@@ -12,7 +12,7 @@ const menuItems = [
 ];
 
 export default function SuperAdminDashboard() {
-  const hasAccess = useRoleGuard('admin');
+  const hasAccess = useRoleGuard('super-admin');
 
   if (!hasAccess) {
     return (
