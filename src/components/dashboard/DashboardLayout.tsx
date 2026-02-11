@@ -7,7 +7,7 @@ import { useAuth as useFirebaseAuth } from '@/firebase';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { LogOut } from 'lucide-react';
+import { LogOut, Package2 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
@@ -86,8 +86,9 @@ export function DashboardLayout({ children, pageTitle, menuItems }: DashboardLay
       <Sidebar collapsible="icon" className="border-r">
         <SidebarHeader className="border-b">
           <div className="flex h-14 items-center justify-center">
-            <Link href="/dashboard" className="text-xl font-semibold tracking-tight text-primary">
-              HRP Starter Kit
+            <Link href="/dashboard" className="flex items-center gap-2 font-semibold">
+              <Package2 className="h-6 w-6 text-primary" />
+              <span className="text-xl tracking-tight text-primary group-data-[state=collapsed]:hidden">HRP Starter Kit</span>
             </Link>
           </div>
         </SidebarHeader>
@@ -98,7 +99,7 @@ export function DashboardLayout({ children, pageTitle, menuItems }: DashboardLay
                 <SidebarMenuButton asChild tooltip={item.label}>
                   <Link href={item.href}>
                     {item.icon}
-                    <span>{item.label}</span>
+                    <span className="group-data-[state=collapsed]:hidden">{item.label}</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
