@@ -256,7 +256,7 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Department</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value} disabled={departmentsLoading}>
+                        <Select onValueChange={field.onChange} value={field.value || ''} disabled={departmentsLoading}>
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="Select a department" />
