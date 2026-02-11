@@ -11,7 +11,7 @@ import {
   FirebaseClientProvider,
   setDocumentNonBlocking
 } from '@/firebase';
-import type { UserProfile } from '@/lib/types';
+import type { UserProfile, UserRole } from '@/lib/types';
 
 type AuthContextType = {
   firebaseUser: FirebaseAuthUser | null;
@@ -24,6 +24,24 @@ const AuthContext = createContext<AuthContextType>({
   userProfile: null,
   loading: true,
 });
+
+const getRoleFromEmail = (email: string | null): UserRole => {
+  switch (email) {
+    case 'super_admin@gmail.com':
+      return 'super_admin';
+    case 'manager@gmail.com':
+      return 'manager';
+    case 'hrd@gmail.com':
+      return 'hrd';
+    case 'karyawan@gmail.com':
+      return 'karyawan';
+    case 'kandidat@gmail.com':
+      return 'kandidat';
+    default:
+      return 'kandidat'; // Default for any other email
+  }
+};
+
 
 function AuthContent({ children }: { children: ReactNode }) {
   const { user: firebaseUser, isUserLoading: isAuthLoading } = useUser();
@@ -38,17 +56,24 @@ function AuthContent({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (firebaseUser && !userProfileData && !isAuthLoading && !isProfileLoading && userDocRef) {
+        const role = getRoleFromEmail(firebaseUser.email);
         const newProfileData: Omit<UserProfile, 'createdAt'> & { createdAt: any } = {
             uid: firebaseUser.uid,
             email: firebaseUser.email || 'unknown@example.com',
             fullName: firebaseUser.displayName || 'New User',
-            role: 'kandidat',
+            role: role,
             isActive: true,
             createdAt: serverTimestamp(),
         };
         setDocumentNonBlocking(userDocRef, newProfileData, { merge: false });
+
+        // Also handle the roles_admin collection for super_admin
+        if (role === 'super_admin' && firestore) {
+          const rolesAdminRef = doc(firestore, 'roles_admin', firebaseUser.uid);
+          setDocumentNonBlocking(rolesAdminRef, { role: 'super_admin' }, { merge: false });
+        }
     }
-  }, [firebaseUser, userProfileData, isAuthLoading, isProfileLoading, userDocRef]);
+  }, [firebaseUser, userProfileData, isAuthLoading, isProfileLoading, userDocRef, firestore]);
 
   const userProfile = userProfileData ?? null;
   const loading = isAuthLoading || (!!firebaseUser && !userProfile);
