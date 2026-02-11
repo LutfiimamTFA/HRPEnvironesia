@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { doc, setDoc, collection } from 'firebase/firestore';
-import { useFirestore } from '@/firebase';
+import { doc, collection } from 'firebase/firestore';
+import { useFirestore, setDocumentNonBlocking } from '@/firebase';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -64,28 +64,21 @@ export function DeptBrandFormDialog({ open, onOpenChange, item, type }: DeptBran
     }
   }, [open, item, form]);
 
-  const onSubmit = async (values: FormValues) => {
+  const onSubmit = (values: FormValues) => {
     setLoading(true);
     const collectionName = type === 'Brand' ? 'brands' : 'departments';
     
     const docRef = item ? doc(firestore, collectionName, item.id!) : doc(collection(firestore, collectionName));
 
-    try {
-      await setDoc(docRef, { ...values }, { merge: true });
-      toast({
-        title: `${type} ${mode === 'Edit' ? 'Updated' : 'Created'}`,
-        description: `The ${type.toLowerCase()} "${values.name}" has been saved.`,
-      });
-      onOpenChange(false);
-    } catch (error: any) {
-      toast({
-        variant: 'destructive',
-        title: `Error saving ${type}`,
-        description: error.message,
-      });
-    } finally {
-      setLoading(false);
-    }
+    setDocumentNonBlocking(docRef, { ...values }, { merge: true });
+    
+    toast({
+      title: `${type} ${mode === 'Edit' ? 'Updated' : 'Created'}`,
+      description: `The ${type.toLowerCase()} "${values.name}" has been saved.`,
+    });
+    
+    onOpenChange(false);
+    setLoading(false);
   };
 
   return (

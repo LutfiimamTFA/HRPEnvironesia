@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { collection, doc, deleteDoc } from 'firebase/firestore';
-import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
+import { collection, doc } from 'firebase/firestore';
+import { useCollection, useFirestore, useMemoFirebase, deleteDocumentNonBlocking } from '@/firebase';
 import type { Brand, Department } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { MoreHorizontal, Pencil, PlusCircle, Trash2 } from 'lucide-react';
@@ -150,25 +150,20 @@ export function DepartmentsBrandsClient() {
     setIsDeleteConfirmOpen(true);
   };
 
-  const confirmDelete = async () => {
+  const confirmDelete = () => {
     if (!selectedItem || !selectedItem.id) return;
     const collectionName = currentItemType === 'Brand' ? 'brands' : 'departments';
-    try {
-      await deleteDoc(doc(firestore, collectionName, selectedItem.id));
-      toast({
-        title: `${currentItemType} Deleted`,
-        description: `The ${currentItemType.toLowerCase()} "${selectedItem.name}" has been deleted.`,
-      });
-    } catch (error: any) {
-      toast({
-        variant: 'destructive',
-        title: `Error deleting ${currentItemType}`,
-        description: error.message,
-      });
-    } finally {
-      setIsDeleteConfirmOpen(false);
-      setSelectedItem(null);
-    }
+    const docRef = doc(firestore, collectionName, selectedItem.id);
+    
+    deleteDocumentNonBlocking(docRef);
+
+    toast({
+      title: `${currentItemType} Deleted`,
+      description: `The ${currentItemType.toLowerCase()} "${selectedItem.name}" has been deleted.`,
+    });
+
+    setIsDeleteConfirmOpen(false);
+    setSelectedItem(null);
   };
 
   return (

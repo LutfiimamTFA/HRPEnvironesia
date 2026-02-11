@@ -33,8 +33,8 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { UserProfile, ROLES, UserRole } from '@/lib/types';
 import { Loader2 } from 'lucide-react';
-import { doc, updateDoc } from 'firebase/firestore';
-import { useFirestore } from '@/firebase';
+import { doc } from 'firebase/firestore';
+import { useFirestore, updateDocumentNonBlocking } from '@/firebase';
 
 interface UserFormDialogProps {
   user: UserProfile | null;
@@ -112,12 +112,15 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
       if (mode === 'edit' && user) {
         const userDocRef = doc(firestore, 'users', user.uid);
         const editValues = values as z.infer<typeof editSchema>;
-        await updateDoc(userDocRef, {
+        
+        updateDocumentNonBlocking(userDocRef, {
           fullName: editValues.fullName,
           role: editValues.role,
           isActive: editValues.isActive,
         });
+
         toast({ title: 'User Updated', description: `${editValues.fullName}'s profile has been updated.` });
+        onOpenChange(false);
       } else {
         const createValues = values as z.infer<typeof createSchema>;
         const response = await fetch('/api/users', {
@@ -133,8 +136,8 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
           throw new Error(result.error || 'Failed to create user.');
         }
         toast({ title: 'User Created', description: `An account for ${createValues.fullName} has been created.` });
+        onOpenChange(false);
       }
-      onOpenChange(false);
     } catch (error: any) {
       toast({
         variant: 'destructive',
