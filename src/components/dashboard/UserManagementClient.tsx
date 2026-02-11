@@ -30,6 +30,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { MoreHorizontal, Pencil, Trash2, PlusCircle } from 'lucide-react';
 import { UserFormDialog } from './UserFormDialog';
+import { DeleteConfirmationDialog } from './DeleteConfirmationDialog';
+import { useToast } from '@/hooks/use-toast';
 
 function UserTableSkeleton() {
   return (
@@ -51,8 +53,11 @@ const roleDisplayNames: Record<UserRole, string> = {
 
 export function UserManagementClient({ seedSecret }: { seedSecret: string }) {
   const firestore = useFirestore();
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const { toast } = useToast();
+  const [isFormDialogOpen, setIsFormDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
+  const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
 
   const usersCollectionRef = useMemoFirebase(
     () => (firestore ? collection(firestore, 'users') : null),
@@ -76,12 +81,43 @@ export function UserManagementClient({ seedSecret }: { seedSecret: string }) {
 
   const handleCreateUser = () => {
     setSelectedUser(null);
-    setIsDialogOpen(true);
+    setIsFormDialogOpen(true);
   };
 
   const handleEditUser = (user: UserProfile) => {
     setSelectedUser(user);
-    setIsDialogOpen(true);
+    setIsFormDialogOpen(true);
+  };
+
+  const handleDeleteUser = (user: UserProfile) => {
+    setUserToDelete(user);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!userToDelete) return;
+    try {
+        const response = await fetch(`/api/users/${userToDelete.uid}`, {
+            method: 'DELETE',
+            headers: {
+                'x-seed-secret': seedSecret,
+            },
+        });
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.error || 'Failed to delete user.');
+        }
+        toast({ title: 'User Deleted', description: `User ${userToDelete.fullName} has been deleted.` });
+    } catch (error: any) {
+        toast({
+            variant: 'destructive',
+            title: 'Error deleting user',
+            description: error.message,
+        });
+    } finally {
+        setIsDeleteDialogOpen(false);
+        setUserToDelete(null);
+    }
   };
 
   const usersByRole = useMemo(() => {
@@ -171,7 +207,10 @@ export function UserManagementClient({ seedSecret }: { seedSecret: string }) {
                                   <Pencil className="mr-2 h-4 w-4" />
                                   <span>Edit</span>
                                 </DropdownMenuItem>
-                                <DropdownMenuItem className="text-destructive focus:text-destructive focus:bg-destructive/10">
+                                <DropdownMenuItem 
+                                  className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                                  onClick={() => handleDeleteUser(user)}
+                                >
                                   <Trash2 className="mr-2 h-4 w-4" />
                                   <span>Delete</span>
                                 </DropdownMenuItem>
@@ -192,9 +231,16 @@ export function UserManagementClient({ seedSecret }: { seedSecret: string }) {
       )}
       <UserFormDialog
         user={selectedUser}
-        open={isDialogOpen}
-        onOpenChange={setIsDialogOpen}
+        open={isFormDialogOpen}
+        onOpenChange={setIsFormDialogOpen}
         seedSecret={seedSecret}
+      />
+      <DeleteConfirmationDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        onConfirm={confirmDelete}
+        itemName={userToDelete?.fullName}
+        itemType="user"
       />
     </div>
   );

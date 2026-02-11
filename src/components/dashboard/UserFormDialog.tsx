@@ -181,7 +181,7 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={form.handleSubmit(onSubmit)}>
             <ScrollArea className="max-h-[60vh] w-full pr-6">
               <div className="space-y-4 py-4">
                 <FormField
@@ -320,7 +320,7 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
                 />
               </div>
             </ScrollArea>
-            <DialogFooter>
+            <DialogFooter className="mt-4">
               <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
