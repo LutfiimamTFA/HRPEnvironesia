@@ -11,6 +11,7 @@ export type UserProfile = {
   role: UserRole;
   isActive: boolean;
   createdAt: Timestamp | { seconds: number; nanoseconds: number };
+  managedBrandIds?: string[];
 };
 
 export type Brand = {

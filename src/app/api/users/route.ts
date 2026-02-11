@@ -3,14 +3,15 @@ import admin from '@/lib/firebase/admin';
 import { UserRole, ROLES } from '@/lib/types';
 import { Timestamp } from 'firebase-admin/firestore';
 
-function isValidBody(body: any): body is { email: string; password: string; fullName: string; role: UserRole } {
+function isValidBody(body: any): body is { email: string; password: string; fullName: string; role: UserRole, managedBrandIds?: string[] } {
   return (
     body &&
     typeof body.email === 'string' &&
     typeof body.password === 'string' && body.password.length >= 8 &&
     typeof body.fullName === 'string' &&
     typeof body.role === 'string' &&
-    ROLES.includes(body.role)
+    ROLES.includes(body.role) &&
+    (body.managedBrandIds === undefined || (Array.isArray(body.managedBrandIds) && body.managedBrandIds.every((i: any) => typeof i === 'string')))
   );
 }
 
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid request body. Ensure all fields are correct.' }, { status: 400 });
     }
 
-    const { email, password, fullName, role } = body;
+    const { email, password, fullName, role, managedBrandIds } = body;
     const db = admin.firestore();
 
     try {
@@ -54,7 +55,7 @@ export async function POST(req: NextRequest) {
       displayName: fullName,
     });
 
-    const userProfile = {
+    const userProfile: any = {
       uid: userRecord.uid,
       email,
       fullName,
@@ -62,6 +63,10 @@ export async function POST(req: NextRequest) {
       isActive: true,
       createdAt: Timestamp.now(),
     };
+
+    if (role === 'hrd' && managedBrandIds) {
+      userProfile.managedBrandIds = managedBrandIds;
+    }
 
     await db.collection('users').doc(userRecord.uid).set(userProfile);
 

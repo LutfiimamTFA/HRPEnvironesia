@@ -21,6 +21,7 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  FormDescription,
 } from '@/components/ui/form';
 import {
   Select,
@@ -30,11 +31,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
-import { UserProfile, ROLES, UserRole } from '@/lib/types';
+import { UserProfile, ROLES, UserRole, Brand } from '@/lib/types';
 import { Loader2 } from 'lucide-react';
-import { doc } from 'firebase/firestore';
-import { useFirestore, updateDocumentNonBlocking } from '@/firebase';
+import { doc, collection } from 'firebase/firestore';
+import { useFirestore, updateDocumentNonBlocking, useCollection, useMemoFirebase } from '@/firebase';
 
 interface UserFormDialogProps {
   user: UserProfile | null;
@@ -49,6 +51,7 @@ const createSchema = z.object({
   role: z.enum(ROLES),
   isActive: z.boolean().default(true),
   password: z.string().min(8, { message: 'Password must be at least 8 characters.' }),
+  managedBrandIds: z.array(z.string()).optional(),
 });
 
 const editSchema = z.object({
@@ -56,6 +59,7 @@ const editSchema = z.object({
   email: z.string().email(), // Readonly
   role: z.enum(ROLES),
   isActive: z.boolean(),
+  managedBrandIds: z.array(z.string()).optional(),
 });
 
 type FormValues = z.infer<typeof createSchema> | z.infer<typeof editSchema>;
@@ -66,6 +70,9 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
   const firestore = useFirestore();
   const mode = user ? 'edit' : 'create';
 
+  const brandsCollectionRef = useMemoFirebase(() => collection(firestore, 'brands'), [firestore]);
+  const { data: brands, isLoading: brandsLoading } = useCollection<Brand>(brandsCollectionRef);
+
   const form = useForm({
     resolver: zodResolver(mode === 'create' ? createSchema : editSchema),
     defaultValues:
@@ -75,6 +82,7 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
             email: user.email,
             role: user.role,
             isActive: user.isActive,
+            managedBrandIds: user.managedBrandIds || [],
           }
         : {
             fullName: '',
@@ -82,8 +90,11 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
             role: 'kandidat' as UserRole,
             isActive: true,
             password: '',
+            managedBrandIds: [],
           },
   });
+
+  const selectedRole = form.watch('role');
 
   useEffect(() => {
     if (open) {
@@ -94,6 +105,7 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
               email: user.email,
               role: user.role,
               isActive: user.isActive,
+              managedBrandIds: user.managedBrandIds || [],
             }
           : {
               fullName: '',
@@ -101,6 +113,7 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
               role: 'kandidat' as UserRole,
               isActive: true,
               password: '',
+              managedBrandIds: [],
             }
       );
     }
@@ -113,11 +126,19 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
         const userDocRef = doc(firestore, 'users', user.uid);
         const editValues = values as z.infer<typeof editSchema>;
         
-        updateDocumentNonBlocking(userDocRef, {
+        const updateData: any = {
           fullName: editValues.fullName,
           role: editValues.role,
           isActive: editValues.isActive,
-        });
+        };
+        
+        if (editValues.role === 'hrd') {
+          updateData.managedBrandIds = editValues.managedBrandIds || [];
+        } else {
+          updateData.managedBrandIds = [];
+        }
+
+        updateDocumentNonBlocking(userDocRef, updateData);
 
         toast({ title: 'User Updated', description: `${editValues.fullName}'s profile has been updated.` });
         onOpenChange(false);
@@ -225,6 +246,61 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
                 </FormItem>
               )}
             />
+            
+            {selectedRole === 'hrd' && (
+              <FormField
+                control={form.control}
+                name="managedBrandIds"
+                render={() => (
+                  <FormItem>
+                    <div className="mb-4">
+                      <FormLabel className="text-base">Managed Brands</FormLabel>
+                      <FormDescription>
+                        Select the brands this HRD user will manage.
+                      </FormDescription>
+                    </div>
+                    {brandsLoading ? <p>Loading brands...</p> : brands?.map((brand) => (
+                      <FormField
+                        key={brand.id}
+                        control={form.control}
+                        name="managedBrandIds"
+                        render={({ field }) => {
+                          return (
+                            <FormItem
+                              key={brand.id}
+                              className="flex flex-row items-start space-x-3 space-y-0"
+                            >
+                              <FormControl>
+                                <Checkbox
+                                  checked={field.value?.includes(brand.id!)}
+                                  onCheckedChange={(checked) => {
+                                    return checked
+                                      ? field.onChange([
+                                          ...(field.value || []),
+                                          brand.id!,
+                                        ])
+                                      : field.onChange(
+                                          field.value?.filter(
+                                            (value) => value !== brand.id
+                                          )
+                                        );
+                                  }}
+                                />
+                              </FormControl>
+                              <FormLabel className="font-normal">
+                                {brand.name}
+                              </FormLabel>
+                            </FormItem>
+                          );
+                        }}
+                      />
+                    ))}
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
             <FormField
               control={form.control}
               name="isActive"
