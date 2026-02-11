@@ -70,7 +70,6 @@ function DataTable({ type, data, isLoading, error, onEdit, onDelete }: DataTable
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
-            <TableHead>Description</TableHead>
             <TableHead className="w-[100px] text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -79,7 +78,6 @@ function DataTable({ type, data, isLoading, error, onEdit, onDelete }: DataTable
             data.map((item) => (
               <TableRow key={item.id}>
                 <TableCell className="font-medium">{item.name}</TableCell>
-                <TableCell>{item.description}</TableCell>
                 <TableCell className="text-right">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -106,7 +104,7 @@ function DataTable({ type, data, isLoading, error, onEdit, onDelete }: DataTable
             ))
           ) : (
             <TableRow>
-              <TableCell colSpan={3} className="h-24 text-center">
+              <TableCell colSpan={2} className="h-24 text-center">
                 No {type.toLowerCase()}s found.
               </TableCell>
             </TableRow>

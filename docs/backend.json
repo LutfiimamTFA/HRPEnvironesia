@@ -21,7 +21,7 @@
         },
         "role": {
           "type": "string",
-          "description": "The role of the user within the application (super_admin, hrd, manager, kandidat, karyawan)."
+          "description": "The role of the user within the application (super-admin, hrd, manager, kandidat, karyawan)."
         },
         "isActive": {
           "type": "boolean",
@@ -50,10 +50,6 @@
         "name": {
           "type": "string",
           "description": "The name of the brand."
-        },
-        "description": {
-          "type": "string",
-          "description": "A short description of the brand."
         }
       },
       "required": [
@@ -68,10 +64,6 @@
         "name": {
           "type": "string",
           "description": "The name of the department."
-        },
-        "description": {
-          "type": "string",
-          "description": "A short description of the department."
         }
       },
       "required": [
@@ -110,7 +102,7 @@
           "schema": {
             "$ref": "#/backend/entities/User"
           },
-          "description": "Indicates super_admin role via document existence. The content of the document is not relevant.",
+          "description": "Indicates super-admin role via document existence. The content of the document is not relevant.",
           "params": [
             {
               "name": "userId",

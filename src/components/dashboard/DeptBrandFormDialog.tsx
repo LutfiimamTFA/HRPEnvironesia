@@ -16,7 +16,6 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Form,
   FormControl,
@@ -31,7 +30,6 @@ import type { Brand, Department } from '@/lib/types';
 
 const formSchema = z.object({
   name: z.string().min(2, { message: 'Name must be at least 2 characters.' }),
-  description: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -53,7 +51,6 @@ export function DeptBrandFormDialog({ open, onOpenChange, item, type }: DeptBran
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: '',
-      description: '',
     },
   });
 
@@ -61,8 +58,8 @@ export function DeptBrandFormDialog({ open, onOpenChange, item, type }: DeptBran
     if (open) {
       form.reset(
         item
-          ? { name: item.name, description: item.description || '' }
-          : { name: '', description: '' }
+          ? { name: item.name }
+          : { name: '' }
       );
     }
   }, [open, item, form]);
@@ -110,19 +107,6 @@ export function DeptBrandFormDialog({ open, onOpenChange, item, type }: DeptBran
                   <FormLabel>Name</FormLabel>
                   <FormControl>
                     <Input placeholder={`${type} name`} {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Description</FormLabel>
-                  <FormControl>
-                    <Textarea placeholder={`A short description...`} {...field} value={field.value ?? ''} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
