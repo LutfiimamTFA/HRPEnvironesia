@@ -1,0 +1,253 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { useToast } from '@/hooks/use-toast';
+import { UserProfile, ROLES, UserRole } from '@/lib/types';
+import { Loader2 } from 'lucide-react';
+import { doc, updateDoc } from 'firebase/firestore';
+import { useFirestore } from '@/firebase';
+
+interface UserFormDialogProps {
+  user: UserProfile | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  seedSecret: string;
+}
+
+const createSchema = z.object({
+  fullName: z.string().min(2, { message: 'Full name is required.' }),
+  email: z.string().email({ message: 'A valid email is required.' }),
+  role: z.enum(ROLES),
+  isActive: z.boolean().default(true),
+  password: z.string().min(8, { message: 'Password must be at least 8 characters.' }),
+});
+
+const editSchema = z.object({
+  fullName: z.string().min(2, { message: 'Full name is required.' }),
+  email: z.string().email(), // Readonly
+  role: z.enum(ROLES),
+  isActive: z.boolean(),
+});
+
+type FormValues = z.infer<typeof createSchema> | z.infer<typeof editSchema>;
+
+export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFormDialogProps) {
+  const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
+  const firestore = useFirestore();
+  const mode = user ? 'edit' : 'create';
+
+  const form = useForm({
+    resolver: zodResolver(mode === 'create' ? createSchema : editSchema),
+    defaultValues:
+      mode === 'edit' && user
+        ? {
+            fullName: user.fullName,
+            email: user.email,
+            role: user.role,
+            isActive: user.isActive,
+          }
+        : {
+            fullName: '',
+            email: '',
+            role: 'kandidat' as UserRole,
+            isActive: true,
+            password: '',
+          },
+  });
+
+  useEffect(() => {
+    if (open) {
+      form.reset(
+        mode === 'edit' && user
+          ? {
+              fullName: user.fullName,
+              email: user.email,
+              role: user.role,
+              isActive: user.isActive,
+            }
+          : {
+              fullName: '',
+              email: '',
+              role: 'kandidat' as UserRole,
+              isActive: true,
+              password: '',
+            }
+      );
+    }
+  }, [user, open, form, mode]);
+
+  async function onSubmit(values: FormValues) {
+    setLoading(true);
+    try {
+      if (mode === 'edit' && user) {
+        const userDocRef = doc(firestore, 'users', user.uid);
+        const editValues = values as z.infer<typeof editSchema>;
+        await updateDoc(userDocRef, {
+          fullName: editValues.fullName,
+          role: editValues.role,
+          isActive: editValues.isActive,
+        });
+        toast({ title: 'User Updated', description: `${editValues.fullName}'s profile has been updated.` });
+      } else {
+        const createValues = values as z.infer<typeof createSchema>;
+        const response = await fetch('/api/users', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-seed-secret': seedSecret,
+          },
+          body: JSON.stringify(createValues),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || 'Failed to create user.');
+        }
+        toast({ title: 'User Created', description: `An account for ${createValues.fullName} has been created.` });
+      }
+      onOpenChange(false);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: `Error ${mode === 'edit' ? 'updating' : 'creating'} user`,
+        description: error.message,
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>{mode === 'edit' ? 'Edit User' : 'Create New User'}</DialogTitle>
+          <DialogDescription>
+            {mode === 'edit' ? "Change the user's details below." : "Fill in the details for the new user."}
+          </DialogDescription>
+        </DialogHeader>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4">
+            <FormField
+              control={form.control}
+              name="fullName"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Full Name</FormLabel>
+                  <FormControl>
+                    <Input placeholder="John Doe" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Email</FormLabel>
+                  <FormControl>
+                    <Input placeholder="user@example.com" {...field} readOnly={mode === 'edit'} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            {mode === 'create' && (
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Password</FormLabel>
+                    <FormControl>
+                      <Input type="password" placeholder="********" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+            <FormField
+              control={form.control}
+              name="role"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Role</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a role" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {ROLES.map((r) => (
+                        <SelectItem key={r} value={r}>
+                          {r.replace(/[-_]/g, ' ')}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="isActive"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
+                  <div className="space-y-0.5">
+                    <FormLabel>Active Status</FormLabel>
+                  </div>
+                  <FormControl>
+                    <Switch checked={field.value} onCheckedChange={field.onChange} />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={loading}>
+                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {mode === 'edit' ? 'Save Changes' : 'Create User'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}

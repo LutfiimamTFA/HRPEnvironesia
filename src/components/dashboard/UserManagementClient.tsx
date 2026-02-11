@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { collection } from 'firebase/firestore';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { UserProfile, ROLES, UserRole } from '@/lib/types';
@@ -28,7 +28,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
-import { MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { MoreHorizontal, Pencil, Trash2, PlusCircle } from 'lucide-react';
+import { UserFormDialog } from './UserFormDialog';
 
 function UserTableSkeleton() {
   return (
@@ -42,14 +43,16 @@ function UserTableSkeleton() {
 
 const roleDisplayNames: Record<UserRole, string> = {
   'super-admin': 'Super Admins',
-  'hrd': 'HRD',
-  'manager': 'Managers',
-  'kandidat': 'Kandidat',
-  'karyawan': 'Karyawan',
+  hrd: 'HRD',
+  manager: 'Managers',
+  kandidat: 'Kandidat',
+  karyawan: 'Karyawan',
 };
 
-export function UserManagementClient() {
+export function UserManagementClient({ seedSecret }: { seedSecret: string }) {
   const firestore = useFirestore();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
 
   const usersCollectionRef = useMemoFirebase(
     () => (firestore ? collection(firestore, 'users') : null),
@@ -57,6 +60,16 @@ export function UserManagementClient() {
   );
   
   const { data: users, isLoading, error } = useCollection<UserProfile>(usersCollectionRef);
+
+  const handleCreateUser = () => {
+    setSelectedUser(null);
+    setIsDialogOpen(true);
+  };
+
+  const handleEditUser = (user: UserProfile) => {
+    setSelectedUser(user);
+    setIsDialogOpen(true);
+  };
 
   const usersByRole = useMemo(() => {
     if (!users) return {};
@@ -85,11 +98,17 @@ export function UserManagementClient() {
     );
   }
 
-  // Determine which roles to display based on available users, maintaining a consistent order.
   const displayRoles = ROLES.filter(role => usersByRole[role] && usersByRole[role].length > 0);
 
   return (
     <div className="w-full space-y-4">
+      <div className="flex justify-end">
+        <Button onClick={handleCreateUser}>
+          <PlusCircle className="mr-2 h-4 w-4" />
+          Create User
+        </Button>
+      </div>
+
        {displayRoles.length > 0 ? (
         <Accordion type="multiple" className="w-full space-y-4" defaultValue={displayRoles.map(role => `role-${role}`)}>
           {displayRoles.map((role) => (
@@ -129,7 +148,7 @@ export function UserManagementClient() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                <DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleEditUser(user)}>
                                   <Pencil className="mr-2 h-4 w-4" />
                                   <span>Edit</span>
                                 </DropdownMenuItem>
@@ -150,8 +169,14 @@ export function UserManagementClient() {
           ))}
         </Accordion>
       ) : (
-        <div className="text-center text-muted-foreground py-10">No users found.</div>
+        <div className="text-center text-muted-foreground py-10">No users found. Try running the seeder.</div>
       )}
+      <UserFormDialog
+        user={selectedUser}
+        open={isDialogOpen}
+        onOpenChange={setIsDialogOpen}
+        seedSecret={seedSecret}
+      />
     </div>
   );
 }

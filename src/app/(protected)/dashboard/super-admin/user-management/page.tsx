@@ -25,7 +25,7 @@ export default function UserManagementPage() {
 
   return (
     <DashboardLayout pageTitle="User Management" menuItems={menuItems}>
-      <UserManagementClient />
+      <UserManagementClient seedSecret={process.env.SEED_SECRET || ''} />
     </DashboardLayout>
   );
 }
