@@ -34,7 +34,7 @@
         },
         "departmentId": {
           "type": "string",
-          "description": "The ID of the department the user belongs to, primarily for HRD roles."
+          "description": "The ID of the department the user belongs to."
         }
       },
       "required": [

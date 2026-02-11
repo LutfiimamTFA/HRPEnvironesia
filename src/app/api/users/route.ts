@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
       createdAt: Timestamp.now(),
     };
 
-    if (role === 'hrd' && departmentId) {
+    if (departmentId) {
       userProfile.departmentId = departmentId;
     }
 

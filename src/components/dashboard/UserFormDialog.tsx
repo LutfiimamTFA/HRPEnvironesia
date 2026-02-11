@@ -94,8 +94,6 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
           },
   });
 
-  const selectedRole = form.watch('role');
-
   useEffect(() => {
     if (open) {
       form.reset(
@@ -130,13 +128,8 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
           fullName: editValues.fullName,
           role: editValues.role,
           isActive: editValues.isActive,
+          departmentId: editValues.departmentId || null,
         };
-        
-        if (editValues.role === 'hrd') {
-          updateData.departmentId = editValues.departmentId || null;
-        } else {
-          updateData.departmentId = null;
-        }
 
         updateDocumentNonBlocking(userDocRef, updateData);
 
@@ -249,39 +242,37 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
                   )}
                 />
                 
-                {selectedRole === 'hrd' && (
-                  <FormField
-                    control={form.control}
-                    name="departmentId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Department</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value || ''} disabled={departmentsLoading}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select a department" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {departmentsLoading ? (
-                              <SelectItem value="loading" disabled>Loading departments...</SelectItem>
-                            ) : (
-                              departments?.map((dept) => (
-                                <SelectItem key={dept.id!} value={dept.id!}>
-                                  {dept.name}
-                                </SelectItem>
-                              ))
-                            )}
-                          </SelectContent>
-                        </Select>
-                        <FormDescription>
-                          Assign this HRD user to a specific department.
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                )}
+                <FormField
+                  control={form.control}
+                  name="departmentId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Department</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value || ''} disabled={departmentsLoading}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a department" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {departmentsLoading ? (
+                            <SelectItem value="loading" disabled>Loading departments...</SelectItem>
+                          ) : (
+                            departments?.map((dept) => (
+                              <SelectItem key={dept.id!} value={dept.id!}>
+                                {dept.name}
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        Assign this user to a department (optional).
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
                 <FormField
                   control={form.control}
