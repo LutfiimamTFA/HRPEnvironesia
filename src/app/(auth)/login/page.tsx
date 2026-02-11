@@ -35,6 +35,17 @@ export default function LoginPage() {
           <p className="mt-2 text-muted-foreground">Sign in to your account</p>
         </div>
         <LoginForm />
+        <div className="text-center text-sm text-muted-foreground">
+          <p>
+            First time setup?{' '}
+            <Link
+              href="/seed"
+              className="font-medium text-primary underline-offset-4 hover:underline"
+            >
+              Seed user roles
+            </Link>
+          </p>
+        </div>
       </div>
     </div>
   );
