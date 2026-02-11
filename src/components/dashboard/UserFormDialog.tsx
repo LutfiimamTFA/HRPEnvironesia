@@ -75,6 +75,14 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
 
   const form = useForm({
     resolver: zodResolver(mode === 'create' ? createSchema : editSchema),
+    defaultValues: {
+      fullName: '',
+      email: '',
+      role: 'kandidat' as UserRole,
+      isActive: true,
+      password: '',
+      departmentId: '',
+    }
   });
 
   const role = form.watch('role');
@@ -106,7 +114,7 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
     setLoading(true);
     
     const finalValues = { ...values };
-    if (finalValues.departmentId === 'unassigned') {
+    if (finalValues.departmentId === '' || finalValues.departmentId === 'unassigned') {
       finalValues.departmentId = undefined;
     }
 
@@ -240,7 +248,7 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Department</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value || ''} disabled={departmentsLoading}>
+                        <Select onValueChange={field.onChange} value={field.value} disabled={departmentsLoading}>
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="Select a department" />
