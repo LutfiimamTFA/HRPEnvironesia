@@ -12,6 +12,15 @@ const seedUsers: { email: string; password: string; fullName: string; role: User
 ];
 
 export async function POST(req: NextRequest) {
+  // Gracefully handle cases where the Admin SDK is not initialized.
+  if (!admin.apps.length) {
+    console.error('Firebase Admin SDK has not been initialized. Please check your server-side environment variables.');
+    return NextResponse.json(
+      { error: 'Firebase Admin SDK not initialized. Ensure FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY are set correctly in your .env.local file.' },
+      { status: 500 }
+    );
+  }
+  
   if (process.env.ENABLE_SEED !== 'true') {
     return NextResponse.json({ error: 'Seeder is disabled.' }, { status: 403 });
   }
