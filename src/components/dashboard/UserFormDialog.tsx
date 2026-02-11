@@ -75,36 +75,13 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
 
   const form = useForm({
     resolver: zodResolver(mode === 'create' ? createSchema : editSchema),
-    defaultValues:
-      mode === 'edit' && user
-        ? {
-            fullName: user.fullName,
-            email: user.email,
-            role: user.role,
-            isActive: user.isActive,
-            departmentId: user.departmentId || '',
-          }
-        : {
-            fullName: '',
-            email: '',
-            role: 'kandidat' as UserRole,
-            isActive: true,
-            password: '',
-            departmentId: '',
-          },
   });
 
   const role = form.watch('role');
 
   useEffect(() => {
-    if (role === 'super-admin') {
-      form.setValue('departmentId', '');
-    }
-  }, [role, form]);
-
-  useEffect(() => {
     if (open) {
-      form.reset(
+      const defaultValues =
         mode === 'edit' && user
           ? {
               fullName: user.fullName,
@@ -120,10 +97,10 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
               isActive: true,
               password: '',
               departmentId: '',
-            }
-      );
+            };
+      form.reset(defaultValues);
     }
-  }, [user, open, form, mode]);
+  }, [user, open, mode, form]);
 
   async function onSubmit(values: FormValues) {
     setLoading(true);
@@ -267,11 +244,20 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
                             {departmentsLoading ? (
                               <SelectItem value="loading" disabled>Loading departments...</SelectItem>
                             ) : (
-                              departments?.map((dept) => (
-                                <SelectItem key={dept.id!} value={dept.id!}>
-                                  {dept.name}
-                                </SelectItem>
-                              ))
+                              <>
+                                <SelectItem value="">None</SelectItem>
+                                {departments && departments.length > 0 ? (
+                                  departments.map((dept) => (
+                                    <SelectItem key={dept.id!} value={dept.id!}>
+                                      {dept.name}
+                                    </SelectItem>
+                                  ))
+                                ) : (
+                                  <SelectItem value="no-depts" disabled>
+                                    No departments exist
+                                  </SelectItem>
+                                )}
+                              </>
                             )}
                           </SelectContent>
                         </Select>
