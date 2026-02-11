@@ -1,6 +1,6 @@
 import type { Timestamp } from 'firebase/firestore';
 
-export const ROLES = ['super_admin', 'hrd', 'manager', 'kandidat', 'karyawan'] as const;
+export const ROLES = ['super-admin', 'hrd', 'manager', 'kandidat', 'karyawan'] as const;
 
 export type UserRole = (typeof ROLES)[number];
 

@@ -120,7 +120,7 @@ export function DashboardLayout({ children, pageTitle, menuItems }: DashboardLay
             <CardHeader>
               <CardTitle>{pageTitle}</CardTitle>
               <CardDescription>
-                Halo, {userProfile.fullName} — Role: {userProfile.role.replace(/_/g, ' ')}
+                Halo, {userProfile.fullName} — Role: {userProfile.role.replace(/-/g, ' ')}
               </CardDescription>
             </CardHeader>
             <CardContent>

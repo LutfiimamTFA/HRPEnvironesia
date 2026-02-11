@@ -4,7 +4,7 @@ import { UserRole } from '@/lib/types';
 import { Timestamp } from 'firebase-admin/firestore';
 
 const seedUsers: { email: string; password: string; fullName: string; role: UserRole }[] = [
-  { email: 'super_admin@gmail.com', password: '12345678', fullName: 'Super Admin', role: 'super_admin' },
+  { email: 'super_admin@gmail.com', password: '12345678', fullName: 'Super Admin', role: 'super-admin' },
   { email: 'hrd@gmail.com', password: '12345678', fullName: 'HRD', role: 'hrd' },
   { email: 'manager@gmail.com', password: '12345678', fullName: 'Manager', role: 'manager' },
   { email: 'kandidat@gmail.com', password: '12345678', fullName: 'Kandidat', role: 'kandidat' },
@@ -73,8 +73,8 @@ export async function POST(req: NextRequest) {
       }
 
       // Handle the roles_admin collection for super_admin
-      if (userData.role === 'super_admin') {
-        await db.collection('roles_admin').doc(userRecord.uid).set({ role: 'super_admin' });
+      if (userData.role === 'super-admin') {
+        await db.collection('roles_admin').doc(userRecord.uid).set({ role: 'super-admin' });
       } else {
         // In case a user's role was demoted, ensure they are not in roles_admin
         await db.collection('roles_admin').doc(userRecord.uid).delete().catch(() => {}); // Ignore error if doc doesn't exist
