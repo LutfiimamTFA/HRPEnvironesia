@@ -66,12 +66,6 @@ function AuthContent({ children }: { children: ReactNode }) {
             createdAt: serverTimestamp(),
         };
         setDocumentNonBlocking(userDocRef, newProfileData, { merge: false });
-
-        // Also handle the roles_admin collection for super_admin
-        if (role === 'super_admin' && firestore) {
-          const rolesAdminRef = doc(firestore, 'roles_admin', firebaseUser.uid);
-          setDocumentNonBlocking(rolesAdminRef, { role: 'super_admin' }, { merge: false });
-        }
     }
   }, [firebaseUser, userProfileData, isAuthLoading, isProfileLoading, userDocRef, firestore]);
 
