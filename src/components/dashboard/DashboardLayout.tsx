@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/providers/auth-provider';
-import { auth } from '@/lib/firebase/client';
+import { useAuth as useFirebaseAuth } from '@/firebase';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -19,6 +19,7 @@ type DashboardLayoutProps = {
 
 function UserNav() {
   const { userProfile } = useAuth();
+  const auth = useFirebaseAuth();
   const router = useRouter();
 
   const handleLogout = async () => {
