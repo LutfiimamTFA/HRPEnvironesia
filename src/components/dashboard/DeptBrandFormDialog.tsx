@@ -30,6 +30,7 @@ import type { Brand, Department } from '@/lib/types';
 
 const formSchema = z.object({
   name: z.string().min(2, { message: 'Name must be at least 2 characters.' }),
+  code: z.string().min(1, { message: 'Code is required.' }),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -37,7 +38,7 @@ type FormValues = z.infer<typeof formSchema>;
 interface DeptBrandFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  item: Brand | Department | null;
+  item: (Brand | Department) & { code?: string } | null;
   type: 'Brand' | 'Department';
 }
 
@@ -51,6 +52,7 @@ export function DeptBrandFormDialog({ open, onOpenChange, item, type }: DeptBran
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: '',
+      code: '',
     },
   });
 
@@ -58,8 +60,8 @@ export function DeptBrandFormDialog({ open, onOpenChange, item, type }: DeptBran
     if (open) {
       form.reset(
         item
-          ? { name: item.name }
-          : { name: '' }
+          ? { name: item.name, code: item.code || '' }
+          : { name: '', code: '' }
       );
     }
   }, [open, item, form]);
@@ -100,6 +102,19 @@ export function DeptBrandFormDialog({ open, onOpenChange, item, type }: DeptBran
                   <FormLabel>Name</FormLabel>
                   <FormControl>
                     <Input placeholder={`${type} name`} {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="code"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Code</FormLabel>
+                  <FormControl>
+                    <Input placeholder={`${type} code`} {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

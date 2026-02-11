@@ -17,9 +17,11 @@ export type UserProfile = {
 export type Brand = {
   id?: string;
   name: string;
+  code: string;
 };
 
 export type Department = {
   id?: string;
   name: string;
+  code: string;
 };

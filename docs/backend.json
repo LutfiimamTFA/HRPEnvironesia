@@ -54,10 +54,15 @@
         "name": {
           "type": "string",
           "description": "The name of the brand."
+        },
+        "code": {
+          "type": "string",
+          "description": "A unique code for the brand."
         }
       },
       "required": [
-        "name"
+        "name",
+        "code"
       ]
     },
     "Department": {
@@ -68,10 +73,15 @@
         "name": {
           "type": "string",
           "description": "The name of the department."
+        },
+        "code": {
+          "type": "string",
+          "description": "A unique code for the department."
         }
       },
       "required": [
-        "name"
+        "name",
+        "code"
       ]
     }
   },
