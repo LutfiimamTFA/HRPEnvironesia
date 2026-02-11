@@ -32,12 +32,9 @@
           "description": "The timestamp indicating when the user account was created.",
           "format": "date-time"
         },
-        "managedBrandIds": {
-          "type": "array",
-          "description": "A list of brand IDs that the HRD user manages.",
-          "items": {
-            "type": "string"
-          }
+        "departmentId": {
+          "type": "string",
+          "description": "The ID of the department the user belongs to, primarily for HRD roles."
         }
       },
       "required": [

@@ -3,7 +3,7 @@ import admin from '@/lib/firebase/admin';
 import { UserRole, ROLES } from '@/lib/types';
 import { Timestamp } from 'firebase-admin/firestore';
 
-function isValidBody(body: any): body is { email: string; password: string; fullName: string; role: UserRole, managedBrandIds?: string[] } {
+function isValidBody(body: any): body is { email: string; password: string; fullName: string; role: UserRole, departmentId?: string } {
   return (
     body &&
     typeof body.email === 'string' &&
@@ -11,7 +11,7 @@ function isValidBody(body: any): body is { email: string; password: string; full
     typeof body.fullName === 'string' &&
     typeof body.role === 'string' &&
     ROLES.includes(body.role) &&
-    (body.managedBrandIds === undefined || (Array.isArray(body.managedBrandIds) && body.managedBrandIds.every((i: any) => typeof i === 'string')))
+    (body.departmentId === undefined || typeof body.departmentId === 'string')
   );
 }
 
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid request body. Ensure all fields are correct.' }, { status: 400 });
     }
 
-    const { email, password, fullName, role, managedBrandIds } = body;
+    const { email, password, fullName, role, departmentId } = body;
     const db = admin.firestore();
 
     try {
@@ -64,8 +64,8 @@ export async function POST(req: NextRequest) {
       createdAt: Timestamp.now(),
     };
 
-    if (role === 'hrd' && managedBrandIds) {
-      userProfile.managedBrandIds = managedBrandIds;
+    if (role === 'hrd' && departmentId) {
+      userProfile.departmentId = departmentId;
     }
 
     await db.collection('users').doc(userRecord.uid).set(userProfile);

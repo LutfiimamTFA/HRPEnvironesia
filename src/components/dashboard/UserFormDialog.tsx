@@ -31,9 +31,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
-import { UserProfile, ROLES, UserRole, Brand } from '@/lib/types';
+import { UserProfile, ROLES, UserRole, Department } from '@/lib/types';
 import { Loader2 } from 'lucide-react';
 import { doc, collection } from 'firebase/firestore';
 import { useFirestore, updateDocumentNonBlocking, useCollection, useMemoFirebase } from '@/firebase';
@@ -52,7 +51,7 @@ const createSchema = z.object({
   role: z.enum(ROLES),
   isActive: z.boolean().default(true),
   password: z.string().min(8, { message: 'Password must be at least 8 characters.' }),
-  managedBrandIds: z.array(z.string()).optional(),
+  departmentId: z.string().optional(),
 });
 
 const editSchema = z.object({
@@ -60,7 +59,7 @@ const editSchema = z.object({
   email: z.string().email(), // Readonly
   role: z.enum(ROLES),
   isActive: z.boolean(),
-  managedBrandIds: z.array(z.string()).optional(),
+  departmentId: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof createSchema> | z.infer<typeof editSchema>;
@@ -71,8 +70,8 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
   const firestore = useFirestore();
   const mode = user ? 'edit' : 'create';
 
-  const brandsCollectionRef = useMemoFirebase(() => collection(firestore, 'brands'), [firestore]);
-  const { data: brands, isLoading: brandsLoading } = useCollection<Brand>(brandsCollectionRef);
+  const departmentsCollectionRef = useMemoFirebase(() => collection(firestore, 'departments'), [firestore]);
+  const { data: departments, isLoading: departmentsLoading } = useCollection<Department>(departmentsCollectionRef);
 
   const form = useForm({
     resolver: zodResolver(mode === 'create' ? createSchema : editSchema),
@@ -83,7 +82,7 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
             email: user.email,
             role: user.role,
             isActive: user.isActive,
-            managedBrandIds: user.managedBrandIds || [],
+            departmentId: user.departmentId || '',
           }
         : {
             fullName: '',
@@ -91,7 +90,7 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
             role: 'kandidat' as UserRole,
             isActive: true,
             password: '',
-            managedBrandIds: [],
+            departmentId: '',
           },
   });
 
@@ -106,7 +105,7 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
               email: user.email,
               role: user.role,
               isActive: user.isActive,
-              managedBrandIds: user.managedBrandIds || [],
+              departmentId: user.departmentId || '',
             }
           : {
               fullName: '',
@@ -114,7 +113,7 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
               role: 'kandidat' as UserRole,
               isActive: true,
               password: '',
-              managedBrandIds: [],
+              departmentId: '',
             }
       );
     }
@@ -134,9 +133,9 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
         };
         
         if (editValues.role === 'hrd') {
-          updateData.managedBrandIds = editValues.managedBrandIds || [];
+          updateData.departmentId = editValues.departmentId || null;
         } else {
-          updateData.managedBrandIds = [];
+          updateData.departmentId = null;
         }
 
         updateDocumentNonBlocking(userDocRef, updateData);
@@ -253,51 +252,31 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
                 {selectedRole === 'hrd' && (
                   <FormField
                     control={form.control}
-                    name="managedBrandIds"
-                    render={() => (
+                    name="departmentId"
+                    render={({ field }) => (
                       <FormItem>
-                        <div className="mb-4">
-                          <FormLabel className="text-base">Managed Brands</FormLabel>
-                          <FormDescription>
-                            Select the brands this HRD user will manage.
-                          </FormDescription>
-                        </div>
-                        {brandsLoading ? <p>Loading brands...</p> : brands?.map((brand) => (
-                          <FormField
-                            key={brand.id}
-                            control={form.control}
-                            name="managedBrandIds"
-                            render={({ field }) => {
-                              return (
-                                <FormItem
-                                  key={brand.id}
-                                  className="flex flex-row items-start space-x-3 space-y-0"
-                                >
-                                  <FormControl>
-                                    <Checkbox
-                                      checked={field.value?.includes(brand.id!)}
-                                      onCheckedChange={(checked) => {
-                                        return checked
-                                          ? field.onChange([
-                                              ...(field.value || []),
-                                              brand.id!,
-                                            ])
-                                          : field.onChange(
-                                              field.value?.filter(
-                                                (value) => value !== brand.id
-                                              )
-                                            );
-                                      }}
-                                    />
-                                  </FormControl>
-                                  <FormLabel className="font-normal">
-                                    {brand.name}
-                                  </FormLabel>
-                                </FormItem>
-                              );
-                            }}
-                          />
-                        ))}
+                        <FormLabel>Department</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value} disabled={departmentsLoading}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select a department" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {departmentsLoading ? (
+                              <SelectItem value="loading" disabled>Loading departments...</SelectItem>
+                            ) : (
+                              departments?.map((dept) => (
+                                <SelectItem key={dept.id!} value={dept.id!}>
+                                  {dept.name}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>
+                          Assign this HRD user to a specific department.
+                        </FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}

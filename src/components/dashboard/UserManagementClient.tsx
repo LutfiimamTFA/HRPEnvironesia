@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { collection } from 'firebase/firestore';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { UserProfile, ROLES, UserRole, Brand } from '@/lib/types';
+import { UserProfile, ROLES, UserRole, Department } from '@/lib/types';
 import {
   Table,
   TableHeader,
@@ -66,18 +66,18 @@ export function UserManagementClient({ seedSecret }: { seedSecret: string }) {
   
   const { data: users, isLoading, error } = useCollection<UserProfile>(usersCollectionRef);
 
-  const brandsCollectionRef = useMemoFirebase(() => collection(firestore, 'brands'), [firestore]);
-  const { data: brands } = useCollection<Brand>(brandsCollectionRef);
+  const departmentsCollectionRef = useMemoFirebase(() => collection(firestore, 'departments'), [firestore]);
+  const { data: departments } = useCollection<Department>(departmentsCollectionRef);
 
-  const brandMap = useMemo(() => {
-    if (!brands) return {};
-    return brands.reduce((acc, brand) => {
-        if (brand.id) {
-            acc[brand.id] = brand.name;
+  const departmentMap = useMemo(() => {
+    if (!departments) return {};
+    return departments.reduce((acc, dept) => {
+        if (dept.id) {
+            acc[dept.id] = dept.name;
         }
         return acc;
     }, {} as Record<string, string>);
-  }, [brands]);
+  }, [departments]);
 
   const handleCreateUser = () => {
     setSelectedUser(null);
@@ -175,7 +175,7 @@ export function UserManagementClient({ seedSecret }: { seedSecret: string }) {
                       <TableRow>
                         <TableHead>Full Name</TableHead>
                         <TableHead>Email</TableHead>
-                        {role === 'hrd' && <TableHead>Managed Brands</TableHead>}
+                        {role === 'hrd' && <TableHead>Department</TableHead>}
                         <TableHead>Status</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
@@ -187,7 +187,7 @@ export function UserManagementClient({ seedSecret }: { seedSecret: string }) {
                           <TableCell>{user.email}</TableCell>
                           {role === 'hrd' && (
                             <TableCell>
-                              {user.managedBrandIds?.map(id => brandMap[id]).filter(Boolean).join(', ') || '-'}
+                              {user.departmentId && departmentMap[user.departmentId] ? departmentMap[user.departmentId] : '-'}
                             </TableCell>
                           )}
                           <TableCell>
