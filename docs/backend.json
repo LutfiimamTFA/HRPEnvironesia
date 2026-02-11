@@ -6,9 +6,9 @@
       "type": "object",
       "description": "Represents a user within the HRP Starter application.",
       "properties": {
-        "id": {
+        "uid": {
           "type": "string",
-          "description": "Unique identifier for the user entity."
+          "description": "Unique identifier for the user entity, matches Firebase Auth UID."
         },
         "fullName": {
           "type": "string",
@@ -34,7 +34,7 @@
         }
       },
       "required": [
-        "id",
+        "uid",
         "fullName",
         "email",
         "role",

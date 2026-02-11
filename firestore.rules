@@ -61,19 +61,19 @@ service cloud.firestore {
     }
 
     /**
-     * Validates that the internal 'id' field of a document being created matches
+     * Validates that the internal 'uid' field of a document being created matches
      * the user ID from the path. This enforces relational integrity.
      */
     function hasValidCreateData(userId) {
-      return request.resource.data.id == userId;
+      return request.resource.data.uid == userId;
     }
 
     /**
-     * Validates that the internal 'id' field of a document being updated is immutable.
+     * Validates that the internal 'uid' field of a document being updated is immutable.
      * This prevents re-assigning ownership of the document.
      */
     function hasValidUpdateData() {
-      return request.resource.data.id == resource.data.id;
+      return request.resource.data.uid == resource.data.uid;
     }
 
     /**

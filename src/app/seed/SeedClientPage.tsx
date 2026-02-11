@@ -74,6 +74,7 @@ export function SeedClientPage({ secret }: { secret: string }) {
                     }
                   >
                     {result.status.replace('_', ' ')}
+                    {result.status === 'error' && result.message && `: ${result.message}`}
                   </span>
                 </li>
               ))}
