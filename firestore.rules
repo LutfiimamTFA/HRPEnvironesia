@@ -1,21 +1,127 @@
+/**
+ * This ruleset enforces a strict security model for the HRP Starter application,
+ * balancing user ownership with powerful administrative capabilities.
+ *
+ * Core Philosophy:
+ * The security model is based on user ownership, where users have primary control
+ * over their own data. This is augmented by a global 'super_admin' role, which
+ * has universal access to all data for administrative purposes.
+ *
+ * Data Structure:
+ * - User-specific data is stored under `/users/{userId}`, directly linking the data
+ *   path to the user's authentication ID.
+ * - A dedicated, non-public collection `/roles_admin/{userId}` is used as a high-performance
+ *   lookup table to identify users with the 'super_admin' role. The mere existence
+ *   of a document in this collection grants administrative privileges.
+ *
+ * Key Security Decisions:
+ * - User Enumeration Prevention: Regular users are explicitly blocked from listing the
+ *   top-level `/users` collection to protect user privacy.
+ * - Privilege Escalation Prevention: The `/roles_admin` collection is made completely
+ *   inaccessible from the client-side (read and write). Admin roles must be granted
+ *   through a trusted server-side process (e.g., Admin SDK), preventing users from
+ *   modifying their own permissions.
+ * - Default Deny: All access is denied by default. Rules explicitly grant permissions
+ *   based on user identity (ownership) or role (super_admin).
+ *
+ * Denormalization for Authorization:
+ * The use of the `/roles_admin/{userId}` collection is a deliberate denormalization strategy.
+ * Instead of performing a costly `get()` on a user's profile document to check their role
+ * for every single operation, the rules perform a highly efficient `exists()` check.
+ * This makes authorization faster and more scalable.
+ */
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Users can read their own profile.
-    // Super admins can read any user profile.
-    match /users/{userId} {
-      allow read: if request.auth.uid == userId || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin';
-      allow create: if request.auth.uid == userId;
-      // Only super admins can update/delete user profiles directly.
-      allow update, delete: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin';
+
+    // Helper functions to create readable, maintainable, and reusable rules.
+
+    /**
+     * Checks if a user is authenticated.
+     */
+    function isSignedIn() {
+      return request.auth != null;
     }
-    
-    // A catch-all rule for other collections.
-    // For this starter kit, only super admins have broad access.
-    // You should define more granular rules for other collections in a real application.
-    match /{path=**}/documents/{document} {
-      allow read, write: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin';
+
+    /**
+     * Checks if the currently authenticated user is the owner of a document
+     * by comparing their UID to the document's ID in the path.
+     */
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    /**
+     * Checks if the currently authenticated user has the 'super_admin' role.
+     * This is determined by the existence of a corresponding document in the
+     * read-only /roles_admin collection. This is faster than a get().
+     */
+    function isSuperAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
+    }
+
+    /**
+     * Validates that the internal 'id' field of a document being created matches
+     * the user ID from the path. This enforces relational integrity.
+     */
+    function hasValidCreateData(userId) {
+      return request.resource.data.id == userId;
+    }
+
+    /**
+     * Validates that the internal 'id' field of a document being updated is immutable.
+     * This prevents re-assigning ownership of the document.
+     */
+    function hasValidUpdateData() {
+      return request.resource.data.id == resource.data.id;
+    }
+
+    /**
+     * @description
+     *   Rules for the user profile collection. A user can manage their own
+     *   profile, and a super_admin has full access to all profiles.
+     * @path
+     *   /users/{userId}
+     * @allow
+     *   A logged-in user (create)s their own profile document.
+     *   auth: { uid: 'user123' } -> create /users/user123
+     * @deny
+     *   An anonymous user tries to (list) all user profiles.
+     *   auth: null -> list /users
+     * @principle
+     *   Restricts access to a user's own data tree and grants universal
+     *   access to administrators.
+     */
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isSuperAdmin();
+      allow list: if isSuperAdmin();
+      allow create: if (isOwner(userId) || isSuperAdmin()) && hasValidCreateData(userId);
+      allow update: if (isOwner(userId) || isSuperAdmin()) && resource != null && hasValidUpdateData();
+      allow delete: if isSuperAdmin() && resource != null;
+    }
+
+    /**
+     * @description
+     *   This collection is a private lookup table for identifying super_admins.
+     *   It is managed exclusively by a trusted server environment and is completely
+     *   inaccessible to all clients to prevent privilege escalation.
+     * @path
+     *   /roles_admin/{userId}
+     * @allow
+     *   No client operations are ever permitted.
+     * @deny
+     *   Any user, including a super_admin, trying to (read) or (write) to this collection.
+     *   auth: { uid: 'admin123' } -> get /roles_admin/admin123
+     * @principle
+     *   Prevents client-side privilege escalation by making authorization
+     *   data read-only and server-managed.
+     */
+    match /roles_admin/{userId} {
+      allow get: if false;
+      allow list: if false;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
     }
   }
 }

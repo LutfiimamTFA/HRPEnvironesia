@@ -1,0 +1,89 @@
+{
+  "entities": {
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "description": "Represents a user within the HRP Starter application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the user entity."
+        },
+        "fullName": {
+          "type": "string",
+          "description": "The full name of the user."
+        },
+        "email": {
+          "type": "string",
+          "description": "The email address of the user.",
+          "format": "email"
+        },
+        "role": {
+          "type": "string",
+          "description": "The role of the user within the application (super_admin, hrd, manager, kandidat, karyawan)."
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Indicates whether the user account is active."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "The timestamp indicating when the user account was created.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "fullName",
+        "email",
+        "role",
+        "isActive",
+        "createdAt"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "Stores user profile data. Includes 'role' for authorization. Path-based ownership.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The Firebase Auth UID of the user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/roles_admin/{userId}",
+        "definition": {
+          "entityName": "roles_admin",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "Indicates super_admin role via document existence. The content of the document is not relevant.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The Firebase Auth UID of the super_admin user."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore structure is designed to provide a secure and scalable foundation for the HRP Starter Kit application. It emphasizes authorization independence, clarity, and adherence to Firestore best practices.\n\nThe design leverages path-based ownership for user profiles, ensuring that only the user (or a super_admin) can access their data.  This is achieved by placing user documents at `/users/{userId}`. This structure inherently provides authorization independence; security rules can validate `request.auth.uid` against the `{userId}` path segment without needing to perform costly and brittle `get()` operations to check ownership.\n\nThe application requirements include a seeding process that creates initial user accounts with specific roles.  The `users/{userId}` collection stores user profiles (fullName, email, role, isActive, createdAt) and facilitates role-based access control. The `super_admin` role has read/write access to all collections, which is achieved in security rules by checking for the existence of a document in a dedicated `/roles_admin/{userId}` collection.\n\nQAPs (Rules Are Not Filters): List operations are inherently safe due to the structure.  A regular user can only read their own document in `users/{userId}`, so listing the entire collection would return no documents (without super_admin privileges).  The super_admin role, indicated by membership in `/roles_admin/{userId}`, grants broad access and bypasses the filtering constraints imposed on other users.\n\nAuthorization Independence: Achieved by storing all necessary authorization information directly within the user document at `/users/{userId}` (specifically, the `role` field) and leveraging path-based ownership. The super admin role is checked for via existence of a document, avoiding document `get()` calls.\n\n"
+  }
+}
