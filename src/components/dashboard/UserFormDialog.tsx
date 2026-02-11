@@ -104,10 +104,16 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
 
   async function onSubmit(values: FormValues) {
     setLoading(true);
+    
+    const finalValues = { ...values };
+    if (finalValues.departmentId === 'unassigned') {
+      finalValues.departmentId = undefined;
+    }
+
     try {
       if (mode === 'edit' && user) {
         const userDocRef = doc(firestore, 'users', user.uid);
-        const editValues = values as z.infer<typeof editSchema>;
+        const editValues = finalValues as z.infer<typeof editSchema>;
         
         const updateData: any = {
           fullName: editValues.fullName,
@@ -121,7 +127,7 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
         toast({ title: 'User Updated', description: `${editValues.fullName}'s profile has been updated.` });
         onOpenChange(false);
       } else {
-        const createValues = values as z.infer<typeof createSchema>;
+        const createValues = finalValues as z.infer<typeof createSchema>;
         const response = await fetch('/api/users', {
           method: 'POST',
           headers: {
@@ -245,7 +251,7 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
                               <SelectItem value="loading" disabled>Loading departments...</SelectItem>
                             ) : (
                               <>
-                                <SelectItem value="">None</SelectItem>
+                                <SelectItem value="unassigned">None</SelectItem>
                                 {departments && departments.length > 0 ? (
                                   departments.map((dept) => (
                                     <SelectItem key={dept.id!} value={dept.id!}>
