@@ -4,6 +4,7 @@ import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { LayoutDashboard, Users, Settings, Briefcase } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { DepartmentsBrandsClient } from '@/components/dashboard/DepartmentsBrandsClient';
 
 const menuItems = [
     { href: '/dashboard/super-admin', label: 'Overview', icon: <LayoutDashboard className="h-4 w-4" /> },
@@ -12,7 +13,7 @@ const menuItems = [
     { href: '#', label: 'System Settings', icon: <Settings className="h-4 w-4" /> },
 ];
 
-export default function SuperAdminDashboard() {
+export default function DepartmentsBrandsPage() {
   const hasAccess = useRoleGuard('super-admin');
 
   if (!hasAccess) {
@@ -24,8 +25,8 @@ export default function SuperAdminDashboard() {
   }
 
   return (
-    <DashboardLayout pageTitle="Dashboard Super Admin" menuItems={menuItems}>
-      <p>This is the main content area for the Super Admin dashboard. You can add widgets, charts, and tables here.</p>
+    <DashboardLayout pageTitle="Departments & Brands" menuItems={menuItems}>
+      <DepartmentsBrandsClient />
     </DashboardLayout>
   );
 }

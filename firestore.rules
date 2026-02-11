@@ -123,5 +123,33 @@ service cloud.firestore {
       allow update: if false;
       allow delete: if false;
     }
+    
+    /**
+     * @description
+     *   Rules for the brands collection. Only super_admins can manage brands.
+     * @path
+     *   /brands/{brandId}
+     * @allow
+     *   A super_admin can perform any action (read, write, delete).
+     * @deny
+     *   Any user who is not a super_admin.
+     */
+    match /brands/{brandId} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    /**
+     * @description
+     *   Rules for the departments collection. Only super_admins can manage departments.
+     * @path
+     *   /departments/{departmentId}
+     * @allow
+     *   A super_admin can perform any action (read, write, delete).
+     * @deny
+     *   Any user who is not a super_admin.
+     */
+    match /departments/{departmentId} {
+      allow read, write: if isSuperAdmin();
+    }
   }
 }
