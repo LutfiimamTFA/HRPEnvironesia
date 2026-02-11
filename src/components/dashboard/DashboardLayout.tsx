@@ -85,7 +85,7 @@ export function DashboardLayout({ children, pageTitle, menuItems }: DashboardLay
                 <CardContent className="grid gap-1">
                     {menuItems.map((item) => (
                         <Link
-                            key={item.href}
+                            key={item.label}
                             href={item.href}
                             className="flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary"
                         >
