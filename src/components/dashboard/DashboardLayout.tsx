@@ -10,6 +10,17 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { LogOut } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import {
+  Sidebar,
+  SidebarProvider,
+  SidebarInset,
+  SidebarHeader,
+  SidebarContent,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuButton,
+  SidebarTrigger,
+} from '@/components/ui/sidebar';
 
 type DashboardLayoutProps = {
   children: ReactNode;
@@ -71,45 +82,52 @@ export function DashboardLayout({ children, pageTitle, menuItems }: DashboardLay
   }
 
   return (
-    <div className="flex min-h-screen w-full flex-col bg-muted/40">
-      <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b bg-background px-4 sm:static sm:h-auto sm:border-0 sm:bg-transparent sm:px-6">
-         <h1 className="flex-1 text-xl font-semibold tracking-tight text-primary">HRP Starter Kit</h1>
-         <UserNav />
-      </header>
-      <main className="flex flex-1 flex-col gap-4 p-4 sm:px-6 sm:py-0 md:gap-8 lg:flex-row">
-        <nav className="grid gap-4 text-sm text-muted-foreground lg:w-1/4 xl:w-1/5">
-            <Card>
-                <CardHeader>
-                    <CardTitle>Menu</CardTitle>
-                </CardHeader>
-                <CardContent className="grid gap-1">
-                    {menuItems.map((item) => (
-                        <Link
-                            key={item.label}
-                            href={item.href}
-                            className="flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary"
-                        >
-                            {item.icon}
-                            {item.label}
-                        </Link>
-                    ))}
-                </CardContent>
-            </Card>
-        </nav>
-        <div className="grid flex-1 items-start gap-4 md:gap-8">
-            <Card>
-                <CardHeader>
-                    <CardTitle>{pageTitle}</CardTitle>
-                    <CardDescription>
-                        Halo, {userProfile.fullName} — Role: {userProfile.role.replace(/_/g, ' ')}
-                    </CardDescription>
-                </CardHeader>
-                <CardContent>
-                    {children}
-                </CardContent>
-            </Card>
-        </div>
-      </main>
-    </div>
+    <SidebarProvider defaultOpen>
+      <Sidebar collapsible="icon" className="border-r">
+        <SidebarHeader className="border-b">
+          <div className="flex h-14 items-center justify-center">
+            <Link href="/dashboard" className="text-xl font-semibold tracking-tight text-primary">
+              HRP Starter Kit
+            </Link>
+          </div>
+        </SidebarHeader>
+        <SidebarContent>
+          <SidebarMenu>
+            {menuItems.map((item) => (
+              <SidebarMenuItem key={item.label}>
+                <SidebarMenuButton asChild tooltip={item.label}>
+                  <Link href={item.href}>
+                    {item.icon}
+                    <span>{item.label}</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ))}
+          </SidebarMenu>
+        </SidebarContent>
+      </Sidebar>
+
+      <SidebarInset>
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b bg-background px-4 sm:px-6">
+          <SidebarTrigger />
+          <div className="flex-1" />
+          <UserNav />
+        </header>
+
+        <main className="flex-1 p-4 sm:px-6 sm:py-6 md:gap-8">
+          <Card>
+            <CardHeader>
+              <CardTitle>{pageTitle}</CardTitle>
+              <CardDescription>
+                Halo, {userProfile.fullName} — Role: {userProfile.role.replace(/_/g, ' ')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {children}
+            </CardContent>
+          </Card>
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
