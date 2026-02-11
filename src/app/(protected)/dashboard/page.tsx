@@ -12,7 +12,8 @@ export default function DashboardRedirectPage() {
   useEffect(() => {
     if (!loading && userProfile) {
       if (userProfile.role) {
-        router.replace(`/dashboard/${userProfile.role}`);
+        const rolePath = userProfile.role === 'admin' ? 'super-admin' : userProfile.role;
+        router.replace(`/dashboard/${rolePath}`);
       } else {
         // Fallback if role is somehow missing, though AuthContext should handle it
         router.replace('/login');

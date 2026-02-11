@@ -28,7 +28,7 @@ const AuthContext = createContext<AuthContextType>({
 const getRoleFromEmail = (email: string | null): UserRole => {
   switch (email) {
     case 'super_admin@gmail.com':
-      return 'super-admin';
+      return 'admin';
     case 'manager@gmail.com':
       return 'manager';
     case 'hrd@gmail.com':
