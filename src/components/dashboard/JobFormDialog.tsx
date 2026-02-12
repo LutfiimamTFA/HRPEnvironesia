@@ -100,7 +100,8 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      setImagePreview(URL.createObjectURL(file));
+      const newImagePreview = URL.createObjectURL(file);
+      setImagePreview(newImagePreview);
       form.setValue('coverImage', file);
     }
   };
@@ -240,7 +241,7 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
                   control={form.control}
                   name="applyDeadline"
                   render={({ field }) => (
-                  <FormItem className="flex flex-col pt-2">
+                  <FormItem className="flex flex-col">
                       <FormLabel>Application Deadline</FormLabel>
                       <Popover>
                       <PopoverTrigger asChild>
@@ -248,16 +249,16 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
                           <Button
                               variant={"outline"}
                               className={cn(
-                              "w-full pl-3 text-left font-normal",
+                              "w-full justify-start text-left font-normal",
                               !field.value && "text-muted-foreground"
                               )}
                           >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
                               {field.value ? (
-                              format(field.value, "PPP")
+                              format(field.value, "dd MMM yyyy")
                               ) : (
                               <span>Pick a date</span>
                               )}
-                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                           </Button>
                           </FormControl>
                       </PopoverTrigger>
@@ -340,3 +341,5 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
     </Dialog>
   );
 }
+
+    

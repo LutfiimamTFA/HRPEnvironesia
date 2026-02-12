@@ -58,11 +58,13 @@ export default function JobDetailPage() {
     const job = jobs?.[0];
 
     useEffect(() => {
-        if (job?.generalRequirementsHtml) {
-            setSanitizedGeneral(DOMPurify.sanitize(job.generalRequirementsHtml));
-        }
-        if (job?.specialRequirementsHtml) {
-            setSanitizedSpecial(DOMPurify.sanitize(job.specialRequirementsHtml));
+        if (typeof window !== 'undefined') {
+            if (job?.generalRequirementsHtml) {
+                setSanitizedGeneral(DOMPurify.sanitize(job.generalRequirementsHtml));
+            }
+            if (job?.specialRequirementsHtml) {
+                setSanitizedSpecial(DOMPurify.sanitize(job.specialRequirementsHtml));
+            }
         }
     }, [job]);
 
@@ -98,7 +100,7 @@ export default function JobDetailPage() {
                 <div className="rounded-xl border bg-card text-card-foreground shadow-sm overflow-hidden">
                     {job.coverImageUrl && (
                         <div className="relative h-48 w-full md:h-64">
-                            <Image src={job.coverImageUrl} alt={`${job.position} cover image`} layout="fill" objectFit="cover" />
+                            <Image src={job.coverImageUrl} alt={`${job.position} cover image`} fill objectFit="cover" />
                         </div>
                     )}
                     <div className="p-6 md:p-8">
@@ -117,7 +119,7 @@ export default function JobDetailPage() {
                                 </Button>
                                 {job.applyDeadline && (
                                     <p className="text-xs text-muted-foreground mt-2 flex items-center justify-end gap-1.5">
-                                        <Calendar className="h-3 w-3"/> Lamar sebelum {format(job.applyDeadline.toDate(), 'PPP')}
+                                        <Calendar className="h-3 w-3"/> Lamar sebelum {format(job.applyDeadline.toDate(), 'dd MMM yyyy')}
                                     </p>
                                 )}
                              </div>
@@ -153,3 +155,5 @@ export default function JobDetailPage() {
         </>
     );
 }
+
+    
