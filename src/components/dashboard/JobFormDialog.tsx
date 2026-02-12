@@ -19,10 +19,14 @@ import {
 } from '@/components/ui/form';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, UploadCloud } from 'lucide-react';
+import { Loader2, UploadCloud, Calendar as CalendarIcon } from 'lucide-react';
 import type { Job, Brand } from '@/lib/types';
 import { RichTextEditor } from '../ui/RichTextEditor';
 import Image from 'next/image';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { format } from 'date-fns';
+import { cn } from '@/lib/utils';
 
 const slugify = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
@@ -33,6 +37,7 @@ const formSchema = z.object({
   location: z.string().min(2, { message: 'Location is required.' }),
   brandId: z.string({ required_error: 'Company/Brand is required.' }),
   workMode: z.enum(['onsite', 'hybrid', 'remote']).optional(),
+  applyDeadline: z.date().optional().nullable(),
   coverImage: z.any().optional(),
   generalRequirementsHtml: z.string().min(10, { message: 'General requirements are required.' }),
   specialRequirementsHtml: z.string().min(10, { message: 'Special requirements are required.' }),
@@ -66,6 +71,7 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
       location: '',
       brandId: undefined,
       workMode: 'onsite',
+      applyDeadline: null,
       generalRequirementsHtml: '',
       specialRequirementsHtml: '',
     },
@@ -76,6 +82,7 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
       if (job) {
         form.reset({
           ...job,
+          applyDeadline: job.applyDeadline ? job.applyDeadline.toDate() : null,
           coverImage: undefined, // Don't repopulate file input
         });
         if (job.coverImageUrl) {
@@ -83,7 +90,7 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
         }
       } else {
         form.reset({
-          position: '', statusJob: 'fulltime', division: '', location: '', brandId: undefined, workMode: 'onsite', generalRequirementsHtml: '', specialRequirementsHtml: '',
+          position: '', statusJob: 'fulltime', division: '', location: '', brandId: undefined, workMode: 'onsite', generalRequirementsHtml: '', specialRequirementsHtml: '', applyDeadline: null
         });
         setImagePreview(null);
       }
@@ -126,6 +133,7 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
 
       const jobData: Omit<Job, 'id'> = {
         ...restOfValues,
+        applyDeadline: values.applyDeadline || null,
         coverImageUrl: finalCoverImageUrl,
         slug: job?.slug || `${slugify(values.position)}-${slugify(brandName)}-${Math.random().toString(36).substring(2, 7)}`,
         publishStatus: job?.publishStatus || 'draft',
@@ -228,6 +236,47 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
                     <FormMessage />
                   </FormItem>
                 )} />
+                <FormField
+                  control={form.control}
+                  name="applyDeadline"
+                  render={({ field }) => (
+                  <FormItem className="flex flex-col pt-2">
+                      <FormLabel>Application Deadline</FormLabel>
+                      <Popover>
+                      <PopoverTrigger asChild>
+                          <FormControl>
+                          <Button
+                              variant={"outline"}
+                              className={cn(
+                              "w-full pl-3 text-left font-normal",
+                              !field.value && "text-muted-foreground"
+                              )}
+                          >
+                              {field.value ? (
+                              format(field.value, "PPP")
+                              ) : (
+                              <span>Pick a date</span>
+                              )}
+                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                          </Button>
+                          </FormControl>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                          mode="single"
+                          selected={field.value ?? undefined}
+                          onSelect={field.onChange}
+                          disabled={(date) =>
+                              date < new Date(new Date().setHours(0, 0, 0, 0))
+                          }
+                          initialFocus
+                          />
+                      </PopoverContent>
+                      </Popover>
+                      <FormMessage />
+                  </FormItem>
+                  )}
+                />
               </div>
 
               <FormField control={form.control} name="coverImage" render={({ field }) => (

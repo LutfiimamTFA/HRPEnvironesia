@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useMemo, useState } from 'react';
@@ -46,12 +47,14 @@ function JobTableSkeleton() {
               <TableHead><Skeleton className="h-5 w-16" /></TableHead>
               <TableHead><Skeleton className="h-5 w-24" /></TableHead>
               <TableHead><Skeleton className="h-5 w-24" /></TableHead>
+              <TableHead><Skeleton className="h-5 w-24" /></TableHead>
               <TableHead className="w-[100px] text-right"><Skeleton className="h-5 w-12" /></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {[...Array(3)].map((_, i) => (
               <TableRow key={i}>
+                <TableCell><Skeleton className="h-5 w-full" /></TableCell>
                 <TableCell><Skeleton className="h-5 w-full" /></TableCell>
                 <TableCell><Skeleton className="h-5 w-full" /></TableCell>
                 <TableCell><Skeleton className="h-5 w-full" /></TableCell>
@@ -172,6 +175,7 @@ export function JobManagementClient() {
               <TableHead>Type</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Location</TableHead>
+              <TableHead>Deadline</TableHead>
               <TableHead>Last Updated</TableHead>
               <TableHead className="w-[100px] text-right">Actions</TableHead>
             </TableRow>
@@ -193,6 +197,9 @@ export function JobManagementClient() {
                     </Badge>
                   </TableCell>
                   <TableCell>{job.location}</TableCell>
+                  <TableCell>
+                    {job.applyDeadline?.toDate ? format(job.applyDeadline.toDate(), 'dd MMM yyyy') : '-'}
+                  </TableCell>
                   <TableCell>
                     {job.updatedAt?.toDate ? format(job.updatedAt.toDate(), 'dd MMM yyyy') : 'Just now'}
                   </TableCell>
@@ -243,7 +250,7 @@ export function JobManagementClient() {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center">
+                <TableCell colSpan={8} className="h-24 text-center">
                   No jobs found. Create one to get started.
                 </TableCell>
               </TableRow>

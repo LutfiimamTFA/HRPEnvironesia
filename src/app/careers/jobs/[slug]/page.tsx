@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowLeft, Briefcase, Building, Calendar, LocateFixed, MapPin, Sparkles } from 'lucide-react';
 import DOMPurify from 'dompurify';
+import { format } from 'date-fns';
 
 function JobDetailSkeleton() {
     return (
@@ -116,7 +117,7 @@ export default function JobDetailPage() {
                                 </Button>
                                 {job.applyDeadline && (
                                     <p className="text-xs text-muted-foreground mt-2 flex items-center justify-end gap-1.5">
-                                        <Calendar className="h-3 w-3"/> Lamar sebelum {new Date(job.applyDeadline.seconds * 1000).toLocaleDateString()}
+                                        <Calendar className="h-3 w-3"/> Lamar sebelum {format(job.applyDeadline.toDate(), 'PPP')}
                                     </p>
                                 )}
                              </div>
