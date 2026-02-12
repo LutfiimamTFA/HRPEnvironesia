@@ -26,9 +26,6 @@ import { DeptBrandFormDialog } from './DeptBrandFormDialog';
 import { DeleteConfirmationDialog } from './DeleteConfirmationDialog';
 import { useToast } from '@/hooks/use-toast';
 
-
-type ItemType = 'Brand';
-
 function DataTableSkeleton() {
   return (
     <div className="space-y-4">
@@ -41,15 +38,14 @@ function DataTableSkeleton() {
 }
 
 interface DataTableProps {
-  type: ItemType;
   data: any[] | null;
   isLoading: boolean;
   error: Error | null;
-  onEdit: (item: any, type: ItemType) => void;
-  onDelete: (item: any, type: ItemType) => void;
+  onEdit: (item: any) => void;
+  onDelete: (item: any) => void;
 }
 
-function DataTable({ type, data, isLoading, error, onEdit, onDelete }: DataTableProps) {
+function DataTable({ data, isLoading, error, onEdit, onDelete }: DataTableProps) {
   if (isLoading) {
     return <DataTableSkeleton />;
   }
@@ -57,7 +53,7 @@ function DataTable({ type, data, isLoading, error, onEdit, onDelete }: DataTable
   if (error) {
     return (
       <Alert variant="destructive">
-        <AlertTitle>Error loading {type}s</AlertTitle>
+        <AlertTitle>Error loading Brands</AlertTitle>
         <AlertDescription>{error.message}</AlertDescription>
       </Alert>
     );
@@ -69,7 +65,6 @@ function DataTable({ type, data, isLoading, error, onEdit, onDelete }: DataTable
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
-            <TableHead>Code</TableHead>
             <TableHead className="w-[100px] text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -78,7 +73,6 @@ function DataTable({ type, data, isLoading, error, onEdit, onDelete }: DataTable
             data.map((item) => (
               <TableRow key={item.id}>
                 <TableCell className="font-medium">{item.name}</TableCell>
-                <TableCell>{item.code}</TableCell>
                 <TableCell className="text-right">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -87,13 +81,13 @@ function DataTable({ type, data, isLoading, error, onEdit, onDelete }: DataTable
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => onEdit(item, type)}>
+                      <DropdownMenuItem onClick={() => onEdit(item)}>
                         <Pencil className="mr-2 h-4 w-4" />
                         Edit
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         className="text-destructive focus:text-destructive focus:bg-destructive/10"
-                        onClick={() => onDelete(item, type)}
+                        onClick={() => onDelete(item)}
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
                         Delete
@@ -105,8 +99,8 @@ function DataTable({ type, data, isLoading, error, onEdit, onDelete }: DataTable
             ))
           ) : (
             <TableRow>
-              <TableCell colSpan={3} className="h-24 text-center">
-                No {type.toLowerCase()}s found.
+              <TableCell colSpan={2} className="h-24 text-center">
+                No brands found.
               </TableCell>
             </TableRow>
           )}
@@ -124,7 +118,6 @@ export function DepartmentsBrandsClient() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<Brand | null>(null);
-  const currentItemType: ItemType = 'Brand';
 
   const brandsRef = useMemoFirebase(() => collection(firestore, 'brands'), [firestore]);
   const { data: brands, isLoading: brandsLoading, error: brandsError } = useCollection<Brand>(brandsRef);
@@ -168,7 +161,6 @@ export function DepartmentsBrandsClient() {
           </Button>
       </div>
       <DataTable
-        type="Brand"
         data={brands}
         isLoading={brandsLoading}
         error={brandsError}
@@ -180,7 +172,6 @@ export function DepartmentsBrandsClient() {
         open={isFormOpen}
         onOpenChange={setIsFormOpen}
         item={selectedItem}
-        type={currentItemType}
       />
       
       <DeleteConfirmationDialog
@@ -188,7 +179,7 @@ export function DepartmentsBrandsClient() {
         onOpenChange={setIsDeleteConfirmOpen}
         onConfirm={confirmDelete}
         itemName={selectedItem?.name}
-        itemType={currentItemType}
+        itemType="Brand"
       />
     </div>
   );

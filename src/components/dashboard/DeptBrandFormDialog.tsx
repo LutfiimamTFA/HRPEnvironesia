@@ -30,7 +30,6 @@ import type { Brand } from '@/lib/types';
 
 const formSchema = z.object({
   name: z.string().min(2, { message: 'Name must be at least 2 characters.' }),
-  code: z.string().min(1, { message: 'Code is required.' }),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -39,10 +38,9 @@ interface BrandFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   item: Brand | null;
-  type: 'Brand';
 }
 
-export function DeptBrandFormDialog({ open, onOpenChange, item, type }: BrandFormDialogProps) {
+export function DeptBrandFormDialog({ open, onOpenChange, item }: BrandFormDialogProps) {
   const firestore = useFirestore();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
@@ -52,7 +50,6 @@ export function DeptBrandFormDialog({ open, onOpenChange, item, type }: BrandFor
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: '',
-      code: '',
     },
   });
 
@@ -60,8 +57,8 @@ export function DeptBrandFormDialog({ open, onOpenChange, item, type }: BrandFor
     if (open) {
       form.reset(
         item
-          ? { name: item.name, code: item.code || '' }
-          : { name: '', code: '' }
+          ? { name: item.name }
+          : { name: '' }
       );
     }
   }, [open, item, form]);
@@ -101,19 +98,6 @@ export function DeptBrandFormDialog({ open, onOpenChange, item, type }: BrandFor
                   <FormLabel>Name</FormLabel>
                   <FormControl>
                     <Input placeholder="Brand name" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="code"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Code</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Brand code" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

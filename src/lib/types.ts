@@ -17,5 +17,4 @@ export type UserProfile = {
 export type Brand = {
   id?: string;
   name: string;
-  code: string;
 };
