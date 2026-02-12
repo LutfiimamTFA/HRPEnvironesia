@@ -1,7 +1,7 @@
 'use client';
 
 import { useAuth } from '@/providers/auth-provider';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 import { ROLES_INTERNAL } from '@/lib/types';
@@ -13,6 +13,13 @@ export default function AdminLayout({
 }) {
   const { userProfile, loading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
+
+  // If we are on the login page, we don't need to run any checks.
+  // The login page has its own logic to redirect if the user is already logged in.
+  if (pathname === '/admin/login') {
+    return <>{children}</>;
+  }
 
   useEffect(() => {
     if (loading) {
@@ -29,9 +36,10 @@ export default function AdminLayout({
       // Logged in, but is a candidate. Redirect to candidate portal.
       router.replace('/careers/login');
     }
-  }, [userProfile, loading, router]);
+  }, [userProfile, loading, router, pathname]);
 
   // Render a loading state while checking for user and role
+  // This check should not apply to the login page itself, which we already handled.
   if (loading || !userProfile || !ROLES_INTERNAL.includes(userProfile.role)) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-background">
