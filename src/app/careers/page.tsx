@@ -53,9 +53,6 @@ export default function CareersPage() {
             <Link href="#faq" className="text-muted-foreground transition-colors hover:text-primary">FAQ</Link>
           </nav>
           <div className="flex items-center gap-2">
-             <Button variant="ghost" asChild>
-                <Link href="/admin/login">Masuk Karyawan</Link>
-            </Button>
             <Button variant="outline" asChild>
               <Link href="/careers/login">Masuk Kandidat</Link>
             </Button>
@@ -215,10 +212,16 @@ export default function CareersPage() {
 
       </main>
 
-      <footer className="border-t py-8">
-        <div className="container flex flex-col-reverse items-center justify-between gap-4 md:flex-row">
-            <p className="text-center text-sm text-muted-foreground">
+      <footer className="border-t">
+        <div className="container flex flex-col-reverse items-center justify-between gap-4 py-6 md:flex-row">
+            <p className="text-sm text-muted-foreground">
                 © {new Date().getFullYear()} Environesia. All Rights Reserved.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Karyawan Environesia?{' '}
+              <Link href="/admin/login" className="font-medium text-primary underline-offset-4 hover:underline">
+                Akses internal di sini
+              </Link>
             </p>
         </div>
       </footer>
