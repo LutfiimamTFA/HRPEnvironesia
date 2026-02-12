@@ -139,7 +139,7 @@ service cloud.firestore {
      */
     match /brands/{brandId} {
       allow read: if isSignedIn();
-      allow write: if isSuperAdmin();
+      allow create, update, delete: if isSuperAdmin();
     }
     
     /**
@@ -150,8 +150,8 @@ service cloud.firestore {
      *   /jobs/{jobId}
      */
     match /jobs/{jobId} {
-      allow read: if (('publishStatus' in resource.data) && resource.data.publishStatus == "published") || isInternal();
-      allow write: if canManageJobs();
+      allow read: if (resource.data.publishStatus == "published") || isInternal();
+      allow create, update, delete: if canManageJobs();
     }
 
 
