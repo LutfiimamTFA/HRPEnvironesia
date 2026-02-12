@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft, Briefcase, Building, Calendar, ChevronRight, LocateFixed, MapPin, Sparkles, Share2 } from 'lucide-react';
+import { ArrowLeft, Briefcase, Building, Calendar, ChevronRight, LocateFixed, MapPin, Sparkles } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import { format } from 'date-fns';
 import { useAuth } from '@/providers/auth-provider';
@@ -185,9 +185,6 @@ export default function JobDetailPage() {
                                         <span className="flex items-center gap-1.5 capitalize"><Briefcase className="h-4 w-4"/> {job.statusJob}</span>
                                     </div>
                                 </div>
-                                <Button variant="outline" size="sm">
-                                    <Share2 className="mr-2 h-4 w-4" /> Bagikan
-                                </Button>
                              </div>
                              
                              <Separator className="my-8" />
