@@ -15,13 +15,12 @@ export default function AdminLayout({
   const router = useRouter();
   const pathname = usePathname();
 
-  // If we are on the login page, we don't need to run any checks.
-  // The login page has its own logic to redirect if the user is already logged in.
-  if (pathname === '/admin/login') {
-    return <>{children}</>;
-  }
-
   useEffect(() => {
+    // Only run redirection logic if we are NOT on the login page.
+    if (pathname === '/admin/login') {
+      return;
+    }
+
     if (loading) {
       return; // Wait until loading is complete
     }
@@ -38,8 +37,13 @@ export default function AdminLayout({
     }
   }, [userProfile, loading, router, pathname]);
 
-  // Render a loading state while checking for user and role
-  // This check should not apply to the login page itself, which we already handled.
+  // If we are on the login page, render it directly.
+  // It has its own logic for redirecting already-logged-in users.
+  if (pathname === '/admin/login') {
+    return <>{children}</>;
+  }
+
+  // For all other /admin/* routes, show a loader while we verify the user's role.
   if (loading || !userProfile || !ROLES_INTERNAL.includes(userProfile.role)) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-background">
@@ -48,6 +52,6 @@ export default function AdminLayout({
     );
   }
 
-  // If checks pass, render the child components
+  // If all checks pass, render the protected page.
   return <>{children}</>;
 }
