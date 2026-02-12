@@ -170,18 +170,18 @@ export function DepartmentsBrandsClient() {
 
   return (
     <div className="space-y-4">
-      <Tabs defaultValue="brands" className="w-full" onValueChange={(value) => setActiveTab(value as ItemType)}>
+      <Tabs defaultValue="Brand" className="w-full" onValueChange={(value) => setActiveTab(value as ItemType)}>
         <div className="flex items-center justify-between">
           <TabsList>
-            <TabsTrigger value="brands">Brands</TabsTrigger>
-            <TabsTrigger value="departments">Departments</TabsTrigger>
+            <TabsTrigger value="Brand">Brands</TabsTrigger>
+            <TabsTrigger value="Department">Departments</TabsTrigger>
           </TabsList>
            <Button onClick={handleCreate}>
               <PlusCircle className="mr-2 h-4 w-4" />
               Create {activeTab}
             </Button>
         </div>
-        <TabsContent value="brands" className="mt-4">
+        <TabsContent value="Brand" className="mt-4">
           <DataTable
             type="Brand"
             data={brands}
@@ -191,7 +191,7 @@ export function DepartmentsBrandsClient() {
             onDelete={handleDelete}
           />
         </TabsContent>
-        <TabsContent value="departments" className="mt-4">
+        <TabsContent value="Department" className="mt-4">
           <DataTable
             type="Department"
             data={departments}

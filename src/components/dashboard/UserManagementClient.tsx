@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { collection } from 'firebase/firestore';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { UserProfile, ROLES, UserRole, Department } from '@/lib/types';
+import { UserProfile, ROLES, UserRole, Department, Brand } from '@/lib/types';
 import {
   Table,
   TableHeader,
@@ -68,6 +68,9 @@ export function UserManagementClient({ seedSecret }: { seedSecret: string }) {
 
   const departmentsCollectionRef = useMemoFirebase(() => collection(firestore, 'departments'), [firestore]);
   const { data: departments } = useCollection<Department>(departmentsCollectionRef);
+  
+  const brandsCollectionRef = useMemoFirebase(() => collection(firestore, 'brands'), [firestore]);
+  const { data: brands } = useCollection<Brand>(brandsCollectionRef);
 
   const departmentMap = useMemo(() => {
     if (!departments) return {};
@@ -78,6 +81,16 @@ export function UserManagementClient({ seedSecret }: { seedSecret: string }) {
         return acc;
     }, {} as Record<string, string>);
   }, [departments]);
+  
+  const brandMap = useMemo(() => {
+    if (!brands) return {};
+    return brands.reduce((acc, brand) => {
+        if (brand.id) {
+            acc[brand.id] = brand.name;
+        }
+        return acc;
+    }, {} as Record<string, string>);
+  }, [brands]);
 
   const handleCreateUser = () => {
     setSelectedUser(null);
@@ -175,6 +188,7 @@ export function UserManagementClient({ seedSecret }: { seedSecret: string }) {
                       <TableRow>
                         <TableHead>Full Name</TableHead>
                         <TableHead>Email</TableHead>
+                        <TableHead>Brand</TableHead>
                         <TableHead>Department</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
@@ -185,6 +199,9 @@ export function UserManagementClient({ seedSecret }: { seedSecret: string }) {
                         <TableRow key={user.uid}>
                           <TableCell className="font-medium">{user.fullName}</TableCell>
                           <TableCell>{user.email}</TableCell>
+                          <TableCell>
+                            {user.brandId && brandMap[user.brandId] ? brandMap[user.brandId] : '-'}
+                          </TableCell>
                           <TableCell>
                             {user.departmentId && departmentMap[user.departmentId] ? departmentMap[user.departmentId] : '-'}
                           </TableCell>

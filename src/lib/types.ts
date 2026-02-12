@@ -12,6 +12,7 @@ export type UserProfile = {
   isActive: boolean;
   createdAt: Timestamp | { seconds: number; nanoseconds: number };
   departmentId?: string;
+  brandId?: string;
 };
 
 export type Brand = {
