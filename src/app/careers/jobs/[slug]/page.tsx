@@ -8,7 +8,7 @@ import type { Job } from '@/lib/types';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowLeft, Briefcase, Building, Calendar, ChevronRight, LocateFixed, MapPin, Sparkles } from 'lucide-react';
 import DOMPurify from 'dompurify';
