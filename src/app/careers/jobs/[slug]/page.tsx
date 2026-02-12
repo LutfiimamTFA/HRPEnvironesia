@@ -142,9 +142,9 @@ export default function JobDetailPage() {
             return;
         }
 
-        // If there is no authenticated user, redirect to login.
+        // If there is no authenticated user, redirect to login, then to the apply page.
         if (!firebaseUser) {
-            router.push(`/careers/login?redirect=${pathname}`);
+            router.push(`/careers/login?redirect=${pathname}/apply`);
             return;
         }
 
@@ -161,14 +161,13 @@ export default function JobDetailPage() {
                     title: 'Akses Khusus Kandidat',
                     description: "Akun Anda terdaftar sebagai akun internal dan tidak dapat digunakan untuk melamar.",
                 });
-                router.push('/admin');
                 return;
             }
         }
         
         // Fallback for cases where user is authenticated but profile is still loading.
-        // The safest bet is to redirect to the login flow which will handle the final redirect.
-        router.push(`/careers/login?redirect=${pathname}`);
+        // Redirect to login flow which will handle the final redirect to the apply page.
+        router.push(`/careers/login?redirect=${pathname}/apply`);
     };
 
     if (isLoading) {
