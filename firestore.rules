@@ -157,7 +157,6 @@ service cloud.firestore {
      */
     match /jobs/{jobId} {
       allow read: if resource.data.publishStatus == "published" || isInternal();
-      allow list: if isInternal(); // Allow internal users to list all jobs, respecting query constraints
       allow create, update, delete: if canManageJobs();
     }
 
