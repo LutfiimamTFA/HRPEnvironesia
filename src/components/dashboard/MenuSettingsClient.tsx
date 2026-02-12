@@ -30,33 +30,41 @@ export function MenuSettingsClient() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [settings, setSettings] = useState<Record<string, string[]>>({});
+  const [isInitialized, setIsInitialized] = useState(false);
 
   const settingsCollectionRef = useMemoFirebase(() => collection(firestore, 'navigation_settings'), [firestore]);
   const { data: initialSettings, isLoading: isLoadingSettings } = useCollection<NavigationSettings>(settingsCollectionRef);
 
   useEffect(() => {
+    // We only want to run the initialization once loading is complete.
+    if (isLoadingSettings || isInitialized) {
+      return;
+    }
+
     const newSettings: Record<string, string[]> = {};
     
     // Define all roles that can have settings
-    const configurableRoles = ROLES.filter(r => r !== 'super-admin');
+    const configurableRoles = ROLES.filter(r => r !== 'super-admin' && ALL_MENU_ITEMS[r as UserRole]);
 
     // First, apply defaults for all configurable roles from menu-config
     configurableRoles.forEach(role => {
-      newSettings[role] = ALL_MENU_ITEMS[role]?.map(item => item.label) || [];
+      newSettings[role] = ALL_MENU_ITEMS[role as UserRole]?.map(item => item.label) || [];
     });
 
     // Then, overwrite with any settings fetched from Firestore
     if (initialSettings) {
       initialSettings.forEach(setting => {
-        if (newSettings[setting.id]) { // Check if the role is a configurable one
+        // Ensure the role from Firestore is a valid, configurable role
+        if (newSettings[setting.id]) {
           newSettings[setting.id] = setting.visibleMenuItems;
         }
       });
     }
     
     setSettings(newSettings);
+    setIsInitialized(true); // Prevent this effect from running again and overwriting user changes
 
-  }, [initialSettings, isLoadingSettings]);
+  }, [initialSettings, isLoadingSettings, isInitialized]);
 
   const handleCheckboxChange = (role: string, menuItemLabel: string, checked: boolean) => {
     setSettings(prevSettings => {
@@ -85,7 +93,7 @@ export function MenuSettingsClient() {
     setLoading(false);
   };
   
-  if (isLoadingSettings) {
+  if (isLoadingSettings && !isInitialized) {
     return (
         <div className="space-y-4">
             <Skeleton className="h-48 w-full" />
