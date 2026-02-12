@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -10,8 +9,9 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft, Briefcase, Building, Calendar, LocateFixed, MapPin, Sparkles } from 'lucide-react';
+import { ArrowLeft, Briefcase, Building, Calendar, LocateFixed, MapPin, Sparkles, ArrowRight } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import { format } from 'date-fns';
 import { useAuth } from '@/providers/auth-provider';
@@ -41,6 +41,23 @@ function JobDetailSkeleton() {
         </div>
     )
 }
+
+const OtherJobCard = ({ job }: { job: Job }) => (
+    <Card className="flex flex-col transition-shadow hover:shadow-lg">
+        <CardHeader className="flex-grow">
+            <CardTitle className="text-lg leading-tight">{job.position}</CardTitle>
+            <CardDescription className="pt-2">{job.brandName} &middot; {job.location}</CardDescription>
+        </CardHeader>
+        <CardFooter>
+            <Button variant="outline" asChild className="w-full">
+                <Link href={`/careers/jobs/${job.slug}`}>
+                    Lihat Detail
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+            </Button>
+        </CardFooter>
+    </Card>
+);
 
 export default function JobDetailPage() {
     const params = useParams();
@@ -72,6 +89,19 @@ export default function JobDetailPage() {
 
     const { data: jobs, isLoading: isLoadingJob } = useCollection<Job>(jobQuery);
     const job = jobs?.[0];
+    
+    const otherJobsQuery = useMemoFirebase(() => {
+        if (!firestore || !slug) return null;
+        return query(
+            collection(firestore, 'jobs'),
+            where('publishStatus', '==', 'published'),
+            where('slug', '!=', slug),
+            limit(3)
+        );
+    }, [firestore, slug]);
+
+    const { data: otherJobs } = useCollection<Job>(otherJobsQuery);
+
     const isLoading = authLoading || isLoadingJob;
 
     useEffect(() => {
@@ -117,7 +147,7 @@ export default function JobDetailPage() {
                 <div className="rounded-xl border bg-card text-card-foreground shadow-sm overflow-hidden">
                     {job.coverImageUrl && (
                         <div className="relative h-48 w-full md:h-64">
-                            <Image src={job.coverImageUrl} alt={`${job.position} cover image`} fill objectFit="cover" />
+                            <Image src={job.coverImageUrl} alt={`${job.position} cover image`} fill style={{ objectFit: 'cover' }} />
                         </div>
                     )}
                     <div className="p-6 md:p-8">
@@ -156,17 +186,37 @@ export default function JobDetailPage() {
                             <div className="md:col-span-1">
                                 <div className="rounded-lg bg-secondary p-4">
                                     <h3 className="font-semibold">Tentang Posisi Ini</h3>
-                                    <ul className="mt-2 space-y-2 text-sm text-muted-foreground">
-                                        <li className="flex items-start"><strong className="w-20 font-medium text-foreground">Divisi</strong>: {job.division}</li>
-                                        <li className="flex items-start"><strong className="w-20 font-medium text-foreground">Tipe</strong>: <span className="capitalize">{job.statusJob}</span></li>
-                                        <li className="flex items-start"><strong className="w-20 font-medium text-foreground">Lokasi</strong>: {job.location}</li>
-                                        {job.workMode && <li className="flex items-start"><strong className="w-20 font-medium text-foreground">Mode</strong>: <span className="capitalize">{job.workMode}</span></li>}
-                                    </ul>
+                                    <div className="mt-4 grid grid-cols-[max-content_1fr] items-start gap-x-4 gap-y-2 text-sm">
+                                        <span className="font-medium text-foreground">Divisi:</span>
+                                        <span className="text-muted-foreground">{job.division}</span>
+
+                                        <span className="font-medium text-foreground">Tipe:</span>
+                                        <span className="capitalize text-muted-foreground">{job.statusJob}</span>
+
+                                        <span className="font-medium text-foreground">Lokasi:</span>
+                                        <span className="text-muted-foreground">{job.location}</span>
+                                        
+                                        {job.workMode && <>
+                                            <span className="font-medium text-foreground">Mode:</span>
+                                            <span className="capitalize text-muted-foreground">{job.workMode}</span>
+                                        </>}
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
+
+                {otherJobs && otherJobs.length > 0 && (
+                    <div className="mt-16">
+                        <h2 className="text-2xl font-bold tracking-tight text-center mb-8">Lowongan Lainnya</h2>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            {otherJobs.map((otherJob) => (
+                                <OtherJobCard key={otherJob.id} job={otherJob} />
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
         </main>
         </>
