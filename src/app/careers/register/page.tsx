@@ -13,7 +13,7 @@ export default function CandidateRegisterPage() {
 
   useEffect(() => {
     if (!loading && userProfile && userProfile.role === 'kandidat') {
-      router.replace('/careers/me');
+      router.replace('/careers/portal');
     }
   }, [userProfile, loading, router]);
 

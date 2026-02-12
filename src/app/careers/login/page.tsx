@@ -18,7 +18,7 @@ export default function CandidateLoginPage() {
       if (redirect) {
         router.replace(redirect);
       } else {
-        router.replace('/careers/me');
+        router.replace('/careers/portal');
       }
     }
   }, [userProfile, loading, router, redirect]);

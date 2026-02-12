@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 import { ROLES_INTERNAL } from '@/lib/types';
+import { CandidatePortalLayout } from '@/components/careers/CandidatePortalLayout';
 
-export default function CandidateLayout({
+export default function CandidatePortalMainLayout({
   children,
 }: {
   children: React.ReactNode;
@@ -41,6 +42,6 @@ export default function CandidateLayout({
     );
   }
 
-  // If checks pass, render the child components
-  return <>{children}</>;
+  // If checks pass, render the child components within the portal layout
+  return <CandidatePortalLayout>{children}</CandidatePortalLayout>;
 }
