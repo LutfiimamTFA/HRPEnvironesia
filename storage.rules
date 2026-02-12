@@ -1,0 +1,23 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Allow public read access to all files. 
+    // This is useful for things like job cover images.
+    match /{allPaths=**} {
+      allow read;
+    }
+
+    // Allow authenticated HRD and Super Admins to write to the 'jobs' folder.
+    // This secures the upload functionality for job postings.
+    match /jobs/{jobId}/{allPaths=**} {
+      allow write: if request.auth != null && (
+        // Check if user is a super_admin
+        exists(/databases/(default)/documents/roles_admin/$(request.auth.uid)) ||
+        // Check if user is an HRD
+        get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'hrd'
+      );
+    }
+  }
+}
