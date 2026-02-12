@@ -59,9 +59,6 @@ export default function CareersPage() {
             <Button asChild>
               <Link href="/careers/register">Daftar</Link>
             </Button>
-             <Button variant="ghost" asChild>
-              <Link href="/login">Masuk Karyawan</Link>
-            </Button>
           </nav>
         </div>
       </header>
@@ -175,9 +172,14 @@ export default function CareersPage() {
 
       </main>
 
-      <footer className="border-t py-6">
-        <div className="container text-center text-sm text-muted-foreground">
-          © {new Date().getFullYear()} Environesia. All Rights Reserved.
+      <footer className="border-t py-8">
+        <div className="container flex flex-col-reverse items-center justify-between gap-4 md:flex-row">
+            <p className="text-center text-sm text-muted-foreground">
+                © {new Date().getFullYear()} Environesia. All Rights Reserved.
+            </p>
+            <Link href="/login" className="text-sm font-medium text-muted-foreground hover:text-primary">
+                Masuk Karyawan
+            </Link>
         </div>
       </footer>
     </div>
