@@ -59,6 +59,14 @@ service cloud.firestore {
     function isSuperAdmin() {
       return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
     }
+    
+    /**
+     * Checks if the currently authenticated user has the 'hrd' role.
+     * This is determined by reading the user's document in the /users collection.
+     */
+    function isHrd() {
+      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'hrd';
+    }
 
     /**
      * Validates that the internal 'uid' field of a document being created matches
@@ -126,17 +134,28 @@ service cloud.firestore {
     
     /**
      * @description
-     *   Rules for the brands collection. Only super_admins can manage brands.
+     *   Rules for the brands collection. Authenticated users can read brands (e.g., for dropdowns),
+     *   but only super_admins can manage them.
      * @path
      *   /brands/{brandId}
-     * @allow
-     *   A super_admin can perform any action (read, write, delete).
-     * @deny
-     *   Any user who is not a super_admin.
      */
     match /brands/{brandId} {
-      allow read, write: if isSuperAdmin();
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
     }
+    
+    /**
+     * @description
+     *   Rules for job postings. Public can read published jobs. HRD and Super Admins
+     *   have full read/write access.
+     * @path
+     *   /jobs/{jobId}
+     */
+    match /jobs/{jobId} {
+      allow read: if resource.data.publishStatus == 'published' || isSuperAdmin() || isHrd();
+      allow write: if isSuperAdmin() || isHrd();
+    }
+
 
     /**
      * @description

@@ -27,9 +27,11 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import type { Brand } from '@/lib/types';
+import { Textarea } from '../ui/textarea';
 
 const formSchema = z.object({
   name: z.string().min(2, { message: 'Name must be at least 2 characters.' }),
+  description: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -50,6 +52,7 @@ export function DeptBrandFormDialog({ open, onOpenChange, item }: BrandFormDialo
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: '',
+      description: '',
     },
   });
 
@@ -57,8 +60,8 @@ export function DeptBrandFormDialog({ open, onOpenChange, item }: BrandFormDialo
     if (open) {
       form.reset(
         item
-          ? { name: item.name }
-          : { name: '' }
+          ? { name: item.name, description: item.description || '' }
+          : { name: '', description: '' }
       );
     }
   }, [open, item, form]);
@@ -98,6 +101,19 @@ export function DeptBrandFormDialog({ open, onOpenChange, item }: BrandFormDialo
                   <FormLabel>Name</FormLabel>
                   <FormControl>
                     <Input placeholder="Brand name" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="description"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Description</FormLabel>
+                  <FormControl>
+                    <Textarea placeholder="A short description of the brand." {...field} value={field.value || ''} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

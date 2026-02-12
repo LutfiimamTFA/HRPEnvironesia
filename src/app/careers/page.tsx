@@ -8,24 +8,46 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { ArrowRight, Briefcase, ChevronDown, FileText, Leaf, MapPin, Search, User, UserCheck } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
+import { collection, query, where } from 'firebase/firestore';
+import type { Job } from '@/lib/types';
+import { Skeleton } from '@/components/ui/skeleton';
 
-const JobCard = ({ title, type, location, brand }: { title: string, type: string, location: string, brand: string }) => (
+const JobCard = ({ job }: { job: Job }) => (
   <Card className="flex flex-col transition-shadow duration-300 hover:shadow-xl">
     <CardHeader className="flex-grow">
-      <CardTitle className="text-xl">{title}</CardTitle>
+      <CardTitle className="text-xl">{job.position}</CardTitle>
       <CardDescription className="flex items-center gap-4 pt-2">
-        <span className="flex items-center gap-1.5"><Briefcase className="h-4 w-4" /> {type}</span>
-        <span className="flex items-center gap-1.5"><MapPin className="h-4 w-4" /> {location}</span>
+        <span className="flex items-center gap-1.5 capitalize"><Briefcase className="h-4 w-4" /> {job.statusJob}</span>
+        <span className="flex items-center gap-1.5"><MapPin className="h-4 w-4" /> {job.location}</span>
       </CardDescription>
     </CardHeader>
     <CardFooter className="flex items-center justify-between">
-      <Badge variant="secondary">{brand}</Badge>
-      <Button variant="default">
-        Lamar Sekarang <ArrowRight className="ml-2 h-4 w-4" />
+      <Badge variant="secondary">{job.brandName || 'Environesia'}</Badge>
+      <Button variant="default" asChild>
+        <Link href={`/careers/jobs/${job.slug}`}>
+          Lihat Detail <ArrowRight className="ml-2 h-4 w-4" />
+        </Link>
       </Button>
     </CardFooter>
   </Card>
 );
+
+const JobCardSkeleton = () => (
+    <Card className="flex flex-col">
+        <CardHeader className="flex-grow">
+            <Skeleton className="h-6 w-3/4" />
+            <div className="flex items-center gap-4 pt-2">
+                <Skeleton className="h-5 w-24" />
+                <Skeleton className="h-5 w-20" />
+            </div>
+        </CardHeader>
+        <CardFooter className="flex items-center justify-between">
+            <Skeleton className="h-6 w-16" />
+            <Skeleton className="h-10 w-32" />
+        </CardFooter>
+    </Card>
+)
 
 const StepCard = ({ icon, title, description }: { icon: React.ReactNode, title: string, description: string }) => (
     <div className="flex flex-col items-center p-4 text-center">
@@ -38,6 +60,16 @@ const StepCard = ({ icon, title, description }: { icon: React.ReactNode, title: 
 );
 
 export default function CareersPage() {
+  const firestore = useFirestore();
+  const jobsCollection = useMemoFirebase(() => collection(firestore, 'jobs'), [firestore]);
+  const publishedJobsQuery = useMemoFirebase(() => query(jobsCollection, where('publishStatus', '==', 'published')), [jobsCollection]);
+
+  const { data: jobs, isLoading } = useCollection<Job>(publishedJobsQuery);
+
+  const filterJobs = (type: Job['statusJob']) => {
+    return jobs?.filter(job => job.statusJob === type) || [];
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-background font-body">
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -107,16 +139,26 @@ export default function CareersPage() {
                   <TabsTrigger value="contract">Contract</TabsTrigger>
                 </TabsList>
               </div>
-              <TabsContent value="fulltime" className="mt-8 grid gap-6 md:grid-cols-2">
-                <JobCard title="Sustainability Consultant" type="Full-time" location="Yogyakarta" brand="Environesia" />
-                <JobCard title="Frontend Developer" type="Full-time" location="Jakarta" brand="Tech Innovate" />
+              <TabsContent value="fulltime" className="mt-8">
+                 <div className="grid gap-6 md:grid-cols-2">
+                    {isLoading && <> <JobCardSkeleton/> <JobCardSkeleton/> </>}
+                    {!isLoading && filterJobs('fulltime').map(job => <JobCard key={job.id} job={job} />)}
+                 </div>
+                 {!isLoading && filterJobs('fulltime').length === 0 && <p className="text-center text-muted-foreground mt-8">Belum ada lowongan full-time saat ini.</p>}
               </TabsContent>
-              <TabsContent value="internship" className="mt-8 grid gap-6 md:grid-cols-2">
-                 <JobCard title="Marketing Intern" type="Internship" location="Surabaya" brand="Creative Labs" />
-                 <JobCard title="HR Intern" type="Internship" location="Yogyakarta" brand="Environesia" />
+               <TabsContent value="internship" className="mt-8">
+                 <div className="grid gap-6 md:grid-cols-2">
+                    {isLoading && <> <JobCardSkeleton/> <JobCardSkeleton/> </>}
+                    {!isLoading && filterJobs('internship').map(job => <JobCard key={job.id} job={job} />)}
+                 </div>
+                 {!isLoading && filterJobs('internship').length === 0 && <p className="text-center text-muted-foreground mt-8">Belum ada lowongan magang saat ini.</p>}
               </TabsContent>
-              <TabsContent value="contract" className="mt-8 grid gap-6 md:grid-cols-2">
-                <JobCard title="Project Manager (6 Bulan)" type="Contract" location="Bandung" brand="Build-It" />
+              <TabsContent value="contract" className="mt-8">
+                 <div className="grid gap-6 md:grid-cols-2">
+                    {isLoading && <> <JobCardSkeleton/> <JobCardSkeleton/> </>}
+                    {!isLoading && filterJobs('contract').map(job => <JobCard key={job.id} job={job} />)}
+                 </div>
+                 {!isLoading && filterJobs('contract').length === 0 && <p className="text-center text-muted-foreground mt-8">Belum ada lowongan kontrak saat ini.</p>}
               </TabsContent>
             </Tabs>
           </div>

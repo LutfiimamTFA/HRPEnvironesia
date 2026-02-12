@@ -54,6 +54,10 @@
         "name": {
           "type": "string",
           "description": "The name of the brand."
+        },
+        "description": {
+          "type": "string",
+          "description": "A short description of the brand."
         }
       },
       "required": [
@@ -80,6 +84,111 @@
       "required": [
         "role",
         "visibleMenuItems"
+      ]
+    },
+    "Job": {
+      "title": "Job Posting",
+      "type": "object",
+      "description": "Represents a job posting in the careers portal.",
+      "properties": {
+        "position": {
+          "type": "string",
+          "description": "The title of the job position."
+        },
+        "slug": {
+          "type": "string",
+          "description": "A unique, URL-friendly identifier for the job."
+        },
+        "statusJob": {
+          "type": "string",
+          "description": "The employment type.",
+          "enum": [
+            "fulltime",
+            "internship",
+            "contract"
+          ]
+        },
+        "division": {
+          "type": "string",
+          "description": "The division or department for the job."
+        },
+        "location": {
+          "type": "string",
+          "description": "The physical location of the job."
+        },
+        "workMode": {
+          "type": "string",
+          "description": "The work arrangement.",
+          "enum": [
+            "onsite",
+            "hybrid",
+            "remote"
+          ]
+        },
+        "brandId": {
+          "type": "string",
+          "description": "The ID of the brand this job belongs to."
+        },
+        "coverImageUrl": {
+          "type": "string",
+          "description": "URL of the cover image for the job posting.",
+          "format": "uri"
+        },
+        "generalRequirementsHtml": {
+          "type": "string",
+          "description": "General job requirements in HTML format."
+        },
+        "specialRequirementsHtml": {
+          "type": "string",
+          "description": "Special or specific job requirements in HTML format."
+        },
+        "publishStatus": {
+          "type": "string",
+          "description": "The visibility status of the job posting.",
+          "enum": [
+            "draft",
+            "published",
+            "closed"
+          ]
+        },
+        "applyDeadline": {
+          "type": "string",
+          "description": "The application deadline.",
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp of when the job was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp of the last update.",
+          "format": "date-time"
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "UID of the user who created the job."
+        },
+        "updatedBy": {
+          "type": "string",
+          "description": "UID of the user who last updated the job."
+        }
+      },
+      "required": [
+        "position",
+        "slug",
+        "statusJob",
+        "division",
+        "location",
+        "brandId",
+        "generalRequirementsHtml",
+        "specialRequirementsHtml",
+        "publishStatus",
+        "createdAt",
+        "updatedAt",
+        "createdBy",
+        "updatedBy"
       ]
     }
   },
@@ -152,6 +261,22 @@
             {
               "name": "roleId",
               "description": "The name of the role (e.g., 'hrd', 'manager')."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/jobs/{jobId}",
+        "definition": {
+          "entityName": "Job",
+          "schema": {
+            "$ref": "#/backend/entities/Job"
+          },
+          "description": "Stores all job postings for the careers portal.",
+          "params": [
+            {
+              "name": "jobId",
+              "description": "The unique ID of the job posting."
             }
           ]
         }

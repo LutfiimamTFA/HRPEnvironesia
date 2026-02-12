@@ -18,10 +18,32 @@ export type UserProfile = {
 export type Brand = {
   id?: string;
   name: string;
+  description?: string;
 };
 
 export type NavigationSetting = {
   id?: string;
   role: UserRole;
   visibleMenuItems: string[];
+};
+
+export type Job = {
+  id?: string;
+  position: string;
+  slug: string;
+  statusJob: 'fulltime' | 'internship' | 'contract';
+  division: string;
+  location: string;
+  workMode?: 'onsite' | 'hybrid' | 'remote';
+  brandId: string;
+  brandName?: string; // Denormalized for convenience
+  coverImageUrl?: string;
+  generalRequirementsHtml: string;
+  specialRequirementsHtml: string;
+  publishStatus: 'draft' | 'published' | 'closed';
+  applyDeadline?: Timestamp;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  createdBy: string;
+  updatedBy: string;
 };
