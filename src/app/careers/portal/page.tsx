@@ -30,12 +30,12 @@ export default function CandidateDashboardPage() {
             <Card>
                 <CardHeader>
                     <CardTitle>Lamaran Anda</CardTitle>
-                    <CardDescription>Anda belum pernah melamar.</CardDescription>
+                    <CardDescription>Lacak semua lamaran pekerjaan Anda di sini.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <Button asChild className="w-full">
-                        <Link href="/careers">
-                            Lihat Lowongan <ArrowRight className="ml-2 h-4 w-4" />
+                        <Link href="/careers/portal/applications">
+                            Lihat Riwayat Lamaran <ArrowRight className="ml-2 h-4 w-4" />
                         </Link>
                     </Button>
                 </CardContent>
