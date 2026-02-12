@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useCollection, useFirestore, useMemoFirebase, addDocumentNonBlocking } from '@/firebase';
 import { collection, query, where, limit, serverTimestamp } from 'firebase/firestore';
@@ -41,8 +41,8 @@ export default function JobApplyPage() {
   const firestore = useFirestore();
   const { userProfile } = useAuth();
   const { toast } = useToast();
-  const [hasApplied, setHasApplied] = useState<boolean | null>(null);
 
+  // 1. Fetch Job details. This is the primary data needed to render the page.
   const jobQuery = useMemoFirebase(() => {
     if (!slug) return null;
     return query(collection(firestore, 'jobs'), where('slug', '==', slug), limit(1));
@@ -51,6 +51,7 @@ export default function JobApplyPage() {
   const { data: jobs, isLoading: isLoadingJob } = useCollection<Job>(jobQuery);
   const job = jobs?.[0];
 
+  // 2. In parallel, prepare a query to check for existing applications.
   const applicationQuery = useMemoFirebase(() => {
     if (!firestore || !userProfile || !job?.id) return null;
     return query(
@@ -60,18 +61,22 @@ export default function JobApplyPage() {
     );
   }, [firestore, userProfile, job]);
 
+  // 3. This hook will manage checking for and creating the application draft.
+  // It does not block rendering.
   const { data: existingApplications, isLoading: isLoadingApplication } = useCollection<JobApplication>(applicationQuery);
 
+  // This useEffect handles the logic of creating a draft application
+  // after the initial data has been loaded. It's a "side effect".
   useEffect(() => {
-    if (isLoadingApplication) {
+    // Wait until we have the user, the job, and the result of the application check.
+    if (isLoadingApplication || !userProfile || !job) {
       return;
     }
-    setHasApplied(existingApplications && existingApplications.length > 0);
-  }, [existingApplications, isLoadingApplication]);
+    
+    const hasApplied = existingApplications && existingApplications.length > 0;
 
-
-  useEffect(() => {
-    if (hasApplied === false && userProfile && job) {
+    // If the user has not applied yet, create a draft.
+    if (!hasApplied) {
       const newApplication: Omit<JobApplication, 'id' | 'appliedAt'> & { appliedAt: any } = {
         userId: userProfile.uid,
         jobId: job.id!,
@@ -89,14 +94,12 @@ export default function JobApplyPage() {
         title: "Lamaran Dimulai!",
         description: `Posisi ${job.position} telah ditambahkan ke daftar lamaran Anda.`,
       });
-      
-      setHasApplied(true);
     }
-  }, [hasApplied, userProfile, job, firestore, toast]);
+  }, [existingApplications, isLoadingApplication, userProfile, job, firestore, toast]);
 
-  const isLoading = isLoadingJob || hasApplied === null;
-
-  if (isLoading || !job) {
+  // The page is only in a "loading" state while fetching the main job data.
+  // The application check/creation happens in the background.
+  if (isLoadingJob || !job) {
       return <JobApplySkeleton />
   }
 
