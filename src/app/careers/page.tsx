@@ -37,29 +37,27 @@ const StepCard = ({ icon, title, description }: { icon: React.ReactNode, title: 
 );
 
 export default function CareersPage() {
-  const handleScroll = () => {
-    const lowonganSection = document.getElementById('lowongan');
-    if (lowonganSection) {
-      lowonganSection.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
-
   return (
     <div className="flex min-h-screen flex-col bg-background font-body">
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container flex h-14 items-center justify-between">
-          <Link href="/careers" className="flex items-center gap-2">
+        <div className="container flex h-14 items-center">
+          <Link href="/careers" className="flex items-center gap-2 mr-6">
             <Leaf className="h-7 w-7 text-primary" />
             <span className="text-xl font-bold tracking-tight text-foreground">Environesia Karir</span>
           </Link>
-          <nav className="flex items-center gap-2">
+          <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
+            <Link href="#lowongan" className="text-muted-foreground transition-colors hover:text-primary">Lowongan</Link>
+            <Link href="#tahapan-rekrutmen" className="text-muted-foreground transition-colors hover:text-primary">Proses Rekrutmen</Link>
+            <Link href="#tutorial" className="text-muted-foreground transition-colors hover:text-primary">Cara Melamar</Link>
+          </nav>
+          <div className="flex flex-1 items-center justify-end gap-2">
             <Button variant="outline" asChild>
               <Link href="/careers/login">Masuk Kandidat</Link>
             </Button>
             <Button asChild>
               <Link href="/careers/register">Daftar</Link>
             </Button>
-          </nav>
+          </div>
         </div>
       </header>
 
@@ -81,14 +79,16 @@ export default function CareersPage() {
                 <p className="mt-4 max-w-2xl text-lg text-primary-foreground/80">
                     Jadilah bagian dari tim inovatif yang berdedikasi untuk menciptakan solusi berkelanjutan. Temukan peran Anda di Environesia.
                 </p>
-                <Button size="lg" className="mt-8" onClick={handleScroll}>
+                <Button size="lg" className="mt-8" asChild>
+                  <Link href="#lowongan">
                     Lihat Lowongan <ChevronDown className="ml-2 h-5 w-5" />
+                  </Link>
                 </Button>
             </div>
         </section>
 
         {/* Lowongan Section */}
-        <section id="lowongan" className="w-full py-12 md:py-20 lg:py-24 bg-secondary">
+        <section id="lowongan" className="w-full py-12 md:py-20 lg:py-24 bg-secondary scroll-mt-14">
           <div className="container">
             <div className="mx-auto max-w-xl text-center">
               <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Lowongan Tersedia</h2>
@@ -121,7 +121,7 @@ export default function CareersPage() {
         </section>
         
         {/* Tahapan Rekrutmen Section */}
-        <section className="w-full py-12 md:py-20 lg:py-24">
+        <section id="tahapan-rekrutmen" className="w-full py-12 md:py-20 lg:py-24 scroll-mt-14">
             <div className="container">
                 <div className="mx-auto max-w-xl text-center">
                     <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Proses Rekrutmen Kami</h2>
@@ -155,7 +155,7 @@ export default function CareersPage() {
         </section>
 
         {/* Tutorial Section */}
-        <section id="tutorial" className="w-full py-12 md:py-20 lg:py-24 bg-secondary">
+        <section id="tutorial" className="w-full py-12 md:py-20 lg:py-24 bg-secondary scroll-mt-14">
           <div className="container">
             <div className="mx-auto max-w-xl text-center">
               <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Cara Mudah Melamar</h2>
