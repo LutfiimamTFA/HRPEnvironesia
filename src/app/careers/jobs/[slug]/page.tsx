@@ -152,17 +152,3 @@ export default function JobDetailPage() {
         </>
     );
 }
-
-// Basic prose styles for dangerouslySetInnerHTML
-const proseStyles = `
-.prose ul { list-style-type: disc; padding-left: 1.5em; }
-.prose ol { list-style-type: decimal; padding-left: 1.5em; }
-.prose strong { font-weight: 600; }
-.prose a { color: hsl(var(--primary)); text-decoration: none; }
-.prose a:hover { text-decoration: underline; }
-.prose h1, .prose h2, .prose h3 { margin-bottom: 0.5em; margin-top: 1em; }
-`;
-
-export function GlobalProseStyles() {
-    return <style jsx global>{proseStyles}</style>
-}
