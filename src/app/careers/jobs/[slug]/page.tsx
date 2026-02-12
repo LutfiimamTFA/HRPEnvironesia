@@ -137,13 +137,29 @@ export default function JobDetailPage() {
     const isLoading = authLoading || isLoadingJob;
 
     const handleApplyClick = () => {
-        if (userProfile) {
+        // If not logged in at all, redirect to login page.
+        if (!userProfile) {
+            router.push(`/careers/login?redirect=${pathname}`);
+            return;
+        }
+
+        // If logged in as a candidate, the apply feature is in development.
+        if (userProfile.role === 'kandidat') {
             toast({
                 title: "Fitur Dalam Pengembangan",
                 description: "Fitur untuk melamar pekerjaan sedang kami siapkan.",
             });
-        } else {
-            router.push(`/careers/login?redirect=${pathname}`);
+            return;
+        }
+        
+        // If logged in as an internal user, they cannot apply for jobs.
+        if (ROLES_INTERNAL.includes(userProfile.role)) {
+             toast({
+                variant: 'destructive',
+                title: 'Akun Karyawan Terdeteksi',
+                description: "Anda tidak dapat melamar pekerjaan karena Anda login sebagai karyawan.",
+            });
+            return;
         }
     };
 
