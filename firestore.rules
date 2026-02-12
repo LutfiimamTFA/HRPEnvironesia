@@ -152,7 +152,7 @@ service cloud.firestore {
      *   /jobs/{jobId}
      */
     match /jobs/{jobId} {
-      allow read: if resource.data.publishStatus == 'published' || isSuperAdmin() || isHrd();
+      allow read: if ('publishStatus' in resource.data && resource.data.publishStatus == 'published') || isSuperAdmin() || isHrd();
       allow write: if isSuperAdmin() || isHrd();
     }
 
