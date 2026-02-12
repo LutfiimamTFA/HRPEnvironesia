@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useMemo, useState } from 'react';
@@ -90,10 +89,16 @@ export function JobManagementClient() {
   }, [brands]);
 
   const jobsWithBrandNames = useMemo(() => {
-    return jobs?.map(job => ({
+    if (!jobs) return [];
+    return jobs.map(job => ({
       ...job,
       brandName: brandMap.get(job.brandId) || 'N/A'
-    })).sort((a, b) => b.updatedAt.toMillis() - a.updatedAt.toMillis());
+    })).sort((a, b) => {
+      // Handle cases where timestamp is pending from server
+      const timeA = a.updatedAt?.toMillis ? a.updatedAt.toMillis() : Date.now();
+      const timeB = b.updatedAt?.toMillis ? b.updatedAt.toMillis() : Date.now();
+      return timeB - timeA;
+    });
   }, [jobs, brandMap]);
 
 
@@ -188,7 +193,9 @@ export function JobManagementClient() {
                     </Badge>
                   </TableCell>
                   <TableCell>{job.location}</TableCell>
-                  <TableCell>{format(job.updatedAt.toDate(), 'dd MMM yyyy')}</TableCell>
+                  <TableCell>
+                    {job.updatedAt?.toDate ? format(job.updatedAt.toDate(), 'dd MMM yyyy') : 'Just now'}
+                  </TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
