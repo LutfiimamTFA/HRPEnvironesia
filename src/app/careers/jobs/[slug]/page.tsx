@@ -19,23 +19,31 @@ import { ROLES_INTERNAL } from '@/lib/types';
 
 function JobDetailSkeleton() {
     return (
-        <div className="container mx-auto max-w-4xl py-12">
+        <div className="container mx-auto max-w-5xl py-12">
             <Skeleton className="h-8 w-40 mb-8" />
-            <Skeleton className="h-10 w-3/4 mb-4" />
-            <div className="flex items-center gap-4 mb-8">
-                <Skeleton className="h-6 w-24" />
-                <Skeleton className="h-6 w-24" />
-                <Skeleton className="h-6 w-24" />
-            </div>
-            <Skeleton className="aspect-video w-full rounded-lg mb-8" />
-            <div className="grid md:grid-cols-3 gap-8">
-                <div className="md:col-span-2 space-y-8">
-                    <Skeleton className="h-48 w-full" />
-                    <Skeleton className="h-48 w-full" />
+            <div className="rounded-xl border bg-card shadow-sm p-8">
+                <div className="md:flex justify-between items-start">
+                    <div>
+                        <Skeleton className="h-10 w-3/4 mb-4" />
+                        <div className="flex items-center gap-4 mb-8">
+                            <Skeleton className="h-6 w-24" />
+                            <Skeleton className="h-6 w-24" />
+                            <Skeleton className="h-6 w-24" />
+                        </div>
+                    </div>
+                    <div className="space-y-2">
+                        <Skeleton className="h-12 w-40" />
+                        <Skeleton className="h-4 w-32" />
+                    </div>
                 </div>
-                <div className="space-y-4">
-                    <Skeleton className="h-10 w-full" />
-                    <Skeleton className="h-24 w-full" />
+                <div className="grid md:grid-cols-3 gap-8 mt-8">
+                    <div className="md:col-span-2 space-y-8">
+                        <Skeleton className="h-48 w-full" />
+                        <Skeleton className="h-48 w-full" />
+                    </div>
+                    <div className="space-y-4">
+                        <Skeleton className="h-32 w-full" />
+                    </div>
                 </div>
             </div>
         </div>
@@ -77,8 +85,6 @@ export default function JobDetailPage() {
         
         let q = query(jobsCollection, where('slug', '==', slug), limit(1));
 
-        // Public users can only see published jobs.
-        // Internal users can see any job via its direct slug URL.
         if (!isInternalUser) {
             q = query(q, where('publishStatus', '==', 'published'));
         }
@@ -91,14 +97,14 @@ export default function JobDetailPage() {
     const job = jobs?.[0];
     
     const otherJobsQuery = useMemoFirebase(() => {
-        if (!firestore || !slug) return null;
+        if (!firestore || !job) return null;
         return query(
             collection(firestore, 'jobs'),
             where('publishStatus', '==', 'published'),
-            where('slug', '!=', slug),
+            where('slug', '!=', job.slug),
             limit(3)
         );
-    }, [firestore, slug]);
+    }, [firestore, job]);
 
     const { data: otherJobs } = useCollection<Job>(otherJobsQuery);
 
