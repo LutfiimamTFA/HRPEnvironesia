@@ -74,6 +74,15 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
     },
   });
 
+  // Clean up object URL for image preview to prevent memory leaks
+  useEffect(() => {
+    return () => {
+        if (imagePreview && imagePreview.startsWith('blob:')) {
+            URL.revokeObjectURL(imagePreview);
+        }
+    }
+  }, [imagePreview]);
+
   useEffect(() => {
     if (open) {
       if (job) {
@@ -84,6 +93,8 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
         });
         if (job.coverImageUrl) {
           setImagePreview(job.coverImageUrl);
+        } else {
+          setImagePreview(null);
         }
       } else {
         form.reset({
@@ -96,11 +107,43 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      const newImagePreview = URL.createObjectURL(file);
-      setImagePreview(newImagePreview);
-      form.setValue('coverImage', file);
+    if (!file) return;
+
+    // Type and Size validation
+    if (!file.type.startsWith('image/')) {
+      toast({ variant: 'destructive', title: 'Invalid File Type', description: 'Please upload an image file.' });
+      return;
     }
+    if (file.size > 5 * 1024 * 1024) { // 5MB
+      toast({ variant: 'destructive', title: 'File Too Large', description: 'Image size should not exceed 5MB.' });
+      return;
+    }
+    
+    // Create a URL for preview and validation
+    const objectUrl = URL.createObjectURL(file);
+    const image = new window.Image();
+
+    image.onload = () => {
+      // Dimension validation
+      if (image.width < 1200 || image.height < 600) {
+        toast({
+          title: 'Image Quality Warning',
+          description: 'For best results, please use an image at least 1200x600px.',
+          duration: 5000,
+        });
+      }
+      
+      // Set value and preview
+      setImagePreview(objectUrl);
+      form.setValue('coverImage', file);
+    };
+
+    image.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        toast({ variant: 'destructive', title: 'Invalid Image', description: 'The selected file could not be read as an image.' });
+    };
+    
+    image.src = objectUrl;
   };
 
   const uploadCoverImage = async (jobId: string, imageFile: File): Promise<string> => {
@@ -273,7 +316,7 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
                           </label>
                           <p className="pl-1">or drag and drop</p>
                         </div>
-                        <p className="text-xs leading-5 text-muted-foreground">PNG, JPG, WEBP up to 2MB</p>
+                        <p className="text-xs leading-5 text-muted-foreground">PNG, JPG, WEBP up to 5MB. Min 1200x600px.</p>
                       </div>
                     </div>
                   </FormControl>

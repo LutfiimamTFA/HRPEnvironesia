@@ -44,18 +44,22 @@ function JobDetailSkeleton() {
 }
 
 const OtherJobCard = ({ job }: { job: Job }) => (
-    <Link href={`/careers/jobs/${job.slug}`} className="block transition-transform duration-200 hover:-translate-y-1">
-        <Card className="flex h-full flex-col overflow-hidden shadow-sm transition-shadow hover:shadow-lg">
-            <CardHeader className="flex-grow p-4">
-                <CardTitle className="text-base font-semibold leading-tight">{job.position}</CardTitle>
-                <CardDescription className="mt-1 text-xs">{job.brandName}</CardDescription>
-            </CardHeader>
-            <CardFooter className="p-4 pt-0">
-                <Button variant="outline" size="sm" className="w-full">
-                    View Details
-                    <ChevronRight className="ml-2 h-4 w-4" />
-                </Button>
-            </CardFooter>
+    <Link href={`/careers/jobs/${job.slug}`} className="block transition-shadow hover:shadow-md rounded-lg">
+        <Card className="flex items-center gap-4 p-3 h-full transition-colors hover:bg-muted/50">
+            <div className="relative h-16 w-24 flex-shrink-0">
+                <Image 
+                    src={job.coverImageUrl || 'https://picsum.photos/seed/job-fallback/200/140'}
+                    alt={job.position}
+                    fill
+                    className="rounded-md object-cover"
+                    data-ai-hint="office building"
+                />
+            </div>
+            <div className="flex-grow overflow-hidden">
+                <p className="font-semibold leading-tight truncate">{job.position}</p>
+                <p className="text-sm text-muted-foreground truncate">{job.brandName}</p>
+            </div>
+            <ChevronRight className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
         </Card>
     </Link>
 );
@@ -161,17 +165,24 @@ export default function JobDetailPage() {
 
             <main className="bg-secondary/50">
                 <div className="container mx-auto max-w-6xl px-4 py-8 md:py-12">
-                     {job.coverImageUrl && (
-                        <div className="relative mb-8 h-48 w-full overflow-hidden rounded-xl shadow-sm md:h-64 lg:h-80">
-                            <Image 
-                                src={job.coverImageUrl} 
-                                alt={`${job.position} cover image`} 
-                                fill 
-                                className="object-cover"
-                                priority
+                    <div className="relative mb-8 h-[300px] w-full overflow-hidden rounded-2xl shadow-lg md:h-[400px]">
+                        <Image
+                            src={job.coverImageUrl || 'https://picsum.photos/seed/default-hero/1200/600'}
+                            alt=""
+                            fill
+                            className="object-cover scale-110 blur-2xl opacity-50"
+                            data-ai-hint="abstract office background"
                             />
-                        </div>
-                    )}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent" />
+                        <Image
+                            src={job.coverImageUrl || 'https://picsum.photos/seed/default-hero/1200/600'}
+                            alt={`${job.position} cover image`}
+                            fill
+                            className="object-cover"
+                            priority
+                            data-ai-hint="office building team"
+                        />
+                    </div>
                     
                     <div className="grid grid-cols-1 gap-x-12 gap-y-8 lg:grid-cols-3">
                         {/* Main Content */}
@@ -241,7 +252,7 @@ export default function JobDetailPage() {
                                      <CardHeader>
                                         <CardTitle className="text-xl">Lowongan Lainnya</CardTitle>
                                     </CardHeader>
-                                    <CardContent className="grid grid-cols-1 gap-4">
+                                    <CardContent className="space-y-3">
                                         {otherJobs.map((otherJob) => (
                                             <OtherJobCard key={otherJob.id} job={otherJob} />
                                         ))}
