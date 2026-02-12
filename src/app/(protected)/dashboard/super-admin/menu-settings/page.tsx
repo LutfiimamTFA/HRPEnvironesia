@@ -1,10 +1,10 @@
 'use client';
 
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
-import { UserManagementClient } from '@/components/dashboard/UserManagementClient';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { LayoutDashboard, Users, Settings, Briefcase, List } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { MenuSettingsClient } from '@/components/dashboard/MenuSettingsClient';
 
 const menuItems = [
   { href: '/dashboard/super-admin', label: 'Overview', icon: <LayoutDashboard className="h-4 w-4" /> },
@@ -14,7 +14,7 @@ const menuItems = [
   { href: '#', label: 'System Settings', icon: <Settings className="h-4 w-4" /> },
 ];
 
-export default function UserManagementPage() {
+export default function MenuSettingsPage() {
   const hasAccess = useRoleGuard('super-admin');
 
   if (!hasAccess) {
@@ -26,8 +26,8 @@ export default function UserManagementPage() {
   }
 
   return (
-    <DashboardLayout pageTitle="User Management" menuItems={menuItems}>
-      <UserManagementClient seedSecret={process.env.SEED_SECRET || ''} />
+    <DashboardLayout pageTitle="Menu Settings" menuItems={menuItems}>
+      <MenuSettingsClient />
     </DashboardLayout>
   );
 }

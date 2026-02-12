@@ -18,3 +18,9 @@ export type Brand = {
   id?: string;
   name: string;
 };
+
+export type NavigationSetting = {
+  id?: string;
+  role: UserRole;
+  visibleMenuItems: string[];
+};

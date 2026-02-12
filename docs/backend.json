@@ -59,6 +59,28 @@
       "required": [
         "name"
       ]
+    },
+    "NavigationSetting": {
+      "title": "Navigation Setting",
+      "type": "object",
+      "description": "Stores the visible menu items for a specific user role.",
+      "properties": {
+        "role": {
+          "type": "string",
+          "description": "The role these settings apply to."
+        },
+        "visibleMenuItems": {
+          "type": "array",
+          "description": "An array of menu item labels that are visible for this role.",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "role",
+        "visibleMenuItems"
+      ]
     }
   },
   "auth": {
@@ -113,6 +135,22 @@
             {
               "name": "brandId",
               "description": "The unique ID of the brand."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/navigation_settings/{roleId}",
+        "definition": {
+          "entityName": "NavigationSetting",
+          "schema": {
+            "$ref": "#/backend/entities/NavigationSetting"
+          },
+          "description": "Stores navigation menu visibility settings for each role. The document ID is the role name.",
+          "params": [
+            {
+              "name": "roleId",
+              "description": "The name of the role (e.g., 'hrd', 'manager')."
             }
           ]
         }

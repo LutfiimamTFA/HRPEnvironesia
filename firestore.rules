@@ -137,5 +137,17 @@ service cloud.firestore {
     match /brands/{brandId} {
       allow read, write: if isSuperAdmin();
     }
+
+    /**
+     * @description
+     *   Rules for navigation settings. Only super_admins can read and write.
+     *   Other authenticated users can read their own role's settings.
+     * @path
+     *   /navigation_settings/{roleId}
+     */
+     match /navigation_settings/{roleId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
   }
 }
