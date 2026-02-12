@@ -99,7 +99,7 @@ export default function JobDetailPage() {
     const router = useRouter();
     const pathname = usePathname();
     const firestore = useFirestore();
-    const { userProfile, loading: authLoading } = useAuth();
+    const { userProfile, firebaseUser, loading: authLoading } = useAuth();
     const { toast } = useToast();
 
 
@@ -137,30 +137,39 @@ export default function JobDetailPage() {
     const isLoading = authLoading || isLoadingJob;
 
     const handleApplyClick = () => {
-        // If not logged in at all, redirect to login page.
-        if (!userProfile) {
+        // If auth is still loading, do nothing to prevent race conditions
+        if (authLoading) {
+            return;
+        }
+
+        // If there is no authenticated user, redirect to login.
+        if (!firebaseUser) {
             router.push(`/careers/login?redirect=${pathname}`);
             return;
         }
 
-        // If logged in as a candidate, the apply feature is in development.
-        if (userProfile.role === 'kandidat') {
-            toast({
-                title: "Fitur Dalam Pengembangan",
-                description: "Fitur untuk melamar pekerjaan sedang kami siapkan.",
-            });
-            return;
+        // A user is authenticated, now check their profile/role.
+        if (userProfile) {
+            if (userProfile.role === 'kandidat') {
+                toast({
+                    title: "Fitur Dalam Pengembangan",
+                    description: "Fitur untuk melamar pekerjaan sedang kami siapkan.",
+                });
+                return;
+            }
+            
+            if (ROLES_INTERNAL.includes(userProfile.role)) {
+                 toast({
+                    variant: 'destructive',
+                    title: 'Akun Karyawan Terdeteksi',
+                    description: "Anda tidak dapat melamar pekerjaan karena Anda login sebagai karyawan.",
+                });
+                return;
+            }
         }
         
-        // If logged in as an internal user, they cannot apply for jobs.
-        if (ROLES_INTERNAL.includes(userProfile.role)) {
-             toast({
-                variant: 'destructive',
-                title: 'Akun Karyawan Terdeteksi',
-                description: "Anda tidak dapat melamar pekerjaan karena Anda login sebagai karyawan.",
-            });
-            return;
-        }
+        // Fallback for cases where user is authenticated but profile is missing/loading
+        router.push(`/careers/login?redirect=${pathname}`);
     };
 
     if (isLoading) {
