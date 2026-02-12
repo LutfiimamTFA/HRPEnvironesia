@@ -181,26 +181,26 @@ export default function CareersPage() {
                 Menemukan jawaban atas pertanyaan umum seputar proses lamaran kerja di Environesia.
               </p>
             </div>
-            <Accordion type="single" collapsible className="mt-12 w-full">
-              <AccordionItem value="item-1">
+            <Accordion type="single" collapsible className="mt-12 w-full space-y-3">
+              <AccordionItem value="item-1" className="rounded-lg border bg-card px-4">
                 <AccordionTrigger>Apa saja yang harus saya siapkan sebelum melamar?</AccordionTrigger>
                 <AccordionContent>
                   Pastikan Anda telah menyiapkan CV (Curriculum Vitae) terbaru dalam format PDF, surat lamaran (opsional), dan portofolio jika posisi yang dilamar memerlukannya (misalnya untuk desainer atau developer).
                 </AccordionContent>
               </AccordionItem>
-              <AccordionItem value="item-2">
+              <AccordionItem value="item-2" className="rounded-lg border bg-card px-4">
                 <AccordionTrigger>Berapa lama proses rekrutmen biasanya berlangsung?</AccordionTrigger>
                 <AccordionContent>
                   Proses rekrutmen kami biasanya memakan waktu 2-4 minggu dari penutupan lowongan. Namun, durasi ini bisa bervariasi tergantung pada posisi dan jumlah pelamar. Kami akan selalu memberikan informasi terbaru melalui email.
                 </AccordionContent>
               </AccordionItem>
-              <AccordionItem value="item-3">
+              <AccordionItem value="item-3" className="rounded-lg border bg-card px-4">
                 <AccordionTrigger>Apakah saya bisa melamar lebih dari satu posisi?</AccordionTrigger>
                 <AccordionContent>
                   Ya, Anda dapat melamar hingga 3 posisi yang berbeda secara bersamaan. Namun, kami sarankan untuk fokus pada posisi yang paling sesuai dengan kualifikasi dan minat Anda.
                 </AccordionContent>
               </AccordionItem>
-              <AccordionItem value="item-4">
+              <AccordionItem value="item-4" className="rounded-lg border bg-card px-4">
                 <AccordionTrigger>Siapa yang bisa saya hubungi jika ada pertanyaan lebih lanjut?</AccordionTrigger>
                 <AccordionContent>
                   Jika Anda memiliki pertanyaan yang tidak terjawab di sini, jangan ragu untuk menghubungi tim rekrutmen kami melalui email di careers@environesia.co.id.
