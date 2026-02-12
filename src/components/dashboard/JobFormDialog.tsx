@@ -114,17 +114,19 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
 
     try {
       const jobId = job?.id || doc(collection(firestore, 'jobs')).id;
-      let coverImageUrl = job?.coverImageUrl || '';
+      let finalCoverImageUrl = job?.coverImageUrl || '';
 
       if (values.coverImage instanceof File) {
-        coverImageUrl = await uploadCoverImage(jobId, values.coverImage);
+        finalCoverImageUrl = await uploadCoverImage(jobId, values.coverImage);
       }
 
       const brandName = brands.find(b => b.id === values.brandId)?.name || '';
 
+      const { coverImage, ...restOfValues } = values;
+
       const jobData: Omit<Job, 'id'> = {
-        ...values,
-        coverImageUrl,
+        ...restOfValues,
+        coverImageUrl: finalCoverImageUrl,
         slug: job?.slug || `${slugify(values.position)}-${slugify(brandName)}-${Math.random().toString(36).substring(2, 7)}`,
         publishStatus: job?.publishStatus || 'draft',
         createdAt: job?.createdAt || serverTimestamp() as any,
