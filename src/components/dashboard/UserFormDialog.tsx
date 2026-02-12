@@ -130,12 +130,21 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
           brandId: editValues.brandId || null,
         };
 
+        if (updateData.role === 'super-admin') {
+          updateData.brandId = null;
+        }
+
         updateDocumentNonBlocking(userDocRef, updateData);
 
         toast({ title: 'User Updated', description: `${editValues.fullName}'s profile has been updated.` });
         onOpenChange(false);
       } else {
         const createValues = finalValues as z.infer<typeof createSchema>;
+        
+        if (createValues.role === 'super-admin') {
+          delete createValues.brandId;
+        }
+        
         const response = await fetch('/api/users', {
           method: 'POST',
           headers: {
