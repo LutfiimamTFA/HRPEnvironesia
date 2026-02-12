@@ -175,7 +175,7 @@ export function UserManagementClient({ seedSecret }: { seedSecret: string }) {
                       <TableRow>
                         <TableHead>Full Name</TableHead>
                         <TableHead>Email</TableHead>
-                        <TableHead>Brand</TableHead>
+                        {role !== 'super-admin' && <TableHead>Brand</TableHead>}
                         <TableHead>Status</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
@@ -185,9 +185,11 @@ export function UserManagementClient({ seedSecret }: { seedSecret: string }) {
                         <TableRow key={user.uid}>
                           <TableCell className="font-medium">{user.fullName}</TableCell>
                           <TableCell>{user.email}</TableCell>
-                          <TableCell>
-                            {user.brandId && brandMap[user.brandId] ? brandMap[user.brandId] : '-'}
-                          </TableCell>
+                          {role !== 'super-admin' && (
+                            <TableCell>
+                              {user.brandId && brandMap[user.brandId] ? brandMap[user.brandId] : '-'}
+                            </TableCell>
+                          )}
                           <TableCell>
                             <Badge variant={user.isActive ? 'default' : 'destructive'}>
                               {user.isActive ? 'Active' : 'Inactive'}
