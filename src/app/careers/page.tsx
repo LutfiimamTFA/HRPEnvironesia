@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
+import { useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -9,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { ArrowRight, Briefcase, ChevronDown, FileText, Leaf, MapPin, Search, User, UserCheck } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, query, where, orderBy } from 'firebase/firestore';
+import { collection, query, where } from 'firebase/firestore';
 import type { Job } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -65,16 +66,24 @@ export default function CareersPage() {
   const publishedJobsQuery = useMemoFirebase(
     () => query(
       collection(firestore, 'jobs'), 
-      where('publishStatus', '==', 'published'),
-      orderBy('createdAt', 'desc')
+      where('publishStatus', '==', 'published')
     ), 
     [firestore]
   );
 
   const { data: jobs, isLoading } = useCollection<Job>(publishedJobsQuery);
 
+  const sortedJobs = useMemo(() => {
+    if (!jobs) return [];
+    return [...jobs].sort((a, b) => {
+        const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+        const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+        return timeB - timeA;
+    });
+  }, [jobs]);
+
   const filterJobs = (type: Job['statusJob']) => {
-    return jobs?.filter(job => job.statusJob === type) || [];
+    return sortedJobs?.filter(job => job.statusJob === type) || [];
   }
 
   return (
