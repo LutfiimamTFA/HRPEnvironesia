@@ -119,31 +119,10 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
       return;
     }
     
-    // Create a URL for preview and validation
+    // Create a URL for preview
     const objectUrl = URL.createObjectURL(file);
-    const image = new window.Image();
-
-    image.onload = () => {
-      // Dimension validation
-      if (image.width < 1200 || image.height < 600) {
-        toast({
-          title: 'Image Quality Warning',
-          description: 'For best results, please use an image at least 1200x600px.',
-          duration: 5000,
-        });
-      }
-      
-      // Set value and preview
-      setImagePreview(objectUrl);
-      form.setValue('coverImage', file);
-    };
-
-    image.onerror = () => {
-        URL.revokeObjectURL(objectUrl);
-        toast({ variant: 'destructive', title: 'Invalid Image', description: 'The selected file could not be read as an image.' });
-    };
-    
-    image.src = objectUrl;
+    setImagePreview(objectUrl);
+    form.setValue('coverImage', file);
   };
 
   const uploadCoverImage = async (jobId: string, imageFile: File): Promise<string> => {
@@ -316,7 +295,7 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
                           </label>
                           <p className="pl-1">or drag and drop</p>
                         </div>
-                        <p className="text-xs leading-5 text-muted-foreground">PNG, JPG, WEBP up to 5MB. Min 1200x600px.</p>
+                        <p className="text-xs leading-5 text-muted-foreground">PNG, JPG, WEBP up to 5MB.</p>
                       </div>
                     </div>
                   </FormControl>
