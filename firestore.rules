@@ -76,7 +76,7 @@ service cloud.firestore {
      */
     function isInternal() {
       // Check for super-admin first to avoid a `get` call if not needed.
-      return isSuperAdmin() || userRole() == 'super-admin' || userRole() == 'hrd' || userRole() == 'manager' || userRole() == 'karyawan';
+      return isSuperAdmin() || userRole() in ['super-admin', 'hrd', 'manager', 'karyawan'];
     }
 
     /**
@@ -84,7 +84,7 @@ service cloud.firestore {
      */
     function canManageJobs() {
       // Check for super-admin first to avoid a `get` call if not needed.
-      return isSuperAdmin() || userRole() == 'super-admin' || userRole() == 'hrd';
+      return isSuperAdmin() || userRole() in ['super-admin', 'hrd'];
     }
 
     /**
