@@ -187,7 +187,12 @@ export function UserManagementClient({ seedSecret }: { seedSecret: string }) {
                           <TableCell>{user.email}</TableCell>
                           {role !== 'super-admin' && (
                             <TableCell>
-                              {user.brandId && brandMap[user.brandId] ? brandMap[user.brandId] : '-'}
+                              {user.brandId ? (
+                                Array.isArray(user.brandId)
+                                  ? user.brandId.map(id => brandMap[id] || id).join(', ')
+                                  : brandMap[user.brandId as string] || '-'
+                                ) : '-'
+                              }
                             </TableCell>
                           )}
                           <TableCell>

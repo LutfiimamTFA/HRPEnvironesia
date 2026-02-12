@@ -3,7 +3,7 @@ import admin from '@/lib/firebase/admin';
 import { UserRole, ROLES } from '@/lib/types';
 import { Timestamp } from 'firebase-admin/firestore';
 
-function isValidBody(body: any): body is { email: string; password: string; fullName: string; role: UserRole, brandId?: string } {
+function isValidBody(body: any): body is { email: string; password: string; fullName: string; role: UserRole, brandId?: string | string[] } {
   return (
     body &&
     typeof body.email === 'string' &&
@@ -11,7 +11,7 @@ function isValidBody(body: any): body is { email: string; password: string; full
     typeof body.fullName === 'string' &&
     typeof body.role === 'string' &&
     ROLES.includes(body.role) &&
-    (body.brandId === undefined || typeof body.brandId === 'string')
+    (body.brandId === undefined || typeof body.brandId === 'string' || Array.isArray(body.brandId))
   );
 }
 
