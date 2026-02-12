@@ -47,3 +47,14 @@ export type Job = {
   createdBy: string;
   updatedBy: string;
 };
+
+export type JobApplication = {
+  id?: string;
+  userId: string;
+  jobId: string;
+  jobPosition: string;
+  brandName: string;
+  jobType: 'fulltime' | 'internship' | 'contract';
+  status: 'draft' | 'submitted' | 'reviewed' | 'interview' | 'rejected' | 'hired';
+  appliedAt: Timestamp;
+};

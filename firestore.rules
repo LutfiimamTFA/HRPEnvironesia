@@ -76,7 +76,8 @@ service cloud.firestore {
      */
     function isInternal() {
       // Check for super-admin first to avoid a `get` call if not needed.
-      return isSuperAdmin() || userRole() in ['super-admin', 'hrd', 'manager', 'karyawan'];
+      let role = userRole();
+      return isSuperAdmin() || (role != null && (role == 'hrd' || role == 'manager' || role == 'karyawan'));
     }
 
     /**
@@ -84,7 +85,8 @@ service cloud.firestore {
      */
     function canManageJobs() {
       // Check for super-admin first to avoid a `get` call if not needed.
-      return isSuperAdmin() || userRole() in ['super-admin', 'hrd'];
+      let role = userRole();
+      return isSuperAdmin() || (role != null && (role == 'hrd' || role == 'super-admin'));
     }
 
     /**
@@ -116,6 +118,10 @@ service cloud.firestore {
       allow create: if (isOwner(userId) || isSuperAdmin()) && hasValidCreateData(userId);
       allow update: if (isOwner(userId) || isSuperAdmin()) && resource != null && hasValidUpdateData();
       allow delete: if isSuperAdmin() && resource != null;
+
+      match /applications/{applicationId} {
+        allow read, write: if isOwner(userId);
+      }
     }
 
     /**
@@ -150,7 +156,8 @@ service cloud.firestore {
      *   /jobs/{jobId}
      */
     match /jobs/{jobId} {
-      allow read: if (resource.data.publishStatus == "published") || isInternal();
+      allow read: if resource.data.publishStatus == "published" || isInternal();
+      allow list: if isInternal(); // Allow internal users to list all jobs, respecting query constraints
       allow create, update, delete: if canManageJobs();
     }
 

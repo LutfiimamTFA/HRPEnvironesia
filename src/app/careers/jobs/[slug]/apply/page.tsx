@@ -1,15 +1,17 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, query, where, limit } from 'firebase/firestore';
-import type { Job } from '@/lib/types';
+import { useCollection, useFirestore, useMemoFirebase, addDocumentNonBlocking } from '@/firebase';
+import { collection, query, where, limit, serverTimestamp } from 'firebase/firestore';
+import type { Job, JobApplication } from '@/lib/types';
+import { useAuth } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft, Building, Calendar, MapPin, Briefcase } from 'lucide-react';
+import { Building, Calendar, MapPin, Briefcase } from 'lucide-react';
 import { format } from 'date-fns';
+import { useToast } from '@/hooks/use-toast';
 
 function JobApplySkeleton() {
     return (
@@ -37,14 +39,62 @@ export default function JobApplyPage() {
   const params = useParams();
   const slug = params.slug as string;
   const firestore = useFirestore();
+  const { userProfile } = useAuth();
+  const { toast } = useToast();
+  const [hasApplied, setHasApplied] = useState<boolean | null>(null);
 
   const jobQuery = useMemoFirebase(() => {
     if (!slug) return null;
     return query(collection(firestore, 'jobs'), where('slug', '==', slug), limit(1));
   }, [firestore, slug]);
 
-  const { data: jobs, isLoading } = useCollection<Job>(jobQuery);
+  const { data: jobs, isLoading: isLoadingJob } = useCollection<Job>(jobQuery);
   const job = jobs?.[0];
+
+  const applicationQuery = useMemoFirebase(() => {
+    if (!firestore || !userProfile || !job?.id) return null;
+    return query(
+      collection(firestore, 'users', userProfile.uid, 'applications'),
+      where('jobId', '==', job.id),
+      limit(1)
+    );
+  }, [firestore, userProfile, job]);
+
+  const { data: existingApplications, isLoading: isLoadingApplication } = useCollection<JobApplication>(applicationQuery);
+
+  useEffect(() => {
+    if (isLoadingApplication) {
+      return;
+    }
+    setHasApplied(existingApplications && existingApplications.length > 0);
+  }, [existingApplications, isLoadingApplication]);
+
+
+  useEffect(() => {
+    if (hasApplied === false && userProfile && job) {
+      const newApplication: Omit<JobApplication, 'id' | 'appliedAt'> & { appliedAt: any } = {
+        userId: userProfile.uid,
+        jobId: job.id!,
+        jobPosition: job.position,
+        brandName: job.brandName || 'N/A',
+        jobType: job.statusJob,
+        status: 'draft',
+        appliedAt: serverTimestamp(),
+      };
+
+      const applicationsRef = collection(firestore, 'users', userProfile.uid, 'applications');
+      addDocumentNonBlocking(applicationsRef, newApplication);
+
+      toast({
+        title: "Lamaran Dimulai!",
+        description: `Posisi ${job.position} telah ditambahkan ke daftar lamaran Anda.`,
+      });
+      
+      setHasApplied(true);
+    }
+  }, [hasApplied, userProfile, job, firestore, toast]);
+
+  const isLoading = isLoadingJob || hasApplied === null;
 
   if (isLoading || !job) {
       return <JobApplySkeleton />

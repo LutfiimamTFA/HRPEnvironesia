@@ -190,6 +190,56 @@
         "createdBy",
         "updatedBy"
       ]
+    },
+    "JobApplication": {
+      "title": "Job Application",
+      "type": "object",
+      "description": "Represents a candidate's application for a specific job.",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "The UID of the candidate applying."
+        },
+        "jobId": {
+          "type": "string",
+          "description": "The ID of the job being applied for."
+        },
+        "jobPosition": {
+          "type": "string",
+          "description": "Denormalized position title from the Job."
+        },
+        "brandName": {
+          "type": "string",
+          "description": "Denormalized brand name from the Job."
+        },
+        "jobType": {
+          "type": "string",
+          "description": "Denormalized job type (fulltime, etc.) from the Job."
+        },
+        "status": {
+          "type": "string",
+          "description": "The current status of the application.",
+          "enum": [
+            "draft",
+            "submitted",
+            "reviewed",
+            "interview",
+            "rejected",
+            "hired"
+          ]
+        },
+        "appliedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the application was initiated."
+        }
+      },
+      "required": [
+        "userId",
+        "jobId",
+        "status",
+        "appliedAt"
+      ]
     }
   },
   "auth": {
@@ -213,6 +263,26 @@
             {
               "name": "userId",
               "description": "The Firebase Auth UID of the user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/applications/{applicationId}",
+        "definition": {
+          "entityName": "JobApplication",
+          "schema": {
+            "$ref": "#/backend/entities/JobApplication"
+          },
+          "description": "Stores applications submitted by a user. Path-based ownership.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The Firebase Auth UID of the user."
+            },
+            {
+              "name": "applicationId",
+              "description": "The unique ID of the application."
             }
           ]
         }
