@@ -151,24 +151,23 @@ export default function JobDetailPage() {
         // A user is authenticated, now check their profile/role.
         if (userProfile) {
             if (userProfile.role === 'kandidat') {
-                toast({
-                    title: "Fitur Dalam Pengembangan",
-                    description: "Fitur untuk melamar pekerjaan sedang kami siapkan.",
-                });
+                router.push(`${pathname}/apply`);
                 return;
             }
             
             if (ROLES_INTERNAL.includes(userProfile.role)) {
                  toast({
                     variant: 'destructive',
-                    title: 'Akun Karyawan Terdeteksi',
-                    description: "Anda tidak dapat melamar pekerjaan karena Anda login sebagai karyawan.",
+                    title: 'Akses Khusus Kandidat',
+                    description: "Akun Anda terdaftar sebagai akun internal dan tidak dapat digunakan untuk melamar.",
                 });
+                router.push('/admin');
                 return;
             }
         }
         
-        // Fallback for cases where user is authenticated but profile is missing/loading
+        // Fallback for cases where user is authenticated but profile is still loading.
+        // The safest bet is to redirect to the login flow which will handle the final redirect.
         router.push(`/careers/login?redirect=${pathname}`);
     };
 

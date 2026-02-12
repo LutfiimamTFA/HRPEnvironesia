@@ -1,0 +1,47 @@
+'use client';
+
+import { useAuth } from '@/providers/auth-provider';
+import { useRouter, usePathname } from 'next/navigation';
+import { useEffect } from 'react';
+import { Loader2 } from 'lucide-react';
+import { ROLES_INTERNAL } from '@/lib/types';
+
+export default function CandidateApplyLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const { userProfile, loading } = useAuth();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  useEffect(() => {
+    if (loading) {
+      return; // Wait until loading is complete
+    }
+
+    if (!userProfile) {
+      // Not logged in, redirect to the candidate login page, preserving the apply url
+      router.replace(`/careers/login?redirect=${pathname}`);
+      return;
+    }
+    
+    if (ROLES_INTERNAL.includes(userProfile.role)) {
+      // Logged in, but is an internal user. Redirect to admin portal.
+      router.replace('/admin');
+    }
+
+  }, [userProfile, loading, router, pathname]);
+
+  // Render a loading state while checking for user and role
+  if (loading || !userProfile || userProfile.role !== 'kandidat') {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  // If checks pass, render the child components
+  return <>{children}</>;
+}
