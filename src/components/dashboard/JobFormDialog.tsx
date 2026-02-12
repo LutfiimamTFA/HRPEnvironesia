@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -23,10 +23,7 @@ import { Loader2, UploadCloud, Calendar as CalendarIcon } from 'lucide-react';
 import type { Job, Brand } from '@/lib/types';
 import { RichTextEditor } from '../ui/RichTextEditor';
 import Image from 'next/image';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
-import { format } from 'date-fns';
-import { cn } from '@/lib/utils';
+import { DatePickerField } from '../ui/date-picker-field';
 
 const slugify = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
@@ -55,7 +52,7 @@ interface JobFormDialogProps {
 export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialogProps) {
   const firestore = useFirestore();
   const firebaseApp = useFirebaseApp();
-  const storage = getStorage(firebaseApp);
+  const storage = useMemo(() => getStorage(firebaseApp), [firebaseApp]);
   const { userProfile } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
@@ -241,41 +238,19 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
                   control={form.control}
                   name="applyDeadline"
                   render={({ field }) => (
-                  <FormItem className="flex flex-col">
+                    <FormItem className="flex flex-col pt-2">
                       <FormLabel>Application Deadline</FormLabel>
-                      <Popover>
-                      <PopoverTrigger asChild>
-                          <FormControl>
-                          <Button
-                              variant={"outline"}
-                              className={cn(
-                              "w-full justify-start text-left font-normal",
-                              !field.value && "text-muted-foreground"
-                              )}
-                          >
-                              <CalendarIcon className="mr-2 h-4 w-4" />
-                              {field.value ? (
-                              format(field.value, "dd MMM yyyy")
-                              ) : (
-                              <span>Pick a date</span>
-                              )}
-                          </Button>
-                          </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar
-                          mode="single"
-                          selected={field.value ?? undefined}
-                          onSelect={field.onChange}
+                      <FormControl>
+                        <DatePickerField
+                          value={field.value}
+                          onChange={field.onChange}
                           disabled={(date) =>
-                              date < new Date(new Date().setHours(0, 0, 0, 0))
+                            date < new Date(new Date().setHours(0, 0, 0, 0))
                           }
-                          initialFocus
-                          />
-                      </PopoverContent>
-                      </Popover>
+                        />
+                      </FormControl>
                       <FormMessage />
-                  </FormItem>
+                    </FormItem>
                   )}
                 />
               </div>
@@ -341,5 +316,3 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
     </Dialog>
   );
 }
-
-    
