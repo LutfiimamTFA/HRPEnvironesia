@@ -2,16 +2,17 @@
 
 import { useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useCollection, useFirestore, useMemoFirebase, addDocumentNonBlocking } from '@/firebase';
-import { collection, query, where, limit, serverTimestamp } from 'firebase/firestore';
+import { useCollection, useFirestore, useMemoFirebase, setDocumentNonBlocking } from '@/firebase';
+import { collection, query, where, limit, serverTimestamp, doc, getDoc } from 'firebase/firestore';
 import type { Job, JobApplication } from '@/lib/types';
 import { useAuth } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Building, Calendar, MapPin, Briefcase } from 'lucide-react';
+import { Building, Calendar, MapPin, Briefcase, CheckCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
+import { Badge } from '@/components/ui/badge';
 
 function JobApplySkeleton() {
     return (
@@ -42,63 +43,76 @@ export default function JobApplyPage() {
   const { userProfile } = useAuth();
   const { toast } = useToast();
 
-  // 1. Fetch Job details. This is the primary data needed to render the page.
+  const [isDraftCreated, setIsDraftCreated] = useState(false);
+
+  // 1. Fetch Job details.
   const jobQuery = useMemoFirebase(() => {
     if (!slug) return null;
-    return query(collection(firestore, 'jobs'), where('slug', '==', slug), limit(1));
+    return query(
+        collection(firestore, 'jobs'), 
+        where('slug', '==', slug),
+        where('publishStatus', '==', 'published'),
+        limit(1)
+    );
   }, [firestore, slug]);
 
   const { data: jobs, isLoading: isLoadingJob } = useCollection<Job>(jobQuery);
   const job = jobs?.[0];
 
-  // 2. In parallel, prepare a query to check for existing applications.
-  const applicationQuery = useMemoFirebase(() => {
-    if (!firestore || !userProfile || !job?.id) return null;
-    return query(
-      collection(firestore, 'users', userProfile.uid, 'applications'),
-      where('jobId', '==', job.id),
-      limit(1)
-    );
-  }, [firestore, userProfile, job]);
-
-  // 3. This hook will manage checking for and creating the application draft.
-  // It does not block rendering.
-  const { data: existingApplications, isLoading: isLoadingApplication } = useCollection<JobApplication>(applicationQuery);
-
-  // This useEffect handles the logic of creating a draft application
-  // after the initial data has been loaded. It's a "side effect".
+  // 2. Idempotently create a draft application when job and user are loaded.
   useEffect(() => {
-    // Wait until we have the user, the job, and the result of the application check.
-    if (isLoadingApplication || !userProfile || !job) {
+    if (!job || !userProfile || isDraftCreated) {
       return;
     }
+
+    const applicationId = `${job.id}_${userProfile.uid}`;
+    const applicationRef = doc(firestore, 'applications', applicationId);
+
+    const createDraft = async () => {
+        try {
+            const docSnap = await getDoc(applicationRef);
+            
+            if (!docSnap.exists()) {
+                const newApplication: Omit<JobApplication, 'id' | 'createdAt' | 'updatedAt'> & { createdAt: any; updatedAt: any; } = {
+                    candidateUid: userProfile.uid,
+                    candidateName: userProfile.fullName,
+                    candidateEmail: userProfile.email,
+                    jobId: job.id!,
+                    jobSlug: job.slug,
+                    jobPosition: job.position,
+                    brandId: job.brandId,
+                    brandName: job.brandName || 'N/A',
+                    jobType: job.statusJob,
+                    location: job.location,
+                    status: 'draft',
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp(),
+                };
+                
+                // Using setDocumentNonBlocking for optimistic UI update
+                setDocumentNonBlocking(applicationRef, newApplication, { merge: false });
+
+                toast({
+                    title: "Lamaran Dimulai!",
+                    description: `Posisi ${job.position} telah disimpan sebagai draf.`,
+                });
+            }
+            setIsDraftCreated(true); // Mark as created/checked
+        } catch (error) {
+            console.error("Error creating application draft:", error);
+            toast({
+                variant: "destructive",
+                title: "Gagal Menyimpan Draf",
+                description: "Terjadi kesalahan saat memulai lamaran Anda.",
+            });
+        }
+    };
     
-    const hasApplied = existingApplications && existingApplications.length > 0;
+    createDraft();
 
-    // If the user has not applied yet, create a draft.
-    if (!hasApplied) {
-      const newApplication: Omit<JobApplication, 'id' | 'appliedAt'> & { appliedAt: any } = {
-        userId: userProfile.uid,
-        jobId: job.id!,
-        jobPosition: job.position,
-        brandName: job.brandName || 'N/A',
-        jobType: job.statusJob,
-        status: 'draft',
-        appliedAt: serverTimestamp(),
-      };
+  }, [job, userProfile, firestore, toast, isDraftCreated]);
 
-      const applicationsRef = collection(firestore, 'users', userProfile.uid, 'applications');
-      addDocumentNonBlocking(applicationsRef, newApplication);
 
-      toast({
-        title: "Lamaran Dimulai!",
-        description: `Posisi ${job.position} telah ditambahkan ke daftar lamaran Anda.`,
-      });
-    }
-  }, [existingApplications, isLoadingApplication, userProfile, job, firestore, toast]);
-
-  // The page is only in a "loading" state while fetching the main job data.
-  // The application check/creation happens in the background.
   if (isLoadingJob || !job) {
       return <JobApplySkeleton />
   }
@@ -107,8 +121,18 @@ export default function JobApplyPage() {
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
         <Card className="lg:col-span-2">
             <CardHeader>
-            <CardTitle>Lamar Posisi: {job.position}</CardTitle>
-            <CardDescription>Selesaikan aplikasi Anda untuk posisi ini.</CardDescription>
+                <div className="flex items-center justify-between">
+                    <div>
+                        <CardTitle>Lamar Posisi: {job.position}</CardTitle>
+                        <CardDescription>Selesaikan aplikasi Anda untuk posisi ini.</CardDescription>
+                    </div>
+                     {isDraftCreated && (
+                        <Badge variant="secondary" className="flex items-center gap-1.5">
+                            <CheckCircle className="h-4 w-4 text-green-600" />
+                            <span>Draf Tersimpan</span>
+                        </Badge>
+                     )}
+                </div>
             </CardHeader>
             <CardContent className="space-y-4">
             <p className="text-sm text-center p-8 border rounded-lg bg-muted/50">

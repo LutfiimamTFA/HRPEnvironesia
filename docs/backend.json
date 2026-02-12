@@ -196,17 +196,34 @@
       "type": "object",
       "description": "Represents a candidate's application for a specific job.",
       "properties": {
-        "userId": {
+        "candidateUid": {
           "type": "string",
-          "description": "The UID of the candidate applying."
+          "description": "The UID of the candidate (user) applying."
+        },
+        "candidateName": {
+          "type": "string",
+          "description": "Denormalized full name of the candidate."
+        },
+        "candidateEmail": {
+          "type": "string",
+          "format": "email",
+          "description": "Denormalized email of the candidate."
         },
         "jobId": {
           "type": "string",
           "description": "The ID of the job being applied for."
         },
+        "jobSlug": {
+          "type": "string",
+          "description": "Denormalized slug from the Job."
+        },
         "jobPosition": {
           "type": "string",
           "description": "Denormalized position title from the Job."
+        },
+        "brandId": {
+          "type": "string",
+          "description": "Denormalized brand ID from the Job."
         },
         "brandName": {
           "type": "string",
@@ -215,6 +232,10 @@
         "jobType": {
           "type": "string",
           "description": "Denormalized job type (fulltime, etc.) from the Job."
+        },
+        "location": {
+          "type": "string",
+          "description": "Denormalized job location."
         },
         "status": {
           "type": "string",
@@ -228,17 +249,35 @@
             "hired"
           ]
         },
-        "appliedAt": {
+        "createdAt": {
           "type": "string",
           "format": "date-time",
-          "description": "Timestamp when the application was initiated."
+          "description": "Timestamp when the application draft was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the application was last updated."
+        },
+        "submittedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the application was formally submitted."
         }
       },
       "required": [
-        "userId",
+        "candidateUid",
+        "candidateName",
+        "candidateEmail",
         "jobId",
+        "jobSlug",
+        "jobPosition",
+        "brandId",
+        "brandName",
+        "jobType",
         "status",
-        "appliedAt"
+        "createdAt",
+        "updatedAt"
       ]
     }
   },
@@ -263,26 +302,6 @@
             {
               "name": "userId",
               "description": "The Firebase Auth UID of the user."
-            }
-          ]
-        }
-      },
-      {
-        "path": "/users/{userId}/applications/{applicationId}",
-        "definition": {
-          "entityName": "JobApplication",
-          "schema": {
-            "$ref": "#/backend/entities/JobApplication"
-          },
-          "description": "Stores applications submitted by a user. Path-based ownership.",
-          "params": [
-            {
-              "name": "userId",
-              "description": "The Firebase Auth UID of the user."
-            },
-            {
-              "name": "applicationId",
-              "description": "The unique ID of the application."
             }
           ]
         }
@@ -347,6 +366,22 @@
             {
               "name": "jobId",
               "description": "The unique ID of the job posting."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/applications/{applicationId}",
+        "definition": {
+          "entityName": "JobApplication",
+          "schema": {
+            "$ref": "#/backend/entities/JobApplication"
+          },
+          "description": "Stores job applications from all candidates. The document ID is a composite key: {jobId}_{candidateUid}.",
+          "params": [
+            {
+              "name": "applicationId",
+              "description": "Unique ID for the application."
             }
           ]
         }

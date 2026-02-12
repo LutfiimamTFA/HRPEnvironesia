@@ -69,24 +69,28 @@ service cloud.firestore {
         ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
         : null;
     }
-
+    
     /**
      * Checks if the user has an internal role (e.g., employee, manager).
-     * This is used to grant broader read access than the general public.
      */
     function isInternal() {
-      // Check for super-admin first to avoid a `get` call if not needed.
       let role = userRole();
-      return isSuperAdmin() || (role != null && (role == 'hrd' || role == 'manager' || role == 'karyawan'));
+      return role == 'super_admin' || role == 'hrd' || role == 'manager' || role == 'karyawan';
+    }
+
+    /**
+     * Checks if the user is a candidate.
+     */
+    function isCandidate() {
+        return userRole() == 'kandidat';
     }
 
     /**
      * Checks if the user has permissions to manage job postings (create, update, delete).
      */
     function canManageJobs() {
-      // Check for super-admin first to avoid a `get` call if not needed.
       let role = userRole();
-      return isSuperAdmin() || (role != null && (role == 'hrd' || role == 'super-admin'));
+      return role == 'super_admin' || role == 'hrd';
     }
 
     /**
@@ -118,10 +122,6 @@ service cloud.firestore {
       allow create: if (isOwner(userId) || isSuperAdmin()) && hasValidCreateData(userId);
       allow update: if (isOwner(userId) || isSuperAdmin()) && resource != null && hasValidUpdateData();
       allow delete: if isSuperAdmin() && resource != null;
-
-      match /applications/{applicationId} {
-        allow read, write: if isOwner(userId);
-      }
     }
 
     /**
@@ -160,6 +160,34 @@ service cloud.firestore {
       allow create, update, delete: if canManageJobs();
     }
 
+    /**
+     * @description
+     *   Rules for job applications. Candidates can create and manage their own
+     *   drafts. Internal users can view all applications for recruitment.
+     * @path
+     *   /applications/{applicationId}
+     */
+    match /applications/{applicationId} {
+      allow create: if isSignedIn()
+                    && isCandidate()
+                    && request.resource.data.candidateUid == request.auth.uid
+                    && request.resource.data.status == "draft";
+
+      allow get, list: if isSignedIn() && (
+                         (isCandidate() && resource.data.candidateUid == request.auth.uid)
+                         || isInternal()
+                       );
+
+      allow update: if isSignedIn() && (
+                      (isCandidate()
+                        && resource.data.candidateUid == request.auth.uid
+                        && resource.data.status == "draft"
+                        && request.resource.data.candidateUid == resource.data.candidateUid)
+                      || isInternal()
+                    );
+
+      allow delete: if isInternal();
+    }
 
     /**
      * @description

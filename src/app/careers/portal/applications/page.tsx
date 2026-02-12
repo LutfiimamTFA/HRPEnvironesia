@@ -1,15 +1,15 @@
 'use client';
 
-import { useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, orderBy, query } from 'firebase/firestore';
+import { collection, orderBy, query, where } from 'firebase/firestore';
 import type { JobApplication } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
+import { MapPin } from "lucide-react";
 
 function ApplicationsTableSkeleton() {
     return (
@@ -39,8 +39,9 @@ export default function ApplicationsPage() {
     const applicationsQuery = useMemoFirebase(() => {
         if (!userProfile) return null;
         return query(
-            collection(firestore, 'users', userProfile.uid, 'applications'),
-            orderBy('appliedAt', 'desc')
+            collection(firestore, 'applications'),
+            where('candidateUid', '==', userProfile.uid),
+            orderBy('createdAt', 'desc')
         );
     }, [userProfile, firestore]);
 
@@ -62,9 +63,9 @@ export default function ApplicationsPage() {
                                 <TableRow>
                                     <TableHead>Posisi</TableHead>
                                     <TableHead>Perusahaan</TableHead>
-                                    <TableHead>Tipe</TableHead>
+                                    <TableHead>Lokasi</TableHead>
                                     <TableHead>Status</TableHead>
-                                    <TableHead>Tanggal</TableHead>
+                                    <TableHead>Tanggal Dibuat</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -73,14 +74,17 @@ export default function ApplicationsPage() {
                                         <TableRow key={app.id}>
                                             <TableCell className="font-medium">{app.jobPosition}</TableCell>
                                             <TableCell>{app.brandName}</TableCell>
-                                            <TableCell className="capitalize">{app.jobType}</TableCell>
+                                            <TableCell className="text-muted-foreground flex items-center gap-1.5">
+                                                <MapPin className="h-4 w-4" />
+                                                {app.location}
+                                            </TableCell>
                                             <TableCell>
                                                 <Badge variant={app.status === 'draft' ? 'secondary' : 'default'} className="capitalize">
                                                     {app.status}
                                                 </Badge>
                                             </TableCell>
                                             <TableCell>
-                                                {app.appliedAt?.toDate ? format(app.appliedAt.toDate(), 'dd MMM yyyy') : 'Baru Saja'}
+                                                {app.createdAt?.toDate ? format(app.createdAt.toDate(), 'dd MMM yyyy') : 'Baru Saja'}
                                             </TableCell>
                                         </TableRow>
                                     ))

@@ -50,11 +50,18 @@ export type Job = {
 
 export type JobApplication = {
   id?: string;
-  userId: string;
+  candidateUid: string;
+  candidateName: string;
+  candidateEmail: string;
   jobId: string;
+  jobSlug: string;
   jobPosition: string;
+  brandId: string;
   brandName: string;
   jobType: 'fulltime' | 'internship' | 'contract';
+  location: string;
   status: 'draft' | 'submitted' | 'reviewed' | 'interview' | 'rejected' | 'hired';
-  appliedAt: Timestamp;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  submittedAt?: Timestamp;
 };
