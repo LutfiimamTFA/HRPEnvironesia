@@ -14,6 +14,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowLeft, Briefcase, Building, Calendar, LocateFixed, MapPin, Sparkles } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import { format } from 'date-fns';
+import { useAuth } from '@/providers/auth-provider';
+import { ROLES_INTERNAL } from '@/lib/types';
 
 function JobDetailSkeleton() {
     return (
@@ -45,17 +47,32 @@ export default function JobDetailPage() {
     const slug = params.slug as string;
     const router = useRouter();
     const firestore = useFirestore();
+    const { userProfile, loading: authLoading } = useAuth();
 
     const [sanitizedGeneral, setSanitizedGeneral] = useState('');
     const [sanitizedSpecial, setSanitizedSpecial] = useState('');
 
-    const jobQuery = useMemoFirebase(
-        () => slug ? query(collection(firestore, 'jobs'), where('slug', '==', slug), limit(1)) : null,
-        [firestore, slug]
-    );
+    const isInternalUser = !authLoading && userProfile && ROLES_INTERNAL.includes(userProfile.role);
 
-    const { data: jobs, isLoading } = useCollection<Job>(jobQuery);
+    const jobQuery = useMemoFirebase(() => {
+        if (!slug) return null;
+        const jobsCollection = collection(firestore, 'jobs');
+        
+        let q = query(jobsCollection, where('slug', '==', slug), limit(1));
+
+        // Public users can only see published jobs.
+        // Internal users can see any job via its direct slug URL.
+        if (!isInternalUser) {
+            q = query(q, where('publishStatus', '==', 'published'));
+        }
+        
+        return q;
+    }, [firestore, slug, isInternalUser]);
+
+
+    const { data: jobs, isLoading: isLoadingJob } = useCollection<Job>(jobQuery);
     const job = jobs?.[0];
+    const isLoading = authLoading || isLoadingJob;
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -155,5 +172,3 @@ export default function JobDetailPage() {
         </>
     );
 }
-
-    

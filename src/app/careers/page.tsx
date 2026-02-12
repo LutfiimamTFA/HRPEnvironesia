@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { ArrowRight, Briefcase, ChevronDown, FileText, Leaf, MapPin, Search, User, UserCheck } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, query, where } from 'firebase/firestore';
+import { collection, query, where, orderBy } from 'firebase/firestore';
 import type { Job } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -61,8 +61,15 @@ const StepCard = ({ icon, title, description }: { icon: React.ReactNode, title: 
 
 export default function CareersPage() {
   const firestore = useFirestore();
-  const jobsCollection = useMemoFirebase(() => collection(firestore, 'jobs'), [firestore]);
-  const publishedJobsQuery = useMemoFirebase(() => query(jobsCollection, where('publishStatus', '==', 'published')), [jobsCollection]);
+  
+  const publishedJobsQuery = useMemoFirebase(
+    () => query(
+      collection(firestore, 'jobs'), 
+      where('publishStatus', '==', 'published'),
+      orderBy('createdAt', 'desc')
+    ), 
+    [firestore]
+  );
 
   const { data: jobs, isLoading } = useCollection<Job>(publishedJobsQuery);
 

@@ -61,11 +61,30 @@ service cloud.firestore {
     }
     
     /**
-     * Checks if the currently authenticated user has the 'hrd' role.
-     * This is determined by reading the user's document in the /users collection.
+     * Gets the role of the currently signed-in user from their user profile.
+     * Returns null if the user is not signed in.
      */
-    function isHrd() {
-      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'hrd';
+    function userRole() {
+      return isSignedIn()
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        : null;
+    }
+
+    /**
+     * Checks if the user has an internal role (e.g., employee, manager).
+     * This is used to grant broader read access than the general public.
+     */
+    function isInternal() {
+      // Check for super-admin first to avoid a `get` call if not needed.
+      return isSuperAdmin() || (userRole() in ['super-admin', 'hrd', 'manager', 'karyawan']);
+    }
+
+    /**
+     * Checks if the user has permissions to manage job postings (create, update, delete).
+     */
+    function canManageJobs() {
+      // Check for super-admin first to avoid a `get` call if not needed.
+      return isSuperAdmin() || (userRole() in ['super-admin', 'hrd']);
     }
 
     /**
@@ -90,15 +109,6 @@ service cloud.firestore {
      *   profile, and a super_admin has full access to all profiles.
      * @path
      *   /users/{userId}
-     * @allow
-     *   A logged-in user (create)s their own profile document.
-     *   auth: { uid: 'user123' } -> create /users/user123
-     * @deny
-     *   An anonymous user tries to (list) all user profiles.
-     *   auth: null -> list /users
-     * @principle
-     *   Restricts access to a user's own data tree and grants universal
-     *   access to administrators.
      */
     match /users/{userId} {
       allow get: if isOwner(userId) || isSuperAdmin();
@@ -115,21 +125,9 @@ service cloud.firestore {
      *   inaccessible to all clients to prevent privilege escalation.
      * @path
      *   /roles_admin/{userId}
-     * @allow
-     *   No client operations are ever permitted.
-     * @deny
-     *   Any user, including a super_admin, trying to (read) or (write) to this collection.
-     *   auth: { uid: 'admin123' } -> get /roles_admin/admin123
-     * @principle
-     *   Prevents client-side privilege escalation by making authorization
-     *   data read-only and server-managed.
      */
     match /roles_admin/{userId} {
-      allow get: if false;
-      allow list: if false;
-      allow create: if false;
-      allow update: if false;
-      allow delete: if false;
+      allow read, write: if false;
     }
     
     /**
@@ -146,14 +144,14 @@ service cloud.firestore {
     
     /**
      * @description
-     *   Rules for job postings. Public can read published jobs. HRD and Super Admins
-     *   have full read/write access.
+     *   Rules for job postings. Public can read published jobs. Internal users have
+     *   full read access, while only specific roles can write.
      * @path
      *   /jobs/{jobId}
      */
     match /jobs/{jobId} {
-      allow read: if ('publishStatus' in resource.data && resource.data.publishStatus == 'published') || isSuperAdmin() || isHrd();
-      allow write: if isSuperAdmin() || isHrd();
+      allow read: if (('publishStatus' in resource.data) && resource.data.publishStatus == "published") || isInternal();
+      allow write: if canManageJobs();
     }
 
 
