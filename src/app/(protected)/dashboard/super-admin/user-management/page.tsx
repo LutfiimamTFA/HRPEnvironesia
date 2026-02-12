@@ -1,53 +1,18 @@
-'use client';
+// This file is deprecated. Please use the new route at /admin/super-admin/user-management
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import Link from 'next/link';
 
-import { useMemo } from 'react';
-import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
-import { UserManagementClient } from '@/components/dashboard/UserManagementClient';
-import { useRoleGuard } from '@/hooks/useRoleGuard';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useAuth } from '@/providers/auth-provider';
-import { useDoc, useFirestore, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
-import { ALL_MENU_ITEMS, ALL_UNIQUE_MENU_ITEMS } from '@/lib/menu-config';
-import type { NavigationSetting } from '@/lib/types';
-
-export default function UserManagementPage() {
-  const hasAccess = useRoleGuard('super-admin');
-  const { userProfile } = useAuth();
-  const firestore = useFirestore();
-
-  const settingsDocRef = useMemoFirebase(
-    () => (userProfile ? doc(firestore, 'navigation_settings', userProfile.role) : null),
-    [userProfile, firestore]
-  );
-
-  const { data: navSettings, isLoading: isLoadingSettings } = useDoc<NavigationSetting>(settingsDocRef);
-
-  const menuItems = useMemo(() => {
-    const defaultItems = ALL_MENU_ITEMS['super-admin'] || [];
-
-    if (isLoadingSettings) {
-      return defaultItems;
-    }
-
-    if (navSettings) {
-      return ALL_UNIQUE_MENU_ITEMS.filter(item => navSettings.visibleMenuItems.includes(item.label));
-    }
-    
-    return defaultItems;
-  }, [navSettings, isLoadingSettings]);
-
-  if (!hasAccess || (userProfile && isLoadingSettings)) {
-    return (
-      <div className="flex h-screen w-full items-center justify-center p-4">
-        <Skeleton className="h-[400px] w-full max-w-6xl" />
-      </div>
-    );
-  }
-
+export default function DeprecatedPage() {
   return (
-    <DashboardLayout pageTitle="User Management" menuItems={menuItems}>
-      <UserManagementClient seedSecret={process.env.SEED_SECRET || ''} />
-    </DashboardLayout>
+    <div className="flex h-screen w-full items-center justify-center">
+      <Card>
+        <CardHeader>
+          <CardTitle>Page Moved</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p>This page is no longer in use. Please access the new dashboard at <Link href="/admin" className="text-primary underline">/admin</Link>.</p>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

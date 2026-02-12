@@ -35,7 +35,7 @@ function UserNav() {
 
   const handleLogout = async () => {
     await auth.signOut();
-    router.push('/login');
+    router.push('/admin/login');
   };
   
   const getInitials = (name: string = '') => {
@@ -86,7 +86,7 @@ export function DashboardLayout({ children, pageTitle, menuItems }: DashboardLay
       <Sidebar collapsible="icon" className="border-r">
         <SidebarHeader className="border-b">
           <div className="flex h-14 items-center justify-center">
-            <Link href="/dashboard" className="flex items-center gap-2 font-semibold">
+            <Link href="/admin" className="flex items-center gap-2 font-semibold">
               <Package2 className="h-6 w-6 text-primary" />
               <span className="text-xl tracking-tight text-primary group-data-[state=collapsed]:hidden">HRP Starter Kit</span>
             </Link>

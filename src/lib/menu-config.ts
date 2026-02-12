@@ -8,10 +8,10 @@ export type MenuItem = {
 };
 
 export const SUPER_ADMIN_MENU_ITEMS: MenuItem[] = [
-    { href: '/dashboard/super-admin', label: 'Overview', icon: createElement(LayoutDashboard, { className: "h-4 w-4" }) },
-    { href: '/dashboard/super-admin/user-management', label: 'User Management', icon: createElement(Users, { className: "h-4 w-4" }) },
-    { href: '/dashboard/super-admin/departments-brands', label: 'Brands', icon: createElement(Briefcase, { className: "h-4 w-4" }) },
-    { href: '/dashboard/super-admin/menu-settings', label: 'Menu Settings', icon: createElement(List, { className: "h-4 w-4" }) },
+    { href: '/admin/super-admin', label: 'Overview', icon: createElement(LayoutDashboard, { className: "h-4 w-4" }) },
+    { href: '/admin/super-admin/user-management', label: 'User Management', icon: createElement(Users, { className: "h-4 w-4" }) },
+    { href: '/admin/super-admin/departments-brands', label: 'Brands', icon: createElement(Briefcase, { className: "h-4 w-4" }) },
+    { href: '/admin/super-admin/menu-settings', label: 'Menu Settings', icon: createElement(List, { className: "h-4 w-4" }) },
     { href: '#', label: 'System Settings', icon: createElement(Settings, { className: "h-4 w-4" }) },
 ];
 

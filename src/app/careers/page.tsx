@@ -53,6 +53,9 @@ export default function CareersPage() {
             <Link href="#faq" className="text-muted-foreground transition-colors hover:text-primary">FAQ</Link>
           </nav>
           <div className="flex items-center gap-2">
+             <Button variant="ghost" asChild>
+                <Link href="/admin/login">Masuk Karyawan</Link>
+            </Button>
             <Button variant="outline" asChild>
               <Link href="/careers/login">Masuk Kandidat</Link>
             </Button>
@@ -217,9 +220,6 @@ export default function CareersPage() {
             <p className="text-center text-sm text-muted-foreground">
                 © {new Date().getFullYear()} Environesia. All Rights Reserved.
             </p>
-            <Link href="/login" className="text-sm font-medium text-muted-foreground hover:text-primary">
-                Masuk Karyawan
-            </Link>
         </div>
       </footer>
     </div>

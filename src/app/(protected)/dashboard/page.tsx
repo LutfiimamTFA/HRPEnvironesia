@@ -1,31 +1,18 @@
-'use client';
+// This file is deprecated. Please use the new route at /admin
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import Link from 'next/link';
 
-import { useAuth } from '@/providers/auth-provider';
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
-import { Loader2 } from 'lucide-react';
-
-export default function DashboardRedirectPage() {
-  const { userProfile, loading } = useAuth();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (!loading && userProfile) {
-      if (userProfile.role) {
-        router.replace(`/dashboard/${userProfile.role}`);
-      } else {
-        // Fallback if role is somehow missing, though AuthContext should handle it
-        router.replace('/login');
-      }
-    }
-  }, [userProfile, loading, router]);
-
+export default function DeprecatedPage() {
   return (
-    <div className="flex h-screen w-full items-center justify-center bg-background">
-      <div className="flex flex-col items-center gap-4">
-        <Loader2 className="h-8 w-8 animate-spin" />
-        <p className="text-muted-foreground">Loading your dashboard...</p>
-      </div>
+    <div className="flex h-screen w-full items-center justify-center">
+      <Card>
+        <CardHeader>
+          <CardTitle>Page Moved</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p>This page is no longer in use. Please access the new dashboard at <Link href="/admin" className="text-primary underline">/admin</Link>.</p>
+        </CardContent>
+      </Card>
     </div>
   );
 }
