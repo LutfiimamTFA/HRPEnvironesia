@@ -9,15 +9,15 @@ import { Badge } from '@/components/ui/badge';
 import { ArrowRight, Briefcase, Building2, Check, ChevronDown, FileText, Leaf, MapPin, Search, User, UserCheck } from 'lucide-react';
 
 const JobCard = ({ title, type, location, brand }: { title: string, type: string, location: string, brand: string }) => (
-  <Card>
-    <CardHeader>
-      <CardTitle className="text-lg">{title}</CardTitle>
-      <CardDescription className="flex items-center gap-4 pt-1">
+  <Card className="flex flex-col transition-shadow duration-300 hover:shadow-xl">
+    <CardHeader className="flex-grow">
+      <CardTitle className="text-xl">{title}</CardTitle>
+      <CardDescription className="flex items-center gap-4 pt-2">
         <span className="flex items-center gap-1.5"><Briefcase className="h-4 w-4" /> {type}</span>
         <span className="flex items-center gap-1.5"><MapPin className="h-4 w-4" /> {location}</span>
       </CardDescription>
     </CardHeader>
-    <CardFooter className="flex justify-between">
+    <CardFooter className="flex items-center justify-between">
       <Badge variant="secondary">{brand}</Badge>
       <Button variant="default">
         Lamar Sekarang <ArrowRight className="ml-2 h-4 w-4" />
@@ -27,7 +27,7 @@ const JobCard = ({ title, type, location, brand }: { title: string, type: string
 );
 
 const StepCard = ({ icon, title, description }: { icon: React.ReactNode, title: string, description: string }) => (
-    <div className="flex flex-col items-center text-center p-4">
+    <div className="flex flex-col items-center p-4 text-center">
         <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
             {icon}
         </div>
@@ -41,11 +41,11 @@ export default function CareersPage() {
     <div className="flex min-h-screen flex-col bg-background font-body">
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container flex h-14 items-center">
-          <Link href="/careers" className="flex items-center gap-2 mr-6">
+          <Link href="/careers" className="mr-6 flex items-center gap-2">
             <Leaf className="h-7 w-7 text-primary" />
             <span className="text-xl font-bold tracking-tight text-foreground">Environesia Karir</span>
           </Link>
-          <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
+          <nav className="hidden items-center gap-6 text-sm font-medium md:flex">
             <Link href="#lowongan" className="text-muted-foreground transition-colors hover:text-primary">Lowongan</Link>
             <Link href="#tahapan-rekrutmen" className="text-muted-foreground transition-colors hover:text-primary">Proses Rekrutmen</Link>
             <Link href="#tutorial" className="text-muted-foreground transition-colors hover:text-primary">Cara Melamar</Link>
@@ -72,8 +72,8 @@ export default function CareersPage() {
                 data-ai-hint="office team collaboration"
             />
             <div className="absolute inset-0 bg-black/50" />
-            <div className="relative z-10 flex h-full flex-col items-center justify-center text-center text-white p-4">
-                <h1 className="text-4xl md:text-6xl font-bold tracking-tighter !leading-tight">
+            <div className="relative z-10 flex h-full flex-col items-center justify-center p-4 text-center text-white">
+                <h1 className="text-4xl font-bold !leading-tight tracking-tighter md:text-6xl">
                     Bangun Masa Depan Anda Bersama Kami
                 </h1>
                 <p className="mt-4 max-w-2xl text-lg text-primary-foreground/80">
@@ -88,16 +88,16 @@ export default function CareersPage() {
         </section>
 
         {/* Lowongan Section */}
-        <section id="lowongan" className="w-full py-12 md:py-20 lg:py-24 bg-secondary scroll-mt-14">
+        <section id="lowongan" className="w-full scroll-mt-14 bg-secondary py-12 md:py-20 lg:py-24">
           <div className="container">
-            <div className="mx-auto max-w-xl text-center">
-              <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Lowongan Tersedia</h2>
-              <p className="mt-4 text-muted-foreground">
-                Filter berdasarkan tipe pekerjaan atau brand yang Anda minati.
+            <div className="mx-auto max-w-2xl text-center">
+              <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Temukan Peluang Anda</h2>
+              <p className="mt-4 text-lg text-muted-foreground">
+                Kami mencari individu berbakat untuk bergabung dengan berbagai tim kami. Jelajahi posisi yang sesuai dengan keahlian Anda.
               </p>
             </div>
 
-            <Tabs defaultValue="fulltime" className="mt-8">
+            <Tabs defaultValue="fulltime" className="mt-12">
               <div className="flex justify-center">
                 <TabsList>
                   <TabsTrigger value="fulltime">Full-time</TabsTrigger>
@@ -105,15 +105,15 @@ export default function CareersPage() {
                   <TabsTrigger value="contract">Contract</TabsTrigger>
                 </TabsList>
               </div>
-              <TabsContent value="fulltime" className="mt-8 space-y-4">
+              <TabsContent value="fulltime" className="mt-8 grid gap-6 md:grid-cols-2">
                 <JobCard title="Sustainability Consultant" type="Full-time" location="Yogyakarta" brand="Environesia" />
                 <JobCard title="Frontend Developer" type="Full-time" location="Jakarta" brand="Tech Innovate" />
               </TabsContent>
-              <TabsContent value="internship" className="mt-8 space-y-4">
+              <TabsContent value="internship" className="mt-8 grid gap-6 md:grid-cols-2">
                  <JobCard title="Marketing Intern" type="Internship" location="Surabaya" brand="Creative Labs" />
                  <JobCard title="HR Intern" type="Internship" location="Yogyakarta" brand="Environesia" />
               </TabsContent>
-              <TabsContent value="contract" className="mt-8 space-y-4">
+              <TabsContent value="contract" className="mt-8 grid gap-6 md:grid-cols-2">
                 <JobCard title="Project Manager (6 Bulan)" type="Contract" location="Bandung" brand="Build-It" />
               </TabsContent>
             </Tabs>
@@ -121,7 +121,7 @@ export default function CareersPage() {
         </section>
         
         {/* Tahapan Rekrutmen Section */}
-        <section id="tahapan-rekrutmen" className="w-full py-12 md:py-20 lg:py-24 scroll-mt-14">
+        <section id="tahapan-rekrutmen" className="w-full scroll-mt-14 py-12 md:py-20 lg:py-24">
             <div className="container">
                 <div className="mx-auto max-w-xl text-center">
                     <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Proses Rekrutmen Kami</h2>
@@ -140,7 +140,7 @@ export default function CareersPage() {
                             { step: 5, title: 'Tawaran Kerja', desc: 'Kandidat terpilih akan menerima tawaran kerja resmi.' },
                         ].map((item, index) => (
                             <div key={item.step} className={`flex items-center gap-6 ${index % 2 === 0 ? 'md:flex-row' : 'md:flex-row-reverse'}`}>
-                                <div className="relative z-10 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground font-bold">{item.step}</div>
+                                <div className="relative z-10 flex h-12 w-12 items-center justify-center rounded-full bg-primary font-bold text-primary-foreground">{item.step}</div>
                                 <Card className="w-full md:w-2/5">
                                     <CardHeader>
                                         <CardTitle>{item.title}</CardTitle>
@@ -155,7 +155,7 @@ export default function CareersPage() {
         </section>
 
         {/* Tutorial Section */}
-        <section id="tutorial" className="w-full py-12 md:py-20 lg:py-24 bg-secondary scroll-mt-14">
+        <section id="tutorial" className="w-full scroll-mt-14 bg-secondary py-12 md:py-20 lg:py-24">
           <div className="container">
             <div className="mx-auto max-w-xl text-center">
               <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Cara Mudah Melamar</h2>
