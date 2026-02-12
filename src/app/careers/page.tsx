@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { ArrowRight, Briefcase, Building2, Check, ChevronDown, FileText, Leaf, MapPin, Search, User, UserCheck } from 'lucide-react';
+import { ArrowRight, Briefcase, ChevronDown, FileText, Leaf, MapPin, Search, User, UserCheck } from 'lucide-react';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 
 const JobCard = ({ title, type, location, brand }: { title: string, type: string, location: string, brand: string }) => (
   <Card className="flex flex-col transition-shadow duration-300 hover:shadow-xl">
@@ -49,6 +50,7 @@ export default function CareersPage() {
             <Link href="#lowongan" className="text-muted-foreground transition-colors hover:text-primary">Lowongan</Link>
             <Link href="#tahapan-rekrutmen" className="text-muted-foreground transition-colors hover:text-primary">Proses Rekrutmen</Link>
             <Link href="#tutorial" className="text-muted-foreground transition-colors hover:text-primary">Cara Melamar</Link>
+            <Link href="#faq" className="text-muted-foreground transition-colors hover:text-primary">FAQ</Link>
           </nav>
           <div className="flex items-center gap-2">
             <Button variant="outline" asChild>
@@ -167,6 +169,44 @@ export default function CareersPage() {
                 <StepCard icon={<FileText className="h-8 w-8" />} title="Kirim Lamaran" description="Unggah CV terbaru Anda dan kirimkan lamaran dengan sekali klik." />
                 <StepCard icon={<UserCheck className="h-8 w-8" />} title="Pantau Proses" description="Lacak status lamaran Anda langsung dari dasbor kandidat." />
             </div>
+          </div>
+        </section>
+
+        {/* FAQ Section */}
+        <section id="faq" className="w-full scroll-mt-14 py-12 md:py-20 lg:py-24">
+          <div className="container max-w-4xl">
+            <div className="mx-auto max-w-xl text-center">
+              <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Pertanyaan Umum (FAQ)</h2>
+              <p className="mt-4 text-muted-foreground">
+                Menemukan jawaban atas pertanyaan umum seputar proses lamaran kerja di Environesia.
+              </p>
+            </div>
+            <Accordion type="single" collapsible className="mt-12 w-full">
+              <AccordionItem value="item-1">
+                <AccordionTrigger>Apa saja yang harus saya siapkan sebelum melamar?</AccordionTrigger>
+                <AccordionContent>
+                  Pastikan Anda telah menyiapkan CV (Curriculum Vitae) terbaru dalam format PDF, surat lamaran (opsional), dan portofolio jika posisi yang dilamar memerlukannya (misalnya untuk desainer atau developer).
+                </AccordionContent>
+              </AccordionItem>
+              <AccordionItem value="item-2">
+                <AccordionTrigger>Berapa lama proses rekrutmen biasanya berlangsung?</AccordionTrigger>
+                <AccordionContent>
+                  Proses rekrutmen kami biasanya memakan waktu 2-4 minggu dari penutupan lowongan. Namun, durasi ini bisa bervariasi tergantung pada posisi dan jumlah pelamar. Kami akan selalu memberikan informasi terbaru melalui email.
+                </AccordionContent>
+              </AccordionItem>
+              <AccordionItem value="item-3">
+                <AccordionTrigger>Apakah saya bisa melamar lebih dari satu posisi?</AccordionTrigger>
+                <AccordionContent>
+                  Ya, Anda dapat melamar hingga 3 posisi yang berbeda secara bersamaan. Namun, kami sarankan untuk fokus pada posisi yang paling sesuai dengan kualifikasi dan minat Anda.
+                </AccordionContent>
+              </AccordionItem>
+              <AccordionItem value="item-4">
+                <AccordionTrigger>Siapa yang bisa saya hubungi jika ada pertanyaan lebih lanjut?</AccordionTrigger>
+                <AccordionContent>
+                  Jika Anda memiliki pertanyaan yang tidak terjawab di sini, jangan ragu untuk menghubungi tim rekrutmen kami melalui email di careers@environesia.co.id.
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
           </div>
         </section>
 
