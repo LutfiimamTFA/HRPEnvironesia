@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { collection } from 'firebase/firestore';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { UserProfile, ROLES, UserRole, Brand } from '@/lib/types';
@@ -58,6 +58,7 @@ export function UserManagementClient({ seedSecret }: { seedSecret: string }) {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
+  const [openMenuUid, setOpenMenuUid] = useState<string | null>(null);
 
   const usersCollectionRef = useMemoFirebase(
     () => (firestore ? collection(firestore, 'users') : null),
@@ -68,6 +69,13 @@ export function UserManagementClient({ seedSecret }: { seedSecret: string }) {
 
   const brandsCollectionRef = useMemoFirebase(() => collection(firestore, 'brands'), [firestore]);
   const { data: brands } = useCollection<Brand>(brandsCollectionRef);
+
+  useEffect(() => {
+    if (!isFormDialogOpen && !isDeleteDialogOpen) {
+      document.body.style.pointerEvents = '';
+      document.body.style.overflow = '';
+    }
+  }, [isFormDialogOpen, isDeleteDialogOpen]);
 
   const brandMap = useMemo(() => {
     if (!brands) return {};
@@ -201,20 +209,32 @@ export function UserManagementClient({ seedSecret }: { seedSecret: string }) {
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">
-                            <DropdownMenu>
+                            <DropdownMenu
+                              open={openMenuUid === user.uid}
+                              onOpenChange={(isOpen) => setOpenMenuUid(isOpen ? user.uid : null)}
+                              modal={false}
+                            >
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="icon">
                                   <MoreHorizontal className="h-4 w-4" />
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => handleEditUser(user)}>
+                                <DropdownMenuItem onSelect={(e) => {
+                                  e.preventDefault();
+                                  setOpenMenuUid(null);
+                                  queueMicrotask(() => handleEditUser(user));
+                                }}>
                                   <Pencil className="mr-2 h-4 w-4" />
                                   <span>Edit</span>
                                 </DropdownMenuItem>
                                 <DropdownMenuItem 
                                   className="text-destructive focus:text-destructive focus:bg-destructive/10"
-                                  onClick={() => handleDeleteUser(user)}
+                                  onSelect={(e) => {
+                                    e.preventDefault();
+                                    setOpenMenuUid(null);
+                                    queueMicrotask(() => handleDeleteUser(user));
+                                  }}
                                 >
                                   <Trash2 className="mr-2 h-4 w-4" />
                                   <span>Delete</span>
