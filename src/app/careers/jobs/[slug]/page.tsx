@@ -211,17 +211,17 @@ export default function JobDetailPage() {
                                 </CardHeader>
                                 <CardContent className="grid grid-cols-[max-content_1fr] items-center gap-x-4 gap-y-2 text-sm">
                                     <span className="font-semibold text-foreground">Divisi</span>
-                                    <span className="text-muted-foreground">{job.division}</span>
+                                    <span className="text-foreground">{job.division}</span>
 
                                     <span className="font-semibold text-foreground">Tipe</span>
-                                    <span className="capitalize text-muted-foreground">{job.statusJob}</span>
+                                    <span className="capitalize text-foreground">{job.statusJob}</span>
 
                                     <span className="font-semibold text-foreground">Lokasi</span>
-                                    <span className="text-muted-foreground">{job.location}</span>
+                                    <span className="text-foreground">{job.location}</span>
                                     
                                     {job.workMode && <>
                                         <span className="font-semibold text-foreground">Mode</span>
-                                        <span className="capitalize text-muted-foreground">{job.workMode}</span>
+                                        <span className="capitalize text-foreground">{job.workMode}</span>
                                     </>}
                                 </CardContent>
                                 <CardFooter className="flex-col items-stretch gap-2">
