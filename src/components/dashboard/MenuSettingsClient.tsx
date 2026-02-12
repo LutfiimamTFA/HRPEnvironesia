@@ -18,7 +18,7 @@ type NavigationSettings = {
   visibleMenuItems: string[];
 }
 
-const rolesToDisplay = ROLES.filter(role => role !== 'super-admin');
+const rolesToDisplay = ROLES;
 
 export function MenuSettingsClient() {
   const firestore = useFirestore();
@@ -37,19 +37,14 @@ export function MenuSettingsClient() {
 
     const newSettings: Record<string, string[]> = {};
     
-    const configurableRoles = ROLES.filter(r => r !== 'super-admin');
-
-    configurableRoles.forEach(role => {
-      newSettings[role] = ALL_MENU_ITEMS[role as UserRole]?.map(item => item.label) || [];
+    ROLES.forEach(role => {
+      const savedSetting = initialSettings?.find(s => s.id === role);
+      if (savedSetting) {
+        newSettings[role] = savedSetting.visibleMenuItems;
+      } else {
+        newSettings[role] = ALL_MENU_ITEMS[role as UserRole]?.map(item => item.label) || [];
+      }
     });
-
-    if (initialSettings) {
-      initialSettings.forEach(setting => {
-        if (newSettings[setting.id] !== undefined) {
-          newSettings[setting.id] = setting.visibleMenuItems;
-        }
-      });
-    }
     
     setSettings(newSettings);
     setIsInitialized(true);
@@ -100,7 +95,7 @@ export function MenuSettingsClient() {
         <CardHeader>
           <CardTitle>Menu Visibility Settings</CardTitle>
            <CardDescription>
-            Configure which navigation menu items are visible for each user role. A menu must be defined for a role to be assignable.
+            Configure which navigation menu items are visible for each user role.
           </CardDescription>
         </CardHeader>
         <CardContent>

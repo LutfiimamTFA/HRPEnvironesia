@@ -1,5 +1,5 @@
 import { createElement, type ReactNode } from 'react';
-import { Briefcase, FileText, Users, ClipboardList, CheckSquare, User, Search, Calendar, DollarSign } from 'lucide-react';
+import { Briefcase, FileText, Users, ClipboardList, CheckSquare, User, Search, Calendar, DollarSign, LayoutDashboard, Settings, List } from 'lucide-react';
 
 export type MenuItem = {
   href: string;
@@ -7,7 +7,16 @@ export type MenuItem = {
   icon: ReactNode;
 };
 
+export const SUPER_ADMIN_MENU_ITEMS: MenuItem[] = [
+    { href: '/dashboard/super-admin', label: 'Overview', icon: createElement(LayoutDashboard, { className: "h-4 w-4" }) },
+    { href: '/dashboard/super-admin/user-management', label: 'User Management', icon: createElement(Users, { className: "h-4 w-4" }) },
+    { href: '/dashboard/super-admin/departments-brands', label: 'Brands', icon: createElement(Briefcase, { className: "h-4 w-4" }) },
+    { href: '/dashboard/super-admin/menu-settings', label: 'Menu Settings', icon: createElement(List, { className: "h-4 w-4" }) },
+    { href: '#', label: 'System Settings', icon: createElement(Settings, { className: "h-4 w-4" }) },
+];
+
 export const ALL_MENU_ITEMS: Record<string, MenuItem[]> = {
+  'super-admin': SUPER_ADMIN_MENU_ITEMS,
   hrd: [
     { href: '#', label: 'Recruitment', icon: createElement(Users, { className: "h-4 w-4" }) },
     { href: '#', label: 'Job Postings', icon: createElement(Briefcase, { className: "h-4 w-4" }) },

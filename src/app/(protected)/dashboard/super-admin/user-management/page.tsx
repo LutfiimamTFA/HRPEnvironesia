@@ -1,23 +1,43 @@
 'use client';
 
+import { useMemo } from 'react';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { UserManagementClient } from '@/components/dashboard/UserManagementClient';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
-import { LayoutDashboard, Users, Settings, Briefcase, List } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-
-const menuItems = [
-  { href: '/dashboard/super-admin', label: 'Overview', icon: <LayoutDashboard className="h-4 w-4" /> },
-  { href: '/dashboard/super-admin/user-management', label: 'User Management', icon: <Users className="h-4 w-4" /> },
-  { href: '/dashboard/super-admin/departments-brands', label: 'Brands', icon: <Briefcase className="h-4 w-4" /> },
-  { href: '/dashboard/super-admin/menu-settings', label: 'Menu Settings', icon: <List className="h-4 w-4" /> },
-  { href: '#', label: 'System Settings', icon: <Settings className="h-4 w-4" /> },
-];
+import { useAuth } from '@/providers/auth-provider';
+import { useDoc, useFirestore, useMemoFirebase } from '@/firebase';
+import { doc } from 'firebase/firestore';
+import { ALL_MENU_ITEMS, ALL_UNIQUE_MENU_ITEMS } from '@/lib/menu-config';
+import type { NavigationSetting } from '@/lib/types';
 
 export default function UserManagementPage() {
   const hasAccess = useRoleGuard('super-admin');
+  const { userProfile } = useAuth();
+  const firestore = useFirestore();
 
-  if (!hasAccess) {
+  const settingsDocRef = useMemoFirebase(
+    () => (userProfile ? doc(firestore, 'navigation_settings', userProfile.role) : null),
+    [userProfile, firestore]
+  );
+
+  const { data: navSettings, isLoading: isLoadingSettings } = useDoc<NavigationSetting>(settingsDocRef);
+
+  const menuItems = useMemo(() => {
+    const defaultItems = ALL_MENU_ITEMS['super-admin'] || [];
+
+    if (isLoadingSettings) {
+      return defaultItems;
+    }
+
+    if (navSettings) {
+      return ALL_UNIQUE_MENU_ITEMS.filter(item => navSettings.visibleMenuItems.includes(item.label));
+    }
+    
+    return defaultItems;
+  }, [navSettings, isLoadingSettings]);
+
+  if (!hasAccess || (userProfile && isLoadingSettings)) {
     return (
       <div className="flex h-screen w-full items-center justify-center p-4">
         <Skeleton className="h-[400px] w-full max-w-6xl" />
