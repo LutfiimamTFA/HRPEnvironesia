@@ -36,8 +36,8 @@ import { UserProfile, ROLES, UserRole, Brand } from '@/lib/types';
 import { Loader2 } from 'lucide-react';
 import { doc, collection } from 'firebase/firestore';
 import { useFirestore, updateDocumentNonBlocking, useCollection, useMemoFirebase } from '@/firebase';
-import { ScrollArea } from '../ui/scroll-area';
 import { Checkbox } from '../ui/checkbox';
+import { ScrollArea } from '../ui/scroll-area';
 
 interface UserFormDialogProps {
   user: UserProfile | null;
@@ -112,12 +112,13 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
       form.reset(defaultValues);
     }
   }, [user, open, mode, form]);
-
+  
   useEffect(() => {
-    if (role === 'hrd') {
-        form.setValue('brandId', []);
-    } else {
-        form.setValue('brandId', '');
+    const currentBrandId = form.getValues('brandId');
+    if (role === 'hrd' && typeof currentBrandId === 'string') {
+      form.setValue('brandId', []);
+    } else if (role !== 'hrd' && Array.isArray(currentBrandId)) {
+      form.setValue('brandId', '');
     }
   }, [role, form]);
 
