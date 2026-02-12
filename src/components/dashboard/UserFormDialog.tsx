@@ -37,7 +37,6 @@ import { Loader2 } from 'lucide-react';
 import { doc, collection } from 'firebase/firestore';
 import { useFirestore, updateDocumentNonBlocking, useCollection, useMemoFirebase } from '@/firebase';
 import { Checkbox } from '../ui/checkbox';
-import { ScrollArea } from '../ui/scroll-area';
 
 interface UserFormDialogProps {
   user: UserProfile | null;
@@ -129,11 +128,11 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
     const finalValues = { ...values };
 
     if (finalValues.role !== 'hrd' && (finalValues.brandId === '' || finalValues.brandId === 'unassigned')) {
-        (finalValues as any).brandId = undefined;
+        (finalValues as any).brandId = null; // Use null for unassigned
     }
     
     if (finalValues.role === 'super-admin') {
-      (finalValues as any).brandId = undefined;
+      (finalValues as any).brandId = null; // Use null for super-admin
     }
 
     try {
@@ -145,10 +144,10 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
           fullName: editValues.fullName,
           role: editValues.role,
           isActive: editValues.isActive,
-          brandId: editValues.brandId || null,
+          brandId: editValues.brandId ?? null,
         };
 
-        if (updateData.role === 'super-admin' || updateData.brandId === 'unassigned') {
+        if (updateData.role === 'super-admin') {
           updateData.brandId = null;
         }
 
@@ -187,217 +186,215 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px] max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>{mode === 'edit' ? 'Edit User' : 'Create New User'}</DialogTitle>
           <DialogDescription>
             {mode === 'edit' ? "Change the user's details below." : "Fill in the details for the new user."}
           </DialogDescription>
         </DialogHeader>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)}>
-            <ScrollArea className="max-h-[60vh] w-full pr-6">
-              <div className="space-y-4 py-4">
-                <FormField
-                  control={form.control}
-                  name="fullName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Full Name</FormLabel>
-                      <FormControl>
-                        <Input placeholder="John Doe" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="email"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Email</FormLabel>
-                      <FormControl>
-                        <Input placeholder="user@example.com" {...field} readOnly={mode === 'edit'} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                {mode === 'create' && (
+        <div className="flex-grow overflow-y-auto -mr-6 pr-6">
+          <Form {...form}>
+            <form id="user-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4">
                   <FormField
                     control={form.control}
-                    name="password"
+                    name="fullName"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Password</FormLabel>
+                        <FormLabel>Full Name</FormLabel>
                         <FormControl>
-                          <Input type="password" placeholder="********" {...field} />
+                          <Input placeholder="John Doe" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                )}
-                <FormField
-                  control={form.control}
-                  name="role"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Role</FormLabel>
-                      <Select modal={false} onValueChange={field.onChange} value={field.value}>
+                  <FormField
+                    control={form.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email</FormLabel>
                         <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select a role" />
-                          </SelectTrigger>
+                          <Input placeholder="user@example.com" {...field} readOnly={mode === 'edit'} />
                         </FormControl>
-                        <SelectContent>
-                          {ROLES.map((r) => (
-                            <SelectItem key={r} value={r}>
-                              {r.replace(/[-_]/g, ' ')}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                {role && role !== 'super-admin' && (
-                  role === 'hrd' ? (
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  {mode === 'create' && (
                     <FormField
                       control={form.control}
-                      name="brandId"
-                      render={() => (
-                        <FormItem>
-                          <FormLabel>Brands</FormLabel>
-                          <FormDescription>
-                            Assign one or more brands to this HRD user.
-                          </FormDescription>
-                          <ScrollArea className="h-24 w-full rounded-md border p-4">
-                          {brandsLoading ? (
-                            <p>Loading brands...</p>
-                          ) : brands && brands.length > 0 ? (
-                            brands.map((brand) => (
-                              <FormField
-                                key={brand.id}
-                                control={form.control}
-                                name="brandId"
-                                render={({ field }) => {
-                                  return (
-                                    <FormItem
-                                      key={brand.id}
-                                      className="flex flex-row items-start space-x-3 space-y-0"
-                                    >
-                                      <FormControl>
-                                        <Checkbox
-                                          checked={Array.isArray(field.value) && field.value.includes(brand.id!)}
-                                          onCheckedChange={(checked) => {
-                                            const currentValue = Array.isArray(field.value) ? field.value : [];
-                                            return checked
-                                              ? field.onChange([...currentValue, brand.id!])
-                                              : field.onChange(
-                                                  currentValue.filter(
-                                                    (value) => value !== brand.id!
-                                                  )
-                                                );
-                                          }}
-                                        />
-                                      </FormControl>
-                                      <FormLabel className="font-normal">
-                                        {brand.name}
-                                      </FormLabel>
-                                    </FormItem>
-                                  );
-                                }}
-                              />
-                            ))
-                          ) : (
-                            <p className="text-sm text-muted-foreground">No brands exist.</p>
-                          )}
-                          </ScrollArea>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  ) : (
-                    <FormField
-                      control={form.control}
-                      name="brandId"
+                      name="password"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Brand</FormLabel>
-                          <Select
-                            modal={false}
-                            onValueChange={field.onChange}
-                            value={typeof field.value === 'string' ? field.value : ''}
-                            disabled={brandsLoading}
-                          >
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select a brand" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {brandsLoading ? (
-                                <SelectItem value="loading" disabled>Loading brands...</SelectItem>
-                              ) : (
-                                <>
-                                  <SelectItem value="unassigned">None</SelectItem>
-                                  {brands && brands.length > 0 ? (
-                                    brands.map((brand) => (
-                                      <SelectItem key={brand.id!} value={brand.id!}>
-                                        {brand.name}
-                                      </SelectItem>
-                                    ))
-                                  ) : (
-                                    <SelectItem value="no-brands" disabled>
-                                      No brands exist
-                                    </SelectItem>
-                                  )}
-                                </>
-                              )}
-                            </SelectContent>
-                          </Select>
-                          <FormDescription>
-                            Assign this user to a brand (optional).
-                          </FormDescription>
+                          <FormLabel>Password</FormLabel>
+                          <FormControl>
+                            <Input type="password" placeholder="********" {...field} />
+                          </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
-                  )
-                )}
-
-
-                <FormField
-                  control={form.control}
-                  name="isActive"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
-                      <div className="space-y-0.5">
-                        <FormLabel>Active Status</FormLabel>
-                      </div>
-                      <FormControl>
-                        <Switch checked={field.value} onCheckedChange={field.onChange} />
-                      </FormControl>
-                    </FormItem>
                   )}
-                />
-              </div>
-            </ScrollArea>
-            <DialogFooter className="mt-4">
-              <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={loading}>
-                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {mode === 'edit' ? 'Save Changes' : 'Create User'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </Form>
+                  <FormField
+                    control={form.control}
+                    name="role"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Role</FormLabel>
+                        <Select modal={false} onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select a role" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {ROLES.map((r) => (
+                              <SelectItem key={r} value={r}>
+                                {r.replace(/[-_]/g, ' ')}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {role && role !== 'super-admin' && (
+                    role === 'hrd' ? (
+                      <FormField
+                        control={form.control}
+                        name="brandId"
+                        render={() => (
+                          <FormItem>
+                            <FormLabel>Brands</FormLabel>
+                            <FormDescription>
+                              Assign one or more brands to this HRD user.
+                            </FormDescription>
+                            <div className="h-24 w-full rounded-md border p-4 overflow-y-auto">
+                            {brandsLoading ? (
+                              <p>Loading brands...</p>
+                            ) : brands && brands.length > 0 ? (
+                              brands.map((brand) => (
+                                <FormField
+                                  key={brand.id}
+                                  control={form.control}
+                                  name="brandId"
+                                  render={({ field }) => {
+                                    return (
+                                      <FormItem
+                                        key={brand.id}
+                                        className="flex flex-row items-start space-x-3 space-y-0 mb-2"
+                                      >
+                                        <FormControl>
+                                          <Checkbox
+                                            checked={Array.isArray(field.value) && field.value.includes(brand.id!)}
+                                            onCheckedChange={(checked) => {
+                                              const currentValue = Array.isArray(field.value) ? field.value : [];
+                                              return checked
+                                                ? field.onChange([...currentValue, brand.id!])
+                                                : field.onChange(
+                                                    currentValue.filter(
+                                                      (value) => value !== brand.id!
+                                                    )
+                                                  );
+                                            }}
+                                          />
+                                        </FormControl>
+                                        <FormLabel className="font-normal">
+                                          {brand.name}
+                                        </FormLabel>
+                                      </FormItem>
+                                    );
+                                  }}
+                                />
+                              ))
+                            ) : (
+                              <p className="text-sm text-muted-foreground">No brands exist.</p>
+                            )}
+                            </div>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    ) : (
+                      <FormField
+                        control={form.control}
+                        name="brandId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Brand</FormLabel>
+                            <Select
+                              modal={false}
+                              onValueChange={field.onChange}
+                              value={typeof field.value === 'string' ? field.value : ''}
+                              disabled={brandsLoading}
+                            >
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select a brand" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {brandsLoading ? (
+                                  <SelectItem value="loading" disabled>Loading brands...</SelectItem>
+                                ) : (
+                                  <>
+                                    <SelectItem value="unassigned">None</SelectItem>
+                                    {brands && brands.length > 0 ? (
+                                      brands.map((brand) => (
+                                        <SelectItem key={brand.id!} value={brand.id!}>
+                                          {brand.name}
+                                        </SelectItem>
+                                      ))
+                                    ) : (
+                                      <SelectItem value="no-brands" disabled>
+                                        No brands exist
+                                      </SelectItem>
+                                    )}
+                                  </>
+                                )}
+                              </SelectContent>
+                            </Select>
+                            <FormDescription>
+                              Assign this user to a brand (optional).
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )
+                  )}
+
+
+                  <FormField
+                    control={form.control}
+                    name="isActive"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
+                        <div className="space-y-0.5">
+                          <FormLabel>Active Status</FormLabel>
+                        </div>
+                        <FormControl>
+                          <Switch checked={field.value} onCheckedChange={field.onChange} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+            </form>
+          </Form>
+        </div>
+        <DialogFooter className="flex-shrink-0 pt-4">
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button type="submit" form="user-form" disabled={loading}>
+            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {mode === 'edit' ? 'Save Changes' : 'Create User'}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
