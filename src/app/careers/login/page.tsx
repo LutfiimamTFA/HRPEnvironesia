@@ -5,9 +5,9 @@ import { useAuth } from '@/providers/auth-provider';
 import { Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, Suspense } from 'react';
 
-export default function CandidateLoginPage() {
+function CandidateLoginContent() {
   const { userProfile, loading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -55,4 +55,13 @@ export default function CandidateLoginPage() {
       </div>
     </div>
   );
+}
+
+
+export default function CandidateLoginPage() {
+  return (
+    <Suspense fallback={<div className="flex h-screen w-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
+      <CandidateLoginContent />
+    </Suspense>
+  )
 }
