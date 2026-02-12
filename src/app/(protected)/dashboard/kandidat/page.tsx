@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/providers/auth-provider';
 import { useDoc, useFirestore, useMemoFirebase } from '@/firebase';
 import { doc } from 'firebase/firestore';
-import { ALL_MENU_ITEMS } from '@/lib/menu-config';
+import { ALL_MENU_ITEMS, ALL_UNIQUE_MENU_ITEMS } from '@/lib/menu-config';
 import type { NavigationSetting } from '@/lib/types';
 
 export default function KandidatDashboard() {
@@ -23,13 +23,18 @@ export default function KandidatDashboard() {
   const { data: navSettings, isLoading: isLoadingSettings } = useDoc<NavigationSetting>(settingsDocRef);
 
   const menuItems = useMemo(() => {
-    const allItems = ALL_MENU_ITEMS.kandidat || [];
-    if (!navSettings) {
-      // If no settings are found (e.g., not set by admin yet), or still loading, show all items.
-      return allItems;
+    const defaultItems = ALL_MENU_ITEMS.kandidat || [];
+
+    if (isLoadingSettings) {
+      return defaultItems;
     }
-    return allItems.filter(item => navSettings.visibleMenuItems.includes(item.label));
-  }, [navSettings]);
+
+    if (navSettings) {
+      return ALL_UNIQUE_MENU_ITEMS.filter(item => navSettings.visibleMenuItems.includes(item.label));
+    }
+
+    return defaultItems;
+  }, [navSettings, isLoadingSettings]);
 
 
   if (!hasAccess || (userProfile && isLoadingSettings)) {

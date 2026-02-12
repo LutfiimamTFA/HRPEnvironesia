@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { collection, doc } from 'firebase/firestore';
 import { useCollection, useFirestore, useMemoFirebase, setDocumentNonBlocking } from '@/firebase';
 import { UserRole, ROLES } from '@/lib/types';
-import { ALL_MENU_ITEMS } from '@/lib/menu-config';
+import { ALL_MENU_ITEMS, ALL_UNIQUE_MENU_ITEMS } from '@/lib/menu-config';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -18,12 +18,7 @@ type NavigationSettings = {
   visibleMenuItems: string[];
 }
 
-// Get all unique menu items from the config, preserving their original icon/href data.
-const allMenus = Object.values(ALL_MENU_ITEMS).flat();
-const uniqueMenus = Array.from(new Map(allMenus.map(item => [item.label, item])).values())
-  .sort((a, b) => a.label.localeCompare(b.label));
-
-const rolesToDisplay = ROLES.filter(role => role !== 'super-admin' && ALL_MENU_ITEMS[role as UserRole]);
+const rolesToDisplay = ROLES.filter(role => role !== 'super-admin');
 
 export function MenuSettingsClient() {
   const firestore = useFirestore();
@@ -36,33 +31,28 @@ export function MenuSettingsClient() {
   const { data: initialSettings, isLoading: isLoadingSettings } = useCollection<NavigationSettings>(settingsCollectionRef);
 
   useEffect(() => {
-    // We only want to run the initialization once loading is complete.
     if (isLoadingSettings || isInitialized) {
       return;
     }
 
     const newSettings: Record<string, string[]> = {};
     
-    // Define all roles that can have settings
-    const configurableRoles = ROLES.filter(r => r !== 'super-admin' && ALL_MENU_ITEMS[r as UserRole]);
+    const configurableRoles = ROLES.filter(r => r !== 'super-admin');
 
-    // First, apply defaults for all configurable roles from menu-config
     configurableRoles.forEach(role => {
       newSettings[role] = ALL_MENU_ITEMS[role as UserRole]?.map(item => item.label) || [];
     });
 
-    // Then, overwrite with any settings fetched from Firestore
     if (initialSettings) {
       initialSettings.forEach(setting => {
-        // Ensure the role from Firestore is a valid, configurable role
-        if (newSettings[setting.id]) {
+        if (newSettings[setting.id] !== undefined) {
           newSettings[setting.id] = setting.visibleMenuItems;
         }
       });
     }
     
     setSettings(newSettings);
-    setIsInitialized(true); // Prevent this effect from running again and overwriting user changes
+    setIsInitialized(true);
 
   }, [initialSettings, isLoadingSettings, isInitialized]);
 
@@ -80,7 +70,7 @@ export function MenuSettingsClient() {
     setLoading(true);
     
     Object.entries(settings).forEach(([role, visibleMenuItems]) => {
-      if (rolesToDisplay.includes(role as UserRole)) { // Only save for configurable roles
+      if (rolesToDisplay.includes(role as UserRole)) {
         const docRef = doc(firestore, 'navigation_settings', role);
         setDocumentNonBlocking(docRef, { role, visibleMenuItems }, { merge: true });
       }
@@ -125,16 +115,14 @@ export function MenuSettingsClient() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {uniqueMenus.map(menuItem => (
+                {ALL_UNIQUE_MENU_ITEMS.map(menuItem => (
                   <TableRow key={menuItem.label}>
                     <TableCell className="font-medium">{menuItem.label}</TableCell>
                     {rolesToDisplay.map(role => {
-                      const isApplicable = ALL_MENU_ITEMS[role as UserRole]?.some(item => item.label === menuItem.label);
                       return (
                         <TableCell key={role} className="text-center">
                           <Checkbox
-                            disabled={!isApplicable}
-                            checked={isApplicable && (settings[role] || []).includes(menuItem.label)}
+                            checked={(settings[role] || []).includes(menuItem.label)}
                             onCheckedChange={(checked) => handleCheckboxChange(role, menuItem.label, !!checked)}
                             id={`${role}-${menuItem.label}`}
                             aria-label={`Toggle ${menuItem.label} for ${role}`}

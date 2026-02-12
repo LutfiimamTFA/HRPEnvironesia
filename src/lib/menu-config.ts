@@ -29,3 +29,7 @@ export const ALL_MENU_ITEMS: Record<string, MenuItem[]> = {
     { href: '#', label: 'Payslips', icon: createElement(DollarSign, { className: "h-4 w-4" }) },
   ],
 };
+
+const allMenusForUniqueness = Object.values(ALL_MENU_ITEMS).flat();
+export const ALL_UNIQUE_MENU_ITEMS = Array.from(new Map(allMenusForUniqueness.map(item => [item.label, item])).values())
+  .sort((a, b) => a.label.localeCompare(b.label));
