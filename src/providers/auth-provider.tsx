@@ -37,8 +37,9 @@ function AuthContent({ children }: { children: ReactNode }) {
 
   const userProfile = userProfileData ?? null;
 
-  // The loading state is true if auth is loading OR if a user is logged in but their profile hasn't loaded yet.
-  const loading = isAuthLoading || (!!firebaseUser && !userProfile);
+  // The overall loading state is true if either the auth state or the profile data is still loading.
+  // This prevents an infinite loading state if a user is authenticated but has no profile document.
+  const loading = isAuthLoading || (!!firebaseUser && isProfileLoading);
   
   const value = { firebaseUser, userProfile, loading };
 
