@@ -79,6 +79,8 @@ export function JobManagementClient() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
 
   const jobsRef = useMemoFirebase(() => collection(firestore, 'jobs'), [firestore]);
   const { data: jobs, isLoading, error } = useCollection<Job>(jobsRef);
@@ -204,7 +206,7 @@ export function JobManagementClient() {
                     {job.updatedAt?.toDate ? format(job.updatedAt.toDate(), 'dd MMM yyyy') : 'Just now'}
                   </TableCell>
                   <TableCell className="text-right">
-                    <DropdownMenu>
+                     <DropdownMenu open={openMenuId === job.id} onOpenChange={(isOpen) => setOpenMenuId(isOpen ? job.id : null)}>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon">
                           <MoreHorizontal className="h-4 w-4" />
@@ -212,25 +214,25 @@ export function JobManagementClient() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleEdit(job)}>
+                        <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setOpenMenuId(null); queueMicrotask(() => handleEdit(job)); }}>
                           <Edit className="mr-2 h-4 w-4" />
                           Edit
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         {job.publishStatus !== 'published' && (
-                          <DropdownMenuItem onClick={() => handleStatusChange(job, 'published')}>
+                          <DropdownMenuItem onSelect={() => handleStatusChange(job, 'published')}>
                             <Eye className="mr-2 h-4 w-4" />
                             Publish
                           </DropdownMenuItem>
                         )}
                         {job.publishStatus === 'published' && (
-                          <DropdownMenuItem onClick={() => handleStatusChange(job, 'draft')}>
+                          <DropdownMenuItem onSelect={() => handleStatusChange(job, 'draft')}>
                             <EyeOff className="mr-2 h-4 w-4" />
                             Unpublish (Draft)
                           </DropdownMenuItem>
                         )}
                         {job.publishStatus !== 'closed' && (
-                            <DropdownMenuItem onClick={() => handleStatusChange(job, 'closed')}>
+                            <DropdownMenuItem onSelect={() => handleStatusChange(job, 'closed')}>
                                 <XCircle className="mr-2 h-4 w-4" />
                                 Close
                             </DropdownMenuItem>
@@ -238,7 +240,7 @@ export function JobManagementClient() {
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
                           className="text-destructive focus:text-destructive focus:bg-destructive/10"
-                          onClick={() => handleDelete(job)}
+                          onSelect={(e) => { e.preventDefault(); setOpenMenuId(null); queueMicrotask(() => handleDelete(job)); }}
                         >
                           <Trash2 className="mr-2 h-4 w-4" />
                           Delete

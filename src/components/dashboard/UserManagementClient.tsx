@@ -70,13 +70,6 @@ export function UserManagementClient({ seedSecret }: { seedSecret: string }) {
   const brandsCollectionRef = useMemoFirebase(() => collection(firestore, 'brands'), [firestore]);
   const { data: brands } = useCollection<Brand>(brandsCollectionRef);
 
-  useEffect(() => {
-    if (!isFormDialogOpen && !isDeleteDialogOpen) {
-      document.body.style.pointerEvents = '';
-      document.body.style.overflow = '';
-    }
-  }, [isFormDialogOpen, isDeleteDialogOpen]);
-
   const brandMap = useMemo(() => {
     if (!brands) return {};
     return brands.reduce((acc, brand) => {
@@ -212,7 +205,6 @@ export function UserManagementClient({ seedSecret }: { seedSecret: string }) {
                             <DropdownMenu
                               open={openMenuUid === user.uid}
                               onOpenChange={(isOpen) => setOpenMenuUid(isOpen ? user.uid : null)}
-                              modal={false}
                             >
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="icon">

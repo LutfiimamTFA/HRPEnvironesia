@@ -46,6 +46,8 @@ interface DataTableProps {
 }
 
 function DataTable({ data, isLoading, error, onEdit, onDelete }: DataTableProps) {
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
   if (isLoading) {
     return <DataTableSkeleton />;
   }
@@ -74,20 +76,28 @@ function DataTable({ data, isLoading, error, onEdit, onDelete }: DataTableProps)
               <TableRow key={item.id}>
                 <TableCell className="font-medium">{item.name}</TableCell>
                 <TableCell className="text-right">
-                  <DropdownMenu>
+                  <DropdownMenu open={openMenuId === item.id} onOpenChange={(isOpen) => setOpenMenuId(isOpen ? item.id : null)}>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="icon">
                         <MoreHorizontal className="h-4 w-4" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => onEdit(item)}>
+                      <DropdownMenuItem onSelect={(e) => {
+                        e.preventDefault();
+                        setOpenMenuId(null);
+                        queueMicrotask(() => onEdit(item));
+                      }}>
                         <Pencil className="mr-2 h-4 w-4" />
                         Edit
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         className="text-destructive focus:text-destructive focus:bg-destructive/10"
-                        onClick={() => onDelete(item)}
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          setOpenMenuId(null);
+                          queueMicrotask(() => onDelete(item));
+                        }}
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
                         Delete

@@ -1,6 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import React from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/providers/auth-provider';
 import { useAuth as useFirebaseAuth } from '@/firebase';
@@ -32,6 +33,7 @@ function UserNav() {
   const { userProfile } = useAuth();
   const auth = useFirebaseAuth();
   const router = useRouter();
+  const [open, setOpen] = React.useState(false);
 
   const handleLogout = async () => {
     await auth.signOut();
@@ -45,7 +47,7 @@ function UserNav() {
   if (!userProfile) return null;
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="relative h-8 w-8 rounded-full">
           <Avatar className="h-9 w-9">
@@ -64,7 +66,11 @@ function UserNav() {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handleLogout}>
+        <DropdownMenuItem onSelect={(e) => {
+          e.preventDefault();
+          setOpen(false);
+          queueMicrotask(handleLogout);
+        }}>
           <LogOut className="mr-2 h-4 w-4" />
           <span>Log out</span>
         </DropdownMenuItem>

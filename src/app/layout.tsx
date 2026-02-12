@@ -2,6 +2,7 @@ import type {Metadata} from 'next';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster"
 import { AuthProvider } from '@/providers/auth-provider';
+import { RadixPointerLockGuard } from '@/components/RadixPointerLockGuard';
 
 export const metadata: Metadata = {
   title: 'HRP Starter Kit',
@@ -24,6 +25,7 @@ export default function RootLayout({
           <AuthProvider>
             {children}
             <Toaster />
+            <RadixPointerLockGuard />
           </AuthProvider>
       </body>
     </html>
