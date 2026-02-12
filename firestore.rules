@@ -173,10 +173,12 @@ service cloud.firestore {
                     && request.resource.data.candidateUid == request.auth.uid
                     && request.resource.data.status == "draft";
 
-      allow get, list: if isSignedIn() && (
-                         (isCandidate() && resource.data.candidateUid == request.auth.uid)
-                         || isInternal()
-                       );
+      // Allow get for existence checks. This rule relies on the document ID format being "{jobId}_{candidateUid}".
+      // It allows a candidate to check a doc if the ID appears to belong to them.
+      allow get: if isInternal() || (isCandidate() && applicationId.split('_')[1] == request.auth.uid);
+
+      // Allow list for queries. This rule requires the client to include `where('candidateUid', '==', auth.uid)`.
+      allow list: if isInternal() || (isCandidate() && resource.data.candidateUid == request.auth.uid);
 
       allow update: if isSignedIn() && (
                       (isCandidate()
