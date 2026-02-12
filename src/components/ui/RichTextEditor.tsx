@@ -127,7 +127,6 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
         types: ['paragraph'],
       }),
     ],
-    content: value,
     onUpdate: ({ editor }) => {
       const html = editor.isEmpty ? '' : editor.getHTML();
       onChange(html);

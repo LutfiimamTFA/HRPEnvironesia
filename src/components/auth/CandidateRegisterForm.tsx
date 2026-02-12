@@ -105,7 +105,7 @@ export function CandidateRegisterForm() {
             <FormItem>
               <FormLabel>Nama Lengkap (Sesuai KTP)</FormLabel>
               <FormControl>
-                <Input placeholder="John Doe" {...field} />
+                <Input placeholder="John Doe" {...field} autoComplete="name" />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -118,7 +118,7 @@ export function CandidateRegisterForm() {
             <FormItem>
               <FormLabel>Alamat Email</FormLabel>
               <FormControl>
-                <Input placeholder="name@example.com" type="email" {...field} />
+                <Input placeholder="name@example.com" type="email" {...field} autoComplete="email" />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -131,7 +131,7 @@ export function CandidateRegisterForm() {
             <FormItem>
               <FormLabel>Konfirmasi Alamat Email</FormLabel>
               <FormControl>
-                <Input placeholder="Ulangi alamat email" type="email" {...field} />
+                <Input placeholder="Ulangi alamat email" type="email" {...field} autoComplete="email" />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -149,6 +149,7 @@ export function CandidateRegisterForm() {
                     type={showPassword ? 'text' : 'password'}
                     placeholder="Minimal 8 karakter"
                     className="pr-10"
+                    autoComplete="new-password"
                     {...field}
                   />
                   <button
@@ -177,6 +178,7 @@ export function CandidateRegisterForm() {
                     type={showConfirmPassword ? 'text' : 'password'}
                     placeholder="Ulangi password"
                     className="pr-10"
+                    autoComplete="new-password"
                     {...field}
                   />
                   <button

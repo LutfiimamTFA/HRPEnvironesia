@@ -102,6 +102,7 @@ export default function CareersPage() {
                 src="https://picsum.photos/seed/career-hero/1800/1200"
                 alt="Tim Environesia"
                 fill
+                priority
                 className="object-cover"
                 data-ai-hint="office team collaboration"
             />
