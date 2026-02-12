@@ -32,7 +32,7 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { UserProfile, ROLES, UserRole, Department, Brand } from '@/lib/types';
+import { UserProfile, ROLES, UserRole, Brand } from '@/lib/types';
 import { Loader2 } from 'lucide-react';
 import { doc, collection } from 'firebase/firestore';
 import { useFirestore, updateDocumentNonBlocking, useCollection, useMemoFirebase } from '@/firebase';
@@ -52,7 +52,6 @@ const createSchema = z.object({
   isActive: z.boolean().default(true),
   password: z.string().min(8, { message: 'Password must be at least 8 characters.' }),
   brandId: z.string().optional(),
-  departmentId: z.string().optional(),
 });
 
 const editSchema = z.object({
@@ -61,7 +60,6 @@ const editSchema = z.object({
   role: z.enum(ROLES),
   isActive: z.boolean(),
   brandId: z.string().optional(),
-  departmentId: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof createSchema> | z.infer<typeof editSchema>;
@@ -71,9 +69,6 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
   const { toast } = useToast();
   const firestore = useFirestore();
   const mode = user ? 'edit' : 'create';
-
-  const departmentsCollectionRef = useMemoFirebase(() => collection(firestore, 'departments'), [firestore]);
-  const { data: departments, isLoading: departmentsLoading } = useCollection<Department>(departmentsCollectionRef);
 
   const brandsCollectionRef = useMemoFirebase(() => collection(firestore, 'brands'), [firestore]);
   const { data: brands, isLoading: brandsLoading } = useCollection<Brand>(brandsCollectionRef);
@@ -87,7 +82,6 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
       isActive: true,
       password: '',
       brandId: '',
-      departmentId: '',
     }
   });
 
@@ -103,7 +97,6 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
               role: user.role,
               isActive: user.isActive,
               brandId: user.brandId || '',
-              departmentId: user.departmentId || '',
             }
           : {
               fullName: '',
@@ -112,7 +105,6 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
               isActive: true,
               password: '',
               brandId: '',
-              departmentId: '',
             };
       form.reset(defaultValues);
     }
@@ -122,9 +114,6 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
     setLoading(true);
     
     const finalValues = { ...values };
-    if (finalValues.departmentId === '' || finalValues.departmentId === 'unassigned') {
-      finalValues.departmentId = undefined;
-    }
     if ('brandId' in finalValues && (finalValues.brandId === '' || finalValues.brandId === 'unassigned')) {
         finalValues.brandId = undefined;
     }
@@ -139,7 +128,6 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
           role: editValues.role,
           isActive: editValues.isActive,
           brandId: editValues.brandId || null,
-          departmentId: editValues.departmentId || null,
         };
 
         updateDocumentNonBlocking(userDocRef, updateData);
@@ -289,49 +277,6 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
                         </Select>
                         <FormDescription>
                           Assign this user to a brand (optional).
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                )}
-                
-                {role !== 'super-admin' && (
-                  <FormField
-                    control={form.control}
-                    name="departmentId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Department</FormLabel>
-                        <Select modal={false} onValueChange={field.onChange} value={field.value} disabled={departmentsLoading}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select a department" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {departmentsLoading ? (
-                              <SelectItem value="loading" disabled>Loading departments...</SelectItem>
-                            ) : (
-                              <>
-                                <SelectItem value="unassigned">None</SelectItem>
-                                {departments && departments.length > 0 ? (
-                                  departments.map((dept) => (
-                                    <SelectItem key={dept.id!} value={dept.id!}>
-                                      {dept.name}
-                                    </SelectItem>
-                                  ))
-                                ) : (
-                                  <SelectItem value="no-depts" disabled>
-                                    No departments exist
-                                  </SelectItem>
-                                )}
-                              </>
-                            )}
-                          </SelectContent>
-                        </Select>
-                        <FormDescription>
-                          Assign this user to a department (optional).
                         </FormDescription>
                         <FormMessage />
                       </FormItem>

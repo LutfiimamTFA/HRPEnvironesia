@@ -9,11 +9,11 @@ import { DepartmentsBrandsClient } from '@/components/dashboard/DepartmentsBrand
 const menuItems = [
     { href: '/dashboard/super-admin', label: 'Overview', icon: <LayoutDashboard className="h-4 w-4" /> },
     { href: '/dashboard/super-admin/user-management', label: 'User Management', icon: <Users className="h-4 w-4" /> },
-    { href: '/dashboard/super-admin/departments-brands', label: 'Departments & Brands', icon: <Briefcase className="h-4 w-4" /> },
+    { href: '/dashboard/super-admin/departments-brands', label: 'Brands', icon: <Briefcase className="h-4 w-4" /> },
     { href: '#', label: 'System Settings', icon: <Settings className="h-4 w-4" /> },
 ];
 
-export default function DepartmentsBrandsPage() {
+export default function BrandsPage() {
   const hasAccess = useRoleGuard('super-admin');
 
   if (!hasAccess) {
@@ -25,7 +25,7 @@ export default function DepartmentsBrandsPage() {
   }
 
   return (
-    <DashboardLayout pageTitle="Departments & Brands" menuItems={menuItems}>
+    <DashboardLayout pageTitle="Brands" menuItems={menuItems}>
       <DepartmentsBrandsClient />
     </DashboardLayout>
   );

@@ -32,9 +32,9 @@
           "description": "The timestamp indicating when the user account was created.",
           "format": "date-time"
         },
-        "departmentId": {
+        "brandId": {
           "type": "string",
-          "description": "The ID of the department the user belongs to."
+          "description": "The ID of the brand the user belongs to."
         }
       },
       "required": [
@@ -58,25 +58,6 @@
         "code": {
           "type": "string",
           "description": "A unique code for the brand."
-        }
-      },
-      "required": [
-        "name",
-        "code"
-      ]
-    },
-    "Department": {
-      "title": "Department",
-      "type": "object",
-      "description": "Represents a department within the company.",
-      "properties": {
-        "name": {
-          "type": "string",
-          "description": "The name of the department."
-        },
-        "code": {
-          "type": "string",
-          "description": "A unique code for the department."
         }
       },
       "required": [
@@ -137,22 +118,6 @@
             {
               "name": "brandId",
               "description": "The unique ID of the brand."
-            }
-          ]
-        }
-      },
-      {
-        "path": "/departments/{departmentId}",
-        "definition": {
-          "entityName": "Department",
-          "schema": {
-            "$ref": "#/backend/entities/Department"
-          },
-          "description": "Stores company department information. Managed by super_admin.",
-          "params": [
-            {
-              "name": "departmentId",
-              "description": "The unique ID of the department."
             }
           ]
         }

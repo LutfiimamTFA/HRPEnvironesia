@@ -26,7 +26,7 @@ import {
 } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
-import type { Brand, Department } from '@/lib/types';
+import type { Brand } from '@/lib/types';
 
 const formSchema = z.object({
   name: z.string().min(2, { message: 'Name must be at least 2 characters.' }),
@@ -35,14 +35,14 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
-interface DeptBrandFormDialogProps {
+interface BrandFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  item: (Brand | Department) & { code?: string } | null;
-  type: 'Brand' | 'Department';
+  item: Brand | null;
+  type: 'Brand';
 }
 
-export function DeptBrandFormDialog({ open, onOpenChange, item, type }: DeptBrandFormDialogProps) {
+export function DeptBrandFormDialog({ open, onOpenChange, item, type }: BrandFormDialogProps) {
   const firestore = useFirestore();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
@@ -68,15 +68,14 @@ export function DeptBrandFormDialog({ open, onOpenChange, item, type }: DeptBran
 
   const onSubmit = (values: FormValues) => {
     setLoading(true);
-    const collectionName = type === 'Brand' ? 'brands' : 'departments';
     
-    const docRef = item ? doc(firestore, collectionName, item.id!) : doc(collection(firestore, collectionName));
+    const docRef = item ? doc(firestore, 'brands', item.id!) : doc(collection(firestore, 'brands'));
 
     setDocumentNonBlocking(docRef, { ...values }, { merge: true });
     
     toast({
-      title: `${type} ${mode === 'Edit' ? 'Updated' : 'Created'}`,
-      description: `The ${type.toLowerCase()} "${values.name}" has been saved.`,
+      title: `Brand ${mode === 'Edit' ? 'Updated' : 'Created'}`,
+      description: `The brand "${values.name}" has been saved.`,
     });
     
     onOpenChange(false);
@@ -87,9 +86,9 @@ export function DeptBrandFormDialog({ open, onOpenChange, item, type }: DeptBran
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>{mode} {type}</DialogTitle>
+          <DialogTitle>{mode} Brand</DialogTitle>
           <DialogDescription>
-            Fill in the details for the {type.toLowerCase()}. Click save when you're done.
+            Fill in the details for the brand. Click save when you're done.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -101,7 +100,7 @@ export function DeptBrandFormDialog({ open, onOpenChange, item, type }: DeptBran
                 <FormItem>
                   <FormLabel>Name</FormLabel>
                   <FormControl>
-                    <Input placeholder={`${type} name`} {...field} />
+                    <Input placeholder="Brand name" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -114,7 +113,7 @@ export function DeptBrandFormDialog({ open, onOpenChange, item, type }: DeptBran
                 <FormItem>
                   <FormLabel>Code</FormLabel>
                   <FormControl>
-                    <Input placeholder={`${type} code`} {...field} />
+                    <Input placeholder="Brand code" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

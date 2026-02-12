@@ -11,17 +11,10 @@ export type UserProfile = {
   role: UserRole;
   isActive: boolean;
   createdAt: Timestamp | { seconds: number; nanoseconds: number };
-  departmentId?: string;
   brandId?: string;
 };
 
 export type Brand = {
-  id?: string;
-  name: string;
-  code: string;
-};
-
-export type Department = {
   id?: string;
   name: string;
   code: string;

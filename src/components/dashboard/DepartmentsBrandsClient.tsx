@@ -3,12 +3,11 @@
 import { useState } from 'react';
 import { collection, doc } from 'firebase/firestore';
 import { useCollection, useFirestore, useMemoFirebase, deleteDocumentNonBlocking } from '@/firebase';
-import type { Brand, Department } from '@/lib/types';
+import type { Brand } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { MoreHorizontal, Pencil, PlusCircle, Trash2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Table,
   TableHeader,
@@ -28,7 +27,7 @@ import { DeleteConfirmationDialog } from './DeleteConfirmationDialog';
 import { useToast } from '@/hooks/use-toast';
 
 
-type ItemType = 'Brand' | 'Department';
+type ItemType = 'Brand';
 
 function DataTableSkeleton() {
   return (
@@ -122,46 +121,38 @@ export function DepartmentsBrandsClient() {
   const firestore = useFirestore();
   const { toast } = useToast();
 
-  const [activeTab, setActiveTab] = useState<ItemType>('Brand');
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
-  const [selectedItem, setSelectedItem] = useState<Brand | Department | null>(null);
-  const [currentItemType, setCurrentItemType] = useState<ItemType>('Brand');
+  const [selectedItem, setSelectedItem] = useState<Brand | null>(null);
+  const currentItemType: ItemType = 'Brand';
 
   const brandsRef = useMemoFirebase(() => collection(firestore, 'brands'), [firestore]);
-  const departmentsRef = useMemoFirebase(() => collection(firestore, 'departments'), [firestore]);
-
   const { data: brands, isLoading: brandsLoading, error: brandsError } = useCollection<Brand>(brandsRef);
-  const { data: departments, isLoading: departmentsLoading, error: departmentsError } = useCollection<Department>(departmentsRef);
 
   const handleCreate = () => {
     setSelectedItem(null);
-    setCurrentItemType(activeTab);
     setIsFormOpen(true);
   };
 
-  const handleEdit = (item: Brand | Department, type: ItemType) => {
+  const handleEdit = (item: Brand) => {
     setSelectedItem(item);
-    setCurrentItemType(type);
     setIsFormOpen(true);
   };
   
-  const handleDelete = (item: Brand | Department, type: ItemType) => {
+  const handleDelete = (item: Brand) => {
     setSelectedItem(item);
-    setCurrentItemType(type);
     setIsDeleteConfirmOpen(true);
   };
 
   const confirmDelete = () => {
     if (!selectedItem || !selectedItem.id) return;
-    const collectionName = currentItemType === 'Brand' ? 'brands' : 'departments';
-    const docRef = doc(firestore, collectionName, selectedItem.id);
+    const docRef = doc(firestore, 'brands', selectedItem.id);
     
     deleteDocumentNonBlocking(docRef);
 
     toast({
-      title: `${currentItemType} Deleted`,
-      description: `The ${currentItemType.toLowerCase()} "${selectedItem.name}" has been deleted.`,
+      title: 'Brand Deleted',
+      description: `The brand "${selectedItem.name}" has been deleted.`,
     });
 
     setIsDeleteConfirmOpen(false);
@@ -170,38 +161,20 @@ export function DepartmentsBrandsClient() {
 
   return (
     <div className="space-y-4">
-      <Tabs defaultValue="Brand" className="w-full" onValueChange={(value) => setActiveTab(value as ItemType)}>
-        <div className="flex items-center justify-between">
-          <TabsList>
-            <TabsTrigger value="Brand">Brands</TabsTrigger>
-            <TabsTrigger value="Department">Departments</TabsTrigger>
-          </TabsList>
-           <Button onClick={handleCreate}>
-              <PlusCircle className="mr-2 h-4 w-4" />
-              Create {activeTab}
-            </Button>
-        </div>
-        <TabsContent value="Brand" className="mt-4">
-          <DataTable
-            type="Brand"
-            data={brands}
-            isLoading={brandsLoading}
-            error={brandsError}
-            onEdit={handleEdit}
-            onDelete={handleDelete}
-          />
-        </TabsContent>
-        <TabsContent value="Department" className="mt-4">
-          <DataTable
-            type="Department"
-            data={departments}
-            isLoading={departmentsLoading}
-            error={departmentsError}
-            onEdit={handleEdit}
-            onDelete={handleDelete}
-          />
-        </TabsContent>
-      </Tabs>
+      <div className="flex items-center justify-end">
+         <Button onClick={handleCreate}>
+            <PlusCircle className="mr-2 h-4 w-4" />
+            Create Brand
+          </Button>
+      </div>
+      <DataTable
+        type="Brand"
+        data={brands}
+        isLoading={brandsLoading}
+        error={brandsError}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+      />
       
       <DeptBrandFormDialog
         open={isFormOpen}

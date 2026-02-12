@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { collection } from 'firebase/firestore';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { UserProfile, ROLES, UserRole, Department, Brand } from '@/lib/types';
+import { UserProfile, ROLES, UserRole, Brand } from '@/lib/types';
 import {
   Table,
   TableHeader,
@@ -66,22 +66,9 @@ export function UserManagementClient({ seedSecret }: { seedSecret: string }) {
   
   const { data: users, isLoading, error } = useCollection<UserProfile>(usersCollectionRef);
 
-  const departmentsCollectionRef = useMemoFirebase(() => collection(firestore, 'departments'), [firestore]);
-  const { data: departments } = useCollection<Department>(departmentsCollectionRef);
-  
   const brandsCollectionRef = useMemoFirebase(() => collection(firestore, 'brands'), [firestore]);
   const { data: brands } = useCollection<Brand>(brandsCollectionRef);
 
-  const departmentMap = useMemo(() => {
-    if (!departments) return {};
-    return departments.reduce((acc, dept) => {
-        if (dept.id) {
-            acc[dept.id] = dept.name;
-        }
-        return acc;
-    }, {} as Record<string, string>);
-  }, [departments]);
-  
   const brandMap = useMemo(() => {
     if (!brands) return {};
     return brands.reduce((acc, brand) => {
