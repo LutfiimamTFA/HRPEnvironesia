@@ -40,8 +40,8 @@ export default function CareersPage() {
   return (
     <div className="flex min-h-screen flex-col bg-background font-body">
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container flex h-14 items-center">
-          <Link href="/careers" className="mr-6 flex items-center gap-2">
+        <div className="container flex h-14 items-center justify-between">
+          <Link href="/careers" className="flex items-center gap-2">
             <Leaf className="h-7 w-7 text-primary" />
             <span className="text-xl font-bold tracking-tight text-foreground">Environesia Karir</span>
           </Link>
@@ -50,7 +50,7 @@ export default function CareersPage() {
             <Link href="#tahapan-rekrutmen" className="text-muted-foreground transition-colors hover:text-primary">Proses Rekrutmen</Link>
             <Link href="#tutorial" className="text-muted-foreground transition-colors hover:text-primary">Cara Melamar</Link>
           </nav>
-          <div className="flex flex-1 items-center justify-end gap-2">
+          <div className="flex items-center gap-2">
             <Button variant="outline" asChild>
               <Link href="/careers/login">Masuk Kandidat</Link>
             </Button>
