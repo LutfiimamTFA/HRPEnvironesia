@@ -1,28 +1,31 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, usePathname } from 'next/navigation';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, query, where, limit } from 'firebase/firestore';
 import type { Job } from '@/lib/types';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowLeft, Briefcase, Building, Calendar, ChevronRight, LocateFixed, MapPin, Sparkles } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import { format } from 'date-fns';
-import { useAuth } from '@/providers/auth-provider';
 import { ROLES_INTERNAL } from '@/lib/types';
 import { Separator } from '@/components/ui/separator';
+import { useAuth } from '@/providers/auth-provider';
+import { useToast } from '@/hooks/use-toast';
 
 function JobDetailSkeleton() {
     return (
         <div className="container mx-auto max-w-6xl px-4 py-8 md:py-12">
             <div className="mb-8">
                 <Skeleton className="h-6 w-1/4" />
+            </div>
+            <div className="relative mb-8 h-[320px] w-full overflow-hidden rounded-2xl shadow-lg md:h-[420px]">
+                <Skeleton className="h-full w-full" />
             </div>
             <div className="grid grid-cols-1 gap-12 lg:grid-cols-3">
                 <div className="lg:col-span-2">
@@ -83,7 +86,7 @@ const RichTextSection = ({ title, htmlContent, icon }: { title: string, htmlCont
                 {title}
             </h2>
             <div
-                className="prose prose-sm max-w-none dark:prose-invert prose-headings:font-semibold prose-a:text-primary prose-li:my-1"
+                className="prose max-w-none dark:prose-invert prose-headings:font-semibold prose-a:text-primary prose-li:my-1"
                 dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
             />
         </section>
@@ -94,8 +97,11 @@ export default function JobDetailPage() {
     const params = useParams();
     const slug = params.slug as string;
     const router = useRouter();
+    const pathname = usePathname();
     const firestore = useFirestore();
     const { userProfile, loading: authLoading } = useAuth();
+    const { toast } = useToast();
+
 
     const isInternalUser = !authLoading && userProfile && ROLES_INTERNAL.includes(userProfile.role);
 
@@ -129,6 +135,17 @@ export default function JobDetailPage() {
     const { data: otherJobs } = useCollection<Job>(otherJobsQuery);
 
     const isLoading = authLoading || isLoadingJob;
+
+    const handleApplyClick = () => {
+        if (userProfile) {
+            toast({
+                title: "Fitur Dalam Pengembangan",
+                description: "Fitur untuk melamar pekerjaan sedang kami siapkan.",
+            });
+        } else {
+            router.push(`/careers/login?redirect=${pathname}`);
+        }
+    };
 
     if (isLoading) {
         return <JobDetailSkeleton />;
@@ -165,15 +182,15 @@ export default function JobDetailPage() {
 
             <main className="bg-secondary/50">
                 <div className="container mx-auto max-w-6xl px-4 py-8 md:py-12">
-                    <div className="relative mb-8 h-[300px] w-full overflow-hidden rounded-2xl shadow-lg md:h-[400px]">
+                    <div className="relative mb-8 h-[320px] w-full overflow-hidden rounded-2xl shadow-lg md:h-[420px]">
                         <Image
                             src={job.coverImageUrl || 'https://picsum.photos/seed/default-hero/1200/600'}
                             alt=""
                             fill
-                            className="object-cover scale-110 blur-2xl opacity-50"
+                            className="absolute inset-0 object-cover scale-110 blur-2xl opacity-60"
                             data-ai-hint="abstract office background"
                             />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent" />
+                         <div className="absolute inset-0 bg-gradient-to-r from-black/45 via-black/10 to-transparent" />
                         <Image
                             src={job.coverImageUrl || 'https://picsum.photos/seed/default-hero/1200/600'}
                             alt={`${job.position} cover image`}
@@ -241,8 +258,8 @@ export default function JobDetailPage() {
                                             <Calendar className="h-3 w-3"/> Lamar sebelum {format(job.applyDeadline.toDate(), 'dd MMM yyyy')}
                                         </p>
                                     )}
-                                    <Button size="lg" asChild className="w-full">
-                                        <Link href="/careers/login">Lamar Sekarang</Link>
+                                    <Button size="lg" onClick={handleApplyClick} className="w-full">
+                                        Lamar Sekarang
                                     </Button>
                                 </CardFooter>
                             </Card>
@@ -271,8 +288,8 @@ export default function JobDetailPage() {
                         Lamar sebelum {format(job.applyDeadline.toDate(), 'dd MMM yyyy')}
                     </p>
                 )}
-                <Button size="lg" asChild className="w-full">
-                    <Link href="/careers/login">Lamar Sekarang</Link>
+                <Button size="lg" onClick={handleApplyClick} className="w-full">
+                    Lamar Sekarang
                 </Button>
             </div>
         </>

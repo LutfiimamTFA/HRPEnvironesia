@@ -4,18 +4,24 @@ import { CandidateLoginForm } from '@/components/auth/CandidateLoginForm';
 import { useAuth } from '@/providers/auth-provider';
 import { Loader2 } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
 
 export default function CandidateLoginPage() {
   const { userProfile, loading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirect = searchParams.get('redirect');
 
   useEffect(() => {
     if (!loading && userProfile && userProfile.role === 'kandidat') {
-      router.replace('/careers/me');
+      if (redirect) {
+        router.replace(redirect);
+      } else {
+        router.replace('/careers/me');
+      }
     }
-  }, [userProfile, loading, router]);
+  }, [userProfile, loading, router, redirect]);
 
   if (loading || (userProfile && userProfile.role === 'kandidat')) {
     return (
