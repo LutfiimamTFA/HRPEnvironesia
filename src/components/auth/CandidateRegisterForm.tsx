@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -20,12 +21,24 @@ import {
 } from '@/components/ui/form';
 import { Loader2 } from 'lucide-react';
 import { UserProfile } from '@/lib/types';
+import { Checkbox } from '@/components/ui/checkbox';
 
 const formSchema = z.object({
-  fullName: z.string().min(2, { message: 'Nama lengkap harus diisi.' }),
-  email: z.string().email({ message: 'Masukkan email yang valid.' }),
-  password: z.string().min(8, { message: 'Password minimal 8 karakter.' }),
-});
+    fullName: z.string().min(2, { message: 'Nama lengkap (sesuai KTP) harus diisi.' }),
+    email: z.string().email({ message: 'Masukkan email yang valid.' }),
+    confirmEmail: z.string().email({ message: 'Konfirmasi email yang valid.' }),
+    password: z.string().min(8, { message: 'Password minimal 8 karakter.' }),
+    confirmPassword: z.string().min(8, { message: 'Konfirmasi password minimal 8 karakter.' }),
+    captcha: z.boolean().refine(value => value === true, {
+      message: "Anda harus melakukan verifikasi.",
+    }),
+  }).refine(data => data.email === data.confirmEmail, {
+      message: "Alamat email tidak cocok.",
+      path: ["confirmEmail"],
+  }).refine(data => data.password === data.confirmPassword, {
+      message: "Password tidak cocok.",
+      path: ["confirmPassword"],
+  });
 
 export function CandidateRegisterForm() {
   const [loading, setLoading] = useState(false);
@@ -35,7 +48,14 @@ export function CandidateRegisterForm() {
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: { fullName: '', email: '', password: '' },
+    defaultValues: { 
+        fullName: '', 
+        email: '', 
+        confirmEmail: '',
+        password: '',
+        confirmPassword: '',
+        captcha: false
+    },
   });
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
@@ -81,7 +101,7 @@ export function CandidateRegisterForm() {
           name="fullName"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Nama Lengkap</FormLabel>
+              <FormLabel>Nama Lengkap (Sesuai KTP)</FormLabel>
               <FormControl>
                 <Input placeholder="John Doe" {...field} />
               </FormControl>
@@ -94,9 +114,22 @@ export function CandidateRegisterForm() {
           name="email"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Email</FormLabel>
+              <FormLabel>Alamat Email</FormLabel>
               <FormControl>
-                <Input placeholder="name@example.com" {...field} />
+                <Input placeholder="name@example.com" type="email" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="confirmEmail"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Konfirmasi Alamat Email</FormLabel>
+              <FormControl>
+                <Input placeholder="Ulangi alamat email" type="email" {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -109,9 +142,45 @@ export function CandidateRegisterForm() {
             <FormItem>
               <FormLabel>Password</FormLabel>
               <FormControl>
-                <Input type="password" placeholder="********" {...field} />
+                <Input type="password" placeholder="Minimal 8 karakter" {...field} />
               </FormControl>
               <FormMessage />
+            </FormItem>
+          )}
+        />
+         <FormField
+          control={form.control}
+          name="confirmPassword"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Konfirmasi Password</FormLabel>
+              <FormControl>
+                <Input type="password" placeholder="Ulangi password" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+         <FormField
+          control={form.control}
+          name="captcha"
+          render={({ field }) => (
+            <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4 shadow-sm">
+              <FormControl>
+                <Checkbox
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                />
+              </FormControl>
+              <div className="space-y-1 leading-none">
+                <FormLabel>
+                  Verifikasi Captcha
+                </FormLabel>
+                <FormDescription>
+                    Centang untuk membuktikan Anda bukan robot.
+                </FormDescription>
+                <FormMessage />
+              </div>
             </FormItem>
           )}
         />
