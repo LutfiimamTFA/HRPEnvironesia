@@ -202,7 +202,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                     <FormItem>
                                         <FormLabel>Nama Lengkap (Sesuai KTP)</FormLabel>
                                         <FormControl>
-                                            <Input {...field} />
+                                            <Input {...field} value={field.value ?? ''} />
                                         </FormControl>
                                         <FormMessage />
                                     </FormItem>
@@ -215,7 +215,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                     <FormItem>
                                         <FormLabel>Nama Panggilan</FormLabel>
                                         <FormControl>
-                                            <Input {...field} />
+                                            <Input {...field} value={field.value ?? ''} />
                                         </FormControl>
                                         <FormMessage />
                                     </FormItem>
@@ -231,7 +231,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                     <FormItem>
                                         <FormLabel>Email</FormLabel>
                                         <FormControl>
-                                            <Input {...field} />
+                                            <Input {...field} value={field.value ?? ''} />
                                         </FormControl>
                                         <FormMessage />
                                     </FormItem>
@@ -244,7 +244,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                     <FormItem>
                                         <FormLabel>Nomor Telepon</FormLabel>
                                         <FormControl>
-                                            <Input {...field} placeholder="0812..." />
+                                            <Input {...field} value={field.value ?? ''} placeholder="0812..." />
                                         </FormControl>
                                         <FormMessage />
                                     </FormItem>
@@ -260,7 +260,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                     <FormItem>
                                         <FormLabel>Nomor e-KTP</FormLabel>
                                         <FormControl>
-                                            <Input {...field} maxLength={16} />
+                                            <Input {...field} value={field.value ?? ''} maxLength={16} />
                                         </FormControl>
                                         <FormMessage />
                                     </FormItem>
@@ -323,23 +323,23 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                         <FormItem>
                                             <FormLabel>Jalan</FormLabel>
                                             <FormControl>
-                                                <Textarea {...field} placeholder="Masukkan nama jalan, nomor rumah, dll..." />
+                                                <Textarea {...field} value={field.value ?? ''} placeholder="Masukkan nama jalan, nomor rumah, dll..." />
                                             </FormControl>
                                             <FormMessage />
                                         </FormItem>
                                     )}
                                 />
                                 <div className="grid grid-cols-2 gap-4">
-                                    <FormField control={form.control} name="addressKtp.rt" render={({ field }) => (<FormItem><FormLabel>RT</FormLabel><FormControl><Input placeholder="001" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                                    <FormField control={form.control} name="addressKtp.rw" render={({ field }) => (<FormItem><FormLabel>RW</FormLabel><FormControl><Input placeholder="002" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                    <FormField control={form.control} name="addressKtp.rt" render={({ field }) => (<FormItem><FormLabel>RT</FormLabel><FormControl><Input placeholder="001" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                                    <FormField control={form.control} name="addressKtp.rw" render={({ field }) => (<FormItem><FormLabel>RW</FormLabel><FormControl><Input placeholder="002" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                                 </div>
-                                <FormField control={form.control} name="addressKtp.village" render={({ field }) => (<FormItem><FormLabel>Kelurahan/Desa</FormLabel><FormControl><Input placeholder="Caturtunggal" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                                <FormField control={form.control} name="addressKtp.district" render={({ field }) => (<FormItem><FormLabel>Kecamatan</FormLabel><FormControl><Input placeholder="Depok" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                <FormField control={form.control} name="addressKtp.village" render={({ field }) => (<FormItem><FormLabel>Kelurahan/Desa</FormLabel><FormControl><Input placeholder="Caturtunggal" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                                <FormField control={form.control} name="addressKtp.district" render={({ field }) => (<FormItem><FormLabel>Kecamatan</FormLabel><FormControl><Input placeholder="Depok" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                                 <div className="grid grid-cols-2 gap-4">
-                                    <FormField control={form.control} name="addressKtp.city" render={({ field }) => (<FormItem><FormLabel>Kota/Kabupaten</FormLabel><FormControl><Input placeholder="Sleman" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                                    <FormField control={form.control} name="addressKtp.province" render={({ field }) => (<FormItem><FormLabel>Provinsi</FormLabel><FormControl><Input placeholder="D.I. Yogyakarta" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                    <FormField control={form.control} name="addressKtp.city" render={({ field }) => (<FormItem><FormLabel>Kota/Kabupaten</FormLabel><FormControl><Input placeholder="Sleman" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                                    <FormField control={form.control} name="addressKtp.province" render={({ field }) => (<FormItem><FormLabel>Provinsi</FormLabel><FormControl><Input placeholder="D.I. Yogyakarta" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                                 </div>
-                                <FormField control={form.control} name="addressKtp.postalCode" render={({ field }) => (<FormItem><FormLabel>Kode Pos</FormLabel><FormControl><Input placeholder="55281" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                <FormField control={form.control} name="addressKtp.postalCode" render={({ field }) => (<FormItem><FormLabel>Kode Pos</FormLabel><FormControl><Input placeholder="55281" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                             </div>
                         </div>
 
@@ -424,7 +424,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                     <FormItem>
                                         <FormLabel>Nomor NPWP</FormLabel>
                                         <FormControl>
-                                            <Input {...field} value={field.value || ''} placeholder="Masukkan nomor NPWP Anda" />
+                                            <Input {...field} value={field.value ?? ''} placeholder="Masukkan nomor NPWP Anda" />
                                         </FormControl>
                                         <FormMessage />
                                     </FormItem>
@@ -475,7 +475,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                     <FormItem>
                                         <FormLabel>Profil LinkedIn (Opsional)</FormLabel>
                                         <FormControl>
-                                            <Input {...field} value={field.value || ''} placeholder="https://linkedin.com/in/..." />
+                                            <Input {...field} value={field.value ?? ''} placeholder="https://linkedin.com/in/..." />
                                         </FormControl>
                                         <FormMessage />
                                     </FormItem>
@@ -488,7 +488,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                     <FormItem>
                                         <FormLabel>Situs Web/Portofolio (Opsional)</FormLabel>
                                         <FormControl>
-                                            <Input {...field} value={field.value || ''} placeholder="https://github.com/..." />
+                                            <Input {...field} value={field.value ?? ''} placeholder="https://github.com/..." />
                                         </FormControl>
                                         <FormMessage />
                                     </FormItem>
