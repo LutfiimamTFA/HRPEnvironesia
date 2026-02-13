@@ -21,7 +21,7 @@ export default function CandidateDashboardPage() {
                 <CardHeader>
                     <CardTitle className="flex items-center gap-3">
                         <Briefcase className="h-6 w-6 text-primary" />
-                        Cari Pekerjaan
+                        Daftar Lowongan
                     </CardTitle>
                     <CardDescription>Jelajahi semua lowongan yang tersedia dan temukan yang cocok untuk Anda.</CardDescription>
                 </CardHeader>

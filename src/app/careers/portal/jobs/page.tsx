@@ -64,7 +64,7 @@ export default function CandidateJobsPage() {
   return (
     <Card>
         <CardHeader>
-            <CardTitle>Cari Lowongan</CardTitle>
+            <CardTitle>Daftar Lowongan</CardTitle>
             <CardDescription>Jelajahi semua peluang karir yang tersedia saat ini.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
