@@ -9,7 +9,7 @@ import type { Job } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Building, Calendar, MapPin, Briefcase, AlertTriangle } from 'lucide-react';
+import { Building, Calendar, MapPin, Briefcase, Info } from 'lucide-react';
 import { format } from 'date-fns';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
@@ -75,12 +75,12 @@ export default function JobApplyPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                     {!isProfileComplete && (
-                        <Alert variant="destructive">
-                            <AlertTriangle className="h-4 w-4" />
-                            <AlertTitle>Profil Belum Lengkap!</AlertTitle>
-                            <AlertDescription>
-                                Anda harus melengkapi profil Anda sebelum dapat melamar.
-                                <Button asChild variant="link" className="p-0 h-auto ml-1">
+                        <Alert variant="default" className="bg-amber-50 border-amber-200 dark:bg-amber-950 dark:border-amber-800">
+                            <Info className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                            <AlertTitle className="text-amber-800 dark:text-amber-300">Profil Anda Belum Lengkap</AlertTitle>
+                            <AlertDescription className="text-amber-700 dark:text-amber-400">
+                                Pastikan kembali data profil sudah terisi semuanya untuk meningkatkan peluang Anda.
+                                <Button asChild variant="link" className="p-0 h-auto ml-1 text-amber-800 dark:text-amber-300">
                                     <Link href="/careers/portal/profile">Lengkapi Profil Sekarang</Link>
                                 </Button>
                             </AlertDescription>
@@ -93,7 +93,7 @@ export default function JobApplyPage() {
                          <Button onClick={() => router.back()} variant="outline">
                             Kembali
                         </Button>
-                        <Button disabled={!isProfileComplete}>Kirim Lamaran (Segera Hadir)</Button>
+                        <Button>Kirim Lamaran (Segera Hadir)</Button>
                     </div>
                 </CardContent>
             </Card>
