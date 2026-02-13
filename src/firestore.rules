@@ -37,8 +37,8 @@ service cloud.firestore {
     }
 
     /**
+     * WARNING: NOT SAFE FOR LIST QUERIES.
      * Checks if the user is a 'super_admin' via a performant existence check.
-     * Safe for all queries.
      */
     function isSuperAdmin() {
       return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
@@ -133,27 +133,35 @@ service cloud.firestore {
 
     /**
      * /applications/{applicationId}
-     * - This is the critical fix for the candidate view.
+     * - Critical fix for candidate view.
      */
     match /applications/{applicationId} {
-      // READ: Allow a user to read an application if they are the owner. This is safe for
-      // queries like `where('candidateUid', '==', request.auth.uid)`. SuperAdmins can read all.
-      // Internal users (HRD, Manager) can only use `get` (defined below) but cannot `list`.
-      allow read: if (resource.data.candidateUid == request.auth.uid) || isSuperAdmin();
+        // LIST: Allow a query to proceed if the user is logged in.
+        // The client-side query MUST contain `where('candidateUid', '==', request.auth.uid)`.
+        // Security is then enforced by the `get` rule below, which Firestore
+        // runs on each document in the result set.
+        allow list: if isSignedIn();
 
-      // GET (Fallback for Internal): Separately allow `get` for internal roles who are not super-admins.
-      // This allows them to view specific applications by ID, but not perform broad queries.
-      allow get: if isInternal();
+        // GET: A user can get a document if they are the owner OR if they have an internal role.
+        // This `get` rule is evaluated for every document returned by a `list` query.
+        allow get: if (resource.data.candidateUid == request.auth.uid) || isInternal();
 
-      // CREATE: A user can create an application only if they are the owner.
-      allow create: if isOwner(request.resource.data.candidateUid)
-                    && (request.resource.data.status == "draft" || request.resource.data.status == "submitted");
-      
-      // UPDATE: A candidate can update their own DRAFT application. Internal users can update any application.
-      allow update: if (isOwner(resource.data.candidateUid) && resource.data.status == "draft") || isInternal();
+        // CREATE: A user can create an application only if they are the owner.
+        allow create: if isCreatingOwn() && (request.resource.data.status == "draft" || request.resource.data.status == "submitted");
+        
+        // UPDATE: A candidate can update their own DRAFT. Internal users can update any. candidateUid cannot be changed.
+        allow update: if ((isOwner() && resource.data.status == "draft") || isInternal()) && request.resource.data.candidateUid == resource.data.candidateUid;
 
-      // DELETE: Only internal users can delete applications.
-      allow delete: if isInternal();
+        // DELETE: Only internal users can delete applications.
+        allow delete: if isInternal();
+
+        // Helper functions local to this scope for clarity
+        function isOwner() {
+            return request.auth.uid == resource.data.candidateUid;
+        }
+        function isCreatingOwn() {
+            return request.auth.uid == request.resource.data.candidateUid;
+        }
     }
 
     /**

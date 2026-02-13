@@ -1,10 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, orderBy, query, where } from 'firebase/firestore';
+import { collection, query, where } from 'firebase/firestore';
 import type { JobApplication } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
@@ -160,17 +160,26 @@ function ApplicationsPageSkeleton() {
 export default function ApplicationsPage() {
     const { userProfile, loading: authLoading } = useAuth();
     const firestore = useFirestore();
+    const uid = userProfile?.uid;
 
     const applicationsQuery = useMemoFirebase(() => {
-        if (!userProfile) return null;
+        if (!uid) return null;
         return query(
             collection(firestore, 'applications'),
-            where('candidateUid', '==', userProfile.uid),
-            orderBy('createdAt', 'desc')
+            where('candidateUid', '==', uid)
         );
-    }, [userProfile, firestore]);
+    }, [uid, firestore]);
 
     const { data: applications, isLoading: applicationsLoading, error } = useCollection<JobApplication>(applicationsQuery);
+
+    const sortedApplications = useMemo(() => {
+        if (!applications) return [];
+        return [...applications].sort((a, b) => {
+            const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+            const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+            return timeB - timeA;
+        });
+    }, [applications]);
 
     const isLoading = authLoading || applicationsLoading;
 
@@ -193,9 +202,9 @@ export default function ApplicationsPage() {
             
             {isLoading ? (
                 <ApplicationsPageSkeleton />
-            ) : applications && applications.length > 0 ? (
+            ) : sortedApplications && sortedApplications.length > 0 ? (
                 <div className="space-y-6">
-                    {applications.map(app => (
+                    {sortedApplications.map(app => (
                         <ApplicationCard key={app.id} application={app} />
                     ))}
                 </div>
