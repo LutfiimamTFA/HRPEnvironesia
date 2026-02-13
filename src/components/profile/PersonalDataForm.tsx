@@ -9,9 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
-import { DatePickerWithYearMonth } from '../ui/date-picker-with-year-month';
 import type { Profile } from '@/lib/types';
 import { Timestamp } from 'firebase/firestore';
+import { GoogleDatePicker } from '../ui/google-date-picker';
 
 const formSchema = z.object({
     fullName: z.string().min(2, { message: "Nama lengkap harus diisi." }),
@@ -106,12 +106,10 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                     <FormItem className="flex flex-col">
                                         <FormLabel>Tanggal Lahir</FormLabel>
                                         <FormControl>
-                                            <DatePickerWithYearMonth
+                                            <GoogleDatePicker
+                                                mode="dob"
                                                 value={field.value}
                                                 onChange={field.onChange}
-                                                disabled={(date) => date > new Date()}
-                                                fromDate={fromDate}
-                                                toDate={new Date()}
                                             />
                                         </FormControl>
                                         <FormMessage />

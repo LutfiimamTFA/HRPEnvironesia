@@ -19,11 +19,11 @@ import {
 } from '@/components/ui/form';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, UploadCloud, Calendar as CalendarIcon } from 'lucide-react';
+import { Loader2, UploadCloud } from 'lucide-react';
 import type { Job, Brand } from '@/lib/types';
 import { RichTextEditor } from '../ui/RichTextEditor';
 import Image from 'next/image';
-import { DatePickerWithYearMonth } from '../ui/date-picker-with-year-month';
+import { GoogleDatePicker } from '../ui/google-date-picker';
 
 const slugify = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
@@ -182,9 +182,6 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
     }
   };
 
-  const toDate = new Date();
-  toDate.setFullYear(toDate.getFullYear() + 5);
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[95vh] flex flex-col">
@@ -266,14 +263,10 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
                     <FormItem className="flex flex-col pt-2">
                       <FormLabel>Application Deadline</FormLabel>
                       <FormControl>
-                        <DatePickerWithYearMonth
+                        <GoogleDatePicker
+                          mode="general"
                           value={field.value}
                           onChange={field.onChange}
-                          disabled={(date) =>
-                            date < new Date(new Date().setHours(0, 0, 0, 0))
-                          }
-                          fromDate={new Date()}
-                          toDate={toDate}
                         />
                       </FormControl>
                       <FormMessage />
