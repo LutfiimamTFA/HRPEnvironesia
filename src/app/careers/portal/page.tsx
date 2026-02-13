@@ -16,14 +16,14 @@ const recruitmentSteps = [
     description: 'Lamar posisi yang Anda minati melalui portal karir.',
   },
   {
-    icon: FileSearch,
-    title: '2. Seleksi Dokumen',
-    description: 'Tim kami akan meninjau CV dan kesesuaian profil Anda.',
+    icon: BrainCircuit,
+    title: '2. Psikotes',
+    description: 'Tes psikologi untuk mengukur potensi dan kesesuaian Anda.',
   },
   {
-    icon: BrainCircuit,
-    title: '3. Psikotes',
-    description: 'Tes psikologi untuk mengukur potensi dan kemampuan.',
+    icon: FileSearch,
+    title: '3. Seleksi Dokumen',
+    description: 'Tim kami akan meninjau CV dan kesesuaian profil Anda.',
   },
   {
     icon: Users,
