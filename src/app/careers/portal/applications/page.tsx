@@ -174,24 +174,18 @@ export default function ApplicationsPage() {
 
     const isLoading = authLoading || applicationsLoading;
 
+    if (error) {
+        return (
+            <div className="p-4 border-2 border-dashed border-red-500 rounded-lg bg-red-50 text-red-900">
+                <h3 className="font-bold text-lg mb-2">Terjadi Kesalahan</h3>
+                <p>Gagal memuat data lamaran Anda. Silakan coba lagi nanti.</p>
+                <pre className="mt-4 text-xs bg-white p-2 rounded overflow-auto">{error.message}</pre>
+            </div>
+        )
+    }
+
     return (
         <div className="space-y-6">
-            <div className="p-4 border-2 border-dashed border-red-500 rounded-lg bg-red-50 text-red-900 text-xs">
-                <h3 className="font-bold text-sm mb-2">DEBUG INFO (Temporary)</h3>
-                <p><strong>Auth User UID:</strong> {userProfile?.uid || 'Not available'}</p>
-                <p><strong>Query Path:</strong> /applications</p>
-                <p><strong>Query Where:</strong> candidateUid == {userProfile?.uid || 'N/A'}</p>
-                <p><strong>Query OrderBy:</strong> createdAt, desc</p>
-                <p><strong>Is Loading:</strong> {isLoading.toString()}</p>
-                <p><strong>Docs Found:</strong> {applications ? applications.length : '0'}</p>
-                {error && <p className="mt-2 p-2 border border-red-300 bg-red-100 rounded"><strong>Error:</strong> {error.message}</p>}
-                {applications && applications.length > 0 && (
-                    <details className="mt-2">
-                        <summary className="cursor-pointer font-medium">First Doc Data</summary>
-                        <pre className="text-[10px] bg-white p-2 rounded mt-1 overflow-auto">{JSON.stringify(applications[0], null, 2)}</pre>
-                    </details>
-                )}
-            </div>
              <div>
                 <h1 className="text-3xl font-bold tracking-tight">Lamaran Saya</h1>
                 <p className="text-muted-foreground">Riwayat dan status lamaran pekerjaan yang telah Anda kirimkan atau simpan sebagai draf.</p>

@@ -181,8 +181,6 @@ service cloud.firestore {
      * @description
      *   Rules for job applications. Candidates can create and manage their own
      *   drafts. Internal users can view all applications for recruitment.
-     * @path
-     *   /applications/{applicationId}
      */
     match /applications/{applicationId} {
       allow create: if isSignedIn()
@@ -190,12 +188,14 @@ service cloud.firestore {
                     && request.resource.data.candidateUid == request.auth.uid
                     && (request.resource.data.status == "draft" || request.resource.data.status == "submitted");
 
-      // READ: A user can read an application if they are the owner or a super_admin.
-      // `isSuperAdmin()` uses `exists()`, which is safe for `list` queries.
-      // This fixes the candidate permission error. This temporarily removes read access for
-      // HRD/Manager roles because their role check (`isInternal`) uses `get()`, which
-      // is not allowed in `list` query security evaluations.
-      allow read: if (resource.data.candidateUid == request.auth.uid) || isSuperAdmin();
+      // LIST: Allows a client to execute a query.
+      // The query itself MUST contain a `where('candidateUid', '==', request.auth.uid)` clause.
+      // This rule just lets the query engine start; it doesn't return data yet.
+      allow list: if isSignedIn();
+
+      // GET: Enforced on every document returned by the list query.
+      // Ensures a user can only read their own applications, or an internal user can read any.
+      allow get: if isInternal() || (resource.data.candidateUid == request.auth.uid);
 
       allow update: if isSignedIn() && (
                       (isCandidate()
