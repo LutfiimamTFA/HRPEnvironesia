@@ -139,7 +139,7 @@ export default function CareersPage() {
         </section>
 
         {/* Lowongan Section */}
-        <section id="lowongan" className="w-full scroll-mt-14 bg-secondary py-12 md:py-20 lg:py-24">
+        <section id="lowongan" className="w-full scroll-mt-14 py-12 md:py-20 lg:py-24">
           <div className="container">
             <div className="mx-auto max-w-2xl text-center">
               <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Temukan Peluang Anda</h2>
@@ -182,7 +182,7 @@ export default function CareersPage() {
         </section>
         
         {/* Tahapan Rekrutmen Section */}
-        <section id="tahapan-rekrutmen" className="w-full scroll-mt-14 py-12 md:py-20 lg:py-24">
+        <section id="tahapan-rekrutmen" className="w-full scroll-mt-14 bg-secondary py-12 md:py-20 lg:py-24">
             <div className="container">
                 <div className="mx-auto max-w-xl text-center">
                     <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Proses Rekrutmen Kami</h2>
@@ -216,7 +216,7 @@ export default function CareersPage() {
         </section>
 
         {/* Tutorial Section */}
-        <section id="tutorial" className="w-full scroll-mt-14 bg-secondary py-12 md:py-20 lg:py-24">
+        <section id="tutorial" className="w-full scroll-mt-14 py-12 md:py-20 lg:py-24">
           <div className="container">
             <div className="mx-auto max-w-xl text-center">
               <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Cara Mudah Melamar</h2>
@@ -232,7 +232,7 @@ export default function CareersPage() {
         </section>
 
         {/* FAQ Section */}
-        <section id="faq" className="w-full scroll-mt-14 py-12 md:py-20 lg:py-24">
+        <section id="faq" className="w-full scroll-mt-14 bg-secondary py-12 md:py-20 lg:py-24">
           <div className="container max-w-4xl">
             <div className="mx-auto max-w-xl text-center">
               <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Pertanyaan Umum (FAQ)</h2>
