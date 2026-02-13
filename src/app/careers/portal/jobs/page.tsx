@@ -38,7 +38,7 @@ const JobCard = ({ job }: { job: Job }) => (
                 </div>
             </div>
 
-            <div className="flex-shrink-0 flex flex-row sm:flex-col items-center gap-2 w-full sm:w-auto">
+            <div className="flex-shrink-0 flex flex-col items-center gap-2 w-full sm:w-40">
                 <Button asChild className="w-full justify-center">
                     <Link href={`/careers/jobs/${job.slug}`}>
                         Lihat Detail
@@ -66,7 +66,7 @@ const JobCardSkeleton = () => (
                     <Skeleton className="h-6 w-28" />
                 </div>
             </div>
-            <div className="flex-shrink-0 flex flex-row sm:flex-col items-center gap-2 w-full sm:w-36">
+            <div className="flex-shrink-0 flex flex-col items-center gap-2 w-full sm:w-40">
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
             </div>
