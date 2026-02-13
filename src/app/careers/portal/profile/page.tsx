@@ -53,8 +53,7 @@ export default function ProfilePage() {
     try {
         await updateDocumentNonBlocking(profileDocRef, formData);
         
-        // Check if profile is complete after saving
-        const requiredFields: (keyof Profile)[] = ['fullName', 'email', 'phone', 'address', 'education', 'workExperience', 'skills'];
+        const requiredFields: (keyof Profile)[] = ['fullName', 'nickname', 'email', 'phone', 'eKtpNumber', 'gender', 'birthDate', 'addressKtp', 'willingToWfo', 'education', 'workExperience', 'skills'];
         
         const updatedProfileData = { ...profile, ...formData };
         const isComplete = requiredFields.every(field => {
@@ -98,10 +97,6 @@ export default function ProfilePage() {
           <CardTitle className="text-3xl">Profil Saya</CardTitle>
           <CardDescription>Lengkapi profil Anda untuk mempermudah proses lamaran.</CardDescription>
         </div>
-        <Button onClick={() => handleProfileSave(form.getValues())} disabled={isSaving}>
-            {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Simpan Perubahan
-        </Button>
       </div>
 
       <Tabs defaultValue="personal" className="w-full">
