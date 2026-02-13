@@ -164,7 +164,7 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
         brandName,
       };
 
-      setDocumentNonBlocking(doc(firestore, 'jobs', jobId), jobData, { merge: true });
+      await setDocumentNonBlocking(doc(firestore, 'jobs', jobId), jobData, { merge: true });
 
       toast({
         title: `Job ${mode === 'Edit' ? 'Updated' : 'Created'}`,

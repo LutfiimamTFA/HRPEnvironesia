@@ -66,20 +66,27 @@ export function DeptBrandFormDialog({ open, onOpenChange, item }: BrandFormDialo
     }
   }, [open, item, form]);
 
-  const onSubmit = (values: FormValues) => {
+  const onSubmit = async (values: FormValues) => {
     setLoading(true);
-    
-    const docRef = item ? doc(firestore, 'brands', item.id!) : doc(collection(firestore, 'brands'));
+    try {
+        const docRef = item ? doc(firestore, 'brands', item.id!) : doc(collection(firestore, 'brands'));
+        await setDocumentNonBlocking(docRef, { ...values }, { merge: true });
+        
+        toast({
+          title: `Brand ${mode === 'Edit' ? 'Updated' : 'Created'}`,
+          description: `The brand "${values.name}" has been saved.`,
+        });
 
-    setDocumentNonBlocking(docRef, { ...values }, { merge: true });
-    
-    toast({
-      title: `Brand ${mode === 'Edit' ? 'Updated' : 'Created'}`,
-      description: `The brand "${values.name}" has been saved.`,
-    });
-    
-    onOpenChange(false);
-    setLoading(false);
+        onOpenChange(false);
+    } catch (error: any) {
+        toast({
+            variant: "destructive",
+            title: `Error saving brand`,
+            description: error.message || "An unknown error occurred.",
+        });
+    } finally {
+        setLoading(false);
+    }
   };
 
   return (

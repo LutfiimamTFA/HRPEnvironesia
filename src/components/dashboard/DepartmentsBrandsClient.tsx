@@ -147,19 +147,26 @@ export function DepartmentsBrandsClient() {
     setIsDeleteConfirmOpen(true);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!selectedItem || !selectedItem.id) return;
     const docRef = doc(firestore, 'brands', selectedItem.id);
     
-    deleteDocumentNonBlocking(docRef);
-
-    toast({
-      title: 'Brand Deleted',
-      description: `The brand "${selectedItem.name}" has been deleted.`,
-    });
-
-    setIsDeleteConfirmOpen(false);
-    setSelectedItem(null);
+    try {
+        await deleteDocumentNonBlocking(docRef);
+        toast({
+          title: 'Brand Deleted',
+          description: `The brand "${selectedItem.name}" has been deleted.`,
+        });
+    } catch (error: any) {
+        toast({
+            variant: "destructive",
+            title: "Error deleting brand",
+            description: error.message,
+        });
+    } finally {
+        setIsDeleteConfirmOpen(false);
+        setSelectedItem(null);
+    }
   };
 
   return (

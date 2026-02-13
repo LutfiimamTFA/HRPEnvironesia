@@ -122,28 +122,45 @@ export function JobManagementClient() {
     setIsDeleteConfirmOpen(true);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!selectedJob || !selectedJob.id) return;
-    deleteDocumentNonBlocking(doc(firestore, 'jobs', selectedJob.id));
-    toast({
-      title: 'Job Deleted',
-      description: `The job posting for "${selectedJob.position}" has been deleted.`,
-    });
-    setIsDeleteConfirmOpen(false);
-    setSelectedJob(null);
+    try {
+        await deleteDocumentNonBlocking(doc(firestore, 'jobs', selectedJob.id));
+        toast({
+          title: 'Job Deleted',
+          description: `The job posting for "${selectedJob.position}" has been deleted.`,
+        });
+    } catch (error: any) {
+        toast({
+            variant: "destructive",
+            title: "Error deleting job",
+            description: error.message,
+        });
+    } finally {
+        setIsDeleteConfirmOpen(false);
+        setSelectedJob(null);
+    }
   };
 
-  const handleStatusChange = (job: Job, status: Job['publishStatus']) => {
+  const handleStatusChange = async (job: Job, status: Job['publishStatus']) => {
     if (!job.id || !userProfile) return;
-    updateDocumentNonBlocking(doc(firestore, 'jobs', job.id), {
-      publishStatus: status,
-      updatedAt: serverTimestamp(),
-      updatedBy: userProfile.uid,
-    });
-    toast({
-      title: 'Job Status Updated',
-      description: `Job "${job.position}" has been ${status}.`,
-    });
+    try {
+        await updateDocumentNonBlocking(doc(firestore, 'jobs', job.id), {
+          publishStatus: status,
+          updatedAt: serverTimestamp(),
+          updatedBy: userProfile.uid,
+        });
+        toast({
+          title: 'Job Status Updated',
+          description: `Job "${job.position}" has been ${status}.`,
+        });
+    } catch (error: any) {
+        toast({
+            variant: "destructive",
+            title: "Error updating status",
+            description: error.message,
+        });
+    }
   };
 
   if (isLoading) {

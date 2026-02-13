@@ -152,7 +152,7 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
           updateData.brandId = null;
         }
 
-        updateDocumentNonBlocking(userDocRef, updateData);
+        await updateDocumentNonBlocking(userDocRef, updateData);
 
         toast({ title: 'User Updated', description: `${editValues.fullName}'s profile has been updated.` });
         onOpenChange(false);
