@@ -9,10 +9,8 @@ import type { Job } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Building, Calendar, MapPin, Briefcase, Info } from 'lucide-react';
+import { Building, Calendar, MapPin, Briefcase } from 'lucide-react';
 import { format } from 'date-fns';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import Link from 'next/link';
 
 function JobApplySkeleton() {
     return (
@@ -41,8 +39,6 @@ export default function JobApplyPage() {
   const slug = params.slug as string;
   const firestore = useFirestore();
   const { userProfile } = useAuth();
-
-  const isProfileComplete = userProfile?.isProfileComplete ?? false;
 
   // Fetch Job details.
   const jobQuery = useMemoFirebase(() => {
@@ -74,18 +70,6 @@ export default function JobApplyPage() {
                     </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                    {!isProfileComplete && (
-                        <Alert variant="default" className="bg-amber-50 border-amber-200 dark:bg-amber-950 dark:border-amber-800">
-                            <Info className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                            <AlertTitle className="text-amber-800 dark:text-amber-300">Profil Anda Belum Lengkap</AlertTitle>
-                            <AlertDescription className="text-amber-700 dark:text-amber-400">
-                                Pastikan kembali data profil sudah terisi semuanya untuk meningkatkan peluang Anda.
-                                <Button asChild variant="link" className="p-0 h-auto ml-1 text-amber-800 dark:text-amber-300">
-                                    <Link href="/careers/portal/profile">Lengkapi Profil Sekarang</Link>
-                                </Button>
-                            </AlertDescription>
-                        </Alert>
-                    )}
                     <p className="text-sm text-center p-8 border rounded-lg bg-muted/50">
                         Formulir aplikasi dan fitur unggah CV sedang dalam tahap pengembangan.
                     </p>
