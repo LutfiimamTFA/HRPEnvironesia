@@ -190,15 +190,15 @@ service cloud.firestore {
                     && request.resource.data.candidateUid == request.auth.uid
                     && (request.resource.data.status == "draft" || request.resource.data.status == "submitted");
 
-      // Allow get for existence checks. This rule relies on the document ID format being "{jobId}_{candidateUid}".
-      // It allows a candidate to check a doc if the ID appears to belong to them.
-      allow get: if isInternal() || (isCandidate() && applicationId.split('_')[1] == request.auth.uid);
+      // GET: An internal user can get any application. A candidate can only get their own,
+      // identified by the candidateUid field within the document.
+      allow get: if isInternal() || 
+                   (isCandidate() && resource.data.candidateUid == request.auth.uid);
 
-      // Allow list for queries. This enforces that a candidate can only query for their own applications.
-      // The client query must include `where('candidateUid', '==', request.auth.uid)`.
-      // The `isInternal()` part is still problematic for non-super-admin internal users,
-      // but this fixes the immediate issue for candidates.
-      allow list: if isInternal() || (isSignedIn() && resource.data.candidateUid == request.auth.uid);
+      // LIST: An internal user can list all applications. A candidate can execute a list query,
+      // but Firestore will only return documents for which the 'get' rule succeeds.
+      // This requires the client query to include `where('candidateUid', '==', request.auth.uid)`.
+      allow list: if isInternal() || isCandidate();
 
       allow update: if isSignedIn() && (
                       (isCandidate()
