@@ -347,6 +347,21 @@
             "skills": {
                 "type": "array",
                 "items": { "type": "string" }
+            },
+            "certifications": {
+                "type": "array",
+                "description": "A list of the candidate's professional certifications.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "string" },
+                        "name": { "type": "string", "description": "The name of the certification." },
+                        "organization": { "type": "string", "description": "The issuing organization." },
+                        "issueDate": { "type": "string", "description": "The month and year the certification was issued (YYYY-MM)." },
+                        "expirationDate": { "type": "string", "description": "The month and year the certification expires (YYYY-MM), if applicable." }
+                    },
+                    "required": ["id", "name", "organization", "issueDate"]
+                }
             }
         },
         "required": ["fullName", "nickname", "email", "phone", "eKtpNumber", "gender", "birthDate", "addressKtp", "willingToWfo", "education", "workExperience", "skills"]

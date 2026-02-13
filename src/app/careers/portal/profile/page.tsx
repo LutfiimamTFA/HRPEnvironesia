@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from "@/providers/auth-provider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from '@/components/ui/skeleton';
-import { useDoc, useFirestore, useMemoFirebase, setDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase';
+import { useDoc, useFirestore, useMemoFirebase, setDoc } from '@/firebase';
 import { doc } from 'firebase/firestore';
 import type { Profile } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
@@ -51,7 +51,7 @@ export default function ProfilePage() {
     if (!profileDocRef || !userProfile) return;
     setIsSaving(true);
     try {
-        await setDocumentNonBlocking(profileDocRef, formData, { merge: true });
+        await setDoc(profileDocRef, formData, { merge: true });
         
         const requiredFields: (keyof Profile)[] = ['fullName', 'nickname', 'email', 'phone', 'eKtpNumber', 'gender', 'birthDate', 'addressKtp', 'willingToWfo', 'education', 'workExperience', 'skills'];
         
@@ -62,12 +62,9 @@ export default function ProfilePage() {
             return !!value;
         });
 
-        if (isComplete && !userProfile.isProfileComplete) {
-             const userDocRef = doc(firestore, 'users', userProfile.uid);
-             await updateDocumentNonBlocking(userDocRef, { isProfileComplete: true });
-        } else if (!isComplete && userProfile.isProfileComplete) {
+        if (isComplete !== userProfile.isProfileComplete) {
             const userDocRef = doc(firestore, 'users', userProfile.uid);
-            await updateDocumentNonBlocking(userDocRef, { isProfileComplete: false });
+            await setDoc(userDocRef, { isProfileComplete: isComplete }, { merge: true });
         }
 
         toast({ title: "Profil Disimpan", description: "Informasi profil Anda telah diperbarui." });
@@ -104,19 +101,26 @@ export default function ProfilePage() {
           <TabsTrigger value="personal">Data Pribadi</TabsTrigger>
           <TabsTrigger value="education">Pendidikan</TabsTrigger>
           <TabsTrigger value="experience">Pengalaman Kerja</TabsTrigger>
-          <TabsTrigger value="skills">Keahlian</TabsTrigger>
+          <TabsTrigger value="skills">Keahlian & Sertifikasi</TabsTrigger>
         </TabsList>
         <TabsContent value="personal">
           <PersonalDataForm initialData={initialProfileData} onSave={handleProfileSave} isSaving={isSaving} />
         </TabsContent>
         <TabsContent value="education">
-          <EducationForm initialData={initialProfileData.education || []} onSave={(data) => handleProfileSave({ education: data })} isSaving={isSaving} />
+          <EducationForm initialData={initialProfileData.education || []} onSave={async (data) => await handleProfileSave({ education: data })} isSaving={isSaving} />
         </TabsContent>
         <TabsContent value="experience">
-          <WorkExperienceForm initialData={initialProfileData.workExperience || []} onSave={(data) => handleProfileSave({ workExperience: data })} isSaving={isSaving} />
+          <WorkExperienceForm initialData={initialProfileData.workExperience || []} onSave={async (data) => await handleProfileSave({ workExperience: data })} isSaving={isSaving} />
         </TabsContent>
         <TabsContent value="skills">
-            <SkillsForm initialData={initialProfileData.skills || []} onSave={(data) => handleProfileSave({ skills: data })} isSaving={isSaving} />
+            <SkillsForm 
+                initialData={{
+                    skills: initialProfileData.skills || [],
+                    certifications: initialProfileData.certifications || [],
+                }} 
+                onSave={async (data) => await handleProfileSave(data)} 
+                isSaving={isSaving} 
+            />
         </TabsContent>
       </Tabs>
     </div>

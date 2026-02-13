@@ -89,6 +89,14 @@ export type WorkExperience = {
     description: string;
 }
 
+export type Certification = {
+    id: string;
+    name: string;
+    organization: string;
+    issueDate: string; // Storing as YYYY-MM string
+    expirationDate?: string; // Storing as YYYY-MM string
+}
+
 export type Profile = {
     fullName: string;
     nickname: string;
@@ -108,4 +116,5 @@ export type Profile = {
     education: Education[];
     workExperience: WorkExperience[];
     skills: string[];
+    certifications?: Certification[];
 }

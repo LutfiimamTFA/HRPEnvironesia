@@ -1,26 +1,47 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from '@/components/ui/button';
-import { Loader2, X } from 'lucide-react';
+import { Loader2, X, PlusCircle, Trash2 } from 'lucide-react';
 import { Badge } from '../ui/badge';
+import type { Certification } from '@/lib/types';
+import { Separator } from '../ui/separator';
+
+const certificationSchema = z.object({
+  id: z.string(),
+  name: z.string().min(1, "Nama sertifikasi harus diisi"),
+  organization: z.string().min(1, "Nama organisasi harus diisi"),
+  issueDate: z.string().min(1, "Tanggal terbit harus diisi"),
+  expirationDate: z.string().optional(),
+});
 
 const formSchema = z.object({
   skills: z.array(z.string()).min(1, "Tambahkan setidaknya satu keahlian."),
+  certifications: z.array(certificationSchema).optional(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
 
 interface SkillsFormProps {
-    initialData: string[];
-    onSave: (data: string[]) => Promise<void>;
+    initialData: { skills: string[], certifications?: Certification[] };
+    onSave: (data: { skills: string[], certifications?: Certification[] }) => Promise<void>;
     isSaving: boolean;
+}
+
+const MonthYearInput = ({ value, onChange }: { value?: string, onChange: (val: string) => void }) => {
+    return (
+        <Input 
+            type="month"
+            value={value || ''}
+            onChange={(e) => onChange(e.target.value)}
+        />
+    )
 }
 
 export function SkillsForm({ initialData, onSave, isSaving }: SkillsFormProps) {
@@ -28,13 +49,20 @@ export function SkillsForm({ initialData, onSave, isSaving }: SkillsFormProps) {
     const form = useForm<FormValues>({
         resolver: zodResolver(formSchema),
         defaultValues: {
-            skills: initialData || [],
+            skills: [],
+            certifications: [],
         },
+    });
+
+    const { fields: certFields, append: appendCert, remove: removeCert } = useFieldArray({
+        control: form.control,
+        name: "certifications",
     });
 
     useEffect(() => {
         form.reset({
-            skills: initialData || []
+            skills: initialData?.skills || [],
+            certifications: initialData?.certifications || [],
         });
     }, [initialData, form]);
 
@@ -57,49 +85,137 @@ export function SkillsForm({ initialData, onSave, isSaving }: SkillsFormProps) {
     };
 
     const handleSubmit = (values: FormValues) => {
-        onSave(values.skills);
+        onSave(values);
     };
 
     return (
         <Card>
             <CardHeader>
-                <CardTitle>Keahlian</CardTitle>
-                <CardDescription>Sebutkan keahlian yang Anda kuasai. Tekan Enter untuk menambahkan.</CardDescription>
+                <CardTitle>Keahlian & Sertifikasi</CardTitle>
+                <CardDescription>Sebutkan keahlian, serta sertifikasi dan pelatihan yang pernah Anda ikuti.</CardDescription>
             </CardHeader>
             <CardContent>
                 <Form {...form}>
-                    <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-                        <FormItem>
-                            <FormLabel>Keahlian Anda</FormLabel>
-                            <FormControl>
-                                <Input 
-                                    placeholder="Contoh: Javascript"
-                                    value={inputValue}
-                                    onChange={(e) => setInputValue(e.target.value)}
-                                    onKeyDown={handleKeyDown}
-                                />
-                            </FormControl>
-                             <div className="pt-4 flex flex-wrap gap-2">
-                                {skills.map((skill) => (
-                                    <Badge key={skill} variant="secondary" className="text-sm py-1 pl-3 pr-2">
-                                        {skill}
-                                        <button 
+                    <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8">
+                        {/* Skills Section */}
+                        <div className='space-y-4'>
+                            <h3 className="text-lg font-medium">Keahlian</h3>
+                             <FormItem>
+                                <FormLabel>Tambahkan Keahlian</FormLabel>
+                                <FormControl>
+                                    <Input 
+                                        placeholder="Contoh: Javascript (Tekan Enter untuk menambah)"
+                                        value={inputValue}
+                                        onChange={(e) => setInputValue(e.target.value)}
+                                        onKeyDown={handleKeyDown}
+                                    />
+                                </FormControl>
+                                <div className="pt-4 flex flex-wrap gap-2 min-h-[2.5rem]">
+                                    {skills.map((skill) => (
+                                        <Badge key={skill} variant="secondary" className="text-sm py-1 pl-3 pr-2">
+                                            {skill}
+                                            <button 
+                                                type="button"
+                                                onClick={() => removeSkill(skill)} 
+                                                className="ml-2 rounded-full hover:bg-muted-foreground/20 p-0.5"
+                                            >
+                                                <X className="h-3 w-3" />
+                                            </button>
+                                        </Badge>
+                                    ))}
+                                </div>
+                                <FormMessage>{form.formState.errors.skills?.message}</FormMessage>
+                            </FormItem>
+                        </div>
+
+                        <Separator />
+
+                        {/* Certifications Section */}
+                        <div className='space-y-4'>
+                            <h3 className="text-lg font-medium">Sertifikasi & Pelatihan</h3>
+                            
+                            <div className="space-y-6">
+                                {certFields.map((field, index) => (
+                                    <div key={field.id} className="space-y-4 p-4 border rounded-md relative">
+                                        <Button 
                                             type="button"
-                                            onClick={() => removeSkill(skill)} 
-                                            className="ml-2 rounded-full hover:bg-muted-foreground/20 p-0.5"
+                                            variant="ghost" 
+                                            size="icon" 
+                                            className="absolute top-2 right-2 text-destructive hover:bg-destructive/10"
+                                            onClick={() => removeCert(index)}
                                         >
-                                            <X className="h-3 w-3" />
-                                        </button>
-                                    </Badge>
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                        
+                                        <FormField
+                                            control={form.control}
+                                            name={`certifications.${index}.name`}
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel>Nama Sertifikasi/Pelatihan</FormLabel>
+                                                    <FormControl><Input {...field} placeholder="Contoh: Certified Cloud Practitioner" /></FormControl>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
+
+                                        <FormField
+                                            control={form.control}
+                                            name={`certifications.${index}.organization`}
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel>Lembaga Penerbit</FormLabel>
+                                                    <FormControl><Input {...field} placeholder="Contoh: Amazon Web Services" /></FormControl>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
+                                        
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <FormField
+                                                control={form.control}
+                                                name={`certifications.${index}.issueDate`}
+                                                render={({ field }) => (
+                                                    <FormItem>
+                                                        <FormLabel>Tanggal Terbit</FormLabel>
+                                                        <FormControl>
+                                                            <MonthYearInput {...field} />
+                                                        </FormControl>
+                                                        <FormMessage />
+                                                    </FormItem>
+                                                )}
+                                            />
+                                            <FormField
+                                                control={form.control}
+                                                name={`certifications.${index}.expirationDate`}
+                                                render={({ field }) => (
+                                                    <FormItem>
+                                                        <FormLabel>Tanggal Kedaluwarsa (Opsional)</FormLabel>
+                                                        <FormControl>
+                                                            <MonthYearInput {...field} value={field.value || ''}/>
+                                                        </FormControl>
+                                                        <FormMessage />
+                                                    </FormItem>
+                                                )}
+                                            />
+                                        </div>
+                                    </div>
                                 ))}
                             </div>
-                            <FormMessage>{form.formState.errors.skills?.message}</FormMessage>
-                        </FormItem>
-
-                        <div className="flex justify-end">
+                            
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => appendCert({ id: crypto.randomUUID(), name: '', organization: '', issueDate: '' })}
+                            >
+                                <PlusCircle className="mr-2 h-4 w-4" /> Tambah Sertifikasi
+                            </Button>
+                        </div>
+                        
+                        <div className="flex justify-end pt-4">
                             <Button type="submit" disabled={isSaving}>
                                 {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                Simpan Keahlian
+                                Simpan
                             </Button>
                         </div>
                     </form>
