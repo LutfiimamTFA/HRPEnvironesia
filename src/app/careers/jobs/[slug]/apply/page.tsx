@@ -1,16 +1,17 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
-import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, query, where, limit } from 'firebase/firestore';
-import type { Job } from '@/lib/types';
+import { useCollection, useFirestore, useMemoFirebase, setDocumentNonBlocking } from '@/firebase';
+import { collection, query, where, limit, doc, getDoc, serverTimestamp } from 'firebase/firestore';
+import type { Job, JobApplication } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Building, Calendar, MapPin, Briefcase } from 'lucide-react';
+import { Building, Calendar, MapPin, Briefcase, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
+import { useToast } from '@/hooks/use-toast';
 
 function JobApplySkeleton() {
     return (
@@ -39,6 +40,8 @@ export default function JobApplyPage() {
   const slug = params.slug as string;
   const firestore = useFirestore();
   const { userProfile } = useAuth();
+  const { toast } = useToast();
+  const [isApplying, setIsApplying] = useState(false);
 
   // Fetch Job details.
   const jobQuery = useMemoFirebase(() => {
@@ -54,6 +57,81 @@ export default function JobApplyPage() {
   const { data: jobs, isLoading: isLoadingJob } = useCollection<Job>(jobQuery);
   const job = jobs?.[0];
 
+  const handleApply = async () => {
+    if (!userProfile || !job) return;
+
+    setIsApplying(true);
+
+    // 1. Check profile completeness
+    if (!userProfile.isProfileComplete) {
+        toast({
+            variant: 'destructive',
+            title: 'Profil Belum Lengkap',
+            description: 'Silakan lengkapi Data Diri dan Pendidikan Anda sebelum melamar.',
+        });
+        router.push('/careers/portal/profile');
+        setIsApplying(false);
+        return;
+    }
+
+    const applicationId = `${job.id}_${userProfile.uid}`;
+    const applicationRef = doc(firestore, 'applications', applicationId);
+
+    try {
+        // 2. Check for existing application
+        const existingAppSnap = await getDoc(applicationRef);
+        if (existingAppSnap.exists()) {
+            toast({
+                variant: 'destructive',
+                title: 'Lamaran Sudah Ada',
+                description: 'Anda sudah pernah melamar untuk posisi ini.',
+            });
+            setIsApplying(false);
+            router.push('/careers/portal/applications');
+            return;
+        }
+
+        // 3. Construct application data
+        const applicationData: Omit<JobApplication, 'id'> = {
+            candidateUid: userProfile.uid,
+            candidateName: userProfile.fullName,
+            candidateEmail: userProfile.email,
+            jobId: job.id!,
+            jobSlug: job.slug,
+            jobPosition: job.position,
+            brandId: job.brandId,
+            brandName: job.brandName || '',
+            jobType: job.statusJob,
+            location: job.location,
+            status: 'submitted',
+            jobApplyDeadline: job.applyDeadline || null,
+            createdAt: serverTimestamp() as any,
+            updatedAt: serverTimestamp() as any,
+            submittedAt: serverTimestamp() as any,
+        };
+
+        // 4. Submit application
+        await setDocumentNonBlocking(applicationRef, applicationData, { merge: false });
+
+        toast({
+            title: 'Lamaran Terkirim!',
+            description: `Lamaran Anda untuk posisi ${job.position} telah berhasil dikirim.`,
+        });
+
+        router.push('/careers/portal/applications');
+
+    } catch (error: any) {
+        console.error("Application submission error:", error);
+        toast({
+            variant: 'destructive',
+            title: 'Gagal Mengirim Lamaran',
+            description: error.message || 'Terjadi kesalahan. Silakan coba lagi.',
+        });
+    } finally {
+        setIsApplying(false);
+    }
+  };
+
 
   if (isLoadingJob || !job) {
       return <JobApplySkeleton />
@@ -66,18 +144,21 @@ export default function JobApplyPage() {
                 <CardHeader>
                     <div>
                         <CardTitle>Lamar Posisi: {job.position}</CardTitle>
-                        <CardDescription>Selesaikan aplikasi Anda untuk posisi ini.</CardDescription>
+                        <CardDescription>Profil Anda akan dikirimkan sebagai lamaran untuk posisi ini. Pastikan semua data sudah benar.</CardDescription>
                     </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                    <p className="text-sm text-center p-8 border rounded-lg bg-muted/50">
-                        Formulir aplikasi sedang dalam tahap pengembangan.
+                     <p className="text-sm text-center p-8 border rounded-lg bg-muted/50">
+                        Profil Anda akan dikirimkan sebagai lamaran untuk posisi ini. Pastikan semua data di profil Anda sudah benar sebelum mengirim.
                     </p>
                     <div className="flex justify-end gap-2 pt-4">
                          <Button onClick={() => router.back()} variant="outline">
                             Kembali
                         </Button>
-                        <Button>Kirim Lamaran (Segera Hadir)</Button>
+                        <Button onClick={handleApply} disabled={isApplying}>
+                            {isApplying && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Kirim Lamaran
+                        </Button>
                     </div>
                 </CardContent>
             </Card>

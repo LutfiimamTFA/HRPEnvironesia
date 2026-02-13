@@ -188,7 +188,7 @@ service cloud.firestore {
       allow create: if isSignedIn()
                     && isCandidate()
                     && request.resource.data.candidateUid == request.auth.uid
-                    && request.resource.data.status == "draft";
+                    && (request.resource.data.status == "draft" || request.resource.data.status == "submitted");
 
       // Allow get for existence checks. This rule relies on the document ID format being "{jobId}_{candidateUid}".
       // It allows a candidate to check a doc if the ID appears to belong to them.
