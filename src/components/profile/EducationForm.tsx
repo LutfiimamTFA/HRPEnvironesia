@@ -12,12 +12,16 @@ import type { Education } from '@/lib/types';
 import { Checkbox } from '../ui/checkbox';
 import { Separator } from '../ui/separator';
 import { useEffect } from 'react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+
+const EDUCATION_LEVELS = ['SMA/SMK', 'D3', 'S1', 'S2', 'S3'] as const;
 
 const educationSchema = z.object({
   id: z.string(),
   institution: z.string().min(1, "Nama institusi harus diisi"),
-  degree: z.string().optional(),
+  level: z.enum(EDUCATION_LEVELS, { required_error: "Jenjang pendidikan harus diisi" }),
   fieldOfStudy: z.string().optional(),
+  gpa: z.string().optional(),
   startDate: z.string().min(4, "Tahun mulai harus diisi"),
   endDate: z.string().min(4, "Tahun selesai harus diisi").optional().or(z.literal('')),
   isCurrent: z.boolean().default(false),
@@ -43,7 +47,7 @@ export function EducationForm({ initialData, onSave, isSaving }: EducationFormPr
     const form = useForm<FormValues>({
         resolver: zodResolver(formSchema),
         defaultValues: {
-            education: initialData || [],
+            education: [],
         },
     });
 
@@ -82,37 +86,59 @@ export function EducationForm({ initialData, onSave, isSaving }: EducationFormPr
                                 >
                                     <Trash2 className="h-4 w-4" />
                                 </Button>
+                                
+                                <FormField
+                                    control={form.control}
+                                    name={`education.${index}.institution`}
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Nama Institusi</FormLabel>
+                                            <FormControl><Input {...field} placeholder="Contoh: Universitas Gadjah Mada, SMAN 1 Yogyakarta" /></FormControl>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <FormField
+                                     <FormField
                                         control={form.control}
-                                        name={`education.${index}.institution`}
+                                        name={`education.${index}.level`}
                                         render={({ field }) => (
                                             <FormItem>
-                                                <FormLabel>Nama Institusi</FormLabel>
-                                                <FormControl><Input {...field} /></FormControl>
+                                                <FormLabel>Jenjang</FormLabel>
+                                                <Select onValueChange={field.onChange} value={field.value}>
+                                                    <FormControl>
+                                                        <SelectTrigger><SelectValue placeholder="Pilih jenjang pendidikan" /></SelectTrigger>
+                                                    </FormControl>
+                                                    <SelectContent>
+                                                        {EDUCATION_LEVELS.map(level => (
+                                                            <SelectItem key={level} value={level}>{level}</SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
                                                 <FormMessage />
                                             </FormItem>
                                         )}
                                     />
                                     <FormField
                                         control={form.control}
-                                        name={`education.${index}.degree`}
+                                        name={`education.${index}.fieldOfStudy`}
                                         render={({ field }) => (
                                             <FormItem>
-                                                <FormLabel>Gelar (Opsional)</FormLabel>
-                                                <FormControl><Input {...field} value={field.value || ''} placeholder="Contoh: Sarjana Ekonomi" /></FormControl>
+                                                <FormLabel>Jurusan (Opsional)</FormLabel>
+                                                <FormControl><Input {...field} value={field.value || ''} placeholder="Contoh: Akuntansi, IPA" /></FormControl>
                                                 <FormMessage />
                                             </FormItem>
                                         )}
                                     />
                                 </div>
-                                <FormField
+                                 <FormField
                                     control={form.control}
-                                    name={`education.${index}.fieldOfStudy`}
+                                    name={`education.${index}.gpa`}
                                     render={({ field }) => (
                                         <FormItem>
-                                            <FormLabel>Bidang Studi / Jurusan (Opsional)</FormLabel>
-                                            <FormControl><Input {...field} value={field.value || ''} placeholder="Contoh: Akuntansi, IPA" /></FormControl>
+                                            <FormLabel>IPK / Nilai Rata-Rata (Opsional)</FormLabel>
+                                            <FormControl><Input {...field} value={field.value || ''} placeholder="Contoh: 3.85 atau 87.5" /></FormControl>
                                             <FormMessage />
                                         </FormItem>
                                     )}
@@ -160,7 +186,7 @@ export function EducationForm({ initialData, onSave, isSaving }: EducationFormPr
                         <Button
                             type="button"
                             variant="outline"
-                            onClick={() => append({ id: crypto.randomUUID(), institution: '', degree: '', fieldOfStudy: '', startDate: '', endDate: '', isCurrent: false })}
+                            onClick={() => append({ id: crypto.randomUUID(), institution: '', level: 'S1', fieldOfStudy: '', gpa: '', startDate: '', endDate: '', isCurrent: false })}
                         >
                             <PlusCircle className="mr-2 h-4 w-4" /> Tambah Pendidikan
                         </Button>

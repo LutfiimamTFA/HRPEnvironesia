@@ -311,13 +311,21 @@
                     "properties": {
                         "id": { "type": "string" },
                         "institution": { "type": "string" },
-                        "degree": { "type": "string" },
+                        "level": {
+                          "type": "string",
+                          "description": "The level of education, e.g., S1, SMA/SMK.",
+                          "enum": ["SMA/SMK", "D3", "S1", "S2", "S3"]
+                        },
                         "fieldOfStudy": { "type": "string" },
+                        "gpa": {
+                          "type": "string",
+                          "description": "Grade Point Average (IPK) or final average score."
+                        },
                         "startDate": { "type": "string" },
                         "endDate": { "type": "string" },
                         "isCurrent": { "type": "boolean" }
                     },
-                    "required": ["id", "institution", "startDate"]
+                    "required": ["id", "institution", "level", "startDate"]
                 }
             },
             "workExperience": {

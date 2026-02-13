@@ -71,8 +71,9 @@ export type JobApplication = {
 export type Education = {
     id: string;
     institution: string;
-    degree?: string;
+    level: 'SMA/SMK' | 'D3' | 'S1' | 'S2' | 'S3';
     fieldOfStudy?: string;
+    gpa?: string;
     startDate: string;
     endDate: string;
     isCurrent: boolean;
