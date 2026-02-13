@@ -176,10 +176,10 @@ export default function ApplicationsPage() {
 
     if (error) {
         return (
-            <div className="p-4 border-2 border-dashed border-red-500 rounded-lg bg-red-50 text-red-900">
-                <h3 className="font-bold text-lg mb-2">Terjadi Kesalahan</h3>
+            <div className="p-4 border-2 border-dashed border-destructive/50 rounded-lg bg-red-50 text-destructive-foreground">
+                <h3 className="font-bold text-lg mb-2 text-destructive">Terjadi Kesalahan</h3>
                 <p>Gagal memuat data lamaran Anda. Silakan coba lagi nanti.</p>
-                <pre className="mt-4 text-xs bg-white p-2 rounded overflow-auto">{error.message}</pre>
+                <pre className="mt-4 text-xs bg-white p-2 rounded overflow-auto text-destructive">{error.message}</pre>
             </div>
         )
     }

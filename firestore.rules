@@ -63,6 +63,7 @@ service cloud.firestore {
     /**
      * Gets the role of the currently signed-in user from their user profile.
      * Returns null if the user is not signed in.
+     * WARNING: This function uses get() and is NOT safe for list queries.
      */
     function userRole() {
       return isSignedIn()
@@ -72,18 +73,17 @@ service cloud.firestore {
     
     /**
      * Checks if the user has an internal role (e.g., employee, manager).
+     * WARNING: This function uses get() and is NOT safe for list queries.
      */
     function isInternal() {
       // isSuperAdmin() is safe for list queries because it uses exists().
       // userRole() is NOT safe for list queries because it uses get().
-      // By putting isSuperAdmin() first, list queries from a super_admin will
-      // short-circuit and succeed. List queries from other internal roles
-      // (like HRD) will fail if they depend on this rule without a specific filter.
       return isSuperAdmin() || userRole() in ['hrd', 'manager', 'karyawan'];
     }
 
     /**
      * Checks if the user is a candidate.
+     * WARNING: This function uses get() and is NOT safe for list queries.
      */
     function isCandidate() {
         return userRole() == 'kandidat';
@@ -91,6 +91,7 @@ service cloud.firestore {
 
     /**
      * Checks if the user has permissions to manage job postings (create, update, delete).
+     * WARNING: This function uses get() and is NOT safe for list queries.
      */
     function canManageJobs() {
       let role = userRole();
@@ -132,7 +133,7 @@ service cloud.firestore {
      * @description
      *   Rules for the detailed candidate profiles collection.
      *   A candidate can read and write to their own profile.
-     *   Internal users can read any profile.
+     *   Internal users can read any profile (get only, not list).
      * @path
      *   /profiles/{userId}
      */
@@ -180,32 +181,33 @@ service cloud.firestore {
     /**
      * @description
      *   Rules for job applications. Candidates can create and manage their own
-     *   drafts. Internal users can view all applications for recruitment.
+     *   applications. Internal users (HRD, Manager) can only get individual
+     *   documents, not perform list queries. SuperAdmins have full access.
      */
     match /applications/{applicationId} {
-      allow create: if isSignedIn()
-                    && isCandidate()
-                    && request.resource.data.candidateUid == request.auth.uid
-                    && (request.resource.data.status == "draft" || request.resource.data.status == "submitted");
-
-      // LIST: Allows a client to execute a query.
-      // The query itself MUST contain a `where('candidateUid', '==', request.auth.uid)` clause.
-      // This rule just lets the query engine start; it doesn't return data yet.
+      // READ rules are split into GET and LIST.
+      // LIST: A query is allowed if the user is signed in.
+      // The query itself MUST be secured on the client-side, e.g., with a
+      // where('candidateUid', '==', auth.uid) clause.
       allow list: if isSignedIn();
 
-      // GET: Enforced on every document returned by the list query.
-      // Ensures a user can only read their own applications, or an internal user can read any.
-      allow get: if isInternal() || (resource.data.candidateUid == request.auth.uid);
+      // GET: After the list query runs, this rule is checked for EACH document returned.
+      // It ensures a user can only receive documents they own, or that an internal
+      // user can view any specific document.
+      allow get: if (resource.data.candidateUid == request.auth.uid) || isInternal();
 
-      allow update: if isSignedIn() && (
-                      (isCandidate()
-                        && resource.data.candidateUid == request.auth.uid
-                        && resource.data.status == "draft"
-                        && request.resource.data.candidateUid == resource.data.candidateUid)
-                      || isInternal()
-                    );
-
+      // WRITE rules
+      allow create: if isCreatingOwn() && (request.resource.data.status == "draft" || request.resource.data.status == "submitted");
+      allow update: if (isOwner() && resource.data.status == "draft") || isInternal();
       allow delete: if isInternal();
+
+      // Helper functions local to this scope for clarity
+      function isOwner() {
+        return request.auth.uid == resource.data.candidateUid;
+      }
+      function isCreatingOwn() {
+        return request.auth.uid == request.resource.data.candidateUid;
+      }
     }
 
     /**
