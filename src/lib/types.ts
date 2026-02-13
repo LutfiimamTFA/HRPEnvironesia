@@ -128,6 +128,9 @@ export type Profile = {
     workExperience?: WorkExperience[];
     skills?: string[];
     certifications?: Certification[];
+    selfDescription?: string;
+    salaryExpectation?: string;
+    motivation?: string;
 }
 
     

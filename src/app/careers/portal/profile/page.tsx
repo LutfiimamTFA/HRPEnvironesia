@@ -12,7 +12,8 @@ import { PersonalDataForm } from '@/components/profile/PersonalDataForm';
 import { EducationForm } from '@/components/profile/EducationForm';
 import { WorkExperienceForm } from '@/components/profile/WorkExperienceForm';
 import { SkillsForm } from '@/components/profile/SkillsForm';
-import { Briefcase, GraduationCap, Sparkles, User } from 'lucide-react';
+import { Briefcase, GraduationCap, Sparkles, User, ClipboardEdit } from 'lucide-react';
+import { SelfDescriptionForm } from '@/components/profile/SelfDescriptionForm';
 
 function ProfileSkeleton() {
     return (
@@ -32,6 +33,7 @@ const navItems = [
     { name: 'Pendidikan', section: 'education', icon: GraduationCap, description: 'Riwayat pendidikan formal.' },
     { name: 'Pengalaman Kerja', section: 'experience', icon: Briefcase, description: 'Pengalaman kerja relevan.' },
     { name: 'Keahlian & Sertifikasi', section: 'skills', icon: Sparkles, description: 'Keahlian & sertifikasi Anda.' },
+    { name: 'Deskripsi Diri', section: 'description', icon: ClipboardEdit, description: 'Profil diri & motivasi.' },
 ];
 
 export default function ProfilePage() {
@@ -52,15 +54,17 @@ export default function ProfilePage() {
       if (!firestore || !firebaseUser) return;
       const userDocRef = doc(firestore, 'users', firebaseUser.uid);
       const currentProfile = { ...profile, ...updatedData };
-      const requiredFields: (keyof Profile)[] = ['fullName', 'nickname', 'email', 'phone', 'eKtpNumber', 'gender', 'birthDate', 'addressKtp', 'willingToWfo', 'education'];
+      const requiredFields: (keyof Profile)[] = ['fullName', 'nickname', 'email', 'phone', 'eKtpNumber', 'gender', 'birthDate', 'addressKtp', 'education'];
       
       const isComplete = requiredFields.every(field => {
           const value = currentProfile[field];
+          if (field === 'willingToWfo') {
+            return typeof value === 'boolean';
+          }
           if (Array.isArray(value)) {
               return value.length > 0;
           }
-          // Check for existence (not just truthiness), as `false` is a valid value for `willingToWfo`.
-          return value !== undefined && value !== null;
+          return value !== undefined && value !== null && value !== '';
       });
 
       if (isComplete !== userProfile?.isProfileComplete) {
@@ -156,6 +160,17 @@ export default function ProfilePage() {
                         }} 
                         onSave={async (data: { skills: string[], certifications?: Certification[] }) => await handleSave(data, 'Keahlian & Sertifikasi')} 
                         isSaving={isSaving} 
+                    />
+                </div>
+                <div style={{ display: activeSection === 'description' ? 'block' : 'none' }}>
+                    <SelfDescriptionForm 
+                        initialData={{
+                            selfDescription: initialProfileData.selfDescription,
+                            salaryExpectation: initialProfileData.salaryExpectation,
+                            motivation: initialProfileData.motivation,
+                        }}
+                        onSave={async (data) => await handleSave(data, 'Deskripsi Diri')}
+                        isSaving={isSaving}
                     />
                 </div>
             </main>
