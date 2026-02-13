@@ -38,14 +38,14 @@ const JobCard = ({ job }: { job: Job }) => (
                 </div>
             </div>
 
-            <div className="flex-shrink-0 flex flex-col items-stretch sm:items-center gap-2 w-full sm:w-40 mt-4 sm:mt-0">
-                <Button asChild className="w-full justify-center">
-                    <Link href={`/careers/jobs/${job.slug}`}>
+            <div className="flex-shrink-0 flex flex-col items-stretch sm:items-end gap-2 w-full sm:w-auto mt-4 sm:mt-0">
+                <Button asChild className="w-full justify-center sm:w-40">
+                    <Link href={`/careers/portal/jobs/${job.slug}`}>
                         Lihat Detail
                         <ArrowRight className="ml-2 h-4 w-4" />
                     </Link>
                 </Button>
-                <Button variant="outline" className="w-full justify-center">
+                <Button variant="outline" className="w-full justify-center sm:w-40">
                     <Bookmark className="mr-2 h-4 w-4" />
                     Simpan
                 </Button>
@@ -66,7 +66,7 @@ const JobCardSkeleton = () => (
                     <Skeleton className="h-6 w-28" />
                 </div>
             </div>
-            <div className="flex-shrink-0 flex flex-col items-center gap-2 w-full sm:w-40">
+            <div className="flex-shrink-0 flex flex-col items-end gap-2 w-full sm:w-40 mt-4 sm:mt-0">
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
             </div>
@@ -81,17 +81,23 @@ export default function CandidateJobsPage() {
   const [companyFilter, setCompanyFilter] = useState('');
 
   const publishedJobsQuery = useMemoFirebase(
-    () => query(
-      collection(firestore, 'jobs'), 
-      where('publishStatus', '==', 'published')
-    ), 
+    () => {
+      if (!firestore) return null;
+      return query(
+        collection(firestore, 'jobs'), 
+        where('publishStatus', '==', 'published')
+      )
+    }, 
     [firestore]
   );
 
   const { data: jobs, isLoading } = useCollection<Job>(publishedJobsQuery);
 
   const brandsQuery = useMemoFirebase(
-    () => query(collection(firestore, 'brands')),
+    () => {
+      if (!firestore) return null;
+      return query(collection(firestore, 'brands'))
+    },
     [firestore]
   );
   const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(brandsQuery);
