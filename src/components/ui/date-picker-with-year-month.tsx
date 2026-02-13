@@ -22,9 +22,9 @@ interface DatePickerWithYearMonthProps {
 export function DatePickerWithYearMonth({ value, onChange, disabled, className, fromDate, toDate }: DatePickerWithYearMonthProps) {
   const [open, setOpen] = React.useState(false);
   
-  // Set default view to a reasonable date for DOB, e.g., 25 years ago, or the current value
-  const initialDisplayMonth = value || new Date(new Date().setFullYear(new Date().getFullYear() - 25));
-  const [month, setMonth] = React.useState<Date>(initialDisplayMonth);
+  const [month, setMonth] = React.useState<Date>(
+    value || new Date(new Date().setFullYear(new Date().getFullYear() - 25))
+  );
 
   const years = React.useMemo(() => {
     const startYear = fromDate?.getFullYear() || new Date().getFullYear() - 100;
@@ -40,22 +40,24 @@ export function DatePickerWithYearMonth({ value, onChange, disabled, className, 
   }, []);
 
   const handleYearChange = (year: string) => {
-    const newMonth = new Date(month.setFullYear(parseInt(year, 10)));
-    setMonth(newMonth);
+    const newDate = new Date(month); // Clone the date to avoid state mutation
+    newDate.setFullYear(parseInt(year, 10));
+    setMonth(newDate);
   };
 
   const handleMonthChange = (monthIndex: string) => {
-    const newMonth = new Date(month.setMonth(parseInt(monthIndex, 10)));
-    setMonth(newMonth);
+    const newDate = new Date(month); // Clone the date to avoid state mutation
+    newDate.setMonth(parseInt(monthIndex, 10));
+    setMonth(newDate);
   };
 
   React.useEffect(() => {
     if (value) {
       setMonth(value);
-    } else {
-        setMonth(initialDisplayMonth);
     }
-  }, [value, initialDisplayMonth]);
+    // No 'else' block. This prevents an infinite loop by not resetting the month
+    // on every render when no date is selected. The user can freely navigate months.
+  }, [value]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
