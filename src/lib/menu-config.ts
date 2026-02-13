@@ -1,3 +1,4 @@
+'use client';
 import { createElement, type ReactNode } from 'react';
 import { Briefcase, FileText, Users, ClipboardList, CheckSquare, User, Search, Calendar, DollarSign, LayoutDashboard, Settings, List, FileUp } from 'lucide-react';
 
@@ -30,6 +31,7 @@ export const ALL_MENU_ITEMS: Record<string, MenuItem[]> = {
   ],
   kandidat: [
     { href: '/careers/portal', label: 'Dashboard', icon: createElement(LayoutDashboard, { className: "h-4 w-4" }) },
+    { href: '/careers/portal/jobs', label: 'Cari Lowongan', icon: createElement(Search, { className: "h-4 w-4" }) },
     { href: '/careers/portal/applications', label: 'Lamaran Saya', icon: createElement(FileText, { className: "h-4 w-4" }) },
     { href: '/careers/portal/documents', label: 'Dokumen', icon: createElement(FileUp, { className: "h-4 w-4" }) },
     { href: '/careers/portal/profile', label: 'Profil Saya', icon: createElement(User, { className: "h-4 w-4" }) },
