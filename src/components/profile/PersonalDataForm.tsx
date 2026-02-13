@@ -14,7 +14,7 @@ import { Timestamp } from 'firebase/firestore';
 import { GoogleDatePicker } from '../ui/google-date-picker';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { Checkbox } from '../ui/checkbox';
-import React from 'react';
+import React, { useEffect } from 'react';
 
 const formSchema = z.object({
     fullName: z.string().min(2, { message: "Nama lengkap harus diisi." }),
@@ -65,7 +65,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
             phone: initialData.phone || '',
             eKtpNumber: initialData.eKtpNumber || '',
             gender: initialData.gender,
-            birthDate: initialData.birthDate?.toDate(),
+            birthDate: initialData.birthDate instanceof Timestamp ? initialData.birthDate.toDate() : initialData.birthDate,
             addressKtp: initialData.addressKtp || '',
             isDomicileSameAsKtp: initialData.isDomicileSameAsKtp || false,
             addressDomicile: initialData.addressDomicile || '',
@@ -76,6 +76,26 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
             websiteUrl: initialData.websiteUrl || '',
         },
     });
+
+    useEffect(() => {
+        form.reset({
+            fullName: initialData.fullName || '',
+            nickname: initialData.nickname || '',
+            email: initialData.email || '',
+            phone: initialData.phone || '',
+            eKtpNumber: initialData.eKtpNumber || '',
+            gender: initialData.gender,
+            birthDate: initialData.birthDate instanceof Timestamp ? initialData.birthDate.toDate() : initialData.birthDate,
+            addressKtp: initialData.addressKtp || '',
+            isDomicileSameAsKtp: initialData.isDomicileSameAsKtp || false,
+            addressDomicile: initialData.addressDomicile || '',
+            hasNpwp: initialData.hasNpwp || false,
+            npwpNumber: initialData.npwpNumber || '',
+            willingToWfo: typeof initialData.willingToWfo === 'boolean' ? (initialData.willingToWfo ? 'ya' : 'tidak') : undefined,
+            linkedinUrl: initialData.linkedinUrl || '',
+            websiteUrl: initialData.websiteUrl || '',
+        })
+    }, [initialData, form]);
 
     const isDomicileSameAsKtp = form.watch('isDomicileSameAsKtp');
     const hasNpwp = form.watch('hasNpwp');
@@ -257,7 +277,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                     <FormItem>
                                         <FormLabel>Alamat Domisili</FormLabel>
                                         <FormControl>
-                                            <Textarea {...field} placeholder="Masukkan alamat domisili saat ini..." />
+                                            <Textarea {...field} value={field.value ?? ''} placeholder="Masukkan alamat domisili saat ini..." />
                                         </FormControl>
                                         <FormMessage />
                                     </FormItem>

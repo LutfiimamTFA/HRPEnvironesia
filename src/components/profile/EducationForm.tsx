@@ -11,6 +11,7 @@ import { Loader2, PlusCircle, Trash2 } from 'lucide-react';
 import type { Education } from '@/lib/types';
 import { Checkbox } from '../ui/checkbox';
 import { Separator } from '../ui/separator';
+import { useEffect } from 'react';
 
 const educationSchema = z.object({
   id: z.string(),
@@ -42,9 +43,15 @@ export function EducationForm({ initialData, onSave, isSaving }: EducationFormPr
     const form = useForm<FormValues>({
         resolver: zodResolver(formSchema),
         defaultValues: {
-            education: initialData.map(item => ({ ...item })) || [],
+            education: initialData || [],
         },
     });
+
+    useEffect(() => {
+        form.reset({
+            education: initialData || []
+        });
+    }, [initialData, form]);
     
     const { fields, append, remove } = useFieldArray({
         control: form.control,

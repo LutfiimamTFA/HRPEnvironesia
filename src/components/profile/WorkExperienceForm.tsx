@@ -12,6 +12,7 @@ import type { WorkExperience } from '@/lib/types';
 import { Checkbox } from '../ui/checkbox';
 import { Separator } from '../ui/separator';
 import { Textarea } from '../ui/textarea';
+import { useEffect } from 'react';
 
 const experienceSchema = z.object({
   id: z.string(),
@@ -42,9 +43,15 @@ export function WorkExperienceForm({ initialData, onSave, isSaving }: WorkExperi
     const form = useForm<FormValues>({
         resolver: zodResolver(formSchema),
         defaultValues: {
-            experience: initialData.map(item => ({ ...item })) || [],
+            experience: initialData || [],
         },
     });
+
+    useEffect(() => {
+        form.reset({
+            experience: initialData || []
+        });
+    }, [initialData, form]);
     
     const { fields, append, remove } = useFieldArray({
         control: form.control,
@@ -141,7 +148,7 @@ export function WorkExperienceForm({ initialData, onSave, isSaving }: WorkExperi
                                     render={({ field }) => (
                                         <FormItem>
                                             <FormLabel>Deskripsi (Opsional)</FormLabel>
-                                            <FormControl><Textarea {...field} placeholder="Jelaskan tanggung jawab Anda..." /></FormControl>
+                                            <FormControl><Textarea {...field} value={field.value ?? ''} placeholder="Jelaskan tanggung jawab Anda..." /></FormControl>
                                             <FormMessage />
                                         </FormItem>
                                     )}
