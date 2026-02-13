@@ -71,7 +71,9 @@ export default function CandidateDashboardPage() {
                         <div className={cn(
                           "flex-1 h-1 transition-colors duration-300",
                           "mt-[23px]", // to align with circle center
-                          isCompleted ? 'bg-primary' : 'bg-border'
+                           isCompleted 
+                            ? 'bg-gradient-to-r from-primary via-emerald-400 to-primary bg-200% animate-flow' 
+                            : 'bg-border'
                         )} />
                       )}
                     </React.Fragment>
