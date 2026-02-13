@@ -247,6 +247,8 @@
           "enum": [
             "draft",
             "submitted",
+            "psychotest",
+            "upload_documents",
             "reviewed",
             "interview",
             "rejected",

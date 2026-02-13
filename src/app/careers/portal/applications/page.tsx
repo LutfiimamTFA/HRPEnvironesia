@@ -11,7 +11,7 @@ import { format } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { ArrowRight, Check, Briefcase, Building, FileSignature, FileUp, ClipboardCheck, Users, Award, XCircle } from "lucide-react";
+import { ArrowRight, Check, Briefcase, Building, FileSignature, FileUp, ClipboardCheck, Users, Award, XCircle, BrainCircuit } from "lucide-react";
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 
@@ -19,6 +19,8 @@ import { Separator } from '@/components/ui/separator';
 const applicationSteps = [
   { status: 'draft', label: 'Draf', icon: FileSignature },
   { status: 'submitted', label: 'Terkirim', icon: FileUp },
+  { status: 'psychotest', label: 'Psikotes', icon: BrainCircuit },
+  { status: 'upload_documents', label: 'Unggah Dokumen', icon: FileUp },
   { status: 'reviewed', label: 'Ditinjau', icon: ClipboardCheck },
   { status: 'interview', label: 'Wawancara', icon: Users },
   { status: 'hired', label: 'Diterima', icon: Award },
@@ -27,6 +29,8 @@ const applicationSteps = [
 const statusLabels: Record<JobApplication['status'], string> = {
   draft: 'Draf',
   submitted: 'Lamaran Terkirim',
+  psychotest: 'Tahap Psikotes',
+  upload_documents: 'Tahap Unggah Dokumen',
   reviewed: 'Sedang Ditinjau',
   interview: 'Tahap Wawancara',
   rejected: 'Tidak Lolos',
