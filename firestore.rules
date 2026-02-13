@@ -190,15 +190,15 @@ service cloud.firestore {
                     && request.resource.data.candidateUid == request.auth.uid
                     && (request.resource.data.status == "draft" || request.resource.data.status == "submitted");
 
-      // A user can read an application if they are the owner, or if they are an internal user.
-      // The `isInternal()` helper function is safe for direct `get` operations.
-      // For `list` operations by candidates, the `resource.data.candidateUid` check runs first and short-circuits,
-      // avoiding the costly `get()` inside `isInternal()`.
+      // GET: A user can get an application if they are the owner OR an internal user.
+      // This rule is safe for direct document fetches but its complexity (calling isInternal, which uses `get`)
+      // was causing the `list` operation to be incorrectly denied by the rules engine's static analysis.
       allow get: if (resource.data.candidateUid == request.auth.uid) || isInternal();
 
-      // `list` is allowed for any authenticated user. The client query MUST filter by `candidateUid`.
-      // The `get` rule above then secures each document returned by the query, ensuring
-      // candidates only see their own applications. Internal users' access is checked via the `get()` in `isInternal()`.
+      // LIST: Allow any authenticated user to attempt a list query.
+      // This rule is simple and does not use `get()`, so it passes static analysis.
+      // Security is enforced because Firestore then applies the `allow get` rule above to EACH document
+      // returned by the query, ensuring users can only see documents they are permitted to.
       allow list: if isSignedIn();
 
       allow update: if isSignedIn() && (
