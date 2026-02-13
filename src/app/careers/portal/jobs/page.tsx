@@ -78,8 +78,6 @@ export default function CandidateJobsPage() {
   
   const [searchTerm, setSearchTerm] = useState('');
   const [companyFilter, setCompanyFilter] = useState('');
-  const [fieldFilter, setFieldFilter] = useState('');
-  const [educationFilter, setEducationFilter] = useState('');
   const [locationFilter, setLocationFilter] = useState('');
 
   const publishedJobsQuery = useMemoFirebase(
@@ -105,20 +103,15 @@ export default function CandidateJobsPage() {
     return sortedJobs.filter(job => {
       const matchesSearchTerm = job.position.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesCompany = companyFilter ? job.brandName?.toLowerCase().includes(companyFilter.toLowerCase()) : true;
-      const matchesField = fieldFilter ? job.division.toLowerCase().includes(fieldFilter.toLowerCase()) : true;
       const matchesLocation = locationFilter ? job.location.toLowerCase().includes(locationFilter.toLowerCase()) : true;
-      // Education filter not implemented as data is not available in Job type
-      const matchesEducation = educationFilter ? true : true; 
 
-      return matchesSearchTerm && matchesCompany && matchesField && matchesLocation && matchesEducation;
+      return matchesSearchTerm && matchesCompany && matchesLocation;
     });
-  }, [sortedJobs, searchTerm, companyFilter, fieldFilter, educationFilter, locationFilter]);
+  }, [sortedJobs, searchTerm, companyFilter, locationFilter]);
 
   const handleResetFilters = () => {
     setSearchTerm('');
     setCompanyFilter('');
-    setFieldFilter('');
-    setEducationFilter('');
     setLocationFilter('');
   };
 
@@ -157,22 +150,6 @@ export default function CandidateJobsPage() {
                             placeholder="" 
                             value={companyFilter}
                             onChange={(e) => setCompanyFilter(e.target.value)}
-                        />
-                    </div>
-                     <div className="space-y-2">
-                        <label className="text-sm font-medium">Bidang Pekerjaan</label>
-                        <Input 
-                            placeholder="" 
-                            value={fieldFilter}
-                            onChange={(e) => setFieldFilter(e.target.value)}
-                        />
-                    </div>
-                     <div className="space-y-2">
-                        <label className="text-sm font-medium">Jenjang Pendidikan</label>
-                        <Input 
-                            placeholder="" 
-                            value={educationFilter}
-                            onChange={(e) => setEducationFilter(e.target.value)}
                         />
                     </div>
                      <div className="space-y-2">
