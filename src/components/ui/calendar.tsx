@@ -36,8 +36,6 @@ function Calendar({
         ),
         table: "w-full border-collapse space-y-1",
         head_row: "hidden",
-        head_cell:
-          "w-9 text-muted-foreground rounded-md font-normal text-[0.8rem]",
         row: "flex w-full mt-2",
         cell: "h-9 w-9 text-center text-sm p-0 relative [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20",
         day: cn(
