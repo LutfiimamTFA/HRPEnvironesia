@@ -17,8 +17,8 @@ const certificationSchema = z.object({
   id: z.string(),
   name: z.string().min(1, "Nama sertifikasi harus diisi"),
   organization: z.string().min(1, "Nama organisasi harus diisi"),
-  issueDate: z.string().min(1, "Tanggal terbit harus diisi"),
-  expirationDate: z.string().optional(),
+  issueDate: z.string().regex(/^\d{4}-\d{2}$/, { message: "Gunakan format YYYY-MM" }),
+  expirationDate: z.string().regex(/^\d{4}-\d{2}$/, { message: "Gunakan format YYYY-MM" }).optional().or(z.literal('')),
 });
 
 const formSchema = z.object({
@@ -32,16 +32,6 @@ interface SkillsFormProps {
     initialData: { skills: string[], certifications?: Certification[] };
     onSave: (data: { skills: string[], certifications?: Certification[] }) => Promise<void>;
     isSaving: boolean;
-}
-
-const MonthYearInput = ({ value, onChange }: { value?: string, onChange: (val: string) => void }) => {
-    return (
-        <Input 
-            type="month"
-            value={value || ''}
-            onChange={(e) => onChange(e.target.value)}
-        />
-    )
 }
 
 export function SkillsForm({ initialData, onSave, isSaving }: SkillsFormProps) {
@@ -179,7 +169,7 @@ export function SkillsForm({ initialData, onSave, isSaving }: SkillsFormProps) {
                                                     <FormItem>
                                                         <FormLabel>Tanggal Terbit</FormLabel>
                                                         <FormControl>
-                                                            <MonthYearInput {...field} />
+                                                            <Input {...field} placeholder="YYYY-MM" />
                                                         </FormControl>
                                                         <FormMessage />
                                                     </FormItem>
@@ -192,7 +182,7 @@ export function SkillsForm({ initialData, onSave, isSaving }: SkillsFormProps) {
                                                     <FormItem>
                                                         <FormLabel>Tanggal Kedaluwarsa (Opsional)</FormLabel>
                                                         <FormControl>
-                                                            <MonthYearInput {...field} value={field.value || ''}/>
+                                                            <Input {...field} value={field.value || ''} placeholder="YYYY-MM" />
                                                         </FormControl>
                                                         <FormMessage />
                                                     </FormItem>
