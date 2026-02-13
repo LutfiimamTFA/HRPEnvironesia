@@ -1,5 +1,5 @@
 import { createElement, type ReactNode } from 'react';
-import { Briefcase, FileText, Users, ClipboardList, CheckSquare, User, Search, Calendar, DollarSign, LayoutDashboard, Settings, List } from 'lucide-react';
+import { Briefcase, FileText, Users, ClipboardList, CheckSquare, User, Search, Calendar, DollarSign, LayoutDashboard, Settings, List, FileUp } from 'lucide-react';
 
 export type MenuItem = {
   href: string;
@@ -29,9 +29,10 @@ export const ALL_MENU_ITEMS: Record<string, MenuItem[]> = {
     { href: '#', label: 'Approvals', icon: createElement(CheckSquare, { className: "h-4 w-4" }) },
   ],
   kandidat: [
-    { href: '#', label: 'My Profile', icon: createElement(User, { className: "h-4 w-4" }) },
-    { href: '#', label: 'Job Search', icon: createElement(Search, { className: "h-4 w-4" }) },
-    { href: '#', label: 'My Applications', icon: createElement(FileText, { className: "h-4 w-4" }) },
+    { href: '/careers/portal', label: 'Dashboard', icon: createElement(LayoutDashboard, { className: "h-4 w-4" }) },
+    { href: '/careers/portal/applications', label: 'Lamaran Saya', icon: createElement(FileText, { className: "h-4 w-4" }) },
+    { href: '/careers/portal/documents', label: 'Dokumen', icon: createElement(FileUp, { className: "h-4 w-4" }) },
+    { href: '/careers/portal/profile', label: 'Profil Saya', icon: createElement(User, { className: "h-4 w-4" }) },
   ],
   karyawan: [
     { href: '#', label: 'My Information', icon: createElement(User, { className: "h-4 w-4" }) },

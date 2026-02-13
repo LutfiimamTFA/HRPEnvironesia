@@ -1,13 +1,14 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import React from 'react';
+import React, { useMemo } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/providers/auth-provider';
-import { useAuth as useFirebaseAuth } from '@/firebase';
+import { useAuth as useFirebaseAuth, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
+import { doc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { LogOut, LayoutDashboard, FileText, FileUp, User, Briefcase, Leaf } from 'lucide-react';
+import { LogOut, Briefcase, Leaf } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
@@ -23,13 +24,8 @@ import {
   SidebarFooter,
 } from '@/components/ui/sidebar';
 import { Separator } from '../ui/separator';
-
-const candidateMenuItems = [
-    { href: '/careers/portal', label: 'Dashboard', icon: <LayoutDashboard /> },
-    { href: '/careers/portal/applications', label: 'Lamaran Saya', icon: <FileText /> },
-    { href: '/careers/portal/documents', label: 'Dokumen', icon: <FileUp /> },
-    { href: '/careers/portal/profile', label: 'Profil Saya', icon: <User /> },
-];
+import { ALL_MENU_ITEMS, ALL_UNIQUE_MENU_ITEMS } from '@/lib/menu-config';
+import type { NavigationSetting } from '@/lib/types';
 
 function UserNav() {
   const { userProfile } = useAuth();
@@ -84,6 +80,28 @@ function UserNav() {
 
 export function CandidatePortalLayout({ children }: { children: ReactNode }) {
   const { userProfile } = useAuth();
+  const firestore = useFirestore();
+
+  const settingsDocRef = useMemoFirebase(
+    () => (userProfile ? doc(firestore, 'navigation_settings', userProfile.role) : null),
+    [userProfile, firestore]
+  );
+
+  const { data: navSettings, isLoading: isLoadingSettings } = useDoc<NavigationSetting>(settingsDocRef);
+
+  const menuItems = useMemo(() => {
+    const defaultItems = ALL_MENU_ITEMS.kandidat || [];
+
+    if (isLoadingSettings) {
+      return defaultItems;
+    }
+    
+    if (navSettings) {
+      return ALL_UNIQUE_MENU_ITEMS.filter(item => navSettings.visibleMenuItems.includes(item.label));
+    }
+    
+    return defaultItems;
+  }, [navSettings, isLoadingSettings]);
   
   if (!userProfile) {
     return null; // Should be handled by the parent layout's guard
@@ -102,7 +120,7 @@ export function CandidatePortalLayout({ children }: { children: ReactNode }) {
         </SidebarHeader>
         <SidebarContent>
           <SidebarMenu>
-            {candidateMenuItems.map((item) => (
+            {menuItems.map((item) => (
               <SidebarMenuItem key={item.label}>
                 <SidebarMenuButton asChild tooltip={item.label}>
                   <Link href={item.href}>
