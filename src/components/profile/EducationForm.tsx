@@ -15,8 +15,8 @@ import { Separator } from '../ui/separator';
 const educationSchema = z.object({
   id: z.string(),
   institution: z.string().min(1, "Nama institusi harus diisi"),
-  degree: z.string().min(1, "Gelar harus diisi"),
-  fieldOfStudy: z.string().min(1, "Bidang studi harus diisi"),
+  degree: z.string().optional(),
+  fieldOfStudy: z.string().optional(),
   startDate: z.string().min(4, "Tahun mulai harus diisi"),
   endDate: z.string().min(4, "Tahun selesai harus diisi").optional().or(z.literal('')),
   isCurrent: z.boolean().default(false),
@@ -92,8 +92,8 @@ export function EducationForm({ initialData, onSave, isSaving }: EducationFormPr
                                         name={`education.${index}.degree`}
                                         render={({ field }) => (
                                             <FormItem>
-                                                <FormLabel>Gelar</FormLabel>
-                                                <FormControl><Input {...field} placeholder="Contoh: Sarjana (S1)" /></FormControl>
+                                                <FormLabel>Gelar (Opsional)</FormLabel>
+                                                <FormControl><Input {...field} value={field.value || ''} placeholder="Contoh: Sarjana Ekonomi" /></FormControl>
                                                 <FormMessage />
                                             </FormItem>
                                         )}
@@ -104,8 +104,8 @@ export function EducationForm({ initialData, onSave, isSaving }: EducationFormPr
                                     name={`education.${index}.fieldOfStudy`}
                                     render={({ field }) => (
                                         <FormItem>
-                                            <FormLabel>Bidang Studi</FormLabel>
-                                            <FormControl><Input {...field} placeholder="Contoh: Teknik Informatika" /></FormControl>
+                                            <FormLabel>Bidang Studi / Jurusan (Opsional)</FormLabel>
+                                            <FormControl><Input {...field} value={field.value || ''} placeholder="Contoh: Akuntansi, IPA" /></FormControl>
                                             <FormMessage />
                                         </FormItem>
                                     )}

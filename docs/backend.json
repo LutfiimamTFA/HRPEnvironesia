@@ -317,7 +317,7 @@
                         "endDate": { "type": "string" },
                         "isCurrent": { "type": "boolean" }
                     },
-                    "required": ["id", "institution", "degree", "fieldOfStudy", "startDate"]
+                    "required": ["id", "institution", "startDate"]
                 }
             },
             "workExperience": {
