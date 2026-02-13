@@ -23,7 +23,7 @@ import { Loader2, UploadCloud, Calendar as CalendarIcon } from 'lucide-react';
 import type { Job, Brand } from '@/lib/types';
 import { RichTextEditor } from '../ui/RichTextEditor';
 import Image from 'next/image';
-import { DatePickerField } from '../ui/date-picker-field';
+import { DatePickerWithYearMonth } from '../ui/date-picker-with-year-month';
 
 const slugify = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
@@ -266,7 +266,7 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
                     <FormItem className="flex flex-col pt-2">
                       <FormLabel>Application Deadline</FormLabel>
                       <FormControl>
-                        <DatePickerField
+                        <DatePickerWithYearMonth
                           value={field.value}
                           onChange={field.onChange}
                           disabled={(date) =>
