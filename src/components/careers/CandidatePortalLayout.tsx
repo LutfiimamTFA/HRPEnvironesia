@@ -116,7 +116,7 @@ export function CandidatePortalLayout({ children }: { children: ReactNode }) {
           <div className="flex h-16 items-center justify-center">
             <Link href="/careers/portal" className="flex items-center gap-2 font-semibold">
               <Leaf className="h-7 w-7 text-primary" />
-              <span className="text-xl tracking-tight text-primary group-data-[state=collapsed]:hidden">Environesia</span>
+              <span className="text-xl tracking-tight text-primary group-data-[state=collapsed]:hidden">Environesia Karir</span>
             </Link>
           </div>
         </SidebarHeader>
