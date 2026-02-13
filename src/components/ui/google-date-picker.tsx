@@ -31,6 +31,8 @@ export type GoogleDatePickerProps = {
   minYear?: number;
   maxYear?: number;
   disabled?: boolean;
+  className?: string;
+  portalled?: boolean;
 };
 
 export function GoogleDatePicker({
@@ -41,6 +43,8 @@ export function GoogleDatePicker({
   minYear: minYearProp,
   maxYear: maxYearProp,
   disabled,
+  className,
+  portalled = true,
 }: GoogleDatePickerProps) {
   const [open, setOpen] = React.useState(false);
   const [view, setView] = React.useState<View>('day');
@@ -55,16 +59,15 @@ export function GoogleDatePicker({
     return new Date();
   }, [value, mode]);
 
-  const [cursorDate, setCursorDate] = React.useState(defaultCursorDate);
+  const [cursorDate, setCursorDate] = React.useState(value || defaultCursorDate);
   const yearRef = React.useRef<HTMLButtonElement>(null);
 
   React.useEffect(() => {
-    if (value) {
-      setCursorDate(value);
-    } else {
-      setCursorDate(defaultCursorDate);
+    if (open) {
+      setCursorDate(value || defaultCursorDate);
+      setView('day');
     }
-  }, [value, defaultCursorDate]);
+  }, [open, value, defaultCursorDate]);
   
   React.useEffect(() => {
     if (view === 'year' && yearRef.current) {
@@ -104,12 +107,7 @@ export function GoogleDatePicker({
   const renderHeader = () => (
     <div className="flex items-center justify-between px-2 pb-2">
       <div className="flex items-center gap-1">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setCursorDate(subMonths(cursorDate, 1))}>
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
-      </div>
-      <div className='flex gap-1'>
-         <Button variant="ghost" className="text-sm font-medium" onClick={() => setView('month')}>
+        <Button variant="ghost" className="text-sm font-medium" onClick={() => setView('month')}>
             {format(cursorDate, 'MMMM', { locale: id })}
         </Button>
         <Button variant="ghost" className="text-sm font-medium" onClick={() => setView('year')}>
@@ -117,6 +115,9 @@ export function GoogleDatePicker({
         </Button>
       </div>
       <div className="flex items-center gap-1">
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setCursorDate(subMonths(cursorDate, 1))}>
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setCursorDate(addMonths(cursorDate, 1))}>
           <ChevronRight className="h-4 w-4" />
         </Button>
@@ -127,11 +128,6 @@ export function GoogleDatePicker({
   const renderDayView = () => (
     <>
       {renderHeader()}
-      <div className="grid grid-cols-7 text-center text-xs text-muted-foreground">
-        {['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'].map(day => (
-          <div key={day} className="h-9 w-9 flex items-center justify-center">{day}</div>
-        ))}
-      </div>
       <div className="grid grid-cols-7">
         {days.map(day => (
           <div key={day.toISOString()} className="p-0.5">
@@ -209,17 +205,19 @@ export function GoogleDatePicker({
         <Button
           variant={'outline'}
           disabled={disabled}
-          className={cn('w-full justify-start text-left font-normal', !value && 'text-muted-foreground')}
+          className={cn('w-full justify-start text-left font-normal', !value && 'text-muted-foreground', className)}
         >
           <CalendarIcon className="mr-2 h-4 w-4" />
           {value ? format(value, 'PPP', { locale: id }) : <span>{placeholder}</span>}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto rounded-xl border bg-popover shadow-lg p-3" align="start">
-        {view === 'day' && renderDayView()}
-        {view === 'month' && renderMonthView()}
-        {view === 'year' && renderYearView()}
-        <div className="flex justify-between items-center pt-2 border-t mt-2">
+      <PopoverContent className="w-auto rounded-xl border bg-popover shadow-lg p-0" align="start" portalled={portalled}>
+        <div className="p-3">
+            {view === 'day' && renderDayView()}
+            {view === 'month' && renderMonthView()}
+            {view === 'year' && renderYearView()}
+        </div>
+        <div className="flex justify-between items-center p-3 pt-0">
             <Button variant="ghost" onClick={handleToday} disabled={mode==='dob'}>Hari ini</Button>
             <Button variant="ghost" onClick={handleClearDate} className="text-destructive">Hapus</Button>
         </div>

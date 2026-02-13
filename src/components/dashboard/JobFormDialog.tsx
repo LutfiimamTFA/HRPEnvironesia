@@ -267,6 +267,7 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
                           mode="general"
                           value={field.value}
                           onChange={field.onChange}
+                          portalled={false}
                         />
                       </FormControl>
                       <FormMessage />
