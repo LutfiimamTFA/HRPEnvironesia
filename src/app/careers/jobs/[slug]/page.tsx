@@ -142,16 +142,17 @@ export default function JobDetailPage() {
             return;
         }
 
-        // If there is no authenticated user, redirect to login, then to the apply page.
+        // If there is no authenticated user, redirect to login, then to the portal dashboard.
         if (!firebaseUser) {
-            router.push(`/careers/login?redirect=${pathname}/apply`);
+            router.push(`/careers/login?redirect=/careers/portal`);
             return;
         }
 
         // A user is authenticated, now check their profile/role.
         if (userProfile) {
             if (userProfile.role === 'kandidat') {
-                router.push(`${pathname}/apply`);
+                // If they are a candidate, take them to the portal dashboard.
+                router.push('/careers/portal');
                 return;
             }
             
@@ -166,8 +167,8 @@ export default function JobDetailPage() {
         }
         
         // Fallback for cases where user is authenticated but profile is still loading.
-        // Redirect to login flow which will handle the final redirect to the apply page.
-        router.push(`/careers/login?redirect=${pathname}/apply`);
+        // Redirect to login flow which will handle the final redirect to the portal dashboard.
+        router.push(`/careers/login?redirect=/careers/portal`);
     };
 
     if (isLoading) {
