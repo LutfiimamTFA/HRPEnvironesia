@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from '@/components/ui/skeleton';
-import { useDoc, useFirestore, useMemoFirebase, setDoc } from '@/firebase';
+import { useDoc, useFirestore, useMemoFirebase, setDocumentNonBlocking } from '@/firebase';
 import { doc } from 'firebase/firestore';
 import type { Profile } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
@@ -35,10 +35,11 @@ function ProfileSkeleton() {
 }
 
 export default function ProfilePage() {
-  const { userProfile, firebaseUser } = useAuth();
+  const { userProfile, firebaseUser, loading } = useAuth();
   const firestore = useFirestore();
   const { toast } = useToast();
   const [isSaving, setIsSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState('personal');
 
   const profileDocRef = useMemoFirebase(() => {
     if (!firestore || !firebaseUser) return null;
@@ -51,7 +52,7 @@ export default function ProfilePage() {
     if (!profileDocRef || !userProfile) return;
     setIsSaving(true);
     try {
-        await setDoc(profileDocRef, formData, { merge: true });
+        await setDocumentNonBlocking(profileDocRef, formData, { merge: true });
         
         const requiredFields: (keyof Profile)[] = ['fullName', 'nickname', 'email', 'phone', 'eKtpNumber', 'gender', 'birthDate', 'addressKtp', 'willingToWfo', 'education', 'workExperience', 'skills'];
         
@@ -64,7 +65,7 @@ export default function ProfilePage() {
 
         if (isComplete !== userProfile.isProfileComplete) {
             const userDocRef = doc(firestore, 'users', userProfile.uid);
-            await setDoc(userDocRef, { isProfileComplete: isComplete }, { merge: true });
+            await setDocumentNonBlocking(userDocRef, { isProfileComplete: isComplete }, { merge: true });
         }
 
         toast({ title: "Profil Disimpan", description: "Informasi profil Anda telah diperbarui." });
@@ -75,8 +76,15 @@ export default function ProfilePage() {
     }
   };
 
+  useEffect(() => {
+    if (!isProfileLoading) {
+        // This effect will run when the profile data is loaded or updated.
+        // We can force re-render or reset forms here if needed,
+        // but often the form libraries handle this if they receive new initialData.
+    }
+  }, [profile, isProfileLoading]);
 
-  if (isProfileLoading || !userProfile) {
+  if (isProfileLoading || loading || !userProfile) {
     return <ProfileSkeleton />;
   }
   
@@ -96,7 +104,7 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      <Tabs defaultValue="personal" className="w-full">
+      <Tabs defaultValue="personal" value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-2 md:grid-cols-4">
           <TabsTrigger value="personal">Data Pribadi</TabsTrigger>
           <TabsTrigger value="education">Pendidikan</TabsTrigger>
