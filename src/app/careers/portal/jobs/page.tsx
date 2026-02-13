@@ -60,7 +60,7 @@ const JobCard = ({ job }: { job: Job }) => (
             <p className="text-muted-foreground capitalize">{job.statusJob}</p>
         </div>
         <div className="flex items-center gap-2 mt-2 w-full justify-start md:justify-end">
-          <Button asChild className="w-full md:w-auto bg-red-600 hover:bg-red-700">
+          <Button asChild className="w-full md:w-auto">
             <Link href={`/careers/jobs/${job.slug}`}>
               Detail Pekerjaan
             </Link>
@@ -152,7 +152,7 @@ export default function CandidateJobsPage() {
                 <CardHeader>
                     <CardTitle className="flex justify-between items-center">
                         <span>Filter Pencarian</span>
-                        <Button variant="ghost" size="sm" onClick={handleResetFilters} className="text-red-600 hover:bg-red-100 hover:text-red-700">
+                        <Button variant="ghost" size="sm" onClick={handleResetFilters} className="text-destructive hover:bg-destructive/10">
                             <Trash2 className="h-4 w-4 mr-2" />
                             Reset
                         </Button>
