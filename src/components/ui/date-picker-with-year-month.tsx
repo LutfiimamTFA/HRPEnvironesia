@@ -124,7 +124,7 @@ export function DatePickerWithYearMonth({ value, onChange, disabled, className, 
           disabled={disabled}
           fromDate={fromDate}
           toDate={toDate}
-          classNames={{ caption: 'hidden' }}
+          classNames={{ caption: 'hidden', nav: 'hidden' }}
         />
       </PopoverContent>
     </Popover>
