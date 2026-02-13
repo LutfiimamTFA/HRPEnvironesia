@@ -111,16 +111,16 @@ export default function ProfilePage() {
           <TabsTrigger value="experience">Pengalaman Kerja</TabsTrigger>
           <TabsTrigger value="skills">Keahlian & Sertifikasi</TabsTrigger>
         </TabsList>
-        <TabsContent value="personal">
+        <TabsContent value="personal" forceMount>
           <PersonalDataForm initialData={initialProfileData} onSave={handleProfileSave} isSaving={isSaving} />
         </TabsContent>
-        <TabsContent value="education">
+        <TabsContent value="education" forceMount>
           <EducationForm initialData={initialProfileData.education || []} onSave={async (data) => await handleProfileSave({ education: data })} isSaving={isSaving} />
         </TabsContent>
-        <TabsContent value="experience">
+        <TabsContent value="experience" forceMount>
           <WorkExperienceForm initialData={initialProfileData.workExperience || []} onSave={async (data) => await handleProfileSave({ workExperience: data })} isSaving={isSaving} />
         </TabsContent>
-        <TabsContent value="skills">
+        <TabsContent value="skills" forceMount>
             <SkillsForm 
                 initialData={{
                     skills: initialProfileData.skills || [],
