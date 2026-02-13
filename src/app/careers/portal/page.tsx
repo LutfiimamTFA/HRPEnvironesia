@@ -13,7 +13,8 @@ import { formatDistanceToNow } from 'date-fns';
 
 function ActiveApplicationCard({ application }: { application: JobApplication }) {
     const deadline = application.jobApplyDeadline?.toDate();
-    const canStillApply = deadline && deadline > new Date();
+    // A draft can be continued if there is NO deadline, OR if the deadline is in the future.
+    const canStillApply = !deadline || deadline > new Date();
 
     return (
         <Card>
@@ -22,13 +23,16 @@ function ActiveApplicationCard({ application }: { application: JobApplication })
                 <CardDescription>{application.brandName}</CardDescription>
             </CardHeader>
             <CardContent>
-                {canStillApply ? (
-                    <p className="text-sm text-destructive mb-4">
-                        Batas waktu tersisa: {formatDistanceToNow(deadline)}
+                {deadline ? (
+                     <p className={`text-sm mb-4 ${canStillApply ? 'text-muted-foreground' : 'text-destructive'}`}>
+                        {canStillApply 
+                            ? `Batas waktu tersisa: ${formatDistanceToNow(deadline, { addSuffix: true })}`
+                            : 'Batas waktu lamaran telah berakhir.'
+                        }
                     </p>
                 ) : (
-                    <p className="text-sm text-destructive mb-4">
-                        Batas waktu lamaran telah berakhir.
+                    <p className="text-sm text-muted-foreground mb-4">
+                        Lamaran ini tidak memiliki batas waktu.
                     </p>
                 )}
                 <Button asChild className="w-full" disabled={!canStillApply}>
@@ -58,7 +62,8 @@ export default function CandidateDashboardPage() {
 
   const { data: draftApplications, isLoading } = useCollection<JobApplication>(draftApplicationsQuery);
   
-  const activeDrafts = draftApplications?.filter(app => app.jobApplyDeadline && app.jobApplyDeadline.toDate() > new Date());
+  // Show all drafts. The ActiveApplicationCard will handle the expired state.
+  const activeDrafts = draftApplications;
 
 
   return (
