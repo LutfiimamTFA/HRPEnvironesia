@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { ArrowRight, Briefcase, MapPin, Search, Trash2, Bookmark } from 'lucide-react';
+import { ArrowRight, Briefcase, MapPin, Search, Trash2, Bookmark, Building } from 'lucide-react';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
 import type { Job } from '@/lib/types';
@@ -14,82 +14,60 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 const JobCard = ({ job }: { job: Job }) => (
-  <Card className="grid grid-cols-1 md:grid-cols-[1fr_2fr_1fr] items-center gap-4 p-6 transition-shadow duration-300 hover:shadow-xl w-full">
-    <div className="flex flex-col items-center justify-center text-center gap-2">
-       <div className="relative h-20 w-20">
-          <svg className="h-full w-full" viewBox="0 0 36 36">
-              <path
-                  className="stroke-current text-gray-200"
-                  d="M18 2.0845
-                    a 15.9155 15.9155 0 0 1 0 31.831
-                    a 15.9155 15.9155 0 0 1 0 -31.831"
-                  strokeWidth="3"
-                  fill="none"
-              />
-              <path
-                  className="stroke-current text-primary"
-                  strokeDasharray="0, 100"
-                  d="M18 2.0845
-                    a 15.9155 15.9155 0 0 1 0 31.831
-                    a 15.9155 15.9155 0 0 1 0 -31.831"
-                  strokeWidth="3"
-                  fill="none"
-                  strokeLinecap="round"
-              />
-          </svg>
-          <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-lg font-bold">0%</span>
-          </div>
-      </div>
-      <p className="text-xs text-muted-foreground">Kuota Kandidat</p>
-      {job.statusJob === 'fulltime' && <Badge className="bg-blue-600 text-white mt-2">Vacancy Urgent</Badge>}
-    </div>
+    <Card className="transition-shadow duration-300 hover:shadow-lg w-full">
+        <div className="p-6 flex flex-col sm:flex-row items-start gap-6">
+            <div className="flex-grow">
+                <CardTitle className="text-lg mb-1">{job.position}</CardTitle>
+                <CardDescription className="flex items-center gap-2 mb-4 text-sm">
+                   <Building className="h-4 w-4" /> {job.brandName}
+                </CardDescription>
 
-    <div>
-      <CardTitle className="text-xl mb-1">{job.position}</CardTitle>
-      <CardDescription>{job.brandName}</CardDescription>
-    </div>
+                <div className="flex flex-wrap gap-2">
+                    <Badge variant="secondary" className="flex items-center gap-1.5 py-1 px-2.5">
+                        <MapPin className="h-3.5 w-3.5" />
+                        {job.location}
+                    </Badge>
+                     <Badge variant="secondary" className="py-1 px-2.5">
+                        {job.division}
+                    </Badge>
+                    <Badge variant="secondary" className="capitalize flex items-center gap-1.5 py-1 px-2.5">
+                        <Briefcase className="h-3.5 w-3.5" />
+                        {job.statusJob}
+                    </Badge>
+                </div>
+            </div>
 
-    <div className="flex flex-col items-start md:items-end gap-2 text-sm">
-        <div className="text-left md:text-right">
-            <p className="font-semibold">Bidang Pekerjaan</p>
-            <p className="text-muted-foreground">{job.division}</p>
+            <div className="flex-shrink-0 flex flex-row sm:flex-col items-center gap-2 w-full sm:w-auto">
+                <Button asChild className="w-full justify-center">
+                    <Link href={`/careers/jobs/${job.slug}`}>
+                        Lihat Detail
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                    </Link>
+                </Button>
+                <Button variant="outline" className="w-full justify-center">
+                    <Bookmark className="mr-2 h-4 w-4" />
+                    Simpan
+                </Button>
+            </div>
         </div>
-        <div className="text-left md:text-right">
-            <p className="font-semibold">Jenjang</p>
-            <p className="text-muted-foreground capitalize">{job.statusJob}</p>
-        </div>
-        <div className="flex items-center gap-2 mt-2 w-full justify-start md:justify-end">
-          <Button asChild className="w-full md:w-auto">
-            <Link href={`/careers/jobs/${job.slug}`}>
-              Detail Pekerjaan
-            </Link>
-          </Button>
-          <Button variant="outline" size="icon">
-            <Bookmark className="h-4 w-4"/>
-          </Button>
-        </div>
-    </div>
-  </Card>
+    </Card>
 );
 
 const JobCardSkeleton = () => (
-    <Card className="p-6">
-        <div className="grid grid-cols-1 md:grid-cols-[1fr_2fr_1fr] items-center gap-4">
-            <div className="flex flex-col items-center justify-center gap-2">
-                <Skeleton className="h-20 w-20 rounded-full" />
-                <Skeleton className="h-4 w-20" />
-            </div>
-            <div>
-                <Skeleton className="h-6 w-3/4 mb-2" />
+    <Card>
+        <div className="p-6 flex flex-col sm:flex-row items-start gap-6">
+            <div className="flex-grow space-y-3 w-full">
+                <Skeleton className="h-5 w-3/4" />
                 <Skeleton className="h-4 w-1/2" />
+                <div className="flex gap-2">
+                    <Skeleton className="h-6 w-24" />
+                    <Skeleton className="h-6 w-20" />
+                    <Skeleton className="h-6 w-28" />
+                </div>
             </div>
-            <div className="flex flex-col items-end gap-3">
-                <Skeleton className="h-5 w-24" />
-                <Skeleton className="h-4 w-20" />
-                 <Skeleton className="h-5 w-24" />
-                <Skeleton className="h-4 w-20" />
-                <Skeleton className="h-10 w-36" />
+            <div className="flex-shrink-0 flex flex-row sm:flex-col items-center gap-2 w-full sm:w-36">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
             </div>
         </div>
     </Card>
@@ -147,7 +125,7 @@ export default function CandidateJobsPage() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
-        <div className="lg:col-span-1">
+        <div className="lg:col-span-1 lg:sticky lg:top-24">
             <Card>
                 <CardHeader>
                     <CardTitle className="flex justify-between items-center">
