@@ -71,7 +71,7 @@ export default function JobApplyPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                     <p className="text-sm text-center p-8 border rounded-lg bg-muted/50">
-                        Formulir aplikasi dan fitur unggah CV sedang dalam tahap pengembangan.
+                        Formulir aplikasi sedang dalam tahap pengembangan.
                     </p>
                     <div className="flex justify-end gap-2 pt-4">
                          <Button onClick={() => router.back()} variant="outline">

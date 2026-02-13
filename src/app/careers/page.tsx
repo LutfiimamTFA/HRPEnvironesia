@@ -195,8 +195,8 @@ export default function CareersPage() {
                     <div className="grid gap-8 md:grid-cols-1 md:gap-y-16">
                         {[
                             { step: 1, title: 'Daftar Online', desc: 'Lengkapi profil dan kirimkan lamaran Anda melalui portal karir kami.' },
-                            { step: 2, title: 'Seleksi CV', desc: 'Tim rekrutmen kami akan meninjau setiap lamaran yang masuk.' },
-                            { step: 3, title: 'Psikotes', desc: 'Tes psikologi untuk mengukur potensi dan kesesuaian Anda.' },
+                            { step: 2, title: 'Psikotes', desc: 'Kerjakan tes psikologi untuk mengukur potensi dan kesesuaian Anda.' },
+                            { step: 3, title: 'Seleksi Administrasi', desc: 'Tim rekrutmen akan meninjau kelengkapan profil dan hasil psikotes Anda.' },
                             { step: 4, title: 'Wawancara', desc: 'Bertemu dengan HR dan calon user untuk diskusi lebih mendalam.' },
                             { step: 5, title: 'Tawaran Kerja', desc: 'Kandidat terpilih akan menerima tawaran kerja resmi.' },
                         ].map((item, index) => (
