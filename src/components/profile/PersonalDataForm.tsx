@@ -16,6 +16,8 @@ import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { Checkbox } from '../ui/checkbox';
 import React, { useEffect } from 'react';
 
+const DRAFT_KEY = 'personal-data-form-draft';
+
 const formSchema = z.object({
     fullName: z.string().min(2, { message: "Nama lengkap harus diisi." }),
     nickname: z.string().min(1, { message: "Nama panggilan harus diisi." }),
@@ -58,56 +60,86 @@ interface PersonalDataFormProps {
 export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalDataFormProps) {
     const form = useForm<FormValues>({
         resolver: zodResolver(formSchema),
-        defaultValues: {
-            fullName: initialData.fullName || '',
-            nickname: initialData.nickname || '',
-            email: initialData.email || '',
-            phone: initialData.phone || '',
-            eKtpNumber: initialData.eKtpNumber || '',
-            gender: initialData.gender,
-            birthDate: initialData.birthDate instanceof Timestamp ? initialData.birthDate.toDate() : initialData.birthDate,
-            addressKtp: initialData.addressKtp || '',
-            isDomicileSameAsKtp: initialData.isDomicileSameAsKtp || false,
-            addressDomicile: initialData.addressDomicile || '',
-            hasNpwp: initialData.hasNpwp || false,
-            npwpNumber: initialData.npwpNumber || '',
-            willingToWfo: typeof initialData.willingToWfo === 'boolean' ? (initialData.willingToWfo ? 'ya' : 'tidak') : undefined,
-            linkedinUrl: initialData.linkedinUrl || '',
-            websiteUrl: initialData.websiteUrl || '',
-        },
+        defaultValues: (() => {
+            try {
+                const savedDraft = localStorage.getItem(DRAFT_KEY);
+                if (savedDraft) {
+                    const parsed = JSON.parse(savedDraft);
+                    // Dates need to be converted back from string
+                    if (parsed.birthDate) {
+                        parsed.birthDate = new Date(parsed.birthDate);
+                    }
+                    return parsed;
+                }
+            } catch (e) { console.error("Failed to load personal data draft", e); }
+            return {
+                fullName: initialData.fullName || '',
+                nickname: initialData.nickname || '',
+                email: initialData.email || '',
+                phone: initialData.phone || '',
+                eKtpNumber: initialData.eKtpNumber || '',
+                gender: initialData.gender,
+                birthDate: initialData.birthDate instanceof Timestamp ? initialData.birthDate.toDate() : initialData.birthDate,
+                addressKtp: initialData.addressKtp || '',
+                isDomicileSameAsKtp: initialData.isDomicileSameAsKtp || false,
+                addressDomicile: initialData.addressDomicile || '',
+                hasNpwp: initialData.hasNpwp || false,
+                npwpNumber: initialData.npwpNumber || '',
+                willingToWfo: typeof initialData.willingToWfo === 'boolean' ? (initialData.willingToWfo ? 'ya' : 'tidak') : undefined,
+                linkedinUrl: initialData.linkedinUrl || '',
+                websiteUrl: initialData.websiteUrl || '',
+            };
+        })(),
     });
 
     useEffect(() => {
-        form.reset({
-            fullName: initialData.fullName || '',
-            nickname: initialData.nickname || '',
-            email: initialData.email || '',
-            phone: initialData.phone || '',
-            eKtpNumber: initialData.eKtpNumber || '',
-            gender: initialData.gender,
-            birthDate: initialData.birthDate instanceof Timestamp ? initialData.birthDate.toDate() : initialData.birthDate,
-            addressKtp: initialData.addressKtp || '',
-            isDomicileSameAsKtp: initialData.isDomicileSameAsKtp || false,
-            addressDomicile: initialData.addressDomicile || '',
-            hasNpwp: initialData.hasNpwp || false,
-            npwpNumber: initialData.npwpNumber || '',
-            willingToWfo: typeof initialData.willingToWfo === 'boolean' ? (initialData.willingToWfo ? 'ya' : 'tidak') : undefined,
-            linkedinUrl: initialData.linkedinUrl || '',
-            websiteUrl: initialData.websiteUrl || '',
-        })
+        const savedDraft = localStorage.getItem(DRAFT_KEY);
+        if (!savedDraft) {
+            form.reset({
+                fullName: initialData.fullName || '',
+                nickname: initialData.nickname || '',
+                email: initialData.email || '',
+                phone: initialData.phone || '',
+                eKtpNumber: initialData.eKtpNumber || '',
+                gender: initialData.gender,
+                birthDate: initialData.birthDate instanceof Timestamp ? initialData.birthDate.toDate() : initialData.birthDate,
+                addressKtp: initialData.addressKtp || '',
+                isDomicileSameAsKtp: initialData.isDomicileSameAsKtp || false,
+                addressDomicile: initialData.addressDomicile || '',
+                hasNpwp: initialData.hasNpwp || false,
+                npwpNumber: initialData.npwpNumber || '',
+                willingToWfo: typeof initialData.willingToWfo === 'boolean' ? (initialData.willingToWfo ? 'ya' : 'tidak') : undefined,
+                linkedinUrl: initialData.linkedinUrl || '',
+                websiteUrl: initialData.websiteUrl || '',
+            });
+        }
     }, [initialData, form]);
+
+    const { watch } = form;
+    useEffect(() => {
+        const subscription = watch((value) => {
+            localStorage.setItem(DRAFT_KEY, JSON.stringify(value));
+        });
+        return () => subscription.unsubscribe();
+    }, [watch]);
+
 
     const isDomicileSameAsKtp = form.watch('isDomicileSameAsKtp');
     const hasNpwp = form.watch('hasNpwp');
 
-    const handleSubmit = (values: FormValues) => {
+    const handleSubmit = async (values: FormValues) => {
         const dataToSave: Partial<Profile> = {
             ...values,
             willingToWfo: values.willingToWfo === 'ya',
             birthDate: Timestamp.fromDate(values.birthDate),
             addressDomicile: values.isDomicileSameAsKtp ? values.addressKtp : values.addressDomicile || '',
         };
-        onSave(dataToSave);
+        try {
+            await onSave(dataToSave);
+            localStorage.removeItem(DRAFT_KEY);
+        } catch (error) {
+            console.error("Failed to save personal data:", error);
+        }
     };
 
     return (

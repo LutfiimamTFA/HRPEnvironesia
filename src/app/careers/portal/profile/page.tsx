@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useAuth } from "@/providers/auth-provider";
-import { CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDoc, useFirestore, useMemoFirebase, setDocumentNonBlocking } from '@/firebase';
@@ -50,7 +49,8 @@ export default function ProfilePage() {
   const { data: profile, isLoading: isProfileLoading } = useDoc<Profile>(profileDocRef);
   
   const checkProfileCompleteness = async (updatedData: Partial<Profile>) => {
-      const userDocRef = doc(firestore, 'users', firebaseUser!.uid);
+      if (!firestore || !firebaseUser) return;
+      const userDocRef = doc(firestore, 'users', firebaseUser.uid);
       const currentProfile = { ...profile, ...updatedData };
       const requiredFields: (keyof Profile)[] = ['fullName', 'nickname', 'email', 'phone', 'eKtpNumber', 'gender', 'birthDate', 'addressKtp', 'willingToWfo', 'education', 'workExperience', 'skills'];
       
@@ -75,6 +75,8 @@ export default function ProfilePage() {
         toast({ title: "Profil Disimpan", description: `Bagian ${sectionName} telah diperbarui.` });
     } catch (error: any) {
         toast({ variant: 'destructive', title: "Gagal Menyimpan", description: error.message });
+        // Re-throw the error so child forms know the save failed and won't clear their draft.
+        throw error;
     } finally {
         setIsSaving(false);
     }
@@ -125,21 +127,21 @@ export default function ProfilePage() {
                 <div style={{ display: activeSection === 'personal' ? 'block' : 'none' }}>
                     <PersonalDataForm 
                         initialData={initialProfileData} 
-                        onSave={(data) => handleSave(data, 'Data Pribadi')} 
+                        onSave={async (data) => await handleSave(data, 'Data Pribadi')} 
                         isSaving={isSaving} 
                     />
                 </div>
                 <div style={{ display: activeSection === 'education' ? 'block' : 'none' }}>
                     <EducationForm 
                         initialData={initialProfileData.education || []} 
-                        onSave={(data: Education[]) => handleSave({ education: data }, 'Pendidikan')} 
+                        onSave={async (data: Education[]) => await handleSave({ education: data }, 'Pendidikan')} 
                         isSaving={isSaving} 
                     />
                 </div>
                 <div style={{ display: activeSection === 'experience' ? 'block' : 'none' }}>
                     <WorkExperienceForm 
                         initialData={initialProfileData.workExperience || []} 
-                        onSave={(data: WorkExperience[]) => handleSave({ workExperience: data }, 'Pengalaman Kerja')} 
+                        onSave={async (data: WorkExperience[]) => await handleSave({ workExperience: data }, 'Pengalaman Kerja')} 
                         isSaving={isSaving} 
                     />
                 </div>
@@ -149,7 +151,7 @@ export default function ProfilePage() {
                             skills: initialProfileData.skills || [],
                             certifications: initialProfileData.certifications || [],
                         }} 
-                        onSave={(data: { skills: string[], certifications?: Certification[] }) => handleSave(data, 'Keahlian & Sertifikasi')} 
+                        onSave={async (data: { skills: string[], certifications?: Certification[] }) => await handleSave(data, 'Keahlian & Sertifikasi')} 
                         isSaving={isSaving} 
                     />
                 </div>

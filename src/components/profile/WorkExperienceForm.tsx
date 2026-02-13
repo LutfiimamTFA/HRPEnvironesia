@@ -14,6 +14,8 @@ import { Separator } from '../ui/separator';
 import { Textarea } from '../ui/textarea';
 import { useEffect } from 'react';
 
+const DRAFT_KEY = 'work-experience-form-draft';
+
 const experienceSchema = z.object({
   id: z.string(),
   company: z.string().min(1, "Nama perusahaan harus diisi"),
@@ -42,15 +44,22 @@ interface WorkExperienceFormProps {
 export function WorkExperienceForm({ initialData, onSave, isSaving }: WorkExperienceFormProps) {
     const form = useForm<FormValues>({
         resolver: zodResolver(formSchema),
-        defaultValues: {
-            experience: initialData || [],
-        },
+        defaultValues: (() => {
+            try {
+                const savedDraft = localStorage.getItem(DRAFT_KEY);
+                if (savedDraft) {
+                    return JSON.parse(savedDraft);
+                }
+            } catch (e) { console.error("Failed to load work experience draft", e); }
+            return { experience: initialData || [] };
+        })(),
     });
 
     useEffect(() => {
-        form.reset({
-            experience: initialData || []
-        });
+        const savedDraft = localStorage.getItem(DRAFT_KEY);
+        if (!savedDraft) {
+            form.reset({ experience: initialData || [] });
+        }
     }, [initialData, form]);
     
     const { fields, append, remove } = useFieldArray({
@@ -58,8 +67,21 @@ export function WorkExperienceForm({ initialData, onSave, isSaving }: WorkExperi
         name: "experience",
     });
 
-    const handleSubmit = (values: FormValues) => {
-        onSave(values.experience);
+    const { watch } = form;
+    useEffect(() => {
+        const subscription = watch((value) => {
+            localStorage.setItem(DRAFT_KEY, JSON.stringify(value));
+        });
+        return () => subscription.unsubscribe();
+    }, [watch]);
+
+    const handleSubmit = async (values: FormValues) => {
+        try {
+            await onSave(values.experience);
+            localStorage.removeItem(DRAFT_KEY);
+        } catch (error) {
+            console.error("Failed to save work experience data:", error);
+        }
     };
 
     return (

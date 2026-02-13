@@ -13,6 +13,8 @@ import { Badge } from '../ui/badge';
 import type { Certification } from '@/lib/types';
 import { Separator } from '../ui/separator';
 
+const DRAFT_KEY = 'skills-form-draft';
+
 const certificationSchema = z.object({
   id: z.string(),
   name: z.string().min(1, "Nama sertifikasi harus diisi"),
@@ -38,10 +40,18 @@ export function SkillsForm({ initialData, onSave, isSaving }: SkillsFormProps) {
     const [inputValue, setInputValue] = useState('');
     const form = useForm<FormValues>({
         resolver: zodResolver(formSchema),
-        defaultValues: {
-            skills: [],
-            certifications: [],
-        },
+        defaultValues: (() => {
+            try {
+                const savedDraft = localStorage.getItem(DRAFT_KEY);
+                if (savedDraft) {
+                    return JSON.parse(savedDraft);
+                }
+            } catch (e) { console.error("Failed to load skills draft", e); }
+            return {
+                skills: initialData?.skills || [],
+                certifications: initialData?.certifications || [],
+            };
+        })(),
     });
 
     const { fields: certFields, append: appendCert, remove: removeCert } = useFieldArray({
@@ -50,13 +60,24 @@ export function SkillsForm({ initialData, onSave, isSaving }: SkillsFormProps) {
     });
 
     useEffect(() => {
-        form.reset({
-            skills: initialData?.skills || [],
-            certifications: initialData?.certifications || [],
-        });
+        const savedDraft = localStorage.getItem(DRAFT_KEY);
+        if (!savedDraft) {
+            form.reset({
+                skills: initialData?.skills || [],
+                certifications: initialData?.certifications || [],
+            });
+        }
     }, [initialData, form]);
 
     const { setValue, watch } = form;
+    
+    useEffect(() => {
+        const subscription = watch((value) => {
+            localStorage.setItem(DRAFT_KEY, JSON.stringify(value));
+        });
+        return () => subscription.unsubscribe();
+    }, [watch]);
+
     const skills = watch('skills');
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -74,8 +95,13 @@ export function SkillsForm({ initialData, onSave, isSaving }: SkillsFormProps) {
         setValue('skills', skills.filter(skill => skill !== skillToRemove));
     };
 
-    const handleSubmit = (values: FormValues) => {
-        onSave(values);
+    const handleSubmit = async (values: FormValues) => {
+        try {
+            await onSave(values);
+            localStorage.removeItem(DRAFT_KEY);
+        } catch (error) {
+            console.error("Failed to save skills data:", error);
+        }
     };
 
     return (

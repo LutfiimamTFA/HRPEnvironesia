@@ -14,6 +14,8 @@ import { Separator } from '../ui/separator';
 import { useEffect } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 
+const DRAFT_KEY = 'education-form-draft';
+
 const EDUCATION_LEVELS = ['SMA/SMK', 'D3', 'S1', 'S2', 'S3'] as const;
 
 const educationSchema = z.object({
@@ -46,15 +48,22 @@ interface EducationFormProps {
 export function EducationForm({ initialData, onSave, isSaving }: EducationFormProps) {
     const form = useForm<FormValues>({
         resolver: zodResolver(formSchema),
-        defaultValues: {
-            education: [],
-        },
+        defaultValues: (() => {
+            try {
+                const savedDraft = localStorage.getItem(DRAFT_KEY);
+                if (savedDraft) {
+                    return JSON.parse(savedDraft);
+                }
+            } catch (e) { console.error("Failed to load education draft", e); }
+            return { education: initialData || [] };
+        })(),
     });
-
+    
     useEffect(() => {
-        form.reset({
-            education: initialData || []
-        });
+        const savedDraft = localStorage.getItem(DRAFT_KEY);
+        if (!savedDraft) {
+            form.reset({ education: initialData || [] });
+        }
     }, [initialData, form]);
     
     const { fields, append, remove } = useFieldArray({
@@ -62,8 +71,21 @@ export function EducationForm({ initialData, onSave, isSaving }: EducationFormPr
         name: "education",
     });
 
-    const handleSubmit = (values: FormValues) => {
-        onSave(values.education);
+    const { watch } = form;
+    useEffect(() => {
+        const subscription = watch((value) => {
+            localStorage.setItem(DRAFT_KEY, JSON.stringify(value));
+        });
+        return () => subscription.unsubscribe();
+    }, [watch]);
+
+    const handleSubmit = async (values: FormValues) => {
+        try {
+            await onSave(values.education);
+            localStorage.removeItem(DRAFT_KEY);
+        } catch (error) {
+            console.error("Failed to save education data:", error);
+        }
     };
 
     return (
