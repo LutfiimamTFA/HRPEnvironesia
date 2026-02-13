@@ -4,39 +4,17 @@ import { useAuth } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import Link from 'next/link';
-import { ArrowRight, Briefcase, FileText, User, FileSignature, FileSearch, BrainCircuit, Users, CheckCircle } from 'lucide-react';
-import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from '@/components/ui/carousel';
+import { ArrowRight, Briefcase, FileText, User, FileUp, CheckCircle } from 'lucide-react';
 import React from 'react';
-
+import { cn } from '@/lib/utils';
 
 const recruitmentSteps = [
-  {
-    icon: FileSignature,
-    title: '1. Kirim Lamaran',
-    description: 'Lamar posisi yang Anda minati melalui portal karir.',
-  },
-  {
-    icon: BrainCircuit,
-    title: '2. Psikotes',
-    description: 'Tes psikologi untuk mengukur potensi dan kesesuaian Anda.',
-  },
-  {
-    icon: FileSearch,
-    title: '3. Seleksi Dokumen',
-    description: 'Tim kami akan meninjau CV dan kesesuaian profil Anda.',
-  },
-  {
-    icon: Users,
-    title: '4. Wawancara',
-    description: 'Diskusi mendalam bersama tim HR dan calon user Anda.',
-  },
-  {
-    icon: CheckCircle,
-    title: '5. Penawaran',
-    description: 'Kandidat terpilih akan menerima tawaran kerja resmi dari kami.',
-  },
+  { title: 'Kirim Lamaran' },
+  { title: 'Psikotes' },
+  { title: 'Seleksi Dokumen' },
+  { title: 'Wawancara' },
+  { title: 'Penawaran' },
 ];
-
 
 export default function CandidateDashboardPage() {
   const { userProfile } = useAuth();
@@ -53,36 +31,44 @@ export default function CandidateDashboardPage() {
             <CardTitle>Tahapan Proses Rekrutmen</CardTitle>
             <CardDescription>Berikut adalah gambaran umum alur seleksi di perusahaan kami.</CardDescription>
           </CardHeader>
-          <CardContent className="px-2">
-             <Carousel
-              opts={{
-                align: "start",
-                dragFree: true,
-              }}
-              className="w-full"
-            >
-              <CarouselContent>
-                {recruitmentSteps.map((step, index) => (
-                  <CarouselItem key={index} className="basis-full md:basis-1/2 lg:basis-1/3 xl:basis-1/4">
-                    <div className="p-1">
-                      <div className="flex h-full items-center gap-4 rounded-lg border p-4">
-                        <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                          <step.icon className="h-6 w-6" />
+          <CardContent className="px-6 pt-4 pb-8">
+            <div className="w-full overflow-x-auto">
+              <div className="flex items-start justify-center min-w-[600px]">
+                {recruitmentSteps.map((step, index) => {
+                  const isActive = index === 0; // Highlight the first step
+                  const isCompleted = index < 0; // No steps are 'completed' in this static view
+                  
+                  return (
+                    <React.Fragment key={index}>
+                      <div className="flex flex-col items-center text-center w-28">
+                        <div
+                          className={cn(
+                            'relative z-10 h-5 w-5 rounded-full flex items-center justify-center',
+                            isActive || isCompleted ? 'bg-primary' : 'bg-border'
+                          )}
+                        >
+                          {(isCompleted) && <CheckCircle className="h-5 w-5 text-primary-foreground" />}
                         </div>
-                        <div>
-                          <p className="font-semibold">{step.title}</p>
-                          <p className="text-xs text-muted-foreground">{step.description}</p>
-                        </div>
+                        <p className={cn(
+                          'mt-2 text-xs font-medium',
+                          isActive || isCompleted ? 'text-foreground' : 'text-muted-foreground'
+                        )}>
+                          {step.title}
+                        </p>
                       </div>
-                    </div>
-                  </CarouselItem>
-                ))}
-              </CarouselContent>
-              <div className="hidden md:block">
-                  <CarouselPrevious />
-                  <CarouselNext />
+
+                      {index < recruitmentSteps.length - 1 && (
+                        <div className={cn(
+                          "flex-1 h-0.5",
+                          "mt-[9px]", // to align with circle center
+                          isCompleted ? 'bg-primary' : 'bg-border'
+                        )} />
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </div>
-            </Carousel>
+            </div>
           </CardContent>
         </Card>
 
