@@ -412,7 +412,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                     <FormItem>
                                         <FormLabel>Nomor NPWP</FormLabel>
                                         <FormControl>
-                                            <Input {...field} placeholder="Masukkan nomor NPWP Anda" />
+                                            <Input {...field} value={field.value || ''} placeholder="Masukkan nomor NPWP Anda" />
                                         </FormControl>
                                         <FormMessage />
                                     </FormItem>
@@ -463,7 +463,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                     <FormItem>
                                         <FormLabel>Profil LinkedIn (Opsional)</FormLabel>
                                         <FormControl>
-                                            <Input {...field} placeholder="https://linkedin.com/in/..." />
+                                            <Input {...field} value={field.value || ''} placeholder="https://linkedin.com/in/..." />
                                         </FormControl>
                                         <FormMessage />
                                     </FormItem>
@@ -476,7 +476,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                     <FormItem>
                                         <FormLabel>Situs Web/Portofolio (Opsional)</FormLabel>
                                         <FormControl>
-                                            <Input {...field} placeholder="https://github.com/..." />
+                                            <Input {...field} value={field.value || ''} placeholder="https://github.com/..." />
                                         </FormControl>
                                         <FormMessage />
                                     </FormItem>
