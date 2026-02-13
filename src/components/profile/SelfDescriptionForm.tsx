@@ -115,7 +115,7 @@ export function SelfDescriptionForm({ initialData, onSave, isSaving }: SelfDescr
                                         <Input
                                             {...field}
                                             value={field.value ?? ''}
-                                            placeholder="Contoh: 5 - 7 Juta, Nego, UMR"
+                                            placeholder="Contoh: 5 - 7 Juta atau UMR"
                                         />
                                     </FormControl>
                                     <FormMessage />
