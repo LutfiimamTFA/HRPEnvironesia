@@ -9,9 +9,10 @@ import { Badge } from '@/components/ui/badge';
 import { ArrowRight, Briefcase, MapPin, Search, Trash2, Bookmark, Building } from 'lucide-react';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
-import type { Job } from '@/lib/types';
+import type { Job, Brand } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const JobCard = ({ job }: { job: Job }) => (
     <Card className="transition-shadow duration-300 hover:shadow-lg w-full">
@@ -90,6 +91,12 @@ export default function CandidateJobsPage() {
 
   const { data: jobs, isLoading } = useCollection<Job>(publishedJobsQuery);
 
+  const brandsQuery = useMemoFirebase(
+    () => query(collection(firestore, 'brands')),
+    [firestore]
+  );
+  const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(brandsQuery);
+
   const sortedJobs = useMemo(() => {
     if (!jobs) return [];
     return [...jobs].sort((a, b) => {
@@ -102,7 +109,7 @@ export default function CandidateJobsPage() {
   const filteredJobs = useMemo(() => {
     return sortedJobs.filter(job => {
       const matchesSearchTerm = job.position.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesCompany = companyFilter ? job.brandName?.toLowerCase().includes(companyFilter.toLowerCase()) : true;
+      const matchesCompany = companyFilter ? job.brandName === companyFilter : true;
       const matchesLocation = locationFilter ? job.location.toLowerCase().includes(locationFilter.toLowerCase()) : true;
 
       return matchesSearchTerm && matchesCompany && matchesLocation;
@@ -146,11 +153,19 @@ export default function CandidateJobsPage() {
                     </div>
                      <div className="space-y-2">
                         <label className="text-sm font-medium">Nama perusahaan</label>
-                        <Input 
-                            placeholder="" 
-                            value={companyFilter}
-                            onChange={(e) => setCompanyFilter(e.target.value)}
-                        />
+                        <Select value={companyFilter} onValueChange={(value) => setCompanyFilter(value === 'all' ? '' : value)} disabled={isLoadingBrands}>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Semua Perusahaan" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">Semua Perusahaan</SelectItem>
+                                {brands?.map((brand) => (
+                                    <SelectItem key={brand.id} value={brand.name}>
+                                        {brand.name}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
                     </div>
                      <div className="space-y-2">
                         <label className="text-sm font-medium">Lokasi Penempatan</label>
