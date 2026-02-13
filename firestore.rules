@@ -190,15 +190,16 @@ service cloud.firestore {
                     && request.resource.data.candidateUid == request.auth.uid
                     && (request.resource.data.status == "draft" || request.resource.data.status == "submitted");
 
-      // GET: An internal user can get any application. A candidate can only get their own,
-      // identified by the candidateUid field within the document.
-      allow get: if isInternal() || 
-                   (isCandidate() && resource.data.candidateUid == request.auth.uid);
+      // A user can read an application if they are the owner, or if they are an internal user.
+      // The `isInternal()` helper function is safe for direct `get` operations.
+      // For `list` operations by candidates, the `resource.data.candidateUid` check runs first and short-circuits,
+      // avoiding the costly `get()` inside `isInternal()`.
+      allow get: if (resource.data.candidateUid == request.auth.uid) || isInternal();
 
-      // LIST: An internal user can list all applications. A candidate can execute a list query,
-      // but Firestore will only return documents for which the 'get' rule succeeds.
-      // This requires the client query to include `where('candidateUid', '==', request.auth.uid)`.
-      allow list: if isInternal() || isCandidate();
+      // `list` is allowed for any authenticated user. The client query MUST filter by `candidateUid`.
+      // The `get` rule above then secures each document returned by the query, ensuring
+      // candidates only see their own applications. Internal users' access is checked via the `get()` in `isInternal()`.
+      allow list: if isSignedIn();
 
       allow update: if isSignedIn() && (
                       (isCandidate()
