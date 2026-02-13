@@ -74,8 +74,12 @@ service cloud.firestore {
      * Checks if the user has an internal role (e.g., employee, manager).
      */
     function isInternal() {
-      let role = userRole();
-      return role == 'super_admin' || role == 'hrd' || role == 'manager' || role == 'karyawan';
+      // isSuperAdmin() is safe for list queries because it uses exists().
+      // userRole() is NOT safe for list queries because it uses get().
+      // By putting isSuperAdmin() first, list queries from a super_admin will
+      // short-circuit and succeed. List queries from other internal roles
+      // (like HRD) will fail if they depend on this rule without a specific filter.
+      return isSuperAdmin() || userRole() in ['hrd', 'manager', 'karyawan'];
     }
 
     /**
@@ -178,7 +182,7 @@ service cloud.firestore {
       allow get: if isInternal() || (isCandidate() && applicationId.split('_')[1] == request.auth.uid);
 
       // Allow list for queries. This rule requires the client to include `where('candidateUid', '==', auth.uid)`.
-      allow list: if isInternal() || (isCandidate() && resource.data.candidateUid == request.auth.uid);
+      allow list: if isInternal() || (isCandidate() && request.resource.data.candidateUid == request.auth.uid);
 
       allow update: if isSignedIn() && (
                       (isCandidate()
