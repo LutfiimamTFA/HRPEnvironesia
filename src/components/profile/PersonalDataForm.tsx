@@ -39,26 +39,39 @@ const formSchema = z.object({
     birthDate: z.date({ required_error: "Tanggal lahir harus diisi."}),
     addressKtp: addressObjectSchema,
     isDomicileSameAsKtp: z.boolean().default(false),
-    addressDomicile: addressObjectSchema.optional(),
+    addressDomicile: addressObjectSchema.deepPartial().optional(), // Make fields optional for conditional validation
     hasNpwp: z.boolean().default(false),
     npwpNumber: z.string().optional().or(z.literal('')),
     willingToWfo: z.enum(['ya', 'tidak'], { required_error: "Pilihan ini harus diisi." }),
     linkedinUrl: z.string().url().optional().or(z.literal('')),
     websiteUrl: z.string().url().optional().or(z.literal('')),
-}).refine(data => {
-    if (data.isDomicileSameAsKtp) return true;
-    return data.addressDomicile;
-}, {
-    message: "Alamat domisili harus diisi jika berbeda.",
-    path: ["addressDomicile"],
-}).refine(data => {
-    if (!data.hasNpwp) return true;
-    const npwpDigits = data.npwpNumber?.replace(/[\.\-]/g, '');
-    return npwpDigits && (npwpDigits.length === 15 || npwpDigits.length === 16);
-}, {
-    message: "NPWP tidak valid. Harap masukkan 15 atau 16 digit.",
-    path: ["npwpNumber"],
+}).superRefine((data, ctx) => {
+    // Conditionally validate addressDomicile only if the checkbox is unchecked
+    if (!data.isDomicileSameAsKtp) {
+        const domicileResult = addressObjectSchema.safeParse(data.addressDomicile);
+        if (!domicileResult.success) {
+            domicileResult.error.errors.forEach((error) => {
+                ctx.addIssue({
+                    ...error,
+                    path: ['addressDomicile', ...error.path],
+                });
+            });
+        }
+    }
+
+    // Conditionally validate npwpNumber
+    if (data.hasNpwp) {
+        const npwpDigits = data.npwpNumber?.replace(/[\.\-]/g, '');
+        if (!npwpDigits || (npwpDigits.length !== 15 && npwpDigits.length !== 16)) {
+             ctx.addIssue({
+                path: ["npwpNumber"],
+                message: "NPWP tidak valid. Harap masukkan 15 atau 16 digit.",
+                code: 'custom'
+            });
+        }
+    }
 });
+
 
 type FormValues = z.infer<typeof formSchema>;
 
@@ -162,7 +175,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
             ...values,
             willingToWfo: values.willingToWfo === 'ya',
             birthDate: Timestamp.fromDate(values.birthDate),
-            addressDomicile: values.isDomicileSameAsKtp ? values.addressKtp : (values.addressDomicile || addressDefaultValues),
+            addressDomicile: values.isDomicileSameAsKtp ? values.addressKtp : (values.addressDomicile as Address || addressDefaultValues),
         };
         try {
             await onSave(dataToSave);
@@ -363,24 +376,23 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                             <FormItem>
                                                 <FormLabel>Jalan</FormLabel>
                                                 <FormControl>
-                                                    <Textarea {...field} placeholder="Masukkan nama jalan, nomor rumah, dll..." />
+                                                    <Textarea {...field} value={field.value ?? ''} placeholder="Masukkan nama jalan, nomor rumah, dll..." />
                                                 </FormControl>
                                                 <FormMessage />
                                             </FormItem>
                                         )}
                                     />
                                     <div className="grid grid-cols-2 gap-4">
-                                        <FormField control={form.control} name="addressDomicile.rt" render={({ field }) => (<FormItem><FormLabel>RT</FormLabel><FormControl><Input placeholder="001" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                                        <FormField control={form.control} name="addressDomicile.rw" render={({ field }) => (<FormItem><FormLabel>RW</FormLabel><FormControl><Input placeholder="002" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                        <FormField control={form.control} name="addressDomicile.rt" render={({ field }) => (<FormItem><FormLabel>RT</FormLabel><FormControl><Input placeholder="001" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                                        <FormField control={form.control} name="addressDomicile.rw" render={({ field }) => (<FormItem><FormLabel>RW</FormLabel><FormControl><Input placeholder="002" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                                     </div>
-                                    <FormField control={form.control} name="addressDomicile.village" render={({ field }) => (<FormItem><FormLabel>Kelurahan/Desa</FormLabel><FormControl><Input placeholder="Caturtunggal" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                                    <FormField control={form.control} name="addressDomicile.district" render={({ field }) => (<FormItem><FormLabel>Kecamatan</FormLabel><FormControl><Input placeholder="Depok" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                    <FormField control={form.control} name="addressDomicile.village" render={({ field }) => (<FormItem><FormLabel>Kelurahan/Desa</FormLabel><FormControl><Input placeholder="Caturtunggal" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                                    <FormField control={form.control} name="addressDomicile.district" render={({ field }) => (<FormItem><FormLabel>Kecamatan</FormLabel><FormControl><Input placeholder="Depok" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                                     <div className="grid grid-cols-2 gap-4">
-                                        <FormField control={form.control} name="addressDomicile.city" render={({ field }) => (<FormItem><FormLabel>Kota/Kabupaten</FormLabel><FormControl><Input placeholder="Sleman" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                                        <FormField control={form.control} name="addressDomicile.province" render={({ field }) => (<FormItem><FormLabel>Provinsi</FormLabel><FormControl><Input placeholder="D.I. Yogyakarta" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                        <FormField control={form.control} name="addressDomicile.city" render={({ field }) => (<FormItem><FormLabel>Kota/Kabupaten</FormLabel><FormControl><Input placeholder="Sleman" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                                        <FormField control={form.control} name="addressDomicile.province" render={({ field }) => (<FormItem><FormLabel>Provinsi</FormLabel><FormControl><Input placeholder="D.I. Yogyakarta" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                                     </div>
-                                    <FormField control={form.control} name="addressDomicile.postalCode" render={({ field }) => (<FormItem><FormLabel>Kode Pos</FormLabel><FormControl><Input placeholder="55281" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                                     <FormMessage>{form.formState.errors.addressDomicile?.root?.message}</FormMessage>
+                                    <FormField control={form.control} name="addressDomicile.postalCode" render={({ field }) => (<FormItem><FormLabel>Kode Pos</FormLabel><FormControl><Input placeholder="55281" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                                 </div>
                             </div>
                         )}
@@ -496,5 +508,3 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
         </Card>
     )
 }
-
-    
