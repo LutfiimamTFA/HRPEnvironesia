@@ -4,20 +4,25 @@ import { useAuth } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import Link from 'next/link';
-import { ArrowRight, Briefcase, FileText, User, FileUp, CheckCircle } from 'lucide-react';
+import { ArrowRight, Briefcase, FileText, User, FileUp, ClipboardCheck, FileSearch, Users, Award } from 'lucide-react';
 import React from 'react';
 import { cn } from '@/lib/utils';
 
 const recruitmentSteps = [
-  { title: 'Kirim Lamaran' },
-  { title: 'Psikotes' },
-  { title: 'Seleksi Dokumen' },
-  { title: 'Wawancara' },
-  { title: 'Penawaran' },
+  { title: 'Lengkapi Profil', icon: User },
+  { title: 'Kirim Lamaran', icon: FileUp },
+  { title: 'Psikotes', icon: ClipboardCheck },
+  { title: 'Seleksi Dokumen', icon: FileSearch },
+  { title: 'Wawancara', icon: Users },
+  { title: 'Penawaran', icon: Award },
 ];
 
 export default function CandidateDashboardPage() {
   const { userProfile } = useAuth();
+  
+  // If profile is not complete, the active step is 0 (Lengkapi Profil).
+  // Otherwise, the active step is 1 (Kirim Lamaran), as they are now ready to apply.
+  const activeStepIndex = userProfile?.isProfileComplete ? 1 : 0;
 
   return (
     <div className="space-y-8">
@@ -28,30 +33,35 @@ export default function CandidateDashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Tahapan Proses Rekrutmen</CardTitle>
-            <CardDescription>Berikut adalah gambaran umum alur seleksi di perusahaan kami.</CardDescription>
+            <CardTitle>Proses Rekrutmen Anda</CardTitle>
+            <CardDescription>Ikuti alur di bawah ini untuk memulai perjalanan Anda bersama kami.</CardDescription>
           </CardHeader>
           <CardContent className="px-6 pt-4 pb-8">
             <div className="w-full overflow-x-auto">
-              <div className="flex items-start justify-center min-w-[600px]">
+              <div className="flex items-start justify-center min-w-[700px] md:min-w-[800px]">
                 {recruitmentSteps.map((step, index) => {
-                  const isActive = index === 0; // Highlight the first step
-                  const isCompleted = index < 0; // No steps are 'completed' in this static view
+                  const isCompleted = index < activeStepIndex;
+                  const isActive = index === activeStepIndex;
                   
                   return (
                     <React.Fragment key={index}>
-                      <div className="flex flex-col items-center text-center w-28">
+                      <div className="flex flex-col items-center text-center w-28 flex-shrink-0">
                         <div
                           className={cn(
-                            'relative z-10 h-5 w-5 rounded-full flex items-center justify-center',
-                            isActive || isCompleted ? 'bg-primary' : 'bg-border'
+                            'relative z-10 h-12 w-12 rounded-full flex items-center justify-center border-2 transition-all duration-300',
+                            isActive ? 'border-primary bg-primary/10' : 'border-border',
+                            isCompleted ? 'border-primary bg-primary' : 'bg-card'
                           )}
                         >
-                          {(isCompleted) && <CheckCircle className="h-5 w-5 text-primary-foreground" />}
+                          <step.icon className={cn(
+                            'h-6 w-6 transition-colors duration-300',
+                            isActive ? 'text-primary' : '',
+                            isCompleted ? 'text-primary-foreground' : 'text-muted-foreground'
+                          )} />
                         </div>
                         <p className={cn(
-                          'mt-2 text-xs font-medium',
-                          isActive || isCompleted ? 'text-foreground' : 'text-muted-foreground'
+                          'mt-2 text-xs font-medium transition-colors duration-300',
+                          isActive || isCompleted ? 'text-primary' : 'text-muted-foreground'
                         )}>
                           {step.title}
                         </p>
@@ -59,8 +69,8 @@ export default function CandidateDashboardPage() {
 
                       {index < recruitmentSteps.length - 1 && (
                         <div className={cn(
-                          "flex-1 h-0.5",
-                          "mt-[9px]", // to align with circle center
+                          "flex-1 h-1 transition-colors duration-300",
+                          "mt-[23px]", // to align with circle center
                           isCompleted ? 'bg-primary' : 'bg-border'
                         )} />
                       )}
