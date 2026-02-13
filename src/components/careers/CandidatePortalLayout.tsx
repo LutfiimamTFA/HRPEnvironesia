@@ -35,7 +35,7 @@ function UserNav() {
 
   const handleLogout = async () => {
     await auth.signOut();
-    router.push('/careers/login');
+    router.push('/careers');
   };
   
   const getInitials = (name: string = '') => {
@@ -97,7 +97,9 @@ export function CandidatePortalLayout({ children }: { children: ReactNode }) {
     }
     
     if (navSettings) {
-      return ALL_UNIQUE_MENU_ITEMS.filter(item => navSettings.visibleMenuItems.includes(item.label));
+      return ALL_UNIQUE_MENU_ITEMS.filter(item => 
+        ALL_MENU_ITEMS.kandidat.some(k => k.label === item.label) && navSettings.visibleMenuItems.includes(item.label)
+      );
     }
     
     return defaultItems;
