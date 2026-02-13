@@ -158,7 +158,7 @@ function ApplicationsPageSkeleton() {
 }
 
 export default function ApplicationsPage() {
-    const { userProfile } = useAuth();
+    const { userProfile, loading: authLoading } = useAuth();
     const firestore = useFirestore();
 
     const applicationsQuery = useMemoFirebase(() => {
@@ -170,7 +170,9 @@ export default function ApplicationsPage() {
         );
     }, [userProfile, firestore]);
 
-    const { data: applications, isLoading } = useCollection<JobApplication>(applicationsQuery);
+    const { data: applications, isLoading: applicationsLoading } = useCollection<JobApplication>(applicationsQuery);
+
+    const isLoading = authLoading || applicationsLoading;
 
     return (
         <div className="space-y-6">
