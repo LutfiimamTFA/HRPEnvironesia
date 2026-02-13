@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Badge } from '@/components/ui/badge';
 import { ArrowRight, Briefcase, MapPin } from 'lucide-react';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, query, where, orderBy } from 'firebase/firestore';
+import { collection, query, where } from 'firebase/firestore';
 import type { Job } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -53,13 +53,21 @@ export default function CandidateJobsPage() {
   const publishedJobsQuery = useMemoFirebase(
     () => query(
       collection(firestore, 'jobs'), 
-      where('publishStatus', '==', 'published'),
-      orderBy('createdAt', 'desc')
+      where('publishStatus', '==', 'published')
     ), 
     [firestore]
   );
 
   const { data: jobs, isLoading } = useCollection<Job>(publishedJobsQuery);
+
+  const sortedJobs = useMemo(() => {
+    if (!jobs) return [];
+    return [...jobs].sort((a, b) => {
+        const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+        const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+        return timeB - timeA;
+    });
+  }, [jobs]);
 
   return (
     <Card>
@@ -74,9 +82,9 @@ export default function CandidateJobsPage() {
                     <JobCardSkeleton />
                     <JobCardSkeleton />
                 </div>
-            ) : jobs && jobs.length > 0 ? (
+            ) : sortedJobs && sortedJobs.length > 0 ? (
                 <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                    {jobs.map(job => <JobCard key={job.id} job={job} />)}
+                    {sortedJobs.map(job => <JobCard key={job.id} job={job} />)}
                 </div>
             ) : (
                 <div className="py-12 text-center text-muted-foreground">
