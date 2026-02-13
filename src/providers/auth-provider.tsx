@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, ReactNode } from 'react';
+import { createContext, useContext, ReactNode, useCallback } from 'react';
 import { User as FirebaseAuthUser } from 'firebase/auth';
 import { doc } from 'firebase/firestore';
 import { 
@@ -16,12 +16,14 @@ type AuthContextType = {
   firebaseUser: FirebaseAuthUser | null;
   userProfile: UserProfile | null;
   loading: boolean;
+  refreshUserProfile: () => void;
 };
 
 const AuthContext = createContext<AuthContextType>({
   firebaseUser: null,
   userProfile: null,
   loading: true,
+  refreshUserProfile: () => {},
 });
 
 function AuthContent({ children }: { children: ReactNode }) {
@@ -33,7 +35,11 @@ function AuthContent({ children }: { children: ReactNode }) {
     return doc(firestore, 'users', firebaseUser.uid);
   }, [firestore, firebaseUser]);
   
-  const { data: userProfileData, isLoading: isProfileLoading } = useDoc<UserProfile>(userDocRef);
+  const { data: userProfileData, isLoading: isProfileLoading, mutate } = useDoc<UserProfile>(userDocRef);
+
+  const refreshUserProfile = useCallback(() => {
+    mutate();
+  }, [mutate]);
 
   const userProfile = userProfileData ?? null;
 
@@ -41,7 +47,7 @@ function AuthContent({ children }: { children: ReactNode }) {
   // This prevents an infinite loading state if a user is authenticated but has no profile document.
   const loading = isAuthLoading || (!!firebaseUser && isProfileLoading);
   
-  const value = { firebaseUser, userProfile, loading };
+  const value = { firebaseUser, userProfile, loading, refreshUserProfile };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

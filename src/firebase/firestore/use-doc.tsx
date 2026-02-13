@@ -1,12 +1,13 @@
 'use client';
     
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   DocumentReference,
   onSnapshot,
   DocumentData,
   FirestoreError,
   DocumentSnapshot,
+  getDoc,
 } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
@@ -22,6 +23,7 @@ export interface UseDocResult<T> {
   data: WithId<T> | null; // Document data with ID, or null.
   isLoading: boolean;       // True if loading.
   error: FirestoreError | Error | null; // Error object, or null.
+  mutate: () => void; // Function to manually refetch data.
 }
 
 /**
@@ -47,6 +49,24 @@ export function useDoc<T = any>(
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<FirestoreError | Error | null>(null);
 
+  const fetchData = useCallback(async () => {
+    if (!memoizedDocRef) return;
+    setIsLoading(true);
+    try {
+      const docSnap = await getDoc(memoizedDocRef);
+       if (docSnap.exists()) {
+          setData({ ...(docSnap.data() as T), id: docSnap.id });
+        } else {
+          setData(null);
+        }
+    } catch (e: any) {
+       setError(e);
+    } finally {
+        setIsLoading(false);
+    }
+  }, [memoizedDocRef]);
+
+
   useEffect(() => {
     if (!memoizedDocRef) {
       setData(null);
@@ -57,7 +77,6 @@ export function useDoc<T = any>(
 
     setIsLoading(true);
     setError(null);
-    // Optional: setData(null); // Clear previous data instantly
 
     const unsubscribe = onSnapshot(
       memoizedDocRef,
@@ -65,10 +84,9 @@ export function useDoc<T = any>(
         if (snapshot.exists()) {
           setData({ ...(snapshot.data() as T), id: snapshot.id });
         } else {
-          // Document does not exist
           setData(null);
         }
-        setError(null); // Clear any previous error on successful snapshot (even if doc doesn't exist)
+        setError(null);
         setIsLoading(false);
       },
       (error: FirestoreError) => {
@@ -81,7 +99,6 @@ export function useDoc<T = any>(
         setData(null);
         setIsLoading(false);
 
-        // Only emit global error for authenticated users to avoid crashing public pages
         if (contextualError.request.auth) {
           errorEmitter.emit('permission-error', contextualError);
         }
@@ -89,7 +106,7 @@ export function useDoc<T = any>(
     );
 
     return () => unsubscribe();
-  }, [memoizedDocRef]); // Re-run if the memoizedDocRef changes.
+  }, [memoizedDocRef]);
 
-  return { data, isLoading, error };
+  return { data, isLoading, error, mutate: fetchData };
 }

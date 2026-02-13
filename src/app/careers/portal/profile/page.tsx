@@ -1,45 +1,46 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useAuth } from "@/providers/auth-provider";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDoc, useFirestore, useMemoFirebase, setDocumentNonBlocking } from '@/firebase';
 import { doc } from 'firebase/firestore';
-import type { Profile } from '@/lib/types';
+import type { Profile, Education, WorkExperience, Certification } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2 } from 'lucide-react';
 import { PersonalDataForm } from '@/components/profile/PersonalDataForm';
 import { EducationForm } from '@/components/profile/EducationForm';
 import { WorkExperienceForm } from '@/components/profile/WorkExperienceForm';
 import { SkillsForm } from '@/components/profile/SkillsForm';
+import { Briefcase, GraduationCap, Sparkles, User } from 'lucide-react';
 
 function ProfileSkeleton() {
     return (
-        <Card>
-            <CardHeader>
-                <Skeleton className="h-8 w-1/3" />
-                <Skeleton className="h-4 w-2/3" />
-            </CardHeader>
-            <CardContent>
-                <Skeleton className="h-10 w-full" />
-                <div className="mt-6 space-y-4">
-                    <Skeleton className="h-24 w-full" />
-                    <Skeleton className="h-24 w-full" />
-                </div>
-            </CardContent>
-        </Card>
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+            <aside className="lg:col-span-1">
+                <Skeleton className="h-48 w-full" />
+            </aside>
+            <main className="lg:col-span-3">
+                <Skeleton className="h-96 w-full" />
+            </main>
+        </div>
     )
 }
 
+const navItems = [
+    { name: 'Data Pribadi', section: 'personal', icon: User, description: 'Info kontak, KTP, dll.' },
+    { name: 'Pendidikan', section: 'education', icon: GraduationCap, description: 'Riwayat pendidikan formal.' },
+    { name: 'Pengalaman Kerja', section: 'experience', icon: Briefcase, description: 'Pengalaman kerja relevan.' },
+    { name: 'Keahlian & Sertifikasi', section: 'skills', icon: Sparkles, description: 'Keahlian & sertifikasi Anda.' },
+];
+
 export default function ProfilePage() {
-  const { userProfile, firebaseUser, loading } = useAuth();
+  const { userProfile, firebaseUser, loading, refreshUserProfile } = useAuth();
   const firestore = useFirestore();
   const { toast } = useToast();
   const [isSaving, setIsSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState('personal');
+  const [activeSection, setActiveSection] = useState('personal');
 
   const profileDocRef = useMemoFirebase(() => {
     if (!firestore || !firebaseUser) return null;
@@ -48,27 +49,30 @@ export default function ProfilePage() {
 
   const { data: profile, isLoading: isProfileLoading } = useDoc<Profile>(profileDocRef);
   
-  const handleProfileSave = async (formData: Partial<Profile>) => {
-    if (!profileDocRef || !userProfile) return;
+  const checkProfileCompleteness = async (updatedData: Partial<Profile>) => {
+      const userDocRef = doc(firestore, 'users', firebaseUser!.uid);
+      const currentProfile = { ...profile, ...updatedData };
+      const requiredFields: (keyof Profile)[] = ['fullName', 'nickname', 'email', 'phone', 'eKtpNumber', 'gender', 'birthDate', 'addressKtp', 'willingToWfo', 'education', 'workExperience', 'skills'];
+      
+      const isComplete = requiredFields.every(field => {
+          const value = currentProfile[field];
+          if (Array.isArray(value)) return value.length > 0;
+          return !!value;
+      });
+
+      if (isComplete !== userProfile?.isProfileComplete) {
+          await setDocumentNonBlocking(userDocRef, { isProfileComplete: isComplete }, { merge: true });
+          refreshUserProfile();
+      }
+  };
+
+  const handleSave = async (formData: Partial<Profile>, sectionName: string) => {
+    if (!profileDocRef) return;
     setIsSaving(true);
     try {
         await setDocumentNonBlocking(profileDocRef, formData, { merge: true });
-        
-        const requiredFields: (keyof Profile)[] = ['fullName', 'nickname', 'email', 'phone', 'eKtpNumber', 'gender', 'birthDate', 'addressKtp', 'willingToWfo', 'education', 'workExperience', 'skills'];
-        
-        const updatedProfileData = { ...profile, ...formData };
-        const isComplete = requiredFields.every(field => {
-            const value = updatedProfileData[field];
-            if (Array.isArray(value)) return value.length > 0;
-            return !!value;
-        });
-
-        if (isComplete !== userProfile.isProfileComplete) {
-            const userDocRef = doc(firestore, 'users', userProfile.uid);
-            await setDocumentNonBlocking(userDocRef, { isProfileComplete: isComplete }, { merge: true });
-        }
-
-        toast({ title: "Profil Disimpan", description: "Informasi profil Anda telah diperbarui." });
+        await checkProfileCompleteness(formData);
+        toast({ title: "Profil Disimpan", description: `Bagian ${sectionName} telah diperbarui.` });
     } catch (error: any) {
         toast({ variant: 'destructive', title: "Gagal Menyimpan", description: error.message });
     } finally {
@@ -76,13 +80,6 @@ export default function ProfilePage() {
     }
   };
 
-  useEffect(() => {
-    if (!isProfileLoading) {
-        // This effect will run when the profile data is loaded or updated.
-        // We can force re-render or reset forms here if needed,
-        // but often the form libraries handle this if they receive new initialData.
-    }
-  }, [profile, isProfileLoading]);
 
   if (isProfileLoading || loading || !userProfile) {
     return <ProfileSkeleton />;
@@ -99,38 +96,65 @@ export default function ProfilePage() {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <CardTitle className="text-3xl">Profil Saya</CardTitle>
-          <CardDescription>Lengkapi profil Anda untuk mempermudah proses lamaran.</CardDescription>
+          <h1 className="text-3xl font-bold tracking-tight">Profil Saya</h1>
+          <p className="text-muted-foreground">Lengkapi profil Anda untuk mempermudah proses lamaran.</p>
         </div>
       </div>
+      
+       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
+            <aside className="lg:col-span-1 lg:sticky lg:top-20">
+                <nav className="flex flex-col space-y-1">
+                    {navItems.map((item) => (
+                        <Button
+                            key={item.section}
+                            variant={activeSection === item.section ? 'secondary' : 'ghost'}
+                            className="h-auto w-full justify-start p-3 text-left"
+                            onClick={() => setActiveSection(item.section)}
+                        >
+                            <item.icon className="mr-4 h-5 w-5 flex-shrink-0 text-muted-foreground" />
+                            <div>
+                                <p className="font-semibold text-base">{item.name}</p>
+                                <p className="text-sm text-muted-foreground">{item.description}</p>
+                            </div>
+                        </Button>
+                    ))}
+                </nav>
+            </aside>
 
-      <Tabs defaultValue="personal" value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-4">
-          <TabsTrigger value="personal">Data Pribadi</TabsTrigger>
-          <TabsTrigger value="education">Pendidikan</TabsTrigger>
-          <TabsTrigger value="experience">Pengalaman Kerja</TabsTrigger>
-          <TabsTrigger value="skills">Keahlian & Sertifikasi</TabsTrigger>
-        </TabsList>
-        <TabsContent value="personal" forceMount>
-          <PersonalDataForm initialData={initialProfileData} onSave={handleProfileSave} isSaving={isSaving} />
-        </TabsContent>
-        <TabsContent value="education" forceMount>
-          <EducationForm initialData={initialProfileData.education || []} onSave={async (data) => await handleProfileSave({ education: data })} isSaving={isSaving} />
-        </TabsContent>
-        <TabsContent value="experience" forceMount>
-          <WorkExperienceForm initialData={initialProfileData.workExperience || []} onSave={async (data) => await handleProfileSave({ workExperience: data })} isSaving={isSaving} />
-        </TabsContent>
-        <TabsContent value="skills" forceMount>
-            <SkillsForm 
-                initialData={{
-                    skills: initialProfileData.skills || [],
-                    certifications: initialProfileData.certifications || [],
-                }} 
-                onSave={async (data) => await handleProfileSave(data)} 
-                isSaving={isSaving} 
-            />
-        </TabsContent>
-      </Tabs>
+            <main className="lg:col-span-3">
+                <div style={{ display: activeSection === 'personal' ? 'block' : 'none' }}>
+                    <PersonalDataForm 
+                        initialData={initialProfileData} 
+                        onSave={(data) => handleSave(data, 'Data Pribadi')} 
+                        isSaving={isSaving} 
+                    />
+                </div>
+                <div style={{ display: activeSection === 'education' ? 'block' : 'none' }}>
+                    <EducationForm 
+                        initialData={initialProfileData.education || []} 
+                        onSave={(data: Education[]) => handleSave({ education: data }, 'Pendidikan')} 
+                        isSaving={isSaving} 
+                    />
+                </div>
+                <div style={{ display: activeSection === 'experience' ? 'block' : 'none' }}>
+                    <WorkExperienceForm 
+                        initialData={initialProfileData.workExperience || []} 
+                        onSave={(data: WorkExperience[]) => handleSave({ workExperience: data }, 'Pengalaman Kerja')} 
+                        isSaving={isSaving} 
+                    />
+                </div>
+                <div style={{ display: activeSection === 'skills' ? 'block' : 'none' }}>
+                    <SkillsForm 
+                        initialData={{
+                            skills: initialProfileData.skills || [],
+                            certifications: initialProfileData.certifications || [],
+                        }} 
+                        onSave={(data: { skills: string[], certifications?: Certification[] }) => handleSave(data, 'Keahlian & Sertifikasi')} 
+                        isSaving={isSaving} 
+                    />
+                </div>
+            </main>
+        </div>
     </div>
   );
 }
