@@ -56,8 +56,11 @@ export default function ProfilePage() {
       
       const isComplete = requiredFields.every(field => {
           const value = currentProfile[field];
-          if (Array.isArray(value)) return value.length > 0;
-          return !!value;
+          if (Array.isArray(value)) {
+              return value.length > 0;
+          }
+          // Check for existence (not just truthiness), as `false` is a valid value for `willingToWfo`.
+          return value !== undefined && value !== null;
       });
 
       if (isComplete !== userProfile?.isProfileComplete) {
