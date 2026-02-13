@@ -114,7 +114,7 @@ export type Profile = {
     linkedinUrl?: string;
     websiteUrl?: string;
     education: Education[];
-    workExperience: WorkExperience[];
-    skills: string[];
+    workExperience?: WorkExperience[];
+    skills?: string[];
     certifications?: Certification[];
 }

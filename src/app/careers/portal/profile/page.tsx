@@ -52,7 +52,7 @@ export default function ProfilePage() {
       if (!firestore || !firebaseUser) return;
       const userDocRef = doc(firestore, 'users', firebaseUser.uid);
       const currentProfile = { ...profile, ...updatedData };
-      const requiredFields: (keyof Profile)[] = ['fullName', 'nickname', 'email', 'phone', 'eKtpNumber', 'gender', 'birthDate', 'addressKtp', 'willingToWfo', 'education', 'workExperience', 'skills'];
+      const requiredFields: (keyof Profile)[] = ['fullName', 'nickname', 'email', 'phone', 'eKtpNumber', 'gender', 'birthDate', 'addressKtp', 'willingToWfo', 'education'];
       
       const isComplete = requiredFields.every(field => {
           const value = currentProfile[field];

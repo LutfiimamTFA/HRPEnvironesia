@@ -366,7 +366,7 @@
                 }
             }
         },
-        "required": ["fullName", "nickname", "email", "phone", "eKtpNumber", "gender", "birthDate", "addressKtp", "willingToWfo", "education", "workExperience", "skills"]
+        "required": ["fullName", "nickname", "email", "phone", "eKtpNumber", "gender", "birthDate", "addressKtp", "willingToWfo", "education"]
     }
   },
   "auth": {
