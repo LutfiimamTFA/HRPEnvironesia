@@ -90,10 +90,18 @@ export type WorkExperience = {
 
 export type Profile = {
     fullName: string;
+    nickname: string;
     email: string;
     phone: string;
-    address: string;
+    eKtpNumber: string;
+    gender: 'Laki-laki' | 'Perempuan';
     birthDate: Timestamp;
+    addressKtp: string;
+    addressDomicile: string;
+    isDomicileSameAsKtp: boolean;
+    hasNpwp?: boolean;
+    npwpNumber?: string;
+    willingToWfo: boolean;
     linkedinUrl?: string;
     websiteUrl?: string;
     education: Education[];

@@ -290,10 +290,18 @@
         "description": "Stores detailed profile information for a candidate.",
         "properties": {
             "fullName": { "type": "string", "description": "Candidate's full name." },
+            "nickname": { "type": "string", "description": "Candidate's nickname." },
             "email": { "type": "string", "format": "email", "description": "Candidate's email." },
             "phone": { "type": "string", "description": "Candidate's phone number." },
-            "address": { "type": "string", "description": "Candidate's full address." },
+            "eKtpNumber": { "type": "string", "description": "16-digit e-KTP number." },
+            "gender": { "type": "string", "description": "Candidate's gender.", "enum": ["Laki-laki", "Perempuan"] },
             "birthDate": { "type": "string", "format": "date-time", "description": "Candidate's date of birth." },
+            "addressKtp": { "type": "string", "description": "Candidate's address as per e-KTP." },
+            "addressDomicile": { "type": "string", "description": "Candidate's current domicile address." },
+            "isDomicileSameAsKtp": { "type": "boolean", "description": "Whether domicile address is the same as KTP address." },
+            "hasNpwp": { "type": "boolean", "description": "Indicates if the candidate has an NPWP." },
+            "npwpNumber": { "type": "string", "description": "Candidate's NPWP number (if any)." },
+            "willingToWfo": { "type": "boolean", "description": "Indicates if the candidate is willing to work from the office." },
             "linkedinUrl": { "type": "string", "format": "uri", "description": "URL to LinkedIn profile." },
             "websiteUrl": { "type": "string", "format": "uri", "description": "URL to personal website/portfolio." },
             "education": {
@@ -333,7 +341,7 @@
                 "items": { "type": "string" }
             }
         },
-        "required": ["fullName", "email", "phone", "address", "birthDate", "education", "workExperience", "skills"]
+        "required": ["fullName", "nickname", "email", "phone", "eKtpNumber", "gender", "birthDate", "addressKtp", "willingToWfo", "education", "workExperience", "skills"]
     }
   },
   "auth": {
