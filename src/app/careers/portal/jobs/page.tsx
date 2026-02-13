@@ -38,7 +38,7 @@ const JobCard = ({ job }: { job: Job }) => (
                 </div>
             </div>
 
-            <div className="flex-shrink-0 flex flex-col items-center gap-2 w-full sm:w-40">
+            <div className="flex-shrink-0 flex flex-col items-stretch sm:items-center gap-2 w-full sm:w-40 mt-4 sm:mt-0">
                 <Button asChild className="w-full justify-center">
                     <Link href={`/careers/jobs/${job.slug}`}>
                         Lihat Detail
@@ -79,7 +79,6 @@ export default function CandidateJobsPage() {
   
   const [searchTerm, setSearchTerm] = useState('');
   const [companyFilter, setCompanyFilter] = useState('');
-  const [locationFilter, setLocationFilter] = useState('');
 
   const publishedJobsQuery = useMemoFirebase(
     () => query(
@@ -110,16 +109,14 @@ export default function CandidateJobsPage() {
     return sortedJobs.filter(job => {
       const matchesSearchTerm = job.position.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesCompany = companyFilter ? job.brandName === companyFilter : true;
-      const matchesLocation = locationFilter ? job.location.toLowerCase().includes(locationFilter.toLowerCase()) : true;
-
-      return matchesSearchTerm && matchesCompany && matchesLocation;
+      
+      return matchesSearchTerm && matchesCompany;
     });
-  }, [sortedJobs, searchTerm, companyFilter, locationFilter]);
+  }, [sortedJobs, searchTerm, companyFilter]);
 
   const handleResetFilters = () => {
     setSearchTerm('');
     setCompanyFilter('');
-    setLocationFilter('');
   };
 
 
@@ -166,14 +163,6 @@ export default function CandidateJobsPage() {
                                 ))}
                             </SelectContent>
                         </Select>
-                    </div>
-                     <div className="space-y-2">
-                        <label className="text-sm font-medium">Lokasi Penempatan</label>
-                        <Input 
-                            placeholder="" 
-                            value={locationFilter}
-                            onChange={(e) => setLocationFilter(e.target.value)}
-                        />
                     </div>
                 </CardContent>
             </Card>
