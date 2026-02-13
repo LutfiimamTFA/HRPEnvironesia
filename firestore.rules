@@ -194,8 +194,11 @@ service cloud.firestore {
       // It allows a candidate to check a doc if the ID appears to belong to them.
       allow get: if isInternal() || (isCandidate() && applicationId.split('_')[1] == request.auth.uid);
 
-      // Allow list for queries. This rule requires the client to include `where('candidateUid', '==', auth.uid)`.
-      allow list: if isInternal() || (isCandidate() && request.resource.data.candidateUid == request.auth.uid);
+      // Allow list for queries. This enforces that a candidate can only query for their own applications.
+      // The client query must include `where('candidateUid', '==', request.auth.uid)`.
+      // The `isInternal()` part is still problematic for non-super-admin internal users,
+      // but this fixes the immediate issue for candidates.
+      allow list: if isInternal() || (isSignedIn() && resource.data.candidateUid == request.auth.uid);
 
       allow update: if isSignedIn() && (
                       (isCandidate()
