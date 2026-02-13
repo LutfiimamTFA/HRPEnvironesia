@@ -40,7 +40,7 @@ export function DatePickerField({ value, onChange, disabled, className, fromDate
           {value ? format(value, 'PPP') : <span>Pick a date</span>}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-0 rounded-md border bg-popover" align="start" portalled={false}>
+      <PopoverContent className="w-auto p-0 rounded-md bg-popover" align="start" portalled={false}>
         <Calendar
           mode="single"
           selected={value ?? undefined}

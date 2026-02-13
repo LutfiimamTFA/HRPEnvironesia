@@ -27,8 +27,8 @@ function Calendar({
         caption_dropdowns: "flex gap-2",
         nav: "space-x-1 flex items-center",
         nav_button: cn(
-          buttonVariants({ variant: "outline" }),
-          "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100"
+          buttonVariants({ variant: "secondary", size: "icon" }),
+          "h-8 w-8"
         ),
         nav_button_previous: "absolute left-1",
         nav_button_next: "absolute right-1",
@@ -39,17 +39,16 @@ function Calendar({
         row: "flex w-full mt-2",
         cell: "h-9 w-9 text-center text-sm p-0 relative focus-within:relative focus-within:z-20",
         day: cn(
-          "h-9 w-9 p-0 font-normal aria-selected:opacity-100 rounded-full",
-          "hover:bg-accent hover:text-accent-foreground",
+          "h-9 w-9 p-0 font-normal aria-selected:opacity-100 rounded-md",
+          "hover:bg-secondary hover:text-secondary-foreground",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
           "disabled:pointer-events-none disabled:opacity-50"
         ),
         day_selected:
-          "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground",
-        day_today: "bg-accent text-accent-foreground",
+          "bg-secondary text-secondary-foreground hover:bg-secondary/90 focus:bg-secondary focus:text-secondary-foreground",
+        day_today: "bg-transparent border border-primary text-primary",
         day_outside:
           "day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50",
-        day_disabled: "text-muted-foreground opacity-50",
         day_hidden: "invisible",
         ...classNames,
       }}
