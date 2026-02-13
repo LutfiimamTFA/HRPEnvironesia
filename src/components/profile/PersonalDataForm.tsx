@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
-import type { Profile } from '@/lib/types';
+import type { Profile, Address } from '@/lib/types';
 import { Timestamp } from 'firebase/firestore';
 import { GoogleDatePicker } from '../ui/google-date-picker';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
@@ -17,6 +17,17 @@ import { Checkbox } from '../ui/checkbox';
 import React, { useEffect } from 'react';
 
 const DRAFT_KEY = 'personal-data-form-draft';
+
+const addressObjectSchema = z.object({
+    street: z.string().min(5, "Alamat jalan harus diisi."),
+    rt: z.string().min(1, "RT harus diisi."),
+    rw: z.string().min(1, "RW harus diisi."),
+    village: z.string().min(2, "Kelurahan/Desa harus diisi."),
+    district: z.string().min(2, "Kecamatan harus diisi."),
+    city: z.string().min(2, "Kota/Kabupaten harus diisi."),
+    province: z.string().min(2, "Provinsi harus diisi."),
+    postalCode: z.string().min(5, "Kode Pos harus diisi."),
+});
 
 const formSchema = z.object({
     fullName: z.string().min(2, { message: "Nama lengkap harus diisi." }),
@@ -26,9 +37,9 @@ const formSchema = z.object({
     eKtpNumber: z.string().length(16, { message: "Nomor e-KTP harus 16 digit." }),
     gender: z.enum(['Laki-laki', 'Perempuan'], { required_error: "Jenis kelamin harus dipilih." }),
     birthDate: z.date({ required_error: "Tanggal lahir harus diisi."}),
-    addressKtp: z.string().min(10, { message: "Alamat KTP harus diisi." }),
+    addressKtp: addressObjectSchema,
     isDomicileSameAsKtp: z.boolean().default(false),
-    addressDomicile: z.string().optional(),
+    addressDomicile: addressObjectSchema.optional(),
     hasNpwp: z.boolean().default(false),
     npwpNumber: z.string().optional().or(z.literal('')),
     willingToWfo: z.enum(['ya', 'tidak'], { required_error: "Pilihan ini harus diisi." }),
@@ -36,7 +47,7 @@ const formSchema = z.object({
     websiteUrl: z.string().url().optional().or(z.literal('')),
 }).refine(data => {
     if (data.isDomicileSameAsKtp) return true;
-    return data.addressDomicile && data.addressDomicile.length >= 10;
+    return data.addressDomicile;
 }, {
     message: "Alamat domisili harus diisi jika berbeda.",
     path: ["addressDomicile"],
@@ -56,6 +67,25 @@ interface PersonalDataFormProps {
     onSave: (data: Partial<Profile>) => Promise<void>;
     isSaving: boolean;
 }
+
+const addressDefaultValues: Address = {
+    street: '',
+    rt: '',
+    rw: '',
+    village: '',
+    district: '',
+    city: '',
+    province: '',
+    postalCode: '',
+};
+
+const getAddressObject = (address: any): Address => {
+    if (typeof address === 'string') {
+        return { ...addressDefaultValues, street: address };
+    }
+    return address ? { ...addressDefaultValues, ...address } : addressDefaultValues;
+};
+
 
 export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalDataFormProps) {
     const form = useForm<FormValues>({
@@ -80,9 +110,9 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                 eKtpNumber: initialData.eKtpNumber || '',
                 gender: initialData.gender,
                 birthDate: initialData.birthDate instanceof Timestamp ? initialData.birthDate.toDate() : initialData.birthDate,
-                addressKtp: initialData.addressKtp || '',
+                addressKtp: getAddressObject(initialData.addressKtp),
                 isDomicileSameAsKtp: initialData.isDomicileSameAsKtp || false,
-                addressDomicile: initialData.addressDomicile || '',
+                addressDomicile: getAddressObject(initialData.addressDomicile),
                 hasNpwp: initialData.hasNpwp || false,
                 npwpNumber: initialData.npwpNumber || '',
                 willingToWfo: typeof initialData.willingToWfo === 'boolean' ? (initialData.willingToWfo ? 'ya' : 'tidak') : undefined,
@@ -103,9 +133,9 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                 eKtpNumber: initialData.eKtpNumber || '',
                 gender: initialData.gender,
                 birthDate: initialData.birthDate instanceof Timestamp ? initialData.birthDate.toDate() : initialData.birthDate,
-                addressKtp: initialData.addressKtp || '',
+                addressKtp: getAddressObject(initialData.addressKtp),
                 isDomicileSameAsKtp: initialData.isDomicileSameAsKtp || false,
-                addressDomicile: initialData.addressDomicile || '',
+                addressDomicile: getAddressObject(initialData.addressDomicile),
                 hasNpwp: initialData.hasNpwp || false,
                 npwpNumber: initialData.npwpNumber || '',
                 willingToWfo: typeof initialData.willingToWfo === 'boolean' ? (initialData.willingToWfo ? 'ya' : 'tidak') : undefined,
@@ -132,7 +162,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
             ...values,
             willingToWfo: values.willingToWfo === 'ya',
             birthDate: Timestamp.fromDate(values.birthDate),
-            addressDomicile: values.isDomicileSameAsKtp ? values.addressKtp : values.addressDomicile || '',
+            addressDomicile: values.isDomicileSameAsKtp ? values.addressKtp : (values.addressDomicile || addressDefaultValues),
         };
         try {
             await onSave(dataToSave);
@@ -269,19 +299,38 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                             )}
                         />
 
-                        <FormField
-                            control={form.control}
-                            name="addressKtp"
-                            render={({ field }) => (
-                                <FormItem>
-                                    <FormLabel>Alamat Sesuai KTP</FormLabel>
-                                    <FormControl>
-                                        <Textarea {...field} placeholder="Masukkan alamat lengkap sesuai KTP..." />
-                                    </FormControl>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
+                        {/* KTP Address */}
+                        <div className="space-y-4">
+                            <FormLabel>Alamat Sesuai KTP</FormLabel>
+                            <div className="p-4 border rounded-lg space-y-4">
+                                <FormField
+                                    control={form.control}
+                                    name="addressKtp.street"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Jalan</FormLabel>
+                                            <FormControl>
+                                                <Textarea {...field} placeholder="Masukkan nama jalan, nomor rumah, dll..." />
+                                            </FormControl>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                                <div className="grid grid-cols-2 gap-4">
+                                    <FormField control={form.control} name="addressKtp.rt" render={({ field }) => (<FormItem><FormLabel>RT</FormLabel><FormControl><Input placeholder="001" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                    <FormField control={form.control} name="addressKtp.rw" render={({ field }) => (<FormItem><FormLabel>RW</FormLabel><FormControl><Input placeholder="002" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                </div>
+                                <FormField control={form.control} name="addressKtp.village" render={({ field }) => (<FormItem><FormLabel>Kelurahan/Desa</FormLabel><FormControl><Input placeholder="Caturtunggal" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                <FormField control={form.control} name="addressKtp.district" render={({ field }) => (<FormItem><FormLabel>Kecamatan</FormLabel><FormControl><Input placeholder="Depok" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                <div className="grid grid-cols-2 gap-4">
+                                    <FormField control={form.control} name="addressKtp.city" render={({ field }) => (<FormItem><FormLabel>Kota/Kabupaten</FormLabel><FormControl><Input placeholder="Sleman" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                    <FormField control={form.control} name="addressKtp.province" render={({ field }) => (<FormItem><FormLabel>Provinsi</FormLabel><FormControl><Input placeholder="D.I. Yogyakarta" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                </div>
+                                <FormField control={form.control} name="addressKtp.postalCode" render={({ field }) => (<FormItem><FormLabel>Kode Pos</FormLabel><FormControl><Input placeholder="55281" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                            </div>
+                        </div>
+
+
                         <FormField
                             control={form.control}
                             name="isDomicileSameAsKtp"
@@ -301,20 +350,39 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                 </FormItem>
                             )}
                         />
+
+                        {/* Domicile Address */}
                         {!isDomicileSameAsKtp && (
-                            <FormField
-                                control={form.control}
-                                name="addressDomicile"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <FormLabel>Alamat Domisili</FormLabel>
-                                        <FormControl>
-                                            <Textarea {...field} value={field.value ?? ''} placeholder="Masukkan alamat domisili saat ini..." />
-                                        </FormControl>
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
-                            />
+                             <div className="space-y-4">
+                                <FormLabel>Alamat Domisili</FormLabel>
+                                <div className="p-4 border rounded-lg space-y-4">
+                                    <FormField
+                                        control={form.control}
+                                        name="addressDomicile.street"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel>Jalan</FormLabel>
+                                                <FormControl>
+                                                    <Textarea {...field} placeholder="Masukkan nama jalan, nomor rumah, dll..." />
+                                                </FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <FormField control={form.control} name="addressDomicile.rt" render={({ field }) => (<FormItem><FormLabel>RT</FormLabel><FormControl><Input placeholder="001" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                        <FormField control={form.control} name="addressDomicile.rw" render={({ field }) => (<FormItem><FormLabel>RW</FormLabel><FormControl><Input placeholder="002" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                    </div>
+                                    <FormField control={form.control} name="addressDomicile.village" render={({ field }) => (<FormItem><FormLabel>Kelurahan/Desa</FormLabel><FormControl><Input placeholder="Caturtunggal" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                    <FormField control={form.control} name="addressDomicile.district" render={({ field }) => (<FormItem><FormLabel>Kecamatan</FormLabel><FormControl><Input placeholder="Depok" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <FormField control={form.control} name="addressDomicile.city" render={({ field }) => (<FormItem><FormLabel>Kota/Kabupaten</FormLabel><FormControl><Input placeholder="Sleman" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                        <FormField control={form.control} name="addressDomicile.province" render={({ field }) => (<FormItem><FormLabel>Provinsi</FormLabel><FormControl><Input placeholder="D.I. Yogyakarta" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                    </div>
+                                    <FormField control={form.control} name="addressDomicile.postalCode" render={({ field }) => (<FormItem><FormLabel>Kode Pos</FormLabel><FormControl><Input placeholder="55281" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                     <FormMessage>{form.formState.errors.addressDomicile?.root?.message}</FormMessage>
+                                </div>
+                            </div>
                         )}
 
                         <FormField
@@ -428,3 +496,5 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
         </Card>
     )
 }
+
+    

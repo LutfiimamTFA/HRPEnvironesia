@@ -97,6 +97,17 @@ export type Certification = {
     expirationDate?: string; // Storing as YYYY-MM string
 }
 
+export type Address = {
+    street: string;
+    rt: string;
+    rw: string;
+    village: string;
+    district: string;
+    city: string;
+    province: string;
+    postalCode: string;
+};
+
 export type Profile = {
     fullName: string;
     nickname: string;
@@ -105,8 +116,8 @@ export type Profile = {
     eKtpNumber: string;
     gender: 'Laki-laki' | 'Perempuan';
     birthDate: Timestamp;
-    addressKtp: string;
-    addressDomicile: string;
+    addressKtp: Address;
+    addressDomicile: Address;
     isDomicileSameAsKtp: boolean;
     hasNpwp?: boolean;
     npwpNumber?: string;
@@ -118,3 +129,5 @@ export type Profile = {
     skills?: string[];
     certifications?: Certification[];
 }
+
+    
