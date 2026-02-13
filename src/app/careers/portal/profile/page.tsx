@@ -1,31 +1,129 @@
 'use client';
 
+import { useState } from 'react';
 import { useAuth } from "@/providers/auth-provider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Skeleton } from '@/components/ui/skeleton';
+import { useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
+import { doc } from 'firebase/firestore';
+import type { Profile } from '@/lib/types';
+import { useToast } from '@/hooks/use-toast';
+import { Loader2 } from 'lucide-react';
+import { PersonalDataForm } from '@/components/profile/PersonalDataForm';
+import { EducationForm } from '@/components/profile/EducationForm';
+import { WorkExperienceForm } from '@/components/profile/WorkExperienceForm';
+import { SkillsForm } from '@/components/profile/SkillsForm';
+
+function ProfileSkeleton() {
+    return (
+        <Card>
+            <CardHeader>
+                <Skeleton className="h-8 w-1/3" />
+                <Skeleton className="h-4 w-2/3" />
+            </CardHeader>
+            <CardContent>
+                <Skeleton className="h-10 w-full" />
+                <div className="mt-6 space-y-4">
+                    <Skeleton className="h-24 w-full" />
+                    <Skeleton className="h-24 w-full" />
+                </div>
+            </CardContent>
+        </Card>
+    )
+}
 
 export default function ProfilePage() {
-  const { userProfile } = useAuth();
+  const { userProfile, firebaseUser } = useAuth();
+  const firestore = useFirestore();
+  const { toast } = useToast();
+  const [isSaving, setIsSaving] = useState(false);
+
+  const profileDocRef = useMemoFirebase(() => {
+    if (!firestore || !firebaseUser) return null;
+    return doc(firestore, 'profiles', firebaseUser.uid);
+  }, [firestore, firebaseUser]);
+
+  const { data: profile, isLoading: isProfileLoading } = useDoc<Profile>(profileDocRef);
+  
+  const handleProfileSave = async (formData: Partial<Profile>) => {
+    if (!profileDocRef || !userProfile) return;
+    setIsSaving(true);
+    try {
+        await updateDocumentNonBlocking(profileDocRef, formData);
+        
+        // Check if profile is complete after saving
+        const requiredFields: (keyof Profile)[] = ['fullName', 'email', 'phone', 'address', 'education', 'workExperience', 'skills'];
+        
+        const updatedProfileData = { ...profile, ...formData };
+        const isComplete = requiredFields.every(field => {
+            const value = updatedProfileData[field];
+            if (Array.isArray(value)) return value.length > 0;
+            return !!value;
+        });
+
+        if (isComplete && !userProfile.isProfileComplete) {
+             const userDocRef = doc(firestore, 'users', userProfile.uid);
+             await updateDocumentNonBlocking(userDocRef, { isProfileComplete: true });
+        } else if (!isComplete && userProfile.isProfileComplete) {
+            const userDocRef = doc(firestore, 'users', userProfile.uid);
+            await updateDocumentNonBlocking(userDocRef, { isProfileComplete: false });
+        }
+
+        toast({ title: "Profil Disimpan", description: "Informasi profil Anda telah diperbarui." });
+    } catch (error: any) {
+        toast({ variant: 'destructive', title: "Gagal Menyimpan", description: error.message });
+    } finally {
+        setIsSaving(false);
+    }
+  };
+
+
+  if (isProfileLoading || !userProfile) {
+    return <ProfileSkeleton />;
+  }
+  
+  const initialProfileData = {
+    ...profile,
+    fullName: profile?.fullName || userProfile.fullName,
+    email: profile?.email || userProfile.email,
+  };
+
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Profil Saya</CardTitle>
-        <CardDescription>Informasi akun Anda. Fitur edit akan segera tersedia.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="space-y-2">
-            <Label htmlFor="fullName">Nama Lengkap</Label>
-            <Input id="fullName" value={userProfile?.fullName || ''} readOnly />
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <CardTitle className="text-3xl">Profil Saya</CardTitle>
+          <CardDescription>Lengkapi profil Anda untuk mempermudah proses lamaran.</CardDescription>
         </div>
-        <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input id="email" value={userProfile?.email || ''} readOnly />
-        </div>
-        <Button disabled>Edit Profil (Segera Hadir)</Button>
-      </CardContent>
-    </Card>
+        <Button onClick={() => handleProfileSave(form.getValues())} disabled={isSaving}>
+            {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Simpan Perubahan
+        </Button>
+      </div>
+
+      <Tabs defaultValue="personal" className="w-full">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-4">
+          <TabsTrigger value="personal">Data Pribadi</TabsTrigger>
+          <TabsTrigger value="education">Pendidikan</TabsTrigger>
+          <TabsTrigger value="experience">Pengalaman Kerja</TabsTrigger>
+          <TabsTrigger value="skills">Keahlian</TabsTrigger>
+        </TabsList>
+        <TabsContent value="personal">
+          <PersonalDataForm initialData={initialProfileData} onSave={handleProfileSave} isSaving={isSaving} />
+        </TabsContent>
+        <TabsContent value="education">
+          <EducationForm initialData={initialProfileData.education || []} onSave={(data) => handleProfileSave({ education: data })} isSaving={isSaving} />
+        </TabsContent>
+        <TabsContent value="experience">
+          <WorkExperienceForm initialData={initialProfileData.workExperience || []} onSave={(data) => handleProfileSave({ workExperience: data })} isSaving={isSaving} />
+        </TabsContent>
+        <TabsContent value="skills">
+            <SkillsForm initialData={initialProfileData.skills || []} onSave={(data) => handleProfileSave({ skills: data })} isSaving={isSaving} />
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }

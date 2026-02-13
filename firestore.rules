@@ -130,6 +130,19 @@ service cloud.firestore {
 
     /**
      * @description
+     *   Rules for the detailed candidate profiles collection.
+     *   A candidate can read and write to their own profile.
+     *   Internal users can read any profile.
+     * @path
+     *   /profiles/{userId}
+     */
+    match /profiles/{userId} {
+      allow get: if isOwner(userId) || isInternal();
+      allow write: if isOwner(userId); // create, update, delete
+    }
+
+    /**
+     * @description
      *   This collection is a private lookup table for identifying super_admins.
      *   It is managed exclusively by a trusted server environment and is completely
      *   inaccessible to all clients to prevent privilege escalation.

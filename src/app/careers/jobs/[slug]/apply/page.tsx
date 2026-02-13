@@ -2,14 +2,17 @@
 
 import { useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, query, where, limit } from 'firebase/firestore';
 import type { Job } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Building, Calendar, MapPin, Briefcase } from 'lucide-react';
+import { Building, Calendar, MapPin, Briefcase, AlertTriangle } from 'lucide-react';
 import { format } from 'date-fns';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import Link from 'next/link';
 
 function JobApplySkeleton() {
     return (
@@ -37,6 +40,9 @@ export default function JobApplyPage() {
   const params = useParams();
   const slug = params.slug as string;
   const firestore = useFirestore();
+  const { userProfile } = useAuth();
+
+  const isProfileComplete = userProfile?.isProfileComplete ?? false;
 
   // Fetch Job details.
   const jobQuery = useMemoFirebase(() => {
@@ -68,6 +74,18 @@ export default function JobApplyPage() {
                     </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                    {!isProfileComplete && (
+                        <Alert variant="destructive">
+                            <AlertTriangle className="h-4 w-4" />
+                            <AlertTitle>Profil Belum Lengkap!</AlertTitle>
+                            <AlertDescription>
+                                Anda harus melengkapi profil Anda sebelum dapat melamar.
+                                <Button asChild variant="link" className="p-0 h-auto ml-1">
+                                    <Link href="/careers/portal/profile">Lengkapi Profil Sekarang</Link>
+                                </Button>
+                            </AlertDescription>
+                        </Alert>
+                    )}
                     <p className="text-sm text-center p-8 border rounded-lg bg-muted/50">
                         Formulir aplikasi dan fitur unggah CV sedang dalam tahap pengembangan.
                     </p>
@@ -75,7 +93,7 @@ export default function JobApplyPage() {
                          <Button onClick={() => router.back()} variant="outline">
                             Kembali
                         </Button>
-                        <Button disabled>Kirim Lamaran (Segera Hadir)</Button>
+                        <Button disabled={!isProfileComplete}>Kirim Lamaran (Segera Hadir)</Button>
                     </div>
                 </CardContent>
             </Card>

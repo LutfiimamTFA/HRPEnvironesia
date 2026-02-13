@@ -13,6 +13,7 @@ export type UserProfile = {
   isActive: boolean;
   createdAt: Timestamp | { seconds: number; nanoseconds: number };
   brandId?: string | string[];
+  isProfileComplete?: boolean;
 };
 
 export type Brand = {
@@ -66,3 +67,36 @@ export type JobApplication = {
   updatedAt: Timestamp;
   submittedAt?: Timestamp;
 };
+
+export type Education = {
+    id: string;
+    institution: string;
+    degree: string;
+    fieldOfStudy: string;
+    startDate: string;
+    endDate: string;
+    isCurrent: boolean;
+}
+
+export type WorkExperience = {
+    id: string;
+    company: string;
+    position: string;
+    startDate: string;
+    endDate: string;
+    isCurrent: boolean;
+    description: string;
+}
+
+export type Profile = {
+    fullName: string;
+    email: string;
+    phone: string;
+    address: string;
+    birthDate: Timestamp;
+    linkedinUrl?: string;
+    websiteUrl?: string;
+    education: Education[];
+    workExperience: WorkExperience[];
+    skills: string[];
+}

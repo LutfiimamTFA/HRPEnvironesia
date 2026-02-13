@@ -35,6 +35,10 @@
         "brandId": {
           "type": "string",
           "description": "The ID of the brand the user belongs to."
+        },
+        "isProfileComplete": {
+          "type": "boolean",
+          "description": "Indicates whether the candidate's profile is complete."
         }
       },
       "required": [
@@ -279,6 +283,57 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "Profile": {
+        "title": "Candidate Profile",
+        "type": "object",
+        "description": "Stores detailed profile information for a candidate.",
+        "properties": {
+            "fullName": { "type": "string", "description": "Candidate's full name." },
+            "email": { "type": "string", "format": "email", "description": "Candidate's email." },
+            "phone": { "type": "string", "description": "Candidate's phone number." },
+            "address": { "type": "string", "description": "Candidate's full address." },
+            "birthDate": { "type": "string", "format": "date-time", "description": "Candidate's date of birth." },
+            "linkedinUrl": { "type": "string", "format": "uri", "description": "URL to LinkedIn profile." },
+            "websiteUrl": { "type": "string", "format": "uri", "description": "URL to personal website/portfolio." },
+            "education": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "string" },
+                        "institution": { "type": "string" },
+                        "degree": { "type": "string" },
+                        "fieldOfStudy": { "type": "string" },
+                        "startDate": { "type": "string" },
+                        "endDate": { "type": "string" },
+                        "isCurrent": { "type": "boolean" }
+                    },
+                    "required": ["id", "institution", "degree", "fieldOfStudy", "startDate"]
+                }
+            },
+            "workExperience": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "string" },
+                        "company": { "type": "string" },
+                        "position": { "type": "string" },
+                        "startDate": { "type": "string" },
+                        "endDate": { "type": "string" },
+                        "isCurrent": { "type": "boolean" },
+                        "description": { "type": "string" }
+                    },
+                    "required": ["id", "company", "position", "startDate"]
+                }
+            },
+            "skills": {
+                "type": "array",
+                "items": { "type": "string" }
+            }
+        },
+        "required": ["fullName", "email", "phone", "address", "birthDate", "education", "workExperience", "skills"]
     }
   },
   "auth": {
@@ -302,6 +357,22 @@
             {
               "name": "userId",
               "description": "The Firebase Auth UID of the user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/profiles/{userId}",
+        "definition": {
+          "entityName": "Profile",
+          "schema": {
+            "$ref": "#/backend/entities/Profile"
+          },
+          "description": "Stores detailed candidate profile data, linked to a user.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The Firebase Auth UID of the user (candidate)."
             }
           ]
         }
