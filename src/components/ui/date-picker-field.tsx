@@ -17,10 +17,13 @@ interface DatePickerFieldProps {
   onChange: (date: Date | undefined) => void;
   disabled?: (date: Date) => boolean;
   className?: string;
+  fromDate?: Date;
+  toDate?: Date;
 }
 
-export function DatePickerField({ value, onChange, disabled, className }: DatePickerFieldProps) {
+export function DatePickerField({ value, onChange, disabled, className, fromDate, toDate }: DatePickerFieldProps) {
   const [open, setOpen] = React.useState(false);
+  const hasDropdowns = fromDate !== undefined && toDate !== undefined;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -47,6 +50,9 @@ export function DatePickerField({ value, onChange, disabled, className }: DatePi
           }}
           disabled={disabled}
           initialFocus
+          captionLayout={hasDropdowns ? "dropdown-buttons" : "buttons"}
+          fromDate={fromDate}
+          toDate={toDate}
         />
       </PopoverContent>
     </Popover>

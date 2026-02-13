@@ -48,6 +48,9 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
         onSave(dataToSave);
     };
 
+    const fromDate = new Date();
+    fromDate.setFullYear(fromDate.getFullYear() - 100);
+
     return (
         <Card>
             <CardHeader>
@@ -107,6 +110,8 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                                 value={field.value}
                                                 onChange={field.onChange}
                                                 disabled={(date) => date > new Date()}
+                                                fromDate={fromDate}
+                                                toDate={new Date()}
                                             />
                                         </FormControl>
                                         <FormMessage />

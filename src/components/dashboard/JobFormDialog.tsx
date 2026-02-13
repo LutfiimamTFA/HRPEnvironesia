@@ -182,6 +182,9 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
     }
   };
 
+  const toDate = new Date();
+  toDate.setFullYear(toDate.getFullYear() + 5);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[95vh] flex flex-col">
@@ -269,6 +272,8 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
                           disabled={(date) =>
                             date < new Date(new Date().setHours(0, 0, 0, 0))
                           }
+                          fromDate={new Date()}
+                          toDate={toDate}
                         />
                       </FormControl>
                       <FormMessage />
