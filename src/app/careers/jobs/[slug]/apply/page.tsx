@@ -9,10 +9,10 @@ import { useAuth } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Building, Calendar, MapPin, Briefcase, CheckCircle } from 'lucide-react';
+import { Building, Calendar, MapPin, Briefcase, CheckCircle, ArrowRight } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
-import { Badge } from '@/components/ui/badge';
+import Link from 'next/link';
 
 function JobApplySkeleton() {
     return (
@@ -44,6 +44,7 @@ export default function JobApplyPage() {
   const { toast } = useToast();
 
   const [isDraftCreated, setIsDraftCreated] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // 1. Fetch Job details.
   const jobQuery = useMemoFirebase(() => {
@@ -61,7 +62,7 @@ export default function JobApplyPage() {
 
   // 2. Idempotently create a draft application when job and user are loaded.
   useEffect(() => {
-    if (!job || !userProfile || isDraftCreated) {
+    if (!job || !userProfile || isDraftCreated || isSubmitting) {
       return;
     }
 
@@ -69,6 +70,7 @@ export default function JobApplyPage() {
     const applicationRef = doc(firestore, 'applications', applicationId);
 
     const createDraft = async () => {
+        setIsSubmitting(true);
         try {
             const docSnap = await getDoc(applicationRef);
             
@@ -85,6 +87,7 @@ export default function JobApplyPage() {
                     jobType: job.statusJob,
                     location: job.location,
                     status: 'draft',
+                    jobApplyDeadline: job.applyDeadline ?? null,
                     createdAt: serverTimestamp(),
                     updatedAt: serverTimestamp(),
                 };
@@ -97,7 +100,7 @@ export default function JobApplyPage() {
                     description: `Posisi ${job.position} telah disimpan sebagai draf.`,
                 });
             }
-            setIsDraftCreated(true); // Mark as created/checked
+            setIsDraftCreated(true);
         } catch (error) {
             console.error("Error creating application draft:", error);
             toast({
@@ -105,44 +108,64 @@ export default function JobApplyPage() {
                 title: "Gagal Menyimpan Draf",
                 description: "Terjadi kesalahan saat memulai lamaran Anda.",
             });
+        } finally {
+            setIsSubmitting(false);
         }
     };
     
     createDraft();
 
-  }, [job, userProfile, firestore, toast, isDraftCreated]);
+  }, [job, userProfile, firestore, toast, isDraftCreated, isSubmitting]);
 
 
-  if (isLoadingJob || !job) {
+  if (isLoadingJob || !job || isSubmitting) {
       return <JobApplySkeleton />
   }
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-        <Card className="lg:col-span-2">
-            <CardHeader>
-                <div className="flex items-center justify-between">
-                    <div>
-                        <CardTitle>Lamar Posisi: {job.position}</CardTitle>
-                        <CardDescription>Selesaikan aplikasi Anda untuk posisi ini.</CardDescription>
-                    </div>
-                     {isDraftCreated && (
-                        <Badge variant="secondary" className="flex items-center gap-1.5">
-                            <CheckCircle className="h-4 w-4 text-green-600" />
-                            <span>Draf Tersimpan</span>
-                        </Badge>
-                     )}
-                </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-            <p className="text-sm text-center p-8 border rounded-lg bg-muted/50">
-                Formulir aplikasi dan fitur unggah CV sedang dalam tahap pengembangan.
-            </p>
-            <Button onClick={() => router.back()} variant="outline" className="w-full">
-                Kembali ke Detail Lowongan
-            </Button>
-            </CardContent>
-        </Card>
+        <div className="lg:col-span-2">
+            {isDraftCreated ? (
+                <Card>
+                    <CardHeader className="items-center text-center">
+                         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-green-700">
+                             <CheckCircle className="h-8 w-8" />
+                         </div>
+                        <CardTitle>Draf Lamaran Tersimpan!</CardTitle>
+                        <CardDescription>
+                            Lamaran Anda untuk posisi <span className="font-semibold">{job.position}</span> telah disimpan.
+                            <br />
+                            Anda dapat melanjutkannya kapan saja dari dasbor Anda.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex flex-col sm:flex-row gap-4">
+                        <Button asChild className="w-full">
+                            <Link href="/careers/portal">
+                                Lanjutkan ke Dasbor
+                                <ArrowRight className="ml-2 h-4 w-4" />
+                            </Link>
+                        </Button>
+                        <Button onClick={() => router.back()} variant="outline" className="w-full">
+                            Kembali ke Detail Lowongan
+                        </Button>
+                    </CardContent>
+                </Card>
+            ) : (
+                <Card>
+                    <CardHeader>
+                        <div>
+                            <CardTitle>Lamar Posisi: {job.position}</CardTitle>
+                            <CardDescription>Selesaikan aplikasi Anda untuk posisi ini.</CardDescription>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <p className="text-sm text-center p-8 border rounded-lg bg-muted/50">
+                            Formulir aplikasi dan fitur unggah CV sedang dalam tahap pengembangan.
+                        </p>
+                    </CardContent>
+                </Card>
+            )}
+        </div>
         <Card className="sticky top-20">
             <CardHeader>
                 <CardTitle className="text-lg">{job.position}</CardTitle>

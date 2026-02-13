@@ -4,10 +4,62 @@ import { useAuth } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import Link from 'next/link';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Briefcase, FileText } from 'lucide-react';
+import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
+import { collection, query, where } from 'firebase/firestore';
+import type { JobApplication } from '@/lib/types';
+import { Skeleton } from '@/components/ui/skeleton';
+import { formatDistanceToNow } from 'date-fns';
+
+function ActiveApplicationCard({ application }: { application: JobApplication }) {
+    const deadline = application.jobApplyDeadline?.toDate();
+    const canStillApply = deadline && deadline > new Date();
+
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle className="text-lg">{application.jobPosition}</CardTitle>
+                <CardDescription>{application.brandName}</CardDescription>
+            </CardHeader>
+            <CardContent>
+                {canStillApply ? (
+                    <p className="text-sm text-destructive mb-4">
+                        Batas waktu tersisa: {formatDistanceToNow(deadline)}
+                    </p>
+                ) : (
+                    <p className="text-sm text-destructive mb-4">
+                        Batas waktu lamaran telah berakhir.
+                    </p>
+                )}
+                <Button asChild className="w-full" disabled={!canStillApply}>
+                    <Link href={`/careers/jobs/${application.jobSlug}/apply`}>
+                        Lanjutkan Lamaran
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                    </Link>
+                </Button>
+            </CardContent>
+        </Card>
+    );
+}
+
 
 export default function CandidateDashboardPage() {
   const { userProfile } = useAuth();
+  const firestore = useFirestore();
+
+  const draftApplicationsQuery = useMemoFirebase(() => {
+    if (!userProfile) return null;
+    return query(
+        collection(firestore, 'applications'),
+        where('candidateUid', '==', userProfile.uid),
+        where('status', '==', 'draft')
+    );
+  }, [userProfile, firestore]);
+
+  const { data: draftApplications, isLoading } = useCollection<JobApplication>(draftApplicationsQuery);
+  
+  const activeDrafts = draftApplications?.filter(app => app.jobApplyDeadline && app.jobApplyDeadline.toDate() > new Date());
+
 
   return (
     <div className="space-y-6">
@@ -15,32 +67,50 @@ export default function CandidateDashboardPage() {
             <h1 className="text-3xl font-bold">Halo, {userProfile?.fullName}!</h1>
             <p className="text-muted-foreground">Selamat datang di portal kandidat Anda. Mari mulai perjalanan karir Anda.</p>
         </div>
-        <div className="grid gap-6 md:grid-cols-2">
-            <Card>
+
+        {isLoading ? (
+            <Skeleton className="h-48 w-full" />
+        ) : activeDrafts && activeDrafts.length > 0 ? (
+            <div className='space-y-4'>
+                <div>
+                    <h2 className="text-2xl font-semibold tracking-tight">Lamaran Aktif Anda</h2>
+                    <p className="text-muted-foreground">Anda memiliki beberapa draf lamaran yang belum selesai.</p>
+                </div>
+                <div className="grid gap-6 md:grid-cols-2">
+                    {activeDrafts.map(app => <ActiveApplicationCard key={app.id} application={app} />)}
+                </div>
+            </div>
+        ) : (
+             <Card className="bg-primary/5 text-center">
                 <CardHeader>
-                    <CardTitle>Profil Anda</CardTitle>
-                    <CardDescription>Pastikan profil Anda selalu terbaru.</CardDescription>
+                    <CardTitle>Tidak Ada Lamaran Aktif</CardTitle>
+                    <CardDescription>Anda tidak memiliki draf lamaran yang sedang berjalan. Mulai cari pekerjaan impian Anda sekarang.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <p className="text-sm p-4 text-center border rounded-lg bg-muted/50">
-                        Fitur kelengkapan profil sedang dikembangkan.
-                    </p>
-                </CardContent>
-            </Card>
-            <Card>
-                <CardHeader>
-                    <CardTitle>Lamaran Anda</CardTitle>
-                    <CardDescription>Lacak semua lamaran pekerjaan Anda di sini.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <Button asChild className="w-full">
-                        <Link href="/careers/portal/applications">
-                            Lihat Riwayat Lamaran <ArrowRight className="ml-2 h-4 w-4" />
+                     <Button asChild>
+                        <Link href="/careers">
+                            <Briefcase className="mr-2 h-4 w-4" />
+                            Lihat Semua Lowongan
                         </Link>
                     </Button>
                 </CardContent>
             </Card>
-        </div>
+        )}
+       
+        <Card>
+            <CardHeader>
+                <CardTitle>Riwayat Lamaran</CardTitle>
+                <CardDescription>Lacak semua draf dan lamaran yang telah Anda kirimkan di sini.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <Button asChild className="w-full">
+                    <Link href="/careers/portal/applications">
+                        <FileText className="mr-2 h-4 w-4" />
+                        Lihat Riwayat Lengkap
+                    </Link>
+                </Button>
+            </CardContent>
+        </Card>
     </div>
   );
 }

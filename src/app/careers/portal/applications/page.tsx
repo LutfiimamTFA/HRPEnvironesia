@@ -9,7 +9,9 @@ import type { JobApplication } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
-import { MapPin } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 
 function ApplicationsTableSkeleton() {
     return (
@@ -17,7 +19,7 @@ function ApplicationsTableSkeleton() {
             <Table>
                 <TableHeader>
                     <TableRow>
-                        {[...Array(5)].map((_, i) => <TableHead key={i}><Skeleton className="h-5 w-20" /></TableHead>)}
+                        {[...Array(5)].map((_, i) => <TableHead key={i}><Skeleton className="h-5 w-full" /></TableHead>)}
                     </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -41,17 +43,35 @@ export default function ApplicationsPage() {
         return query(
             collection(firestore, 'applications'),
             where('candidateUid', '==', userProfile.uid),
-            orderBy('createdAt', 'desc')
+            orderBy('updatedAt', 'desc')
         );
     }, [userProfile, firestore]);
 
     const { data: applications, isLoading } = useCollection<JobApplication>(applicationsQuery);
 
+    const getStatusBadge = (app: JobApplication) => {
+        const isExpired = app.jobApplyDeadline && app.jobApplyDeadline.toDate() < new Date() && app.status === 'draft';
+        if (isExpired) {
+            return <Badge variant="destructive">Expired</Badge>;
+        }
+        
+        const variants: Record<JobApplication['status'], 'default' | 'secondary' | 'destructive'> = {
+            draft: 'secondary',
+            submitted: 'default',
+            reviewed: 'default',
+            interview: 'default',
+            hired: 'default', // Success variant would be better
+            rejected: 'destructive',
+        };
+
+        return <Badge variant={variants[app.status] || 'secondary'} className="capitalize">{app.status}</Badge>;
+    };
+
     return (
         <Card>
             <CardHeader>
                 <CardTitle>Lamaran Saya</CardTitle>
-                <CardDescription>Riwayat lamaran pekerjaan yang telah Anda kirimkan.</CardDescription>
+                <CardDescription>Riwayat lamaran pekerjaan yang telah Anda kirimkan atau simpan sebagai draf.</CardDescription>
             </CardHeader>
             <CardContent>
                 {isLoading ? (
@@ -63,31 +83,44 @@ export default function ApplicationsPage() {
                                 <TableRow>
                                     <TableHead>Posisi</TableHead>
                                     <TableHead>Perusahaan</TableHead>
-                                    <TableHead>Lokasi</TableHead>
                                     <TableHead>Status</TableHead>
-                                    <TableHead>Tanggal Dibuat</TableHead>
+                                    <TableHead>Batas Waktu</TableHead>
+                                    <TableHead className="text-right">Tindakan</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {applications && applications.length > 0 ? (
-                                    applications.map(app => (
-                                        <TableRow key={app.id}>
-                                            <TableCell className="font-medium">{app.jobPosition}</TableCell>
-                                            <TableCell>{app.brandName}</TableCell>
-                                            <TableCell className="text-muted-foreground flex items-center gap-1.5">
-                                                <MapPin className="h-4 w-4" />
-                                                {app.location}
-                                            </TableCell>
-                                            <TableCell>
-                                                <Badge variant={app.status === 'draft' ? 'secondary' : 'default'} className="capitalize">
-                                                    {app.status}
-                                                </Badge>
-                                            </TableCell>
-                                            <TableCell>
-                                                {app.createdAt?.toDate ? format(app.createdAt.toDate(), 'dd MMM yyyy') : 'Baru Saja'}
-                                            </TableCell>
-                                        </TableRow>
-                                    ))
+                                    applications.map(app => {
+                                        const isExpired = app.jobApplyDeadline && app.jobApplyDeadline.toDate() < new Date() && app.status === 'draft';
+                                        const canContinue = app.status === 'draft' && !isExpired;
+
+                                        return (
+                                            <TableRow key={app.id}>
+                                                <TableCell className="font-medium">{app.jobPosition}</TableCell>
+                                                <TableCell>{app.brandName}</TableCell>
+                                                <TableCell>
+                                                    {getStatusBadge(app)}
+                                                </TableCell>
+                                                <TableCell>
+                                                    {app.jobApplyDeadline?.toDate ? format(app.jobApplyDeadline.toDate(), 'dd MMM yyyy') : '-'}
+                                                </TableCell>
+                                                <TableCell className="text-right">
+                                                    {canContinue ? (
+                                                        <Button asChild size="sm">
+                                                            <Link href={`/careers/jobs/${app.jobSlug}/apply`}>
+                                                                Lanjutkan
+                                                                <ArrowRight className="ml-2 h-4 w-4" />
+                                                            </Link>
+                                                        </Button>
+                                                    ) : (
+                                                         <Button variant="outline" size="sm" disabled>
+                                                            Lihat
+                                                        </Button>
+                                                    )}
+                                                </TableCell>
+                                            </TableRow>
+                                        );
+                                    })
                                 ) : (
                                     <TableRow>
                                         <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
