@@ -1,6 +1,6 @@
 'use client';
 
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { useDoc, useFirestore, useMemoFirebase } from '@/firebase';
 import { doc } from 'firebase/firestore';
 import type { AssessmentSession } from '@/lib/types';
@@ -15,11 +15,22 @@ function ResultSkeleton() {
     return <div className="h-96 flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>
 }
 
+function ProcessingState() {
+  return (
+    <div className="flex h-96 flex-col items-center justify-center space-y-4 text-center">
+      <Loader2 className="h-10 w-10 animate-spin text-primary" />
+      <h2 className="text-2xl font-bold">Sedang memproses hasil Anda...</h2>
+      <p className="text-muted-foreground">
+        Halaman ini akan diperbarui secara otomatis. Mohon tunggu sebentar.
+      </p>
+    </div>
+  );
+}
+
 export default function AssessmentResultPage() {
     const params = useParams();
     const sessionId = params.sessionId as string;
     const firestore = useFirestore();
-    const router = useRouter();
 
     const sessionRef = useMemoFirebase(
         () => (sessionId ? doc(firestore, 'assessment_sessions', sessionId) : null),
@@ -32,21 +43,26 @@ export default function AssessmentResultPage() {
         return <ResultSkeleton />;
     }
 
-    if (error || !session || !session.report) {
+    if (error) {
         return (
             <Card>
                 <CardHeader>
-                    <CardTitle>Hasil Tidak Ditemukan</CardTitle>
+                    <CardTitle>Terjadi Kesalahan</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <p>Tidak dapat memuat hasil assessment Anda. Sesi mungkin tidak valid atau belum diselesaikan.</p>
-                    {error && <pre className="mt-4 text-xs text-destructive">{error.message}</pre>}
+                    <p>Tidak dapat memuat data assessment. Silakan coba lagi nanti.</p>
+                    <pre className="mt-4 text-xs text-destructive">{error.message}</pre>
                 </CardContent>
             </Card>
         );
     }
     
-    const { report } = session;
+    // Handles both session not found and report not yet generated
+    if (!session || !session.result?.report) {
+        return <ProcessingState />;
+    }
+    
+    const { report } = session.result;
 
     return (
         <div className="max-w-4xl mx-auto space-y-8">
@@ -65,7 +81,7 @@ export default function AssessmentResultPage() {
                     <CardTitle>Deskripsi Tipe Kepribadian</CardTitle>
                 </CardHeader>
                 <CardContent className="prose prose-lg max-w-none dark:prose-invert">
-                    {report.descBlocks?.map((block, i) => <p key={i}>{block}</p>)}
+                    {report.blocks?.map((block, i) => <p key={i}>{block}</p>)}
                 </CardContent>
             </Card>
             
@@ -86,7 +102,7 @@ export default function AssessmentResultPage() {
                     </CardHeader>
                     <CardContent>
                         <ul className="list-disc list-inside space-y-2">
-                             {report.weaknesses?.map(item => <li key={item}>{item}</li>)}
+                             {report.risks?.map(item => <li key={item}>{item}</li>)}
                         </ul>
                     </CardContent>
                 </Card>
