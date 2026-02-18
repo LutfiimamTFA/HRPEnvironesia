@@ -8,7 +8,7 @@ import { useAuth as useFirebaseAuth, useFirestore, useDoc, useMemoFirebase } fro
 import { doc } from 'firebase/firestore';
 import { useRouter, usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { LogOut, Briefcase, Leaf, ArrowLeft } from 'lucide-react';
+import { LogOut, ArrowLeft, Leaf } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
@@ -23,9 +23,9 @@ import {
   SidebarTrigger,
   SidebarFooter,
 } from '@/components/ui/sidebar';
-import { Separator } from '../ui/separator';
 import { ALL_MENU_ITEMS, ALL_UNIQUE_MENU_ITEMS } from '@/lib/menu-config';
 import type { NavigationSetting } from '@/lib/types';
+import { cn } from '@/lib/utils';
 
 function UserNav() {
   const { userProfile } = useAuth();
@@ -112,12 +112,12 @@ export function CandidatePortalLayout({ children }: { children: ReactNode }) {
 
   return (
     <SidebarProvider defaultOpen>
-      <Sidebar collapsible="icon" className="border-r-0 bg-gradient-to-b from-emerald-600 to-emerald-700 text-white">
-        <SidebarHeader className="border-b border-white/20 p-0">
-          <div className="p-4">
+      <Sidebar collapsible="icon" className="border-r-0 bg-emerald-800 text-white">
+        <SidebarHeader className="border-b border-white/10 p-0">
+          <div className="flex h-16 items-center px-4">
              <Link href="/careers/portal" className="flex items-center gap-3">
-               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/20">
-                <Leaf className="h-5 w-5 text-white" />
+               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/10">
+                <Leaf className="h-6 w-6 text-white" />
                </div>
                <div className="leading-tight group-data-[state=collapsed]:hidden">
                  <div className="font-semibold text-white text-base">Environesia Karir</div>
@@ -126,7 +126,7 @@ export function CandidatePortalLayout({ children }: { children: ReactNode }) {
              </Link>
            </div>
         </SidebarHeader>
-        <SidebarContent>
+        <SidebarContent className="p-2">
           <SidebarMenu>
             {menuItems.map((item) => {
               const isActive = pathname === item.href;
@@ -136,7 +136,10 @@ export function CandidatePortalLayout({ children }: { children: ReactNode }) {
                   asChild 
                   tooltip={item.label}
                   isActive={isActive}
-                  className="text-emerald-100 hover:bg-white/10 hover:text-white data-[active=true]:bg-white/15 data-[active=true]:text-white"
+                  className={cn(
+                    "text-emerald-100 hover:bg-emerald-700 hover:text-white data-[active=true]:bg-white data-[active=true]:text-emerald-800 font-medium",
+                    "justify-start"
+                  )}
                 >
                   <Link href={item.href}>
                     {item.icon}
@@ -147,18 +150,17 @@ export function CandidatePortalLayout({ children }: { children: ReactNode }) {
             )})}
           </SidebarMenu>
         </SidebarContent>
-        <SidebarFooter className="mt-auto">
-            <Separator className="my-2 bg-white/20" />
+        <SidebarFooter className="mt-auto p-2">
             <SidebarMenu>
                  <SidebarMenuItem>
                     <SidebarMenuButton 
                       asChild 
                       tooltip="Kembali ke Halaman Karir"
-                      className="text-emerald-100 hover:bg-white/10 hover:text-white"
+                      className="text-emerald-100 hover:bg-emerald-700 hover:text-white justify-start"
                     >
                         <Link href="/careers">
                             <ArrowLeft />
-                            <span className="group-data-[state=collapsed]:hidden">Kembali ke Karir</span>
+                            <span className="group-data-[state=collapsed]:hidden">Halaman Karir</span>
                         </Link>
                     </SidebarMenuButton>
                 </SidebarMenuItem>
