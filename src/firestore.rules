@@ -142,9 +142,9 @@ service cloud.firestore {
         // runs on each document in the result set.
         allow list: if isSignedIn();
 
-        // GET: A user can get a document if they are the owner OR if they have an internal role.
-        // This `get` rule is evaluated for every document returned by a `list` query.
-        allow get: if (resource.data.candidateUid == request.auth.uid) || isInternal();
+        // GET: Allow if internal, or if the document doesn't exist, or if the user is the owner.
+        // This allows checking for a document's existence without causing a permission error.
+        allow get: if isInternal() || !exists(/databases/$(database)/documents/applications/$(applicationId)) || resource.data.candidateUid == request.auth.uid;
 
         // CREATE: A user can create an application only if they are the owner.
         allow create: if isCreatingOwn() && (request.resource.data.status == "draft" || request.resource.data.status == "submitted");
@@ -214,16 +214,17 @@ service cloud.firestore {
       allow delete: if false;
 
       function isUpdatingHrdDecision() {
-        // This rule allows HRD/Super-Admins to update the decision for a submitted assessment.
-        // It ensures that only specific fields related to the decision are being modified.
         let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
         let allowedUpdateKeys = ['hrdDecision', 'hrdDecisionAt', 'hrdDecisionBy', 'updatedAt'];
         
         return isInternal()
           && resource.data.status == 'submitted'
-          && changedKeys.hasOnly(allowedUpdateKeys) // Ensures ONLY the allowed fields are part of the update.
-          && request.resource.data.hrdDecisionBy == request.auth.uid // Ensures the decision is made by the authenticated user.
-          && request.resource.data.hrdDecision in ['pending', 'approved', 'rejected']; // Validates the decision value.
+          && request.resource.data.candidateUid == resource.data.candidateUid
+          && request.resource.data.assessmentId == resource.data.assessmentId
+          && request.resource.data.status == resource.data.status
+          && changedKeys.hasOnly(allowedUpdateKeys)
+          && request.resource.data.hrdDecisionBy == request.auth.uid
+          && request.resource.data.hrdDecision in ['pending', 'approved', 'rejected'];
       }
     }
   }
