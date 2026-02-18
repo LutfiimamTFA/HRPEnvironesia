@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase, addDocumentNonBlocking } from '@/firebase';
@@ -12,6 +13,31 @@ import type { Assessment, AssessmentSession } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { CheckCircle, Info } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+
+
+function CompletedTestView({ sessionId }: { sessionId: string }) {
+    return (
+        <Card className="max-w-3xl mx-auto">
+            <CardHeader className="items-center text-center">
+                <CheckCircle className="h-12 w-12 text-green-500" />
+                <CardTitle className="text-2xl mt-4">Tes Telah Diselesaikan</CardTitle>
+                <CardDescription>
+                    Anda sudah pernah menyelesaikan tes kepribadian ini.
+                </CardDescription>
+            </CardHeader>
+            <CardContent className="text-center">
+                <p className="text-muted-foreground mb-6">
+                    Anda dapat melihat kembali hasil tes Anda atau melanjutkan proses lamaran lainnya.
+                </p>
+                <Button asChild size="lg">
+                    <Link href={`/careers/portal/assessment/personality/result/${sessionId}`}>
+                        Lihat Hasil Tes
+                    </Link>
+                </Button>
+            </CardContent>
+        </Card>
+    );
+}
 
 export default function AssessmentStartPage() {
   const { userProfile, loading: authLoading } = useAuth();
@@ -28,14 +54,29 @@ export default function AssessmentStartPage() {
   const { data: assessments, isLoading: assessmentLoading } = useCollection<Assessment>(assessmentQuery);
   const activeAssessment = assessments?.[0];
 
-  const isLoading = authLoading || assessmentLoading;
+  // 2. Find user's sessions for the active assessment
+  const sessionsQuery = useMemoFirebase(() => {
+    if (!userProfile || !activeAssessment) return null;
+    return query(
+        collection(firestore, 'assessment_sessions'),
+        where('candidateUid', '==', userProfile.uid),
+        where('assessmentId', '==', activeAssessment.id!)
+    );
+  }, [firestore, userProfile, activeAssessment]);
+
+  const { data: sessions, isLoading: sessionsLoading } = useCollection<AssessmentSession>(sessionsQuery);
+  
+  const submittedSession = useMemo(() => sessions?.find(s => s.status === 'submitted'), [sessions]);
+
+  const isLoading = authLoading || assessmentLoading || (activeAssessment && sessionsLoading);
+
 
   const handleStart = async () => {
     if (!userProfile || !activeAssessment) return;
     setIsProcessing(true);
 
     try {
-      // 2. Check for existing "draft" session
+      // Check for existing "draft" session
       const sessionsQuery = query(
         collection(firestore, 'assessment_sessions'),
         where('candidateUid', '==', userProfile.uid),
@@ -53,24 +94,7 @@ export default function AssessmentStartPage() {
         return;
       }
       
-      // 3. Check for "submitted" session
-       const submittedQuery = query(
-        collection(firestore, 'assessment_sessions'),
-        where('candidateUid', '==', userProfile.uid),
-        where('assessmentId', '==', activeAssessment.id!),
-        where('status', '==', 'submitted'),
-        limit(1)
-      );
-      const submittedSnap = await getDocs(submittedQuery);
-
-      if (!submittedSnap.empty) {
-        const submittedSession = submittedSnap.docs[0];
-        toast({ title: 'Tes Sudah Selesai', description: 'Anda sudah pernah menyelesaikan tes ini.' });
-        router.push(`/careers/portal/assessment/personality/result/${submittedSession.id}`);
-        return;
-      }
-
-      // 4. Create a new session
+      // Create a new session
       const sessionData: Omit<AssessmentSession, 'id'> = {
         assessmentId: activeAssessment.id!,
         candidateUid: userProfile.uid,
@@ -111,6 +135,10 @@ export default function AssessmentStartPage() {
             </CardContent>
         </Card>
     );
+  }
+  
+  if (submittedSession) {
+    return <CompletedTestView sessionId={submittedSession.id!} />;
   }
 
   return (
