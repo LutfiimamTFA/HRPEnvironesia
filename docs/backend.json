@@ -517,7 +517,12 @@
         "report": { "type": "object" },
         "startedAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" },
-        "completedAt": { "type": "string", "format": "date-time" }
+        "completedAt": { "type": "string", "format": "date-time" },
+        "hrdDecision": {
+            "type": "string",
+            "description": "The HRD's final decision on the assessment result.",
+            "enum": ["pending", "approved", "rejected"]
+        }
       },
       "required": ["assessmentId", "candidateUid", "status", "startedAt"]
     }

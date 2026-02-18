@@ -257,6 +257,7 @@ export type AssessmentSession = {
     discType: string;
     report: Partial<ResultTemplate> & { bigfiveSummary?: any[], interviewQuestions?: any[] };
   };
+  hrdDecision?: 'pending' | 'approved' | 'rejected';
   startedAt: Timestamp;
   updatedAt: Timestamp;
   completedAt?: Timestamp;

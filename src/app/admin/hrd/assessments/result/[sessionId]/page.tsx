@@ -1,24 +1,86 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
-import { useCollection, useDoc, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, doc, query, where } from 'firebase/firestore';
+import { useCollection, useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
+import { collection, doc, query, where, serverTimestamp } from 'firebase/firestore';
 import type { AssessmentSession, NavigationSetting, Profile, AssessmentQuestion } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { ALL_MENU_ITEMS, ALL_UNIQUE_MENU_ITEMS } from '@/lib/menu-config';
-import { Loader2, ArrowLeft } from 'lucide-react';
+import { Loader2, ArrowLeft, Check, X } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { getInitials } from '@/lib/utils';
+import { getInitials, cn } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { AnswerAnalysis } from '@/components/dashboard/AnswerAnalysis';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
+
+
+function HrdDecisionManager({ session }: { session: AssessmentSession }) {
+  const [isUpdating, setIsUpdating] = useState(false);
+  const firestore = useFirestore();
+  const { toast } = useToast();
+
+  const handleUpdateDecision = async (decision: 'approved' | 'rejected') => {
+    setIsUpdating(true);
+    try {
+      const sessionRef = doc(firestore, 'assessment_sessions', session.id!);
+      await updateDocumentNonBlocking(sessionRef, {
+        hrdDecision: decision,
+        updatedAt: serverTimestamp(),
+      });
+      toast({ title: 'Success', description: `Assessment marked as ${decision}.` });
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Error', description: error.message });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const currentDecision = session.hrdDecision || 'pending';
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>HRD Decision</CardTitle>
+        <CardDescription>Mark the result of this assessment.</CardDescription>
+      </CardHeader>
+      <CardContent className="flex items-center gap-2">
+        <p className="font-medium">Status:</p>
+        <Badge variant={
+          currentDecision === 'approved' ? 'default'
+          : currentDecision === 'rejected' ? 'destructive'
+          : 'secondary'
+        } className={cn('capitalize', currentDecision === 'approved' && 'bg-green-600 hover:bg-green-700')}>{currentDecision}</Badge>
+      </CardContent>
+      <CardFooter className="gap-2">
+        <Button 
+          onClick={() => handleUpdateDecision('approved')} 
+          disabled={isUpdating || currentDecision === 'approved'}
+          className="bg-green-600 hover:bg-green-700 w-full"
+        >
+          {isUpdating && currentDecision !== 'approved' ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Check className="mr-2 h-4 w-4"/>}
+          Approve
+        </Button>
+        <Button 
+          onClick={() => handleUpdateDecision('rejected')} 
+          disabled={isUpdating || currentDecision === 'rejected'}
+          variant="destructive"
+          className="w-full"
+        >
+           {isUpdating && currentDecision !== 'rejected' ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <X className="mr-2 h-4 w-4"/>}
+          Reject
+        </Button>
+      </CardFooter>
+    </Card>
+  );
+}
+
 
 function ResultSkeleton() {
     return (
@@ -157,6 +219,7 @@ export default function HrdAssessmentResultPage() {
                     </div>
 
                     <div className="lg:sticky lg:top-24 space-y-6">
+                        <HrdDecisionManager session={session} />
                         <Card>
                             <CardHeader><CardTitle>Recommended Roles</CardTitle></CardHeader>
                             <CardContent className="flex flex-wrap gap-2">
