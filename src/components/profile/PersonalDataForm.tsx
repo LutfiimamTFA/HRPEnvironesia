@@ -193,6 +193,12 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                 <CardDescription>Pastikan semua data yang Anda masukkan sudah benar. Kolom dengan tanda <span className="text-destructive">*</span> wajib diisi.</CardDescription>
             </CardHeader>
             <CardContent>
+                <Alert variant="destructive" className="mb-6 flex items-start gap-3 text-amber-800 dark:text-amber-400 border-amber-500/40 bg-amber-50 dark:bg-amber-950/40 [&>svg]:text-amber-600 dark:[&>svg]:text-amber-500">
+                    <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                    <AlertDescription className="text-xs leading-relaxed">
+                        Mohon pastikan kembali <span className="font-semibold">Nama Lengkap</span> dan <span className="font-semibold">Nomor NIK KTP</span> yang Anda masukkan sama persis dengan yang tertulis di KTP untuk kelancaran proses verifikasi.
+                    </AlertDescription>
+                </Alert>
                 <Form {...form}>
                     <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -264,12 +270,6 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                             <Input {...field} value={field.value ?? ''} maxLength={16} />
                                         </FormControl>
                                         <FormMessage />
-                                        <Alert variant="destructive" className="mt-2 flex items-start gap-2 text-amber-800 dark:text-amber-400 border-amber-500/40 bg-amber-50 dark:bg-amber-950/40 [&>svg]:text-amber-600 dark:[&>svg]:text-amber-500">
-                                            <AlertTriangle className="h-4 w-4 mt-0.5" />
-                                            <AlertDescription className="text-xs">
-                                                Mohon pastikan kembali Nomor NIK KTP yang Anda masukkan sama dengan yang tertulis di KTP untuk kelancaran proses verifikasi.
-                                            </AlertDescription>
-                                        </Alert>
                                     </FormItem>
                                 )}
                             />
