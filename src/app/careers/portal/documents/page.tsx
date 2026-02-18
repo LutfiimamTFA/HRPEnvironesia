@@ -97,7 +97,7 @@ function FileUploadSlot({ label, fileType, onUploadComplete, userId, application
             <XCircle className="mx-auto h-10 w-10" />
             <p className="mt-2 font-semibold">Unggah Gagal</p>
             <p className="text-xs">{uploadState.error}</p>
-            <Button size="sm" variant="destructive" className="mt-2" onClick={() => setUploadState(initialUploadState)}>Coba Lagi</Button>
+            <p className="text-xs mt-2">Silakan segarkan halaman dan coba lagi.</p>
           </div>
         ) : isUploading ? (
           <div className="w-full text-center">
