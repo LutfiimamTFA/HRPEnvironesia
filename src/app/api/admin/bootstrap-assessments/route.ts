@@ -1,3 +1,5 @@
+'use server';
+
 import { NextRequest, NextResponse } from 'next/server';
 import admin from '@/lib/firebase/admin';
 import { Timestamp } from 'firebase-admin/firestore';
@@ -84,6 +86,10 @@ export async function POST(req: NextRequest) {
             version: 1,
             isActive: true,
             publishStatus: "published",
+            rules: {
+                discRule: 'highest',
+                bigfiveNormalization: 'minmax'
+            },
             resultTemplates: {
                 disc: {
                     D: { title: "Tipe Dominan", subtitle: "Fokus pada hasil dan tegas.", blocks: ["Anda adalah individu yang berorientasi pada tujuan dan suka mengambil inisiatif."], strengths: ["Tegas", "Berorientasi Hasil"], risks: ["Terlalu menuntut"], roleFit: ["Manajer", "Pemimpin Proyek"] },
@@ -104,10 +110,6 @@ export async function POST(req: NextRequest) {
                         "Ceritakan pengalaman Anda bekerja dalam sebuah tim untuk mencapai tujuan bersama."
                     ]
                 }
-            },
-            rules: {
-                discRule: 'highest',
-                bigfiveNormalization: 'minmax'
             },
             createdAt: Timestamp.now(),
             updatedAt: Timestamp.now(),

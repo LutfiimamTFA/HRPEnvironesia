@@ -59,12 +59,12 @@ export async function POST(req: NextRequest) {
     }
     const template = { ...templateDoc.data(), id: templateDoc.id } as AssessmentTemplate;
 
-    // Guard against malformed template and assessment
-    if (!template || !template.dimensions || !template.scale || !template.scoring) {
+    // --- GUARD CLAUSES FOR SCHEMA VALIDATION ---
+    if (!template || !template.dimensions?.disc || !template.dimensions?.bigfive || !template.scale || !template.scoring) {
         console.error("Template loaded:", template.id, template);
         throw new Error(`Assessment template '${template.id}' is malformed or missing key properties like 'dimensions', 'scale', or 'scoring'.`);
     }
-    if (!assessment.resultTemplates || !assessment.resultTemplates.disc || !assessment.resultTemplates.bigfive || !assessment.rules) {
+    if (!assessment || !assessment.resultTemplates?.disc || !assessment.resultTemplates?.bigfive || !assessment.rules) {
         console.error("Assessment loaded:", assessment.id, assessment);
         throw new Error(`Assessment '${assessment.id}' is malformed or missing key properties like 'resultTemplates' or 'rules'.`);
     }
