@@ -20,17 +20,33 @@ interface CandidateFitAnalysisProps {
 }
 
 const decisionConfig = {
-    advance_interview: { label: 'Advance to Interview', icon: CheckCircle, className: 'text-green-600' },
-    advance_test: { label: 'Advance to Test', icon: CheckCircle, className: 'text-blue-600' },
-    hold: { label: 'Hold', icon: AlertCircle, className: 'text-yellow-600' },
-    reject: { label: 'Reject', icon: XCircle, className: 'text-red-600' },
+    advance_interview: { label: 'Lanjutkan ke Wawancara', icon: CheckCircle, className: 'text-green-600' },
+    advance_test: { label: 'Lanjutkan ke Tes', icon: CheckCircle, className: 'text-blue-600' },
+    hold: { label: 'Tahan (Hold)', icon: AlertCircle, className: 'text-yellow-600' },
+    reject: { label: 'Tolak', icon: XCircle, className: 'text-red-600' },
 };
 
 const matchConfig = {
-    yes: { label: 'Yes', icon: CheckCircle, className: 'text-green-600' },
-    partial: { label: 'Partial', icon: AlertCircle, className: 'text-yellow-600' },
-    no: { label: 'No', icon: XCircle, className: 'text-red-600' },
+    yes: { label: 'Ya', icon: CheckCircle, className: 'text-green-600' },
+    partial: { label: 'Sebagian', icon: AlertCircle, className: 'text-yellow-600' },
+    no: { label: 'Tidak', icon: XCircle, className: 'text-red-600' },
 };
+
+const scoreLabels: Record<string, string> = {
+    relevantExperience: 'Pengalaman Relevan',
+    adminDocumentation: 'Administrasi/Dokumentasi',
+    communicationTeamwork: 'Komunikasi/Kerja Tim',
+    analyticalProblemSolving: 'Analitis/Penyelesaian Masalah',
+    toolsHardSkills: 'Alat/Keterampilan Teknis',
+    initiativeOwnership: 'Inisiatif/Kepemilikan',
+    cultureFit: 'Kecocokan Budaya'
+};
+
+const confidenceLabels: Record<string, string> = {
+    high: 'Tinggi',
+    medium: 'Sedang',
+    low: 'Rendah'
+}
 
 const AnalysisSection = ({ title, icon, children }: { title: string, icon: React.ReactNode, children: React.ReactNode }) => (
     <Card>
@@ -134,7 +150,7 @@ export function CandidateFitAnalysis({ profile, job }: CandidateFitAnalysisProps
                 <div className="grid md:grid-cols-2 gap-6">
                     <Card>
                         <CardHeader>
-                            <CardTitle className="text-base">A. Recommended Decision</CardTitle>
+                            <CardTitle className="text-base">A. Rekomendasi Keputusan</CardTitle>
                         </CardHeader>
                         <CardContent>
                              <div className={cn("flex items-center gap-2 text-lg font-semibold", Decision.className)}>
@@ -145,11 +161,11 @@ export function CandidateFitAnalysis({ profile, job }: CandidateFitAnalysisProps
                     </Card>
                     <Card>
                         <CardHeader>
-                            <CardTitle className="text-base">B. Confidence</CardTitle>
+                            <CardTitle className="text-base">B. Tingkat Keyakinan</CardTitle>
                         </CardHeader>
                         <CardContent>
                             <div className="flex items-center gap-4">
-                                <Badge variant="outline" className="capitalize text-base py-1 px-3">{analysis.confidence.level}</Badge>
+                                <Badge variant="outline" className="capitalize text-base py-1 px-3">{confidenceLabels[analysis.confidence.level] || analysis.confidence.level}</Badge>
                                 <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
                                     {analysis.confidence.reasons.map((reason, i) => <li key={i}>{reason}</li>)}
                                 </ul>
@@ -159,16 +175,16 @@ export function CandidateFitAnalysis({ profile, job }: CandidateFitAnalysisProps
                 </div>
 
                 {/* Section C: Requirement Match Matrix */}
-                <AnalysisSection title="C. Requirement Match Matrix" icon={<Target className="h-5 w-5" />}>
+                <AnalysisSection title="C. Matriks Kecocokan Kebutuhan" icon={<Target className="h-5 w-5" />}>
                     <div className="overflow-x-auto">
                         <Table>
                             <TableHeader>
                                 <TableRow>
-                                    <TableHead>Requirement</TableHead>
-                                    <TableHead>Type</TableHead>
-                                    <TableHead>Match</TableHead>
-                                    <TableHead>Evidence from CV</TableHead>
-                                    <TableHead>Risk Note</TableHead>
+                                    <TableHead>Kebutuhan</TableHead>
+                                    <TableHead>Tipe</TableHead>
+                                    <TableHead>Kecocokan</TableHead>
+                                    <TableHead>Bukti dari CV</TableHead>
+                                    <TableHead>Catatan Risiko</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -177,7 +193,7 @@ export function CandidateFitAnalysis({ profile, job }: CandidateFitAnalysisProps
                                     return (
                                         <TableRow key={i}>
                                             <TableCell className="font-medium">{item.requirement}</TableCell>
-                                            <TableCell><Badge variant={item.type === 'must-have' ? 'destructive' : 'secondary'}>{item.type}</Badge></TableCell>
+                                            <TableCell><Badge variant={item.type === 'must-have' ? 'destructive' : 'secondary'}>{item.type === 'must-have' ? 'Wajib' : 'Sebaiknya'}</Badge></TableCell>
                                             <TableCell>
                                                 <div className={cn("flex items-center gap-1 font-medium", match.className)}>
                                                     <match.icon className="h-4 w-4" />
@@ -196,10 +212,10 @@ export function CandidateFitAnalysis({ profile, job }: CandidateFitAnalysisProps
 
                 {/* Section D, E, F */}
                 <div className="grid lg:grid-cols-3 gap-6 items-start">
-                    <AnalysisSection title="D. Score Breakdown" icon={<Sparkles className="h-5 w-5" />}>
+                    <AnalysisSection title="D. Rincian Skor" icon={<Sparkles className="h-5 w-5" />}>
                         <ul className="space-y-2 text-sm">
                             {Object.entries(analysis.scoreBreakdown).map(([key, value]) => {
-                                const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                                const label = scoreLabels[key as keyof typeof scoreLabels] || key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
                                 if (key === 'cultureFit') {
                                     return (
                                         <li key={key} className="flex justify-between items-start">
@@ -216,30 +232,30 @@ export function CandidateFitAnalysis({ profile, job }: CandidateFitAnalysisProps
                             })}
                         </ul>
                     </AnalysisSection>
-                     <AnalysisSection title="E. Strengths" icon={<CheckCircle className="h-5 w-5 text-green-600" />}>
+                     <AnalysisSection title="E. Kekuatan" icon={<CheckCircle className="h-5 w-5 text-green-600" />}>
                          <ul className="space-y-3 text-sm">
                             {analysis.strengths.map((item, i) => (
                                 <li key={i}>
                                     <p className="font-medium">{item.strength}</p>
-                                    <p className="text-xs text-muted-foreground italic">Evidence: "{item.evidence_from_cv}"</p>
+                                    <p className="text-xs text-muted-foreground italic">Bukti: "{item.evidence_from_cv}"</p>
                                 </li>
                             ))}
                         </ul>
                      </AnalysisSection>
-                     <AnalysisSection title="F. Gaps & Risks" icon={<XCircle className="h-5 w-5 text-red-600" />}>
+                     <AnalysisSection title="F. Celah & Risiko" icon={<XCircle className="h-5 w-5 text-red-600" />}>
                          <ul className="space-y-3 text-sm">
                             {analysis.gapsRisks.map((item, i) => (
                                 <li key={i}>
                                     <p className="font-medium">{item.gap}</p>
-                                    <p className="text-xs text-muted-foreground"><strong>Impact:</strong> {item.impact}</p>
-                                    <p className="text-xs text-muted-foreground"><strong>Mitigation:</strong> {item.onboarding_mitigation}</p>
+                                    <p className="text-xs text-muted-foreground"><strong>Dampak:</strong> {item.impact}</p>
+                                    <p className="text-xs text-muted-foreground"><strong>Mitigasi Onboarding:</strong> {item.onboarding_mitigation}</p>
                                 </li>
                             ))}
                         </ul>
                      </AnalysisSection>
                 </div>
                  {analysis.redFlags && analysis.redFlags.length > 0 && (
-                     <AnalysisSection title="G. Red Flags" icon={<AlertCircle className="h-5 w-5 text-destructive" />}>
+                     <AnalysisSection title="G. Tanda Bahaya (Red Flags)" icon={<AlertCircle className="h-5 w-5 text-destructive" />}>
                          <ul className="list-disc list-inside space-y-1 text-sm text-destructive font-medium">
                             {analysis.redFlags.map((flag, i) => <li key={i}>{flag}</li>)}
                         </ul>
@@ -248,7 +264,7 @@ export function CandidateFitAnalysis({ profile, job }: CandidateFitAnalysisProps
                  <Separator />
 
                 {/* Section H: Interview Questions */}
-                 <AnalysisSection title="H. Interview Questions" icon={<FileQuestion className="h-5 w-5" />}>
+                 <AnalysisSection title="H. Pertanyaan Wawancara" icon={<FileQuestion className="h-5 w-5" />}>
                      <Accordion type="single" collapsible className="w-full">
                         {analysis.interviewQuestions.map((item, i) => (
                             <AccordionItem value={`item-${i}`} key={i}>
@@ -263,12 +279,12 @@ export function CandidateFitAnalysis({ profile, job }: CandidateFitAnalysisProps
 
                 {/* Section I & J */}
                  <div className="grid md:grid-cols-2 gap-6 items-start">
-                    <AnalysisSection title="I. Quick Test Recommendation" icon={<FlaskConical className="h-5 w-5" />}>
+                    <AnalysisSection title="I. Rekomendasi Tes Cepat" icon={<FlaskConical className="h-5 w-5" />}>
                         <ul className="list-disc list-inside text-sm space-y-1">
                             {analysis.quickTestRecommendation.map((item, i) => <li key={i}>{item}</li>)}
                         </ul>
                     </AnalysisSection>
-                     <AnalysisSection title="J. Missing Information" icon={<Lightbulb className="h-5 w-5" />}>
+                     <AnalysisSection title="J. Informasi yang Hilang" icon={<Lightbulb className="h-5 w-5" />}>
                          <ul className="list-disc list-inside text-sm space-y-1">
                             {analysis.missingInformation.map((item, i) => <li key={i}>{item}</li>)}
                         </ul>

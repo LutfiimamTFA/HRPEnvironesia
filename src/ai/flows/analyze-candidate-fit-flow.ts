@@ -1,4 +1,3 @@
-
 'use server';
 /**
  * @fileOverview An AI flow to analyze a candidate's fit for a job.
@@ -56,7 +55,8 @@ J. Missing Information to Ask Candidate (maks 5)
 
 KETENTUAN:
 - Jika must-have tidak terpenuhi -> Recommended Decision minimal “hold” atau “reject” dengan alasan jelas.
-- Semua klaim harus punya evidence_from_cv. Jika tidak ada, tulis “NOT FOUND IN CV”.`,
+- Semua klaim harus punya evidence_from_cv. Jika tidak ada, tulis “NOT FOUND IN CV”.
+- HASILKAN SEMUA OUTPUT DALAM BAHASA INDONESIA.`,
 });
 
 const analyzeCandidateFitFlow = ai.defineFlow(
