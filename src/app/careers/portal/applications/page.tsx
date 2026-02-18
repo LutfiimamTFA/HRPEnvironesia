@@ -11,7 +11,7 @@ import { format } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { ArrowRight, Check, Briefcase, Building, FileSignature, FileUp, ClipboardCheck, Users, Award, XCircle, BrainCircuit } from "lucide-react";
+import { ArrowRight, Check, Briefcase, Building, FileSignature, FileUp, ClipboardCheck, Users, Award, XCircle, BrainCircuit, FileText } from "lucide-react";
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 
@@ -20,7 +20,8 @@ const applicationSteps = [
   { status: 'draft', label: 'Draf', icon: FileSignature },
   { status: 'submitted', label: 'Terkirim', icon: FileUp },
   { status: 'psychotest', label: 'Psikotes', icon: BrainCircuit },
-  { status: 'reviewed', label: 'Ditinjau', icon: ClipboardCheck },
+  { status: 'verification', label: 'Verifikasi', icon: ClipboardCheck },
+  { status: 'document_submission', label: 'Pengumpulan Dokumen', icon: FileText },
   { status: 'interview', label: 'Wawancara', icon: Users },
   { status: 'hired', label: 'Diterima', icon: Award },
 ];
@@ -29,7 +30,8 @@ const statusLabels: Record<JobApplication['status'], string> = {
   draft: 'Draf',
   submitted: 'Lamaran Terkirim',
   psychotest: 'Tahap Psikotes',
-  reviewed: 'Sedang Ditinjau',
+  verification: 'Verifikasi HRD',
+  document_submission: 'Pengumpulan Dokumen',
   interview: 'Tahap Wawancara',
   rejected: 'Tidak Lolos',
   hired: 'Diterima',
@@ -61,7 +63,7 @@ function ApplicationCard({ application }: { application: JobApplication }) {
       <CardContent className="flex-grow space-y-4">
         <Separator />
         <div className="w-full overflow-x-auto pb-4">
-            <div className="flex items-center min-w-[500px]">
+            <div className="flex items-center min-w-[600px]">
             {applicationSteps.map((step, index) => {
               const isActive = index === currentStepIndex;
               const isCompleted = !isRejected && currentStepIndex >= index;

@@ -3,12 +3,13 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
 import type { JobApplication } from '@/lib/types';
-import { Check, BrainCircuit, ClipboardCheck, Users, Award, FileUp } from 'lucide-react';
+import { Check, BrainCircuit, ClipboardCheck, Users, Award, FileUp, FileText } from 'lucide-react';
 
 const applicationSteps = [
   { status: 'submitted', label: 'Terkirim', icon: FileUp },
   { status: 'psychotest', label: 'Psikotes', icon: BrainCircuit },
-  { status: 'reviewed', label: 'Ditinjau', icon: ClipboardCheck },
+  { status: 'verification', label: 'Verifikasi', icon: ClipboardCheck },
+  { status: 'document_submission', label: 'Dokumen', icon: FileText },
   { status: 'interview', label: 'Wawancara', icon: Users },
   { status: 'hired', label: 'Diterima', icon: Award },
 ];
@@ -28,7 +29,7 @@ export function ApplicationProgressStepper({ currentStatus }: ApplicationProgres
 
   return (
     <div className="w-full overflow-x-auto pb-4">
-      <div className="flex items-center min-w-[500px]">
+      <div className="flex items-center min-w-[600px]">
         {applicationSteps.map((step, index) => {
           const isActive = index === currentStepIndex;
           const isCompleted = !isRejected && currentStepIndex > index;

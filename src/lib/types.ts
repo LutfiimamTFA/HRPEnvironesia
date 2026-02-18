@@ -62,7 +62,7 @@ export type JobApplication = {
   brandName: string;
   jobType: 'fulltime' | 'internship' | 'contract';
   location: string;
-  status: 'draft' | 'submitted' | 'psychotest' | 'reviewed' | 'interview' | 'rejected' | 'hired';
+  status: 'draft' | 'submitted' | 'psychotest' | 'verification' | 'document_submission' | 'interview' | 'rejected' | 'hired';
   jobApplyDeadline?: Timestamp | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;

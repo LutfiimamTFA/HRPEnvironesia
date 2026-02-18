@@ -58,7 +58,7 @@ export default function RecruitmentPage() {
   const applicationsQuery = useMemoFirebase(
     () => {
         if (!firestore) return null;
-        return query(collection(firestore, 'applications'), where('status', 'in', ['submitted', 'psychotest', 'reviewed', 'interview', 'hired', 'rejected']));
+        return query(collection(firestore, 'applications'), where('status', 'in', ['submitted', 'psychotest', 'verification', 'document_submission', 'interview', 'hired', 'rejected']));
     },
     [firestore]
   );
