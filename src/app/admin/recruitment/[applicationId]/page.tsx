@@ -10,7 +10,7 @@ import type { JobApplication, Profile, NavigationSetting } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft, Briefcase, Calendar, Check, Mail, Phone } from 'lucide-react';
+import { ArrowLeft, Briefcase, Calendar, Mail, Phone, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -21,6 +21,8 @@ import { useToast } from '@/hooks/use-toast';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { getInitials } from '@/lib/utils';
 import { format } from 'date-fns';
+import { ApplicationProgressStepper } from '@/components/recruitment/ApplicationProgressStepper';
+import { Separator } from '@/components/ui/separator';
 
 function ApplicationDetailSkeleton() {
   return <Skeleton className="h-[500px] w-full" />;
@@ -145,7 +147,20 @@ export default function ApplicationDetailPage() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="border-t pt-6">
+            <CardContent className="border-t pt-6 space-y-6">
+                 {application.status !== 'rejected' && (
+                  <ApplicationProgressStepper currentStatus={application.status} />
+                 )}
+
+                 {application.status === 'rejected' && (
+                    <div className="p-4 rounded-md border border-destructive/50 bg-destructive/10 text-destructive flex items-center gap-3">
+                        <XCircle className="h-5 w-5" />
+                        <p className="text-sm font-medium">This application was rejected.</p>
+                    </div>
+                 )}
+
+                 <Separator />
+
                  <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
                     <div>
                         <h3 className="font-semibold text-lg">Applied for: {application.jobPosition}</h3>
