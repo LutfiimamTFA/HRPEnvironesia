@@ -9,7 +9,7 @@ import { Loader2, PlusCircle } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 interface AssessmentBootstrapClientProps {
-  onBootstrapSuccess: () => void;
+  onBootstrapSuccess?: () => void;
 }
 
 export function AssessmentBootstrapClient({ onBootstrapSuccess }: AssessmentBootstrapClientProps) {
@@ -47,7 +47,10 @@ export function AssessmentBootstrapClient({ onBootstrapSuccess }: AssessmentBoot
         description: 'Default assessment template and test have been created.',
       });
 
-      onBootstrapSuccess();
+      if (typeof onBootstrapSuccess === 'function') {
+        onBootstrapSuccess();
+      }
+
     } catch (e: any) {
       setError(e.message);
       toast({

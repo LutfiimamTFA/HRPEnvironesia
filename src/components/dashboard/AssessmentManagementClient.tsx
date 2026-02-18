@@ -1,8 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, query, where } from 'firebase/firestore';
+import { collection } from 'firebase/firestore';
 import type { Assessment } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -23,13 +24,14 @@ function AssessmentListSkeleton() {
 
 export function AssessmentManagementClient() {
   const firestore = useFirestore();
+  const router = useRouter();
 
   const assessmentsQuery = useMemoFirebase(
     () => collection(firestore, 'assessments'),
     [firestore]
   );
-  // Using mutate to allow child components to trigger a re-fetch
-  const { data: assessments, isLoading, error, mutate } = useCollection<Assessment>(assessmentsQuery);
+
+  const { data: assessments, isLoading, error } = useCollection<Assessment>(assessmentsQuery);
 
   if (isLoading) {
     return <AssessmentListSkeleton />;
@@ -77,7 +79,7 @@ export function AssessmentManagementClient() {
           </Card>
         ))
       ) : (
-        <AssessmentBootstrapClient onBootstrapSuccess={mutate} />
+        <AssessmentBootstrapClient onBootstrapSuccess={router.refresh} />
       )}
     </div>
   );
