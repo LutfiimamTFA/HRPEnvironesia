@@ -19,6 +19,7 @@ import { AnswerAnalysis } from '@/components/dashboard/AnswerAnalysis';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import { AssessmentStatusBadge } from '@/components/dashboard/AssessmentStatusBadge';
+import { Badge } from '@/components/ui/badge';
 
 
 function HrdDecisionManager({ session }: { session: AssessmentSession }) {
