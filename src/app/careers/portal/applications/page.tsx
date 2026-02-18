@@ -48,10 +48,12 @@ function ApplicationCard({ application }: { application: JobApplication }) {
   
   const timelineSteps = useMemo(() => {
     if (isRejected) {
-      return [...visibleSteps, { status: 'rejected', label: 'Tidak Lolos', icon: XCircle }];
+      const lastVisibleStepIndex = allStatuses.indexOf(application.status) -1;
+      const stepsToShow = visibleSteps.filter((_, index) => index <= lastVisibleStepIndex);
+      return [...stepsToShow, { status: 'rejected', label: 'Tidak Lolos', icon: XCircle }];
     }
     return visibleSteps;
-  }, [isRejected]);
+  }, [isRejected, application.status]);
 
   return (
     <Card className="flex flex-col">
@@ -76,8 +78,9 @@ function ApplicationCard({ application }: { application: JobApplication }) {
               const stepStatusIndex = allStatuses.indexOf(step.status as JobApplication['status']);
               const isCurrentRejectedStep = isRejected && step.status === 'rejected';
 
-              const isActive = !isRejected && currentStatusIndex === stepStatusIndex;
+              // A step is completed if its index is less than the current status index.
               const isCompleted = !isRejected && currentStatusIndex > stepStatusIndex;
+              const isActive = !isRejected && currentStatusIndex === stepStatusIndex;
 
               return (
                 <React.Fragment key={step.status}>
@@ -105,6 +108,9 @@ function ApplicationCard({ application }: { application: JobApplication }) {
                     )}>
                       {step.label}
                     </p>
+                    {isCompleted && !['draft', 'submitted'].includes(step.status) && (
+                      <p className="text-xs font-semibold text-green-600 mt-1">Lolos</p>
+                    )}
                   </div>
 
                   {index < timelineSteps.length - 1 && (
