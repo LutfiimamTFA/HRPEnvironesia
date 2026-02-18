@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import { useAuth } from '@/providers/auth-provider';
 import { useDoc, useFirestore, useMemoFirebase } from '@/firebase';
 import { doc } from 'firebase/firestore';
-import type { NavigationSetting, Assessment } from '@/lib/types';
+import type { NavigationSetting, Assessment, AssessmentTemplate } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -47,8 +47,15 @@ export default function ManageAssessmentPage() {
     [firestore, assessmentId]
   );
   const { data: assessment, isLoading: isLoadingAssessment } = useDoc<Assessment>(assessmentRef);
+  
+  // Template data
+  const templateRef = useMemoFirebase(
+    () => (assessment ? doc(firestore, 'assessment_templates', assessment.templateId) : null),
+    [firestore, assessment]
+  );
+  const { data: template, isLoading: isLoadingTemplate } = useDoc<AssessmentTemplate>(templateRef);
 
-  const isLoading = isLoadingSettings || isLoadingAssessment;
+  const isLoading = isLoadingSettings || isLoadingAssessment || isLoadingTemplate;
 
   if (!hasAccess || isLoading) {
     return (
@@ -58,10 +65,10 @@ export default function ManageAssessmentPage() {
     );
   }
 
-  if (!assessment) {
+  if (!assessment || !template) {
       return (
          <DashboardLayout pageTitle="Error" menuItems={menuItems}>
-            <p>Assessment not found.</p>
+            <p>Assessment or its template not found.</p>
          </DashboardLayout>
       )
   }
@@ -73,7 +80,7 @@ export default function ManageAssessmentPage() {
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Back to Assessment Tools
             </Button>
-            <QuestionManagementClient assessment={assessment} />
+            <QuestionManagementClient assessment={assessment} template={template} />
         </div>
     </DashboardLayout>
   );

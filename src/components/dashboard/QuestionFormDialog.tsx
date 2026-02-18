@@ -4,23 +4,23 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { doc, collection } from 'firebase/firestore';
+import { doc, collection, serverTimestamp } from 'firebase/firestore';
 import { useFirestore, setDocumentNonBlocking } from '@/firebase';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
-import type { Assessment, AssessmentQuestion } from '@/lib/types';
+import type { Assessment, AssessmentQuestion, AssessmentTemplate } from '@/lib/types';
 import { Textarea } from '../ui/textarea';
 import { Switch } from '../ui/switch';
 
 const formSchema = z.object({
   order: z.coerce.number().int().min(1, 'Order must be at least 1'),
   text: z.string().min(10, 'Question text is required.'),
-  dimensionKey: z.string({ required_error: 'Dimension is required.' }),
+  dimension: z.string({ required_error: 'Dimension is required.' }),
   weight: z.coerce.number().default(1),
   reverse: z.boolean().default(false),
 });
@@ -32,9 +32,10 @@ interface QuestionFormDialogProps {
   onOpenChange: (open: boolean) => void;
   question: AssessmentQuestion | null;
   assessment: Assessment;
+  template: AssessmentTemplate;
 }
 
-export function QuestionFormDialog({ open, onOpenChange, question, assessment }: QuestionFormDialogProps) {
+export function QuestionFormDialog({ open, onOpenChange, question, assessment, template }: QuestionFormDialogProps) {
   const firestore = useFirestore();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
@@ -43,17 +44,22 @@ export function QuestionFormDialog({ open, onOpenChange, question, assessment }:
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      order: 1, text: '', dimensionKey: undefined, weight: 1, reverse: false
+      order: 1, text: '', dimension: undefined, weight: 1, reverse: false
     },
   });
 
   useEffect(() => {
     if (open) {
-      form.reset(
-        question
-          ? { ...question }
-          : { order: 1, text: '', dimensionKey: undefined, weight: 1, reverse: false }
-      );
+      if (question) {
+        form.reset({
+          ...question,
+          dimension: `${question.engineKey}|${question.dimensionKey}`
+        });
+      } else {
+        form.reset({
+          order: 1, text: '', dimension: undefined, weight: 1, reverse: false
+        });
+      }
     }
   }, [open, question, form]);
 
@@ -62,19 +68,17 @@ export function QuestionFormDialog({ open, onOpenChange, question, assessment }:
     try {
         const docRef = question ? doc(firestore, 'assessment_questions', question.id!) : doc(collection(firestore, 'assessment_questions'));
         
+        const [engineKey, dimensionKey] = values.dimension.split('|');
+
         const questionData = {
-          ...values,
+          order: values.order,
+          text: values.text,
+          weight: values.weight,
+          reverse: values.reverse,
+          engineKey,
+          dimensionKey,
           assessmentId: assessment.id!,
-          // 7-point Likert scale choices
-          choices: [
-            { text: 'Sangat Tidak Setuju', value: 1 },
-            { text: 'Tidak Setuju', value: 2 },
-            { text: 'Agak Tidak Setuju', value: 3 },
-            { text: 'Netral', value: 4 },
-            { text: 'Agak Setuju', value: 5 },
-            { text: 'Setuju', value: 6 },
-            { text: 'Sangat Setuju', value: 7 },
-          ],
+          isActive: true, // Questions are active by default
         }
 
         await setDocumentNonBlocking(docRef, questionData, { merge: true });
@@ -102,13 +106,24 @@ export function QuestionFormDialog({ open, onOpenChange, question, assessment }:
               <FormField control={form.control} name="order" render={({ field }) => (<FormItem><FormLabel>Order</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
               <FormField control={form.control} name="weight" render={({ field }) => (<FormItem><FormLabel>Weight</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
             </div>
-            <FormField control={form.control} name="dimensionKey" render={({ field }) => (
+            <FormField control={form.control} name="dimension" render={({ field }) => (
               <FormItem>
                 <FormLabel>Dimension</FormLabel>
                 <Select onValueChange={field.onChange} value={field.value}>
                   <FormControl><SelectTrigger><SelectValue placeholder="Select a dimension" /></SelectTrigger></FormControl>
                   <SelectContent>
-                    {assessment.scoringConfig.dimensions.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                    {template.dimensions.disc && (
+                       <SelectGroup>
+                        <SelectLabel>DISC</SelectLabel>
+                        {template.dimensions.disc.map(d => <SelectItem key={d.key} value={`disc|${d.key}`}>{d.label}</SelectItem>)}
+                      </SelectGroup>
+                    )}
+                    {template.dimensions.bigfive && (
+                       <SelectGroup>
+                        <SelectLabel>Big Five</SelectLabel>
+                        {template.dimensions.bigfive.map(d => <SelectItem key={d.key} value={`bigfive|${d.key}`}>{d.label}</SelectItem>)}
+                      </SelectGroup>
+                    )}
                   </SelectContent>
                 </Select>
                 <FormMessage />

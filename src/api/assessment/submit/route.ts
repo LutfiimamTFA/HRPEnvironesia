@@ -59,6 +59,11 @@ export async function POST(req: NextRequest) {
     }
     const template = templateDoc.data() as AssessmentTemplate;
 
+    // Guard against malformed template
+    if (!template || !template.dimensions || !template.scale || !template.resultTemplates) {
+        throw new Error(`Assessment template '${assessment.templateId}' is malformed or missing key properties like 'dimensions', 'scale', or 'resultTemplates'.`);
+    }
+
     const questionsQuery = db.collection('assessment_questions').where('assessmentId', '==', session.assessmentId).where('isActive', '==', true);
     const questionsSnap = await questionsQuery.get();
     const questions = questionsSnap.docs.map(doc => ({ ...doc.data(), id: doc.id } as AssessmentQuestion));

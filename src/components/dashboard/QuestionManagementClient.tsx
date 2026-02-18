@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { collection, query, where, doc } from 'firebase/firestore';
 import { useCollection, useFirestore, useMemoFirebase, deleteDocumentNonBlocking } from '@/firebase';
-import type { Assessment, AssessmentQuestion } from '@/lib/types';
+import type { Assessment, AssessmentQuestion, AssessmentTemplate } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { MoreHorizontal, Pencil, PlusCircle, Trash2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -26,7 +26,12 @@ function TableSkeleton() {
   );
 }
 
-export function QuestionManagementClient({ assessment }: { assessment: Assessment }) {
+interface QuestionManagementClientProps {
+    assessment: Assessment;
+    template: AssessmentTemplate;
+}
+
+export function QuestionManagementClient({ assessment, template }: QuestionManagementClientProps) {
   const firestore = useFirestore();
   const { toast } = useToast();
 
@@ -89,6 +94,7 @@ export function QuestionManagementClient({ assessment }: { assessment: Assessmen
             <TableRow>
               <TableHead className="w-16">Order</TableHead>
               <TableHead>Question Text</TableHead>
+              <TableHead>Engine</TableHead>
               <TableHead>Dimension</TableHead>
               <TableHead className="w-[100px] text-right">Actions</TableHead>
             </TableRow>
@@ -99,6 +105,7 @@ export function QuestionManagementClient({ assessment }: { assessment: Assessmen
                 <TableRow key={q.id}>
                   <TableCell className="font-medium">{q.order}</TableCell>
                   <TableCell>{q.text}</TableCell>
+                   <TableCell><Badge variant="secondary" className="capitalize">{q.engineKey}</Badge></TableCell>
                    <TableCell><Badge variant="outline">{q.dimensionKey}</Badge></TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>
@@ -114,7 +121,7 @@ export function QuestionManagementClient({ assessment }: { assessment: Assessmen
                 </TableRow>
               ))
             ) : (
-              <TableRow><TableCell colSpan={4} className="h-24 text-center">No questions found.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={5} className="h-24 text-center">No questions found.</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
@@ -125,6 +132,7 @@ export function QuestionManagementClient({ assessment }: { assessment: Assessmen
         onOpenChange={setIsFormOpen}
         question={selectedQuestion}
         assessment={assessment}
+        template={template}
       />
       
       <DeleteConfirmationDialog
