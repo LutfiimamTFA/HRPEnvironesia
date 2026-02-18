@@ -1,10 +1,10 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
-import { useCollection, useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
-import { collection, doc, serverTimestamp, query, where } from 'firebase/firestore';
+import { useCollection, useDoc, useFirestore, useMemoFirebase } from '@/firebase';
+import { collection, doc, query, where } from 'firebase/firestore';
 import type { AssessmentSession, NavigationSetting, Profile, AssessmentQuestion } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
@@ -13,8 +13,6 @@ import { Loader2, ArrowLeft } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { getInitials } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { AnswerAnalysis } from '@/components/dashboard/AnswerAnalysis';
@@ -33,78 +31,12 @@ function ResultSkeleton() {
                     <Skeleton className="h-48 w-full" />
                 </div>
                 <div className="space-y-6">
-                    <Skeleton className="h-48 w-full" />
                     <Skeleton className="h-32 w-full" />
                 </div>
             </div>
         </div>
     );
 }
-
-function HrdNoteManager({ session }: { session: AssessmentSession }) {
-  const [note, setNote] = useState(session.hrdReview?.note || '');
-  const [status, setStatus] = useState(session.hrdReview?.status || 'pending');
-  const [isUpdating, setIsUpdating] = useState(false);
-  const firestore = useFirestore();
-  const { toast } = useToast();
-
-  const handleUpdate = async () => {
-    setIsUpdating(true);
-    try {
-      const sessionRef = doc(firestore, 'assessment_sessions', session.id!);
-       const newHrdReview = {
-        status: status as 'pending' | 'reviewed' | 'approved',
-        note: note,
-        reviewedAt: serverTimestamp(),
-      };
-      await updateDocumentNonBlocking(sessionRef, {
-        hrdReview: newHrdReview,
-        updatedAt: serverTimestamp(),
-      });
-      toast({ title: 'Success', description: 'HRD notes have been updated.' });
-    } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Error', description: error.message });
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  const hasChanges = note !== (session.hrdReview?.note || '') || status !== (session.hrdReview?.status || 'pending');
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>HRD Review</CardTitle>
-        <CardDescription>Add internal notes and set the review status for this assessment.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Internal Note</label>
-          <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add your notes here..." />
-        </div>
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Review Status</label>
-           <Select value={status} onValueChange={(v) => setStatus(v as any)}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Update status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="reviewed">Reviewed</SelectItem>
-              <SelectItem value="approved">Approved</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </CardContent>
-      <CardFooter>
-        <Button onClick={handleUpdate} disabled={!hasChanges || isUpdating}>
-          {isUpdating ? 'Saving...' : 'Save Review'}
-        </Button>
-      </CardFooter>
-    </Card>
-  )
-}
-
 
 export default function HrdAssessmentResultPage() {
     const hasAccess = useRoleGuard(['hrd', 'super-admin']);
@@ -225,7 +157,6 @@ export default function HrdAssessmentResultPage() {
                     </div>
 
                     <div className="lg:sticky lg:top-24 space-y-6">
-                        <HrdNoteManager session={session} />
                         <Card>
                             <CardHeader><CardTitle>Recommended Roles</CardTitle></CardHeader>
                             <CardContent className="flex flex-wrap gap-2">

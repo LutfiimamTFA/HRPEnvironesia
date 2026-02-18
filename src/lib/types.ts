@@ -242,6 +242,7 @@ export type AssessmentSession = {
   assessmentId: string;
   candidateUid: string;
   candidateName?: string;
+  candidateEmail?: string;
   applicationId?: string;
   status: 'draft' | 'submitted';
   answers: { [questionId: string]: number };
@@ -259,9 +260,4 @@ export type AssessmentSession = {
   startedAt: Timestamp;
   updatedAt: Timestamp;
   completedAt?: Timestamp;
-  hrdReview?: {
-    status: 'pending' | 'reviewed' | 'approved';
-    note?: string;
-    reviewedAt?: Timestamp;
-  };
 };

@@ -517,9 +517,7 @@
         "report": { "type": "object" },
         "startedAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" },
-        "completedAt": { "type": "string", "format": "date-time" },
-        "hrdNote": { "type": "string" },
-        "hrdStatus": { "type": "string", "enum": ["pending", "reviewed", "approved"] }
+        "completedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["assessmentId", "candidateUid", "status", "startedAt"]
     }
