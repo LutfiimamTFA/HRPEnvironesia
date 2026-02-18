@@ -16,15 +16,16 @@ import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 
 
-const applicationSteps = [
+const allStatuses: JobApplication['status'][] = ['draft', 'submitted', 'psychotest', 'verification', 'document_submission', 'interview', 'hired'];
+const visibleSteps = [
   { status: 'draft', label: 'Draf', icon: FileSignature },
   { status: 'submitted', label: 'Terkirim', icon: FileUp },
   { status: 'psychotest', label: 'Psikotes', icon: BrainCircuit },
-  { status: 'verification', label: 'Verifikasi', icon: ClipboardCheck },
   { status: 'document_submission', label: 'Pengumpulan Dokumen', icon: FileText },
   { status: 'interview', label: 'Wawancara', icon: Users },
   { status: 'hired', label: 'Diterima', icon: Award },
 ];
+
 
 const statusLabels: Record<JobApplication['status'], string> = {
   draft: 'Draf',
@@ -38,7 +39,7 @@ const statusLabels: Record<JobApplication['status'], string> = {
 };
 
 function ApplicationCard({ application }: { application: JobApplication }) {
-  const currentStepIndex = applicationSteps.findIndex(step => step.status === application.status);
+  const currentStatusIndex = allStatuses.indexOf(application.status);
   const isRejected = application.status === 'rejected';
   const isHired = application.status === 'hired';
 
@@ -64,9 +65,10 @@ function ApplicationCard({ application }: { application: JobApplication }) {
         <Separator />
         <div className="w-full overflow-x-auto pb-4">
             <div className="flex items-center min-w-[600px]">
-            {applicationSteps.map((step, index) => {
-              const isActive = index === currentStepIndex;
-              const isCompleted = !isRejected && currentStepIndex > index;
+            {visibleSteps.map((step, index) => {
+              const stepStatusIndex = allStatuses.indexOf(step.status as JobApplication['status']);
+              const isActive = !isRejected && currentStatusIndex === stepStatusIndex;
+              const isCompleted = !isRejected && currentStatusIndex > stepStatusIndex;
 
               return (
                 <React.Fragment key={step.status}>
@@ -90,7 +92,7 @@ function ApplicationCard({ application }: { application: JobApplication }) {
                     </p>
                   </div>
 
-                  {index < applicationSteps.length - 1 && (
+                  {index < visibleSteps.length - 1 && (
                     <div className={cn(
                       "flex-1 h-1 transition-colors duration-300 -mx-1",
                       isCompleted ? 'bg-primary' : 'bg-border'
