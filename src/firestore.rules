@@ -221,7 +221,7 @@ service cloud.firestore {
             && existing.status == 'submitted'
             && incoming.hrdDecisionBy == request.auth.uid
             && incoming.hrdDecision in ['pending', 'approved', 'rejected']
-            // Immutable fields
+            // Explicitly check that all other fields have NOT changed.
             && incoming.assessmentId == existing.assessmentId
             && incoming.candidateUid == existing.candidateUid
             && incoming.applicationId == existing.applicationId
