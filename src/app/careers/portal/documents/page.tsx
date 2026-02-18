@@ -9,7 +9,7 @@ import type { JobApplication } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { FileUp, Loader2, UploadCloud, CheckCircle, XCircle, FileCheck, Info, Eye, Trash2, ClipboardCheck } from 'lucide-react';
+import { FileUp, Loader2, UploadCloud, CheckCircle, XCircle, FileCheck, Info, Eye, RefreshCw, ClipboardCheck } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -157,8 +157,8 @@ function DocumentUploadSlot({ label, fileType, userId, applicationId, initialFil
                     <Eye className="mr-2 h-4 w-4"/> Lihat
                   </a>
                 </Button>
-                <Button variant="destructive" size="sm" onClick={handleDelete}>
-                  <Trash2 className="mr-2 h-4 w-4"/> Hapus
+                <Button variant="outline" size="sm" onClick={handleDelete}>
+                  <RefreshCw className="mr-2 h-4 w-4"/> Ganti File
                 </Button>
              </div>
           </div>
@@ -302,7 +302,7 @@ export default function DocumentsPage() {
                 <CardHeader>
                     <CardTitle>Pengumpulan Dokumen</CardTitle>
                     <CardDescription>
-                    Selamat! Anda telah maju ke tahap pengumpulan dokumen. Silakan unggah file yang diminta di bawah ini.
+                        Unggah dokumen yang diminta. Anda dapat melihat pratinjau atau mengganti file sebelum mengirimkannya secara final.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
@@ -344,7 +344,7 @@ export default function DocumentsPage() {
                         onClick={handleSubmitDocuments}
                     >
                         {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileUp className="mr-2 h-4 w-4" />}
-                        Kirim Dokumen
+                        Kirim Final Dokumen
                     </Button>
                     </div>
                 </CardContent>
@@ -362,3 +362,5 @@ export default function DocumentsPage() {
     </div>
   )
 }
+
+    
