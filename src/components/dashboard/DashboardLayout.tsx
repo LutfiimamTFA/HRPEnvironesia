@@ -22,6 +22,7 @@ import {
   SidebarMenuButton,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
+import { ThemeToggle } from '../ui/ThemeToggle';
 
 type DashboardLayoutProps = {
   children: ReactNode;
@@ -90,8 +91,8 @@ export function DashboardLayout({ children, pageTitle, menuItems }: DashboardLay
 
   return (
     <SidebarProvider defaultOpen>
-      <Sidebar collapsible="icon" className="border-r-0 bg-slate-900 text-slate-50">
-        <SidebarHeader className="border-b border-slate-700">
+      <Sidebar collapsible="icon" className="bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
+        <SidebarHeader className="border-b border-sidebar-border">
           <div className="flex h-16 items-center justify-center">
             <Link href="/admin" className="flex items-center gap-2 font-semibold">
               <Package2 className="h-6 w-6 text-primary" />
@@ -109,7 +110,7 @@ export function DashboardLayout({ children, pageTitle, menuItems }: DashboardLay
                   asChild 
                   tooltip={item.label}
                   isActive={isActive}
-                  className="text-slate-300 hover:bg-slate-700 hover:text-white data-[active=true]:bg-primary data-[active=true]:text-primary-foreground"
+                  className="text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[active=true]:bg-primary data-[active=true]:text-primary-foreground"
                 >
                   <Link href={item.href}>
                     {item.icon}
@@ -128,7 +129,10 @@ export function DashboardLayout({ children, pageTitle, menuItems }: DashboardLay
           <div className="flex-1">
              <h1 className="text-xl font-semibold tracking-tight">{pageTitle}</h1>
           </div>
-          <UserNav />
+          <div className="flex items-center gap-4">
+            <ThemeToggle />
+            <UserNav />
+          </div>
         </header>
 
         <main className="flex-1 p-4 sm:px-6 sm:py-6 md:gap-8">

@@ -26,6 +26,7 @@ import {
 import { ALL_MENU_ITEMS, ALL_UNIQUE_MENU_ITEMS } from '@/lib/menu-config';
 import type { NavigationSetting } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { ThemeToggle } from '../ui/ThemeToggle';
 
 function UserNav() {
   const { userProfile } = useAuth();
@@ -112,16 +113,16 @@ export function CandidatePortalLayout({ children }: { children: ReactNode }) {
 
   return (
     <SidebarProvider defaultOpen>
-      <Sidebar collapsible="icon" className="border-r-0 bg-emerald-800 text-white">
-        <SidebarHeader className="border-b border-white/10 p-0">
+      <Sidebar collapsible="icon" className="bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
+        <SidebarHeader className="border-b border-sidebar-border p-0">
           <div className="flex h-16 items-center px-4">
              <Link href="/careers/portal" className="flex items-center gap-3">
-               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/10">
-                <Leaf className="h-6 w-6 text-white" />
+               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sidebar-accent">
+                <Leaf className="h-6 w-6 text-primary" />
                </div>
                <div className="leading-tight group-data-[state=collapsed]:hidden">
-                 <div className="font-semibold text-white text-base">Environesia Karir</div>
-                 <div className="text-xs text-white/70">Portal Kandidat</div>
+                 <div className="font-semibold text-foreground text-base">Environesia Karir</div>
+                 <div className="text-xs text-muted-foreground">Portal Kandidat</div>
                </div>
              </Link>
            </div>
@@ -137,7 +138,7 @@ export function CandidatePortalLayout({ children }: { children: ReactNode }) {
                   tooltip={item.label}
                   isActive={isActive}
                   className={cn(
-                    "text-emerald-100 hover:bg-emerald-700 hover:text-white data-[active=true]:bg-white data-[active=true]:text-emerald-800 font-medium",
+                    "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[active=true]:bg-primary data-[active=true]:text-primary-foreground font-medium",
                     "justify-start"
                   )}
                 >
@@ -156,7 +157,7 @@ export function CandidatePortalLayout({ children }: { children: ReactNode }) {
                     <SidebarMenuButton 
                       asChild 
                       tooltip="Kembali ke Halaman Karir"
-                      className="text-emerald-100 hover:bg-emerald-700 hover:text-white justify-start"
+                      className="text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground justify-start"
                     >
                         <Link href="/careers">
                             <ArrowLeft />
@@ -172,7 +173,10 @@ export function CandidatePortalLayout({ children }: { children: ReactNode }) {
         <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background px-4 sm:px-6">
           <SidebarTrigger />
           <div className="flex-1" />
-          <UserNav />
+          <div className="flex items-center gap-4">
+            <ThemeToggle />
+            <UserNav />
+          </div>
         </header>
 
         <main className="flex-1 p-4 sm:px-6 sm:py-6 md:gap-8">

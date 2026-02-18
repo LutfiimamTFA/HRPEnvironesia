@@ -13,6 +13,7 @@ import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
 import type { Job } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ThemeToggle } from '@/components/ui/ThemeToggle';
 
 const JobCard = ({ job }: { job: Job }) => (
   <Card className="flex flex-col transition-shadow duration-300 hover:shadow-xl">
@@ -101,6 +102,7 @@ export default function CareersPage() {
             <Link href="#faq" className="text-muted-foreground transition-colors hover:text-primary">FAQ</Link>
           </nav>
           <div className="flex items-center gap-2">
+            <ThemeToggle />
             <Button variant="outline" asChild>
               <Link href="/careers/login">Masuk Kandidat</Link>
             </Button>
