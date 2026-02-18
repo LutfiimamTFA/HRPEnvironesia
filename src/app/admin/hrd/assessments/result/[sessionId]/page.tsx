@@ -20,6 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import { AssessmentStatusBadge } from '@/components/dashboard/AssessmentStatusBadge';
 import { Badge } from '@/components/ui/badge';
+import { FirestorePermissionError, errorEmitter } from '@/firebase';
 
 
 function HrdDecisionManager({ session }: { session: AssessmentSession }) {
@@ -30,24 +31,27 @@ function HrdDecisionManager({ session }: { session: AssessmentSession }) {
 
   const handleUpdateDecision = async (decision: 'approved' | 'rejected') => {
     if (!firebaseUser || !session?.candidateUid) {
-        toast({ variant: 'destructive', title: 'Error', description: 'User or session data is missing.' });
-        return;
+      toast({ variant: 'destructive', title: 'Error', description: 'User or session data is missing.' });
+      return;
     }
 
     setIsUpdating(true);
-    const batch = writeBatch(firestore);
+
+    const sessionRef = doc(firestore, 'assessment_sessions', session.id!);
+    const sessionUpdateData = {
+      hrdDecision: decision,
+      hrdDecisionAt: serverTimestamp(),
+      hrdDecisionBy: firebaseUser.uid,
+      updatedAt: serverTimestamp(),
+    };
 
     try {
-      // 1. Update the assessment session itself
-      const sessionRef = doc(firestore, 'assessment_sessions', session.id!);
-      batch.update(sessionRef, {
-        hrdDecision: decision,
-        hrdDecisionAt: serverTimestamp(),
-        hrdDecisionBy: firebaseUser.uid,
-        updatedAt: serverTimestamp(),
-      });
+      const batch = writeBatch(firestore);
 
-      // 2. Find and update the corresponding job application(s)
+      // 1. Queue the session update
+      batch.update(sessionRef, sessionUpdateData);
+
+      // 2. Find and queue the application updates
       const newAppStatus = decision === 'approved' ? 'verification' : 'rejected';
       
       const appsQuery = query(
@@ -67,20 +71,35 @@ function HrdDecisionManager({ session }: { session: AssessmentSession }) {
         updatedAppsCount++;
       });
       
-      // 3. Commit all updates
+      // 3. Commit the batch
       await batch.commit();
-      
+
+      // Success
       let successMessage = `Assessment marked as ${decision}.`;
       if (updatedAppsCount > 0) {
         successMessage += ` And ${updatedAppsCount} application(s) moved to '${newAppStatus}'.`;
       }
-      
       toast({ title: 'Success', description: successMessage });
 
-    } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Error updating status', description: error.message });
+    } catch (serverError: any) {
+        // Failure: Create and emit a rich, contextual error
+        const permissionError = new FirestorePermissionError({
+            path: sessionRef.path, 
+            operation: 'update',
+            requestResourceData: sessionUpdateData,
+        });
+
+        // Emit the rich error for the dev overlay
+        errorEmitter.emit('permission-error', permissionError);
+
+        // Show a generic toast to the user
+        toast({
+          variant: 'destructive',
+          title: 'Error Updating Status',
+          description: "Permission denied. Check the developer console for details.",
+        });
     } finally {
-      setIsUpdating(false);
+        setIsUpdating(false);
     }
   };
 
