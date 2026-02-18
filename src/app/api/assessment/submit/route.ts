@@ -51,8 +51,8 @@ export async function POST(req: NextRequest) {
         let finalValue = answerValue;
         // Apply reverse scoring if needed
         if (question.reverse) {
-            // Assuming choices are 1-5, reverse is (max + min) - value
-            finalValue = 6 - answerValue;
+            // Assuming choices are 1-7, reverse is (max + min) - value
+            finalValue = 8 - answerValue;
         }
         
         scores[question.dimensionKey] = (scores[question.dimensionKey] || 0) + (finalValue * (question.weight || 1));

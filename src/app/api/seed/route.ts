@@ -68,9 +68,11 @@ async function seedAssessment(db: admin.firestore.Firestore) {
             choices: [
                 { text: 'Sangat Tidak Setuju', value: 1 },
                 { text: 'Tidak Setuju', value: 2 },
-                { text: 'Netral', value: 3 },
-                { text: 'Setuju', value: 4 },
-                { text: 'Sangat Setuju', value: 5 },
+                { text: 'Agak Tidak Setuju', value: 3 },
+                { text: 'Netral', value: 4 },
+                { text: 'Agak Setuju', value: 5 },
+                { text: 'Setuju', value: 6 },
+                { text: 'Sangat Setuju', value: 7 },
             ],
         });
     }
