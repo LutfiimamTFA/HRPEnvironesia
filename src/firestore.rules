@@ -206,17 +206,30 @@ service cloud.firestore {
       
       // UPDATE:
       // - A candidate can only update their own session, and only if it's a 'draft'.
-      // - Internal roles can update specific fields (hrdReview).
+      // - Internal roles can update the decision.
       allow update: if (isOwner(resource.data.candidateUid) && resource.data.status == 'draft') || 
-                       (isInternal() && isUpdatingHrdFields());
+                       (isInternal() && isUpdatingHrdDecision());
                        
       // DELETE: No one can delete a session record.
       allow delete: if false;
-      
-      function isUpdatingHrdFields() {
-        // Allow internal roles to only update the hrdReview map.
-        let updatedKeys = request.resource.data.diff(resource.data).affectedKeys;
-        return updatedKeys.hasOnly(['hrdReview', 'updatedAt']);
+
+      function isUpdatingHrdDecision() {
+        let diff = request.resource.data.diff(resource.data);
+        
+        // Define fields that HRD should NOT be able to change.
+        let forbiddenKeys = [
+          'candidateUid', 'assessmentId', 'applicationId', 'status', 
+          'answers', 'scores', 'normalized', 'result', 
+          'startedAt', 'completedAt', 'candidateName', 'candidateEmail'
+        ];
+
+        // Ensure that none of the forbidden keys are part of the update.
+        let isChangingForbidden = diff.affectedKeys().hasAny(forbiddenKeys);
+        
+        // Ensure that the 'hrdDecision' field is actually being updated.
+        let isChangingDecision = diff.affectedKeys().has('hrdDecision');
+
+        return isChangingDecision && !isChangingForbidden;
       }
     }
   }
