@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from '@/components/ui/button';
-import { Loader2 } from 'lucide-react';
+import { AlertTriangle, Loader2 } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import type { Profile, Address } from '@/lib/types';
 import { Timestamp } from 'firebase/firestore';
@@ -15,6 +15,7 @@ import { GoogleDatePicker } from '../ui/google-date-picker';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { Checkbox } from '../ui/checkbox';
 import React, { useEffect } from 'react';
+import { Alert, AlertDescription } from '../ui/alert';
 
 const DRAFT_KEY = 'personal-data-form-draft';
 
@@ -189,7 +190,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
         <Card>
             <CardHeader>
                 <CardTitle>Informasi Pribadi</CardTitle>
-                <CardDescription>Pastikan semua data yang Anda masukkan sudah benar.</CardDescription>
+                <CardDescription>Pastikan semua data yang Anda masukkan sudah benar. Kolom dengan tanda <span className="text-destructive">*</span> wajib diisi.</CardDescription>
             </CardHeader>
             <CardContent>
                 <Form {...form}>
@@ -200,7 +201,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                 name="fullName"
                                 render={({ field }) => (
                                     <FormItem>
-                                        <FormLabel>Nama Lengkap (Sesuai KTP)</FormLabel>
+                                        <FormLabel>Nama Lengkap (Sesuai KTP) <span className="text-destructive">*</span></FormLabel>
                                         <FormControl>
                                             <Input {...field} value={field.value ?? ''} />
                                         </FormControl>
@@ -213,7 +214,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                 name="nickname"
                                 render={({ field }) => (
                                     <FormItem>
-                                        <FormLabel>Nama Panggilan</FormLabel>
+                                        <FormLabel>Nama Panggilan <span className="text-destructive">*</span></FormLabel>
                                         <FormControl>
                                             <Input {...field} value={field.value ?? ''} />
                                         </FormControl>
@@ -229,7 +230,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                 name="email"
                                 render={({ field }) => (
                                     <FormItem>
-                                        <FormLabel>Email</FormLabel>
+                                        <FormLabel>Email <span className="text-destructive">*</span></FormLabel>
                                         <FormControl>
                                             <Input {...field} value={field.value ?? ''} />
                                         </FormControl>
@@ -242,7 +243,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                 name="phone"
                                 render={({ field }) => (
                                     <FormItem>
-                                        <FormLabel>Nomor Telepon</FormLabel>
+                                        <FormLabel>Nomor Telepon <span className="text-destructive">*</span></FormLabel>
                                         <FormControl>
                                             <Input {...field} value={field.value ?? ''} placeholder="0812..." />
                                         </FormControl>
@@ -258,11 +259,17 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                 name="eKtpNumber"
                                 render={({ field }) => (
                                     <FormItem>
-                                        <FormLabel>Nomor e-KTP</FormLabel>
+                                        <FormLabel>Nomor e-KTP <span className="text-destructive">*</span></FormLabel>
                                         <FormControl>
                                             <Input {...field} value={field.value ?? ''} maxLength={16} />
                                         </FormControl>
                                         <FormMessage />
+                                        <Alert variant="destructive" className="mt-2 flex items-start gap-2 text-amber-800 dark:text-amber-400 border-amber-500/40 bg-amber-50 dark:bg-amber-950/40 [&>svg]:text-amber-600 dark:[&>svg]:text-amber-500">
+                                            <AlertTriangle className="h-4 w-4 mt-0.5" />
+                                            <AlertDescription className="text-xs">
+                                                Mohon pastikan kembali Nomor NIK KTP yang Anda masukkan sama dengan yang tertulis di KTP untuk kelancaran proses verifikasi.
+                                            </AlertDescription>
+                                        </Alert>
                                     </FormItem>
                                 )}
                             />
@@ -271,7 +278,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                 name="gender"
                                 render={({ field }) => (
                                     <FormItem>
-                                        <FormLabel>Jenis Kelamin</FormLabel>
+                                        <FormLabel>Jenis Kelamin <span className="text-destructive">*</span></FormLabel>
                                          <FormControl>
                                             <RadioGroup
                                             onValueChange={field.onChange}
@@ -299,7 +306,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                             name="birthDate"
                             render={({ field }) => (
                                 <FormItem className="flex flex-col">
-                                    <FormLabel>Tanggal Lahir</FormLabel>
+                                    <FormLabel>Tanggal Lahir <span className="text-destructive">*</span></FormLabel>
                                     <FormControl>
                                         <GoogleDatePicker
                                             mode="dob"
@@ -314,14 +321,14 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
 
                         {/* KTP Address */}
                         <div className="space-y-4">
-                            <FormLabel>Alamat Sesuai KTP</FormLabel>
+                            <FormLabel>Alamat Sesuai KTP <span className="text-destructive">*</span></FormLabel>
                             <div className="p-4 border rounded-lg space-y-4">
                                 <FormField
                                     control={form.control}
                                     name="addressKtp.street"
                                     render={({ field }) => (
                                         <FormItem>
-                                            <FormLabel>Jalan</FormLabel>
+                                            <FormLabel>Jalan <span className="text-destructive">*</span></FormLabel>
                                             <FormControl>
                                                 <Textarea {...field} value={field.value ?? ''} placeholder="Masukkan nama jalan, nomor rumah, dll..." />
                                             </FormControl>
@@ -330,16 +337,16 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                     )}
                                 />
                                 <div className="grid grid-cols-2 gap-4">
-                                    <FormField control={form.control} name="addressKtp.rt" render={({ field }) => (<FormItem><FormLabel>RT</FormLabel><FormControl><Input placeholder="001" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
-                                    <FormField control={form.control} name="addressKtp.rw" render={({ field }) => (<FormItem><FormLabel>RW</FormLabel><FormControl><Input placeholder="002" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                                    <FormField control={form.control} name="addressKtp.rt" render={({ field }) => (<FormItem><FormLabel>RT <span className="text-destructive">*</span></FormLabel><FormControl><Input placeholder="001" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                                    <FormField control={form.control} name="addressKtp.rw" render={({ field }) => (<FormItem><FormLabel>RW <span className="text-destructive">*</span></FormLabel><FormControl><Input placeholder="002" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                                 </div>
-                                <FormField control={form.control} name="addressKtp.village" render={({ field }) => (<FormItem><FormLabel>Kelurahan/Desa</FormLabel><FormControl><Input placeholder="Caturtunggal" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
-                                <FormField control={form.control} name="addressKtp.district" render={({ field }) => (<FormItem><FormLabel>Kecamatan</FormLabel><FormControl><Input placeholder="Depok" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                                <FormField control={form.control} name="addressKtp.village" render={({ field }) => (<FormItem><FormLabel>Kelurahan/Desa <span className="text-destructive">*</span></FormLabel><FormControl><Input placeholder="Caturtunggal" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                                <FormField control={form.control} name="addressKtp.district" render={({ field }) => (<FormItem><FormLabel>Kecamatan <span className="text-destructive">*</span></FormLabel><FormControl><Input placeholder="Depok" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                                 <div className="grid grid-cols-2 gap-4">
-                                    <FormField control={form.control} name="addressKtp.city" render={({ field }) => (<FormItem><FormLabel>Kota/Kabupaten</FormLabel><FormControl><Input placeholder="Sleman" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
-                                    <FormField control={form.control} name="addressKtp.province" render={({ field }) => (<FormItem><FormLabel>Provinsi</FormLabel><FormControl><Input placeholder="D.I. Yogyakarta" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                                    <FormField control={form.control} name="addressKtp.city" render={({ field }) => (<FormItem><FormLabel>Kota/Kabupaten <span className="text-destructive">*</span></FormLabel><FormControl><Input placeholder="Sleman" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                                    <FormField control={form.control} name="addressKtp.province" render={({ field }) => (<FormItem><FormLabel>Provinsi <span className="text-destructive">*</span></FormLabel><FormControl><Input placeholder="D.I. Yogyakarta" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                                 </div>
-                                <FormField control={form.control} name="addressKtp.postalCode" render={({ field }) => (<FormItem><FormLabel>Kode Pos</FormLabel><FormControl><Input placeholder="55281" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                                <FormField control={form.control} name="addressKtp.postalCode" render={({ field }) => (<FormItem><FormLabel>Kode Pos <span className="text-destructive">*</span></FormLabel><FormControl><Input placeholder="55281" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                             </div>
                         </div>
 
@@ -367,14 +374,14 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                         {/* Domicile Address */}
                         {!isDomicileSameAsKtp && (
                              <div className="space-y-4">
-                                <FormLabel>Alamat Domisili</FormLabel>
+                                <FormLabel>Alamat Domisili <span className="text-destructive">*</span></FormLabel>
                                 <div className="p-4 border rounded-lg space-y-4">
                                     <FormField
                                         control={form.control}
                                         name="addressDomicile.street"
                                         render={({ field }) => (
                                             <FormItem>
-                                                <FormLabel>Jalan</FormLabel>
+                                                <FormLabel>Jalan <span className="text-destructive">*</span></FormLabel>
                                                 <FormControl>
                                                     <Textarea {...field} value={field.value ?? ''} placeholder="Masukkan nama jalan, nomor rumah, dll..." />
                                                 </FormControl>
@@ -383,16 +390,16 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                         )}
                                     />
                                     <div className="grid grid-cols-2 gap-4">
-                                        <FormField control={form.control} name="addressDomicile.rt" render={({ field }) => (<FormItem><FormLabel>RT</FormLabel><FormControl><Input placeholder="001" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
-                                        <FormField control={form.control} name="addressDomicile.rw" render={({ field }) => (<FormItem><FormLabel>RW</FormLabel><FormControl><Input placeholder="002" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                                        <FormField control={form.control} name="addressDomicile.rt" render={({ field }) => (<FormItem><FormLabel>RT <span className="text-destructive">*</span></FormLabel><FormControl><Input placeholder="001" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                                        <FormField control={form.control} name="addressDomicile.rw" render={({ field }) => (<FormItem><FormLabel>RW <span className="text-destructive">*</span></FormLabel><FormControl><Input placeholder="002" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                                     </div>
-                                    <FormField control={form.control} name="addressDomicile.village" render={({ field }) => (<FormItem><FormLabel>Kelurahan/Desa</FormLabel><FormControl><Input placeholder="Caturtunggal" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
-                                    <FormField control={form.control} name="addressDomicile.district" render={({ field }) => (<FormItem><FormLabel>Kecamatan</FormLabel><FormControl><Input placeholder="Depok" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                                    <FormField control={form.control} name="addressDomicile.village" render={({ field }) => (<FormItem><FormLabel>Kelurahan/Desa <span className="text-destructive">*</span></FormLabel><FormControl><Input placeholder="Caturtunggal" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                                    <FormField control={form.control} name="addressDomicile.district" render={({ field }) => (<FormItem><FormLabel>Kecamatan <span className="text-destructive">*</span></FormLabel><FormControl><Input placeholder="Depok" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                                     <div className="grid grid-cols-2 gap-4">
-                                        <FormField control={form.control} name="addressDomicile.city" render={({ field }) => (<FormItem><FormLabel>Kota/Kabupaten</FormLabel><FormControl><Input placeholder="Sleman" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
-                                        <FormField control={form.control} name="addressDomicile.province" render={({ field }) => (<FormItem><FormLabel>Provinsi</FormLabel><FormControl><Input placeholder="D.I. Yogyakarta" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                                        <FormField control={form.control} name="addressDomicile.city" render={({ field }) => (<FormItem><FormLabel>Kota/Kabupaten <span className="text-destructive">*</span></FormLabel><FormControl><Input placeholder="Sleman" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                                        <FormField control={form.control} name="addressDomicile.province" render={({ field }) => (<FormItem><FormLabel>Provinsi <span className="text-destructive">*</span></FormLabel><FormControl><Input placeholder="D.I. Yogyakarta" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                                     </div>
-                                    <FormField control={form.control} name="addressDomicile.postalCode" render={({ field }) => (<FormItem><FormLabel>Kode Pos</FormLabel><FormControl><Input placeholder="55281" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                                    <FormField control={form.control} name="addressDomicile.postalCode" render={({ field }) => (<FormItem><FormLabel>Kode Pos <span className="text-destructive">*</span></FormLabel><FormControl><Input placeholder="55281" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                                 </div>
                             </div>
                         )}
@@ -422,7 +429,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                 name="npwpNumber"
                                 render={({ field }) => (
                                     <FormItem>
-                                        <FormLabel>Nomor NPWP</FormLabel>
+                                        <FormLabel>Nomor NPWP <span className="text-destructive">*</span></FormLabel>
                                         <FormControl>
                                             <Input {...field} value={field.value ?? ''} placeholder="Masukkan nomor NPWP Anda" />
                                         </FormControl>
@@ -437,7 +444,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                             name="willingToWfo"
                             render={({ field }) => (
                                 <FormItem className="space-y-3">
-                                    <FormLabel>Apakah Anda bersedia Work From Office (WFO)?</FormLabel>
+                                    <FormLabel>Apakah Anda bersedia Work From Office (WFO)? <span className="text-destructive">*</span></FormLabel>
                                     <FormControl>
                                         <RadioGroup
                                         onValueChange={field.onChange}
