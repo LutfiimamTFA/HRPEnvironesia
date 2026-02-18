@@ -25,11 +25,11 @@ function HrdDecisionManager({ session }: { session: AssessmentSession }) {
   const [isUpdating, setIsUpdating] = useState(false);
   const firestore = useFirestore();
   const { toast } = useToast();
-  const { userProfile } = useAuth();
+  const { firebaseUser } = useAuth();
 
   const handleUpdateDecision = async (decision: 'approved' | 'rejected') => {
-    if (!userProfile) {
-        toast({ variant: 'destructive', title: 'Error', description: 'User profile not found.' });
+    if (!firebaseUser) {
+        toast({ variant: 'destructive', title: 'Error', description: 'User not authenticated.' });
         return;
     }
 
@@ -39,7 +39,7 @@ function HrdDecisionManager({ session }: { session: AssessmentSession }) {
       await updateDocumentNonBlocking(sessionRef, {
         hrdDecision: decision,
         hrdDecisionAt: serverTimestamp(),
-        hrdDecisionBy: userProfile.uid,
+        hrdDecisionBy: firebaseUser.uid,
         updatedAt: serverTimestamp(),
       });
       toast({ title: 'Success', description: `Assessment marked as ${decision}.` });

@@ -214,26 +214,16 @@ service cloud.firestore {
       allow delete: if false;
 
       function isUpdatingHrdDecision() {
-          let incoming = request.resource.data;
-          let existing = resource.data;
-          
-          return isInternal()
-            && existing.status == 'submitted'
-            && incoming.hrdDecisionBy == request.auth.uid
-            && incoming.hrdDecision in ['pending', 'approved', 'rejected']
-            // Explicitly check that all other fields have NOT changed.
-            && incoming.assessmentId == existing.assessmentId
-            && incoming.candidateUid == existing.candidateUid
-            && incoming.applicationId == existing.applicationId
-            && incoming.status == existing.status
-            && incoming.answers == existing.answers
-            && incoming.scores == existing.scores
-            && incoming.result == existing.result
-            && incoming.startedAt == existing.startedAt
-            && incoming.completedAt == existing.completedAt
-            && incoming.candidateName == existing.candidateName
-            && incoming.candidateEmail == existing.candidateEmail
-            && incoming.normalized == existing.normalized;
+        // This rule allows HRD/Super-Admins to update the decision for a submitted assessment.
+        // It ensures that only specific fields related to the decision are being modified.
+        let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
+        let allowedUpdateKeys = ['hrdDecision', 'hrdDecisionAt', 'hrdDecisionBy', 'updatedAt'];
+        
+        return isInternal()
+          && resource.data.status == 'submitted'
+          && changedKeys.hasOnly(allowedUpdateKeys) // Ensures ONLY the allowed fields are part of the update.
+          && request.resource.data.hrdDecisionBy == request.auth.uid // Ensures the decision is made by the authenticated user.
+          && request.resource.data.hrdDecision in ['pending', 'approved', 'rejected']; // Validates the decision value.
       }
     }
   }
