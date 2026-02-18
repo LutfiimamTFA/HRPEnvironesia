@@ -7,9 +7,9 @@ import type { AssessmentSession } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { format } from 'date-fns';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
+import { AssessmentStatusBadge } from './AssessmentStatusBadge';
 
 function SubmissionsSkeleton() {
   return (
@@ -65,13 +65,13 @@ export function AssessmentSubmissionsClient() {
                   {session.candidateName ?? session.candidateEmail ?? session.candidateUid}
                 </TableCell>
                 <TableCell>
-                  {session.result?.discType ? <Badge variant="secondary">{session.result.discType}</Badge> : '-'}
+                  {session.result?.discType ? <AssessmentStatusBadge status="result" label={session.result.discType} /> : '-'}
                 </TableCell>
                 <TableCell>
                   {session.completedAt ? format(session.completedAt.toDate(), 'dd MMM yyyy') : '-'}
                 </TableCell>
-                  <TableCell>
-                  <Badge variant={session.status === 'submitted' ? 'default' : 'outline'}>{session.status}</Badge>
+                <TableCell>
+                    <AssessmentStatusBadge status={session.hrdDecision || session.status} />
                 </TableCell>
                 <TableCell className="text-right">
                     <Button asChild variant="outline" size="sm" disabled={session.status !== 'submitted'}>
