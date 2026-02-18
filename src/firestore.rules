@@ -214,14 +214,24 @@ service cloud.firestore {
       allow delete: if false;
 
       function isUpdatingHrdDecision() {
-        let allowedUpdateKeys = ['hrdDecision', 'updatedAt', 'hrdDecisionAt', 'hrdDecisionBy'];
+        let allowedUpdateKeys = ['hrdDecision', 'hrdDecisionAt', 'hrdDecisionBy', 'updatedAt'];
         let incomingKeys = request.resource.data.diff(resource.data).affectedKeys();
         
-        return resource.data.status == 'submitted'
-          && request.resource.data.candidateUid == resource.data.candidateUid
-          && request.resource.data.hrdDecision in ['pending', 'approved', 'rejected']
-          && incomingKeys.has('hrdDecision')
-          && incomingKeys.subset(allowedUpdateKeys.toSet());
+        return 
+          // The document must be in 'submitted' state to be decided upon.
+          resource.data.status == 'submitted' &&
+          
+          // The user making the request must be the one recorded in the 'hrdDecisionBy' field of the NEW data.
+          request.resource.data.hrdDecisionBy == request.auth.uid &&
+          
+          // The new decision value must be valid.
+          request.resource.data.hrdDecision in ['pending', 'approved', 'rejected'] &&
+          
+          // The request must be attempting to modify the decision.
+          incomingKeys.has('hrdDecision') &&
+          
+          // All modified keys must be within the allowed set of keys for this operation.
+          incomingKeys.subset(allowedUpdateKeys.toSet());
       }
     }
   }

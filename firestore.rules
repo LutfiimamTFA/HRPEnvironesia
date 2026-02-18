@@ -214,24 +214,24 @@ service cloud.firestore {
       allow delete: if false;
 
       function isUpdatingHrdDecision() {
-        // The keys that are allowed to be changed in this specific operation
-        let allowedKeys = ['hrdDecision', 'hrdDecisionAt', 'hrdDecisionBy', 'updatedAt'];
+        let allowedUpdateKeys = ['hrdDecision', 'hrdDecisionAt', 'hrdDecisionBy', 'updatedAt'];
+        let incomingKeys = request.resource.data.diff(resource.data).affectedKeys();
         
         return 
-          // Condition 1: The assessment must have been submitted.
+          // The document must be in 'submitted' state to be decided upon.
           resource.data.status == 'submitted' &&
           
-          // Condition 2: The request must actually contain the 'hrdDecision' field.
-          'hrdDecision' in request.writeFields &&
+          // The user making the request must be the one recorded in the 'hrdDecisionBy' field of the NEW data.
+          request.resource.data.hrdDecisionBy == request.auth.uid &&
           
-          // Condition 3: The new decision value must be one of the allowed enums.
-          request.writeFields.hrdDecision in ['pending', 'approved', 'rejected'] &&
+          // The new decision value must be valid.
+          request.resource.data.hrdDecision in ['pending', 'approved', 'rejected'] &&
           
-          // Condition 4: The 'hrdDecisionBy' field in the request must match the UID of the user making the request.
-          request.writeFields.hrdDecisionBy == request.auth.uid &&
+          // The request must be attempting to modify the decision.
+          incomingKeys.has('hrdDecision') &&
           
-          // Condition 5: The request must not contain any fields other than the ones we've explicitly allowed.
-          request.writeFields.keys().hasOnly(allowedKeys);
+          // All modified keys must be within the allowed set of keys for this operation.
+          incomingKeys.subset(allowedUpdateKeys.toSet());
       }
     }
   }
