@@ -25,13 +25,21 @@ function HrdDecisionManager({ session }: { session: AssessmentSession }) {
   const [isUpdating, setIsUpdating] = useState(false);
   const firestore = useFirestore();
   const { toast } = useToast();
+  const { userProfile } = useAuth();
 
   const handleUpdateDecision = async (decision: 'approved' | 'rejected') => {
+    if (!userProfile) {
+        toast({ variant: 'destructive', title: 'Error', description: 'User profile not found.' });
+        return;
+    }
+
     setIsUpdating(true);
     try {
       const sessionRef = doc(firestore, 'assessment_sessions', session.id!);
       await updateDocumentNonBlocking(sessionRef, {
         hrdDecision: decision,
+        hrdDecisionAt: serverTimestamp(),
+        hrdDecisionBy: userProfile.uid,
         updatedAt: serverTimestamp(),
       });
       toast({ title: 'Success', description: `Assessment marked as ${decision}.` });

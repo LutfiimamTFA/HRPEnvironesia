@@ -214,15 +214,14 @@ service cloud.firestore {
       allow delete: if false;
 
       function isUpdatingHrdDecision() {
-        // This function ensures that an internal user (HRD/super-admin) can only
-        // change the 'hrdDecision' and 'updatedAt' fields.
-        let allowedUpdateKeys = ['hrdDecision', 'updatedAt'];
+        let allowedUpdateKeys = ['hrdDecision', 'updatedAt', 'hrdDecisionAt', 'hrdDecisionBy'];
         let incomingKeys = request.resource.data.diff(resource.data).affectedKeys();
         
-        // The incoming changes must be a SUBSET of the allowed keys.
-        // This also means no other fields can be changed in the same update.
-        // It also ensures that 'hrdDecision' is part of the update.
-        return incomingKeys.has('hrdDecision') && incomingKeys.subset(allowedUpdateKeys.toSet());
+        return resource.data.status == 'submitted'
+          && request.resource.data.candidateUid == resource.data.candidateUid
+          && request.resource.data.hrdDecision in ['pending', 'approved', 'rejected']
+          && incomingKeys.has('hrdDecision')
+          && incomingKeys.subset(allowedUpdateKeys.toSet());
       }
     }
   }

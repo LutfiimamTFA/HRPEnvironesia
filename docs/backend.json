@@ -522,6 +522,15 @@
             "type": "string",
             "description": "The HRD's final decision on the assessment result.",
             "enum": ["pending", "approved", "rejected"]
+        },
+        "hrdDecisionAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of when the HRD decision was made."
+        },
+        "hrdDecisionBy": {
+          "type": "string",
+          "description": "UID of the user who made the HRD decision."
         }
       },
       "required": ["assessmentId", "candidateUid", "status", "startedAt"]

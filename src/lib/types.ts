@@ -258,6 +258,8 @@ export type AssessmentSession = {
     report: Partial<ResultTemplate> & { bigfiveSummary?: any[], interviewQuestions?: any[] };
   };
   hrdDecision?: 'pending' | 'approved' | 'rejected';
+  hrdDecisionAt?: Timestamp;
+  hrdDecisionBy?: string;
   startedAt: Timestamp;
   updatedAt: Timestamp;
   completedAt?: Timestamp;
