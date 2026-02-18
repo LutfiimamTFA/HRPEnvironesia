@@ -35,6 +35,7 @@ const formSchema = z.object({
   brandId: z.string({ required_error: 'Company/Brand is required.' }),
   workMode: z.enum(['onsite', 'hybrid', 'remote']).optional(),
   applyDeadline: z.date().optional().nullable(),
+  numberOfOpenings: z.coerce.number().int().min(1, 'Must be at least 1').optional().nullable(),
   coverImage: z.any().optional(),
   generalRequirementsHtml: z.string().min(10, { message: 'General requirements are required.' }),
   specialRequirementsHtml: z.string().min(10, { message: 'Special requirements are required.' }),
@@ -69,6 +70,7 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
       brandId: undefined,
       workMode: 'onsite',
       applyDeadline: null,
+      numberOfOpenings: 1,
       generalRequirementsHtml: '',
       specialRequirementsHtml: '',
     },
@@ -89,6 +91,7 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
         form.reset({
           ...job,
           applyDeadline: job.applyDeadline ? job.applyDeadline.toDate() : null,
+          numberOfOpenings: job.numberOfOpenings ?? 1,
           coverImage: undefined, // Don't repopulate file input
         });
         if (job.coverImageUrl) {
@@ -98,7 +101,7 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
         }
       } else {
         form.reset({
-          position: '', statusJob: 'fulltime', division: '', location: '', brandId: undefined, workMode: 'onsite', generalRequirementsHtml: '', specialRequirementsHtml: '', applyDeadline: null
+          position: '', statusJob: 'fulltime', division: '', location: '', brandId: undefined, workMode: 'onsite', generalRequirementsHtml: '', specialRequirementsHtml: '', applyDeadline: null, numberOfOpenings: 1
         });
         setImagePreview(null);
       }
@@ -153,6 +156,7 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
 
       const jobData: Omit<Job, 'id'> = {
         ...restOfValues,
+        numberOfOpenings: values.numberOfOpenings || 1,
         applyDeadline: values.applyDeadline || null,
         coverImageUrl: finalCoverImageUrl,
         slug: job?.slug || `${slugify(values.position)}-${slugify(brandName)}-${Math.random().toString(36).substring(2, 7)}`,
@@ -270,6 +274,26 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
                           portalled={false}
                         />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="numberOfOpenings"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-col pt-2">
+                      <FormLabel>Jumlah yang dibutuhkan</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          placeholder="e.g., 1"
+                          {...field}
+                          value={field.value ?? ""}
+                          onChange={e => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
+                        />
+                      </FormControl>
+                       <FormDescription>Berapa orang yang dibutuhkan untuk posisi ini.</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

@@ -43,6 +43,7 @@ export type Job = {
   specialRequirementsHtml: string;
   publishStatus: 'draft' | 'published' | 'closed';
   applyDeadline?: Timestamp;
+  numberOfOpenings?: number;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   createdBy: string;

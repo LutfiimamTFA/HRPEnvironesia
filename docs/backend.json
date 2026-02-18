@@ -160,6 +160,10 @@
           "description": "The application deadline.",
           "format": "date-time"
         },
+        "numberOfOpenings": {
+          "type": "number",
+          "description": "The number of open positions for this job."
+        },
         "createdAt": {
           "type": "string",
           "description": "Timestamp of when the job was created.",

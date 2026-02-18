@@ -45,6 +45,7 @@ function JobTableSkeleton() {
               <TableHead><Skeleton className="h-5 w-20" /></TableHead>
               <TableHead><Skeleton className="h-5 w-16" /></TableHead>
               <TableHead><Skeleton className="h-5 w-16" /></TableHead>
+              <TableHead><Skeleton className="h-5 w-16" /></TableHead>
               <TableHead><Skeleton className="h-5 w-24" /></TableHead>
               <TableHead><Skeleton className="h-5 w-24" /></TableHead>
               <TableHead><Skeleton className="h-5 w-24" /></TableHead>
@@ -54,6 +55,7 @@ function JobTableSkeleton() {
           <TableBody>
             {[...Array(3)].map((_, i) => (
               <TableRow key={i}>
+                <TableCell><Skeleton className="h-5 w-full" /></TableCell>
                 <TableCell><Skeleton className="h-5 w-full" /></TableCell>
                 <TableCell><Skeleton className="h-5 w-full" /></TableCell>
                 <TableCell><Skeleton className="h-5 w-full" /></TableCell>
@@ -192,6 +194,7 @@ export function JobManagementClient() {
               <TableHead>Position</TableHead>
               <TableHead>Company</TableHead>
               <TableHead>Type</TableHead>
+              <TableHead>Openings</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Location</TableHead>
               <TableHead>Deadline</TableHead>
@@ -206,6 +209,7 @@ export function JobManagementClient() {
                   <TableCell className="font-medium">{job.position}</TableCell>
                   <TableCell>{job.brandName}</TableCell>
                   <TableCell className="capitalize">{job.statusJob}</TableCell>
+                  <TableCell className="text-center">{job.numberOfOpenings || '-'}</TableCell>
                   <TableCell>
                     <Badge variant={
                       job.publishStatus === 'published' ? 'default' 
@@ -269,7 +273,7 @@ export function JobManagementClient() {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center">
+                <TableCell colSpan={9} className="h-24 text-center">
                   No jobs found. Create one to get started.
                 </TableCell>
               </TableRow>

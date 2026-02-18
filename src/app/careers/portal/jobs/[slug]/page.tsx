@@ -8,7 +8,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft, Briefcase, Building, Calendar, LocateFixed, MapPin, Sparkles } from 'lucide-react';
+import { ArrowLeft, Briefcase, Building, Calendar, LocateFixed, MapPin, Sparkles, Users } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import { format } from 'date-fns';
 import { Separator } from '@/components/ui/separator';
@@ -121,6 +121,9 @@ export default function PortalJobDetailPage() {
                                 <span className="flex items-center gap-1.5"><Building className="h-4 w-4"/> {job.brandName}</span>
                                 <span className="flex items-center gap-1.5"><MapPin className="h-4 w-4"/> {job.location}</span>
                                 <span className="flex items-center gap-1.5 capitalize"><Briefcase className="h-4 w-4"/> {job.statusJob}</span>
+                                {job.numberOfOpenings && job.numberOfOpenings > 0 && (
+                                    <span className="flex items-center gap-1.5"><Users className="h-4 w-4"/> {job.numberOfOpenings} orang</span>
+                                )}
                             </CardDescription>
                         </div>
                         <div className="flex-shrink-0">

@@ -10,7 +10,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft, Briefcase, Building, Calendar, ChevronRight, LocateFixed, MapPin, Sparkles } from 'lucide-react';
+import { ArrowLeft, Briefcase, Building, Calendar, ChevronRight, LocateFixed, MapPin, Sparkles, Users } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import { format } from 'date-fns';
 import { ROLES_INTERNAL } from '@/lib/types';
@@ -274,6 +274,10 @@ export default function JobDetailPage() {
                                     {job.workMode && <>
                                         <span className="font-semibold text-foreground">Mode</span>
                                         <span className="capitalize text-foreground">{job.workMode}</span>
+                                    </>}
+                                    {job.numberOfOpenings && job.numberOfOpenings > 0 && <>
+                                        <span className="font-semibold text-foreground">Kebutuhan</span>
+                                        <span className="text-foreground">{job.numberOfOpenings} orang</span>
                                     </>}
                                 </CardContent>
                                 <CardFooter className="flex-col items-stretch gap-2">
