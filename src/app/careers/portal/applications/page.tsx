@@ -66,7 +66,7 @@ function ApplicationCard({ application }: { application: JobApplication }) {
             <div className="flex items-center min-w-[600px]">
             {applicationSteps.map((step, index) => {
               const isActive = index === currentStepIndex;
-              const isCompleted = !isRejected && currentStepIndex >= index;
+              const isCompleted = !isRejected && currentStepIndex > index;
 
               return (
                 <React.Fragment key={step.status}>
@@ -74,7 +74,7 @@ function ApplicationCard({ application }: { application: JobApplication }) {
                     <div
                       className={cn(
                         'h-10 w-10 rounded-full flex items-center justify-center border-2 transition-all duration-300',
-                        isCompleted ? 'bg-primary border-primary' : 'bg-card border-border'
+                        isCompleted ? 'bg-primary border-primary' : (isActive ? 'bg-primary/10 border-primary' : 'bg-card border-border')
                       )}
                     >
                       {isCompleted ? 
@@ -84,7 +84,7 @@ function ApplicationCard({ application }: { application: JobApplication }) {
                     </div>
                     <p className={cn(
                       'mt-2 text-xs font-medium transition-colors duration-300',
-                      isCompleted ? 'text-primary' : 'text-muted-foreground'
+                      (isCompleted || isActive) ? 'text-primary' : 'text-muted-foreground'
                     )}>
                       {step.label}
                     </p>
@@ -92,8 +92,8 @@ function ApplicationCard({ application }: { application: JobApplication }) {
 
                   {index < applicationSteps.length - 1 && (
                     <div className={cn(
-                      "flex-1 h-1 transition-colors duration-300",
-                      isCompleted && index < currentStepIndex ? 'bg-primary' : 'bg-border'
+                      "flex-1 h-1 transition-colors duration-300 -mx-1",
+                      isCompleted ? 'bg-primary' : 'bg-border'
                     )} />
                   )}
                 </React.Fragment>
