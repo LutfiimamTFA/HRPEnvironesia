@@ -169,7 +169,7 @@ export function CandidatePortalLayout({ children }: { children: ReactNode }) {
         </SidebarFooter>
       </Sidebar>
 
-      <SidebarInset className="bg-muted/30">
+      <SidebarInset className="bg-background">
         <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background px-4 sm:px-6">
           <SidebarTrigger />
           <div className="flex-1" />
