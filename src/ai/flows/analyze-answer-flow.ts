@@ -3,26 +3,14 @@
  * @fileOverview An AI flow to analyze a candidate's specific answer in a personality test.
  *
  * - analyzeAnswer - A function that provides a brief psychological analysis of an answer.
- * - AnalyzeAnswerInput - The input type for the analyzeAnswer function.
- * - AnalyzeAnswerOutput - The return type for the analyzeAnswer function.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
-
-export const AnalyzeAnswerInputSchema = z.object({
-    questionText: z.string().describe("The personality test question."),
-    answerValue: z.number().describe("The candidate's answer on a Likert scale (1-7)."),
-    answerScale: z.string().describe("The label for the answer value (e.g., 'Sangat Setuju')."),
-    dimensionKey: z.string().describe("The psychological dimension key being measured (e.g., 'O' for Openness, 'D' for Dominance)."),
-    dimensionLabel: z.string().describe("The full label for the dimension (e.g., 'Openness')."),
-});
-export type AnalyzeAnswerInput = z.infer<typeof AnalyzeAnswerInputSchema>;
-
-export const AnalyzeAnswerOutputSchema = z.object({
-  analysis: z.string().describe("A brief, one-sentence analysis of the candidate's answer in Bahasa Indonesia."),
-});
-export type AnalyzeAnswerOutput = z.infer<typeof AnalyzeAnswerOutputSchema>;
+import { ai } from '@/ai/genkit';
+import { 
+    AnalyzeAnswerInputSchema, 
+    AnalyzeAnswerOutputSchema,
+} from '@/ai/schemas/assessment-schemas';
+import type { AnalyzeAnswerInput, AnalyzeAnswerOutput } from '@/ai/schemas/assessment-schemas';
 
 
 const prompt = ai.definePrompt({
@@ -53,7 +41,7 @@ const analyzeAnswerFlow = ai.defineFlow(
     inputSchema: AnalyzeAnswerInputSchema,
     outputSchema: AnalyzeAnswerOutputSchema,
   },
-  async (input) => {
+  async (input: AnalyzeAnswerInput) => {
     const {output} = await prompt(input);
     return output!;
   }
