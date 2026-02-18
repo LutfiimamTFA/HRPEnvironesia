@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
-import { useCollection, useFirestore, useMemoFirebase, addDocumentNonBlocking, getDocs } from '@/firebase';
-import { collection, query, where, limit, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { useCollection, useFirestore, useMemoFirebase, addDocumentNonBlocking } from '@/firebase';
+import { collection, query, where, limit, serverTimestamp, Timestamp, getDocs } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
@@ -37,7 +37,7 @@ export default function AssessmentStartPage() {
     try {
       // 2. Check for existing "draft" session
       const sessionsQuery = query(
-        collection(firestore, 'sessions'),
+        collection(firestore, 'assessment_sessions'),
         where('candidateUid', '==', userProfile.uid),
         where('assessmentId', '==', activeAssessment.id!),
         where('status', '==', 'draft'),
