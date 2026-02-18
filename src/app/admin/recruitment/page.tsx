@@ -47,7 +47,7 @@ export default function RecruitmentPage() {
   const hasAccess = useRoleGuard(['hrd', 'super-admin']);
   const { userProfile } = useAuth();
   const firestore = useFirestore();
-  const [brandFilter, setBrandFilter] = useState<string>('');
+  const [brandFilter, setBrandFilter] = useState<string>('all');
 
   const settingsDocRef = useMemoFirebase(
     () => (userProfile ? doc(firestore, 'navigation_settings', userProfile.role) : null),
@@ -101,7 +101,7 @@ export default function RecruitmentPage() {
         permissionFilteredApps = [];
     }
 
-    const brandFilteredApps = brandFilter
+    const brandFilteredApps = brandFilter && brandFilter !== 'all'
       ? permissionFilteredApps.filter(app => app.brandId === brandFilter)
       : permissionFilteredApps;
 
@@ -142,7 +142,7 @@ export default function RecruitmentPage() {
                     <SelectValue placeholder="Filter by brand..." />
                 </SelectTrigger>
                 <SelectContent>
-                    <SelectItem value="">All Brands</SelectItem>
+                    <SelectItem value="all">All Brands</SelectItem>
                     {brandsForFilter.map(brand => (
                         <SelectItem key={brand.id} value={brand.id!}>{brand.name}</SelectItem>
                     ))}
