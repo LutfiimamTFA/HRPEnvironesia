@@ -48,7 +48,7 @@ function HrdDecisionManager({ session }: { session: AssessmentSession }) {
       });
 
       // 2. Find and update the corresponding job application(s)
-      const newAppStatus = decision === 'approved' ? 'document_submission' : 'rejected';
+      const newAppStatus = decision === 'approved' ? 'verification' : 'rejected';
       
       const appsQuery = query(
         collection(firestore, 'applications'),
