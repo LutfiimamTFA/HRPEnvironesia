@@ -15,6 +15,8 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 
 interface UploadedFile {
   url: string;
@@ -36,7 +38,7 @@ function SubmittedDocumentsView({ application }: { application: JobApplication }
           <ClipboardCheck className="h-4 w-4" />
           <AlertTitle>Status: Sedang Diverifikasi</AlertTitle>
           <AlertDescription>
-            Anda tidak dapat mengubah dokumen setelah dikirim. Tim kami akan menghubungi Anda jika ada informasi lebih lanjut.
+            Anda dapat memperbarui dokumen jika diperlukan. Tim kami akan menghubungi Anda jika ada informasi lebih lanjut.
           </AlertDescription>
         </Alert>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
@@ -76,118 +78,103 @@ interface DocumentUploadSlotProps {
   applicationId: string;
   initialFile: UploadedFile | null;
   onUploadComplete: (fileType: 'cv' | 'ijazah', file: UploadedFile) => void;
-  onDelete: (fileType: 'cv' | 'ijazah') => void;
 }
 
-function DocumentUploadSlot({ label, fileType, userId, applicationId, initialFile, onUploadComplete, onDelete }: DocumentUploadSlotProps) {
-  const [file, setFile] = useState<File | null>(null);
-  const [progress, setProgress] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [task, setTask] = useState<UploadTask | null>(null);
+function DocumentUploadSlot({ label, fileType, userId, applicationId, initialFile, onUploadComplete }: DocumentUploadSlotProps) {
+    const [file, setFile] = useState<File | null>(null);
+    const [progress, setProgress] = useState(0);
+    const [error, setError] = useState<string | null>(null);
+    const [isUploading, setIsUploading] = useState(false);
+    const [task, setTask] = useState<UploadTask | null>(null);
 
-  const effectiveFile = file ? { name: file.name, url: '' } : initialFile;
+    const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+        const selectedFile = e.target.files?.[0];
+        setError(null);
 
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    setError(null);
-    setProgress(0);
-    setFile(null);
-    if (task) {
-      task.cancel();
-      setTask(null);
-    }
-    
-    const selectedFile = e.target.files?.[0];
-    if (!selectedFile) return;
+        if (selectedFile) {
+            if (selectedFile.size > 5 * 1024 * 1024) { // 5MB limit
+                setError('Ukuran file tidak boleh lebih dari 5MB.');
+                setFile(null);
+                e.target.value = '';
+                return;
+            }
+            setFile(selectedFile);
+        } else {
+            setFile(null);
+        }
+    };
 
-    if (selectedFile.size > 5 * 1024 * 1024) { // 5MB limit
-      setError('Ukuran file tidak boleh lebih dari 5MB.');
-      return;
-    }
-    
-    setFile(selectedFile);
-    
-    const storage = getStorage();
-    const filePath = `userDocs/${userId}/${applicationId}/${fileType}-${selectedFile.name}`;
-    const storageRef = ref(storage, filePath);
-    const uploadTask = uploadBytesResumable(storageRef, selectedFile);
-    
-    setTask(uploadTask);
+    const handleUpload = () => {
+        if (!file) return;
 
-    uploadTask.on('state_changed',
-      (snapshot) => setProgress((snapshot.bytesTransferred / snapshot.totalBytes) * 100),
-      (error) => {
-        setError('Gagal mengunggah file. Coba segarkan halaman dan unggah kembali.');
-        setTask(null);
-      },
-      () => {
-        getDownloadURL(uploadTask.snapshot.ref).then((downloadURL) => {
-          onUploadComplete(fileType, { url: downloadURL, name: selectedFile.name });
-          setTask(null);
-        });
-      }
+        setIsUploading(true);
+        setError(null);
+        setProgress(0);
+
+        const storage = getStorage();
+        const filePath = `userDocs/${userId}/${applicationId}/${fileType}-${file.name}`;
+        const storageRef = ref(storage, filePath);
+        const uploadTask = uploadBytesResumable(storageRef, file);
+
+        setTask(uploadTask);
+
+        uploadTask.on('state_changed',
+            (snapshot) => {
+                setProgress((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+            },
+            (uploadError) => {
+                setError('Gagal mengunggah file. Silakan coba lagi.');
+                setIsUploading(false);
+                setTask(null);
+            },
+            async () => {
+                try {
+                    const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                    onUploadComplete(fileType, { url: downloadURL, name: file.name });
+                    setFile(null);
+                    const input = document.getElementById(`${fileType}-upload`) as HTMLInputElement;
+                    if (input) input.value = '';
+                } catch (urlError) {
+                    setError('Gagal mendapatkan URL file.');
+                } finally {
+                    setIsUploading(false);
+                    setTask(null);
+                }
+            }
+        );
+    };
+
+    const fileDescription = fileType === 'cv' ? '(pdf, doc, docx, maks. 5MB)' : '(pdf, jpg, png, maks. 5MB)';
+
+    return (
+        <div className="rounded-lg border bg-card p-4 space-y-3">
+            <div className="flex justify-between items-center">
+                <h4 className="font-semibold flex items-center gap-2">
+                    {label}
+                    <span className="text-destructive">*</span>
+                </h4>
+                {initialFile && <Badge className="bg-blue-100 text-blue-800">Done</Badge>}
+            </div>
+            <p className="text-sm text-muted-foreground">{fileDescription}</p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 items-center gap-4">
+                <Button asChild variant="outline" size="sm" disabled={!initialFile}>
+                    <a href={initialFile?.url} target="_blank" rel="noopener noreferrer">
+                        Pratinjau File
+                    </a>
+                </Button>
+                <div className="flex items-center gap-2">
+                    <Input id={`${fileType}-upload`} type="file" onChange={handleFileChange} className="text-sm h-9 flex-grow" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" />
+                    <Button onClick={handleUpload} disabled={!file || isUploading} size="sm">
+                        {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Upload"}
+                    </Button>
+                </div>
+            </div>
+
+            {isUploading && <Progress value={progress} className="mt-2" />}
+            {error && <p className="text-sm text-destructive mt-1">{error}</p>}
+        </div>
     );
-  };
-  
-  const handleDelete = () => {
-    if (task) task.cancel();
-    setTask(null);
-    setFile(null);
-    setProgress(0);
-    setError(null);
-    onDelete(fileType);
-  }
-
-  const isUploading = progress > 0 && progress < 100;
-  const isComplete = !!effectiveFile && !isUploading && !error;
-
-  return (
-    <div className="space-y-2">
-      <label className="font-medium">{label} (.pdf, .jpg, .png, maks 5MB)</label>
-      <div className={cn("flex flex-col w-full p-6 border-2 border-dashed rounded-lg transition-colors min-h-[190px] justify-center",
-        isComplete && "border-green-500 bg-green-50/50",
-        !!error && "border-destructive bg-destructive/10"
-      )}>
-        {isComplete ? (
-          <div className="text-center">
-             <FileCheck className="mx-auto h-10 w-10 text-green-600" />
-             <p className="mt-2 font-semibold truncate max-w-xs mx-auto" title={effectiveFile.name}>{effectiveFile.name}</p>
-             <div className="flex justify-center items-center gap-2 mt-4">
-                <Button asChild variant="outline" size="sm">
-                  <a href={effectiveFile.url} target="_blank" rel="noopener noreferrer">
-                    <Eye className="mr-2 h-4 w-4"/> Lihat
-                  </a>
-                </Button>
-                <Button variant="outline" size="sm" onClick={handleDelete}>
-                  <RefreshCw className="mr-2 h-4 w-4"/> Ganti File
-                </Button>
-             </div>
-          </div>
-        ) : error ? (
-           <div className="text-center text-destructive">
-            <XCircle className="mx-auto h-10 w-10" />
-            <p className="mt-2 font-semibold">Unggah Gagal</p>
-            <p className="text-xs">{error}</p>
-            <Button variant="destructive" size="sm" className="mt-4" onClick={handleDelete}>Coba lagi</Button>
-          </div>
-        ) : isUploading ? (
-          <div className="w-full text-center">
-            <Loader2 className="mx-auto h-10 w-10 animate-spin text-primary" />
-            <p className="mt-2 font-semibold">Mengunggah...</p>
-            <p className="text-sm truncate max-w-xs mx-auto">{file?.name}</p>
-            <Progress value={progress} className="mt-2" />
-          </div>
-        ) : (
-          <div className="text-center">
-            <UploadCloud className="mx-auto h-10 w-10 text-muted-foreground" />
-            <label htmlFor={`${fileType}-upload`} className="mt-2 text-sm font-semibold text-primary hover:underline cursor-pointer">
-              Pilih file untuk diunggah
-            </label>
-            <input id={`${fileType}-upload`} type="file" className="sr-only" onChange={handleFileChange} accept=".pdf,.jpg,.jpeg,.png" />
-          </div>
-        )}
-      </div>
-    </div>
-  );
 }
 
 export default function DocumentsPage() {
@@ -232,10 +219,6 @@ export default function DocumentsPage() {
   const handleUploadComplete = (fileType: 'cv' | 'ijazah', file: UploadedFile) => {
     setUploads(prev => ({ ...prev, [fileType]: file }));
   };
-  
-  const handleUploadDelete = (fileType: 'cv' | 'ijazah') => {
-    setUploads(prev => ({...prev, [fileType]: null}));
-  }
 
   const handleSubmitDocuments = async () => {
     if (!applicationsForEditing || applicationsForEditing.length === 0 || !uploads.cv || !uploads.ijazah) return;
@@ -315,7 +298,7 @@ export default function DocumentsPage() {
                 <CardHeader>
                     <CardTitle>Pengumpulan Dokumen</CardTitle>
                     <CardDescription>
-                        Unggah dokumen yang diminta. Anda dapat melihat pratinjau atau mengganti file sebelum mengirimkannya secara final.
+                        Unggah dokumen yang diminta. File yang diunggah akan menggantikan versi sebelumnya.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
@@ -327,13 +310,12 @@ export default function DocumentsPage() {
                     </AlertDescription>
                     </Alert>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-4">
                     <DocumentUploadSlot
                         label="Curriculum Vitae (CV)"
                         fileType="cv"
                         initialFile={uploads.cv}
                         onUploadComplete={handleUploadComplete}
-                        onDelete={handleUploadDelete}
                         userId={userProfile!.uid}
                         applicationId={applicationsForEditing[0].id!}
                     />
@@ -342,7 +324,6 @@ export default function DocumentsPage() {
                         fileType="ijazah"
                         initialFile={uploads.ijazah}
                         onUploadComplete={handleUploadComplete}
-                        onDelete={handleUploadDelete}
                         userId={userProfile!.uid}
                         applicationId={applicationsForEditing[0].id!}
                     />
