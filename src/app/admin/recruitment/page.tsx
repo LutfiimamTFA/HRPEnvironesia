@@ -74,22 +74,28 @@ export default function RecruitmentPage() {
 
   const filteredApplications = useMemo(() => {
     if (!applications || !userProfile) return [];
-    
-    let sortedApps = [...applications].sort((a, b) => {
-        const timeA = a.submittedAt?.toMillis() || a.createdAt.toMillis();
-        const timeB = b.submittedAt?.toMillis() || b.createdAt.toMillis();
-        return timeB - timeA;
+
+    const sortedApps = [...applications].sort((a, b) => {
+      const timeA = a.submittedAt?.toMillis() || a.createdAt.toMillis();
+      const timeB = b.submittedAt?.toMillis() || b.createdAt.toMillis();
+      return timeB - timeA;
     });
 
     if (userProfile.role === 'super-admin') {
       return sortedApps;
     }
-    
-    if (userProfile.role === 'hrd' && userProfile.brandId) {
+
+    if (userProfile.role === 'hrd') {
+      // If HRD has no brandId assigned, they are a "global" HRD and can see all applications.
+      if (!userProfile.brandId || (Array.isArray(userProfile.brandId) && userProfile.brandId.length === 0)) {
+        return sortedApps;
+      }
+      
+      // If HRD is assigned to specific brand(s), filter applications by that brandId.
       const hrdBrands = Array.isArray(userProfile.brandId) ? userProfile.brandId : [userProfile.brandId];
       return sortedApps.filter(app => hrdBrands.includes(app.brandId));
     }
-    
+
     return [];
   }, [applications, userProfile]);
   
