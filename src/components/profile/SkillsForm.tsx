@@ -106,7 +106,7 @@ export function SkillsForm({ initialData, onSaveSuccess, onBack }: SkillsFormPro
         <Card>
             <CardHeader>
                 <CardTitle>Keahlian & Sertifikasi</CardTitle>
-                <CardDescription>Sebutkan keahlian, serta sertifikasi dan pelatihan yang pernah Anda ikuti.</CardDescription>
+                <CardDescription>Sebutkan keahlian, serta sertifikasi dan pelatihan yang pernah Anda ikuti. Kolom dengan tanda <span className="text-destructive">*</span> adalah kolom yang wajib diisi.</CardDescription>
             </CardHeader>
             <CardContent>
                 <Form {...form}>
@@ -114,7 +114,7 @@ export function SkillsForm({ initialData, onSaveSuccess, onBack }: SkillsFormPro
                         <div className='space-y-4'>
                             <h3 className="text-lg font-medium">Keahlian</h3>
                              <FormItem>
-                                <FormLabel>Tambahkan Keahlian (minimal 1)</FormLabel>
+                                <FormLabel>Keahlian <span className="text-destructive">*</span></FormLabel>
                                 <FormControl>
                                     <Input 
                                         placeholder="Contoh: Javascript (Tekan Enter untuk menambah)"
@@ -141,10 +141,10 @@ export function SkillsForm({ initialData, onSaveSuccess, onBack }: SkillsFormPro
                                 {certFields.map((field, index) => (
                                     <div key={field.id} className="space-y-4 p-4 border rounded-md relative">
                                         <Button type="button" variant="ghost" size="icon" className="absolute top-2 right-2 text-destructive hover:bg-destructive/10" onClick={() => removeCert(index)}><Trash2 className="h-4 w-4" /></Button>
-                                        <FormField control={form.control} name={`certifications.${index}.name`} render={({ field }) => (<FormItem><FormLabel>Nama Sertifikasi/Pelatihan</FormLabel><FormControl><Input {...field} placeholder="Contoh: Certified Cloud Practitioner" /></FormControl><FormMessage /></FormItem>)} />
-                                        <FormField control={form.control} name={`certifications.${index}.organization`} render={({ field }) => (<FormItem><FormLabel>Lembaga Penerbit</FormLabel><FormControl><Input {...field} placeholder="Contoh: Amazon Web Services" /></FormControl><FormMessage /></FormItem>)} />
+                                        <FormField control={form.control} name={`certifications.${index}.name`} render={({ field }) => (<FormItem><FormLabel>Nama Sertifikasi/Pelatihan <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} placeholder="Contoh: Certified Cloud Practitioner" /></FormControl><FormMessage /></FormItem>)} />
+                                        <FormField control={form.control} name={`certifications.${index}.organization`} render={({ field }) => (<FormItem><FormLabel>Lembaga Penerbit <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} placeholder="Contoh: Amazon Web Services" /></FormControl><FormMessage /></FormItem>)} />
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <FormField control={form.control} name={`certifications.${index}.issueDate`} render={({ field }) => (<FormItem><FormLabel>Tanggal Terbit</FormLabel><FormControl><Input {...field} placeholder="YYYY-MM" /></FormControl><FormMessage /></FormItem>)} />
+                                            <FormField control={form.control} name={`certifications.${index}.issueDate`} render={({ field }) => (<FormItem><FormLabel>Tanggal Terbit <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} placeholder="YYYY-MM" /></FormControl><FormMessage /></FormItem>)} />
                                             <FormField control={form.control} name={`certifications.${index}.expirationDate`} render={({ field }) => (<FormItem><FormLabel>Tgl Kedaluwarsa (Opsional)</FormLabel><FormControl><Input {...field} value={field.value || ''} placeholder="YYYY-MM" /></FormControl><FormMessage /></FormItem>)} />
                                         </div>
                                     </div>

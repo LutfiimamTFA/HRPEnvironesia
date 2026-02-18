@@ -88,7 +88,7 @@ export function WorkExperienceForm({ initialData, onSaveSuccess, onBack }: WorkE
         <Card>
             <CardHeader>
                 <CardTitle>Pengalaman Kerja</CardTitle>
-                <CardDescription>Tambahkan pengalaman kerja yang relevan. Kosongkan jika belum ada.</CardDescription>
+                <CardDescription>Tambahkan pengalaman kerja yang relevan. Kosongkan jika belum ada. Kolom dengan tanda <span className="text-destructive">*</span> adalah kolom yang wajib diisi.</CardDescription>
             </CardHeader>
             <CardContent>
                 <Form {...form}>
@@ -100,12 +100,12 @@ export function WorkExperienceForm({ initialData, onSaveSuccess, onBack }: WorkE
                                         <Trash2 className="h-4 w-4" />
                                     </Button>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <FormField control={form.control} name={`experience.${index}.company`} render={({ field }) => (<FormItem><FormLabel>Nama Perusahaan</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
-                                        <FormField control={form.control} name={`experience.${index}.position`} render={({ field }) => (<FormItem><FormLabel>Posisi</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                        <FormField control={form.control} name={`experience.${index}.company`} render={({ field }) => (<FormItem><FormLabel>Nama Perusahaan <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                        <FormField control={form.control} name={`experience.${index}.position`} render={({ field }) => (<FormItem><FormLabel>Posisi <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <FormField control={form.control} name={`experience.${index}.startDate`} render={({ field }) => (<FormItem><FormLabel>Tahun Mulai</FormLabel><FormControl><Input type="number" {...field} placeholder="YYYY" /></FormControl><FormMessage /></FormItem>)} />
-                                        <FormField control={form.control} name={`experience.${index}.endDate`} render={({ field }) => (<FormItem><FormLabel>Tahun Selesai</FormLabel><FormControl><Input type="number" {...field} value={field.value || ''} placeholder="YYYY" disabled={form.watch(`experience.${index}.isCurrent`)} /></FormControl><FormMessage /></FormItem>)} />
+                                        <FormField control={form.control} name={`experience.${index}.startDate`} render={({ field }) => (<FormItem><FormLabel>Tahun Mulai <span className="text-destructive">*</span></FormLabel><FormControl><Input type="number" {...field} placeholder="YYYY" /></FormControl><FormMessage /></FormItem>)} />
+                                        <FormField control={form.control} name={`experience.${index}.endDate`} render={({ field }) => (<FormItem><FormLabel>Tahun Selesai <span className="text-destructive">*</span></FormLabel><FormControl><Input type="number" {...field} value={field.value || ''} placeholder="YYYY" disabled={form.watch(`experience.${index}.isCurrent`)} /></FormControl><FormMessage /></FormItem>)} />
                                     </div>
                                     <FormField control={form.control} name={`experience.${index}.isCurrent`} render={({ field }) => (<FormItem className="flex flex-row items-start space-x-3 space-y-0"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><div className="space-y-1 leading-none"><FormLabel>Saat ini masih bekerja di sini</FormLabel></div></FormItem>)} />
                                     <FormField control={form.control} name={`experience.${index}.description`} render={({ field }) => (<FormItem><FormLabel>Deskripsi (Opsional)</FormLabel><FormControl><Textarea {...field} value={field.value ?? ''} placeholder="Jelaskan tanggung jawab Anda..." /></FormControl><FormMessage /></FormItem>)} />

@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
@@ -49,6 +49,7 @@ export function SelfDescriptionForm({ initialData, onFinish, onBack }: SelfDescr
             selfDescription: initialData?.selfDescription || '',
             salaryExpectation: initialData?.salaryExpectation || '',
             motivation: initialData?.motivation || '',
+            declaration: false,
         },
     });
 
@@ -83,7 +84,7 @@ export function SelfDescriptionForm({ initialData, onFinish, onBack }: SelfDescr
         <Card>
             <CardHeader>
                 <CardTitle>Deskripsi Diri & Pernyataan</CardTitle>
-                <CardDescription>Ini adalah langkah terakhir. Berikan sentuhan personal pada profil Anda.</CardDescription>
+                <CardDescription>Ini adalah langkah terakhir. Berikan sentuhan personal pada profil Anda. Kolom dengan tanda <span className="text-destructive">*</span> adalah kolom yang wajib diisi.</CardDescription>
             </CardHeader>
             <CardContent>
                 <Form {...form}>
@@ -104,7 +105,7 @@ export function SelfDescriptionForm({ initialData, onFinish, onBack }: SelfDescr
                                     />
                                 </FormControl>
                                 <div className="space-y-1 leading-none">
-                                    <FormLabel>Pernyataan Kebenaran Data</FormLabel>
+                                    <FormLabel>Pernyataan Kebenaran Data <span className="text-destructive">*</span></FormLabel>
                                     <FormDescription>
                                         Saya menyatakan dengan sesungguhnya bahwa seluruh data yang saya berikan adalah benar dan dapat dipertanggungjawabkan.
                                     </FormDescription>
