@@ -57,7 +57,7 @@ function HrdDecisionManager({ session }: { session: AssessmentSession }) {
       const appsQuery = query(
         collection(firestore, 'applications'),
         where('candidateUid', '==', session.candidateUid),
-        where('status', '==', 'psychotest')
+        where('status', '==', 'submitted')
       );
       
       const appsSnapshot = await getDocs(appsQuery);
