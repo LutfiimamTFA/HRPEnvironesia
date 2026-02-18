@@ -219,9 +219,9 @@ export type Assessment = {
 export type ResultTemplate = {
     title: string;
     subtitle: string;
-    descBlocks: string[];
+    blocks: string[];
     strengths: string[];
-    weaknesses: string[];
+    risks: string[];
     roleFit: string[];
 };
 
@@ -241,6 +241,7 @@ export type AssessmentSession = {
   id?: string;
   assessmentId: string;
   candidateUid: string;
+  candidateName?: string;
   applicationId?: string;
   status: 'draft' | 'submitted';
   answers: { [questionId: string]: number };

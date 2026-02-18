@@ -74,9 +74,10 @@ export default function AssessmentStartPage() {
       const sessionData: Omit<AssessmentSession, 'id'> = {
         assessmentId: activeAssessment.id!,
         candidateUid: userProfile.uid,
+        candidateName: userProfile.fullName,
         status: 'draft',
         answers: {},
-        scores: {},
+        scores: { disc: {}, bigfive: {} },
         startedAt: serverTimestamp() as Timestamp,
         updatedAt: serverTimestamp() as Timestamp,
       };

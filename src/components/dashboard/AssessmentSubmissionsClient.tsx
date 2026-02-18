@@ -53,9 +53,9 @@ export function AssessmentSubmissionsClient() {
           {sessions && sessions.length > 0 ? (
             sessions.map(session => (
               <TableRow key={session.id}>
-                <TableCell className="font-medium">{session.candidateUid.substring(0, 12)}...</TableCell>
+                <TableCell className="font-medium">{session.candidateName || session.candidateUid.substring(0, 12)}</TableCell>
                 <TableCell>
-                  <Badge variant="secondary">{session.resultType || 'N/A'}</Badge>
+                  <Badge variant="secondary">{session.result?.discType || 'N/A'}</Badge>
                 </TableCell>
                 <TableCell>
                   {session.completedAt ? format(session.completedAt.toDate(), 'dd MMM yyyy') : '-'}
@@ -64,7 +64,7 @@ export function AssessmentSubmissionsClient() {
                   <Badge variant={session.status === 'submitted' ? 'default' : 'outline'}>{session.status}</Badge>
                 </TableCell>
                 <TableCell className="text-right">
-                    <Button asChild variant="outline" size="sm">
+                    <Button asChild variant="outline" size="sm" disabled={session.status !== 'submitted'}>
                       <Link href={`/admin/hrd/assessments/result/${session.id}`}>View</Link>
                     </Button>
                 </TableCell>
