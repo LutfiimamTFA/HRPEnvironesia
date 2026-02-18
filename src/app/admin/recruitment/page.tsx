@@ -18,7 +18,7 @@ import { Eye } from 'lucide-react';
 import { ALL_MENU_ITEMS, ALL_UNIQUE_MENU_ITEMS } from '@/lib/menu-config';
 import { useDoc } from '@/firebase/firestore/use-doc';
 import { doc } from 'firebase/firestore';
-import { ApplicationStatusBadge } from '@/components/recruitment/ApplicationStatusBadge';
+import { ApplicationStatusBadge, APPLICATION_STATUSES } from '@/components/recruitment/ApplicationStatusBadge';
 
 function RecruitmentTableSkeleton() {
   return (
@@ -55,7 +55,10 @@ export default function RecruitmentPage() {
   const { data: navSettings, isLoading: isLoadingSettings } = useDoc<NavigationSetting>(settingsDocRef);
   
   const applicationsQuery = useMemoFirebase(
-    () => query(collection(firestore, 'applications'), where('status', '!=', 'draft')),
+    () => {
+        if (!firestore) return null;
+        return query(collection(firestore, 'applications'), where('status', 'in', ['submitted', 'psychotest', 'reviewed', 'interview', 'hired', 'rejected']));
+    },
     [firestore]
   );
   const { data: applications, isLoading: isLoadingApps, error } = useCollection<JobApplication>(applicationsQuery);
