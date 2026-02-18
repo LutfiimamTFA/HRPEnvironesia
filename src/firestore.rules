@@ -182,7 +182,6 @@ service cloud.firestore {
             let allowedKeys = ['cvUrl', 'ijazahUrl', 'cvFileName', 'ijazahFileName', 'updatedAt'];
             return isOwner()
                 && resource.data.status == 'verification'
-                && request.resource.data.status == 'verification'
                 && changedKeys.hasOnly(allowedKeys);
         }
         function isInternalStatusUpdate() {
