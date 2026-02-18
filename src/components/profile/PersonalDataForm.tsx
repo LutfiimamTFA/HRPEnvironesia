@@ -7,15 +7,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import type { Profile, Address } from '@/lib/types';
 import { Timestamp, serverTimestamp } from 'firebase/firestore';
 import { GoogleDatePicker } from '../ui/google-date-picker';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { Checkbox } from '../ui/checkbox';
-import React, { useEffect, useState } from 'react';
-import { Alert, AlertDescription } from '../ui/alert';
+import React, { useState } from 'react';
 import { useAuth } from '@/providers/auth-provider';
 import { useFirestore, setDocumentNonBlocking } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
@@ -46,7 +45,7 @@ const personalDataSchema = z.object({
     addressDomicile: addressObjectSchema.deepPartial().optional(), // Make fields optional for conditional validation
     hasNpwp: z.boolean().default(false),
     npwpNumber: z.string().optional().or(z.literal('')),
-    willingToWfo: z.enum(['ya', 'tidak'], { required_error: "Pilihan ini harus diisi." }),
+    willingToWfo: z.boolean({required_error: "Pilihan ini harus diisi."}),
     linkedinUrl: z.string().url().optional().or(z.literal('')),
     websiteUrl: z.string().url().optional().or(z.literal('')),
 }).superRefine((data, ctx) => {
@@ -99,22 +98,10 @@ export function PersonalDataForm({ initialData, onSaveSuccess }: PersonalDataFor
     const form = useForm<FormValues>({
         resolver: zodResolver(personalDataSchema),
         defaultValues: {
-            fullName: initialData.fullName || '',
-            nickname: initialData.nickname || '',
-            email: initialData.email || '',
-            phone: initialData.phone || '',
-            eKtpNumber: initialData.eKtpNumber || '',
-            gender: initialData.gender,
-            birthPlace: initialData.birthPlace || '',
+            ...initialData,
             birthDate: initialData.birthDate instanceof Timestamp ? initialData.birthDate.toDate() : undefined,
             addressKtp: getAddressObject(initialData.addressKtp),
-            isDomicileSameAsKtp: initialData.isDomicileSameAsKtp || false,
             addressDomicile: getAddressObject(initialData.addressDomicile),
-            hasNpwp: initialData.hasNpwp || false,
-            npwpNumber: initialData.npwpNumber || '',
-            willingToWfo: typeof initialData.willingToWfo === 'boolean' ? (initialData.willingToWfo ? 'ya' : 'tidak') : undefined,
-            linkedinUrl: initialData.linkedinUrl || '',
-            websiteUrl: initialData.websiteUrl || '',
         },
     });
 
@@ -130,7 +117,6 @@ export function PersonalDataForm({ initialData, onSaveSuccess }: PersonalDataFor
         try {
             const dataToSave: Partial<Profile> = {
                 ...values,
-                willingToWfo: values.willingToWfo === 'ya',
                 birthDate: Timestamp.fromDate(values.birthDate),
                 addressDomicile: values.isDomicileSameAsKtp ? values.addressKtp : (values.addressDomicile as Address),
                 profileStatus: 'draft',
@@ -154,29 +140,26 @@ export function PersonalDataForm({ initialData, onSaveSuccess }: PersonalDataFor
         <Card>
             <CardHeader>
                 <CardTitle>Informasi Pribadi</CardTitle>
-                <CardDescription>Pastikan semua data yang Anda masukkan sudah benar. Kolom dengan tanda <span className="text-destructive">*</span> wajib diisi.</CardDescription>
+                <CardDescription>
+                    Pastikan semua data yang Anda masukkan sudah benar.
+                    NB: Kolom dengan tanda <span className="text-destructive">*</span> adalah kolom yang wajib diisi.
+                </CardDescription>
             </CardHeader>
             <CardContent>
-                <Alert variant="destructive" className="mb-6 flex items-start gap-3 text-amber-800 dark:text-amber-400 border-amber-500/40 bg-amber-50 dark:bg-amber-950/40 [&>svg]:text-amber-600 dark:[&>svg]:text-amber-500">
-                    <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                    <AlertDescription className="text-xs leading-relaxed">
-                        Mohon pastikan kembali <span className="font-semibold">Nama Lengkap</span> dan <span className="font-semibold">Nomor NIK KTP</span> yang Anda masukkan sama persis dengan yang tertulis di KTP untuk kelancaran proses verifikasi.
-                    </AlertDescription>
-                </Alert>
                 <Form {...form}>
                     <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8">
                         <div className="space-y-6">
                             <h3 className="text-xl font-semibold tracking-tight border-b pb-2">Data Diri</h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <FormField control={form.control} name="fullName" render={({ field }) => (<FormItem><FormLabel>Nama Lengkap (Sesuai KTP) <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                <FormField control={form.control} name="fullName" render={({ field }) => (<FormItem><FormLabel>Nama Lengkap <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
                                 <FormField control={form.control} name="nickname" render={({ field }) => (<FormItem><FormLabel>Nama Panggilan <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <FormField control={form.control} name="email" render={({ field }) => (<FormItem><FormLabel>Email <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
                                 <FormField control={form.control} name="phone" render={({ field }) => (<FormItem><FormLabel>Nomor Telepon <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} placeholder="0812..." /></FormControl><FormMessage /></FormItem>)} />
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <FormField control={form.control} name="birthPlace" render={({ field }) => (<FormItem><FormLabel>Tempat Lahir <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} placeholder="Kota lahir" /></FormControl><FormMessage /></FormItem>)} />
+                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <FormField control={form.control} name="birthPlace" render={({ field }) => (<FormItem><FormLabel>Tempat Lahir <span className="text-destructive">*</span></FormLabel><FormControl><Input placeholder="Kota lahir" {...field} /></FormControl><FormMessage /></FormItem>)} />
                                 <FormField control={form.control} name="birthDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>Tanggal Lahir <span className="text-destructive">*</span></FormLabel><FormControl><GoogleDatePicker mode="dob" value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>)} />
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -216,7 +199,7 @@ export function PersonalDataForm({ initialData, onSaveSuccess }: PersonalDataFor
                             <h3 className="text-xl font-semibold tracking-tight border-b pb-2">Informasi Tambahan</h3>
                             <FormField control={form.control} name="hasNpwp" render={({ field }) => (<FormItem className="flex flex-row items-center space-x-3 space-y-0"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><div className="space-y-1 leading-none"><FormLabel>Saya memiliki NPWP</FormLabel></div></FormItem>)} />
                             {hasNpwp && (<FormField control={form.control} name="npwpNumber" render={({ field }) => (<FormItem><FormLabel>Nomor NPWP <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} placeholder="Masukkan nomor NPWP Anda" /></FormControl><FormMessage /></FormItem>)} />)}
-                            <FormField control={form.control} name="willingToWfo" render={({ field }) => (<FormItem className="space-y-3"><FormLabel>Apakah Anda bersedia Work From Office (WFO)? <span className="text-destructive">*</span></FormLabel><FormControl><RadioGroup onValueChange={field.onChange} value={field.value} className="flex flex-col space-y-1"><FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="ya" /></FormControl><FormLabel className="font-normal">Ya</FormLabel></FormItem><FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="tidak" /></FormControl><FormLabel className="font-normal">Tidak</FormLabel></FormItem></RadioGroup></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="willingToWfo" render={({ field }) => (<FormItem className="space-y-3"><FormLabel>Apakah Anda bersedia Work From Office (WFO)? <span className="text-destructive">*</span></FormLabel><FormControl><RadioGroup onValueChange={(value) => field.onChange(value === 'ya')} value={field.value === undefined ? '' : field.value ? 'ya' : 'tidak'} className="flex flex-col space-y-1"><FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="ya" /></FormControl><FormLabel className="font-normal">Ya</FormLabel></FormItem><FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="tidak" /></FormControl><FormLabel className="font-normal">Tidak</FormLabel></FormItem></RadioGroup></FormControl><FormMessage /></FormItem>)} />
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <FormField control={form.control} name="linkedinUrl" render={({ field }) => (<FormItem><FormLabel>Profil LinkedIn (Opsional)</FormLabel><FormControl><Input {...field} value={field.value ?? ''} placeholder="https://linkedin.com/in/..." /></FormControl><FormMessage /></FormItem>)} />
                                 <FormField control={form.control} name="websiteUrl" render={({ field }) => (<FormItem><FormLabel>Situs Web/Portofolio (Opsional)</FormLabel><FormControl><Input {...field} value={field.value ?? ''} placeholder="https://github.com/..." /></FormControl><FormMessage /></FormItem>)} />
