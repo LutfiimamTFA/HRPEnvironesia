@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
 import { doc, serverTimestamp } from 'firebase/firestore';
-import type { JobApplication, Profile, NavigationSetting } from '@/lib/types';
+import type { JobApplication, Profile, NavigationSetting, Job } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -23,6 +23,8 @@ import { getInitials } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ApplicationProgressStepper } from '@/components/recruitment/ApplicationProgressStepper';
 import { Separator } from '@/components/ui/separator';
+import { CandidateDocumentsCard } from '@/components/recruitment/CandidateDocumentsCard';
+import { CandidateFitAnalysis } from '@/components/recruitment/CandidateFitAnalysis';
 
 function ApplicationDetailSkeleton() {
   return <Skeleton className="h-[500px] w-full" />;
@@ -94,6 +96,12 @@ export default function ApplicationDetailPage() {
     [firestore, application]
   );
   const { data: profile, isLoading: isLoadingProfile } = useDoc<Profile>(profileRef);
+  
+  const jobRef = useMemoFirebase(
+    () => (application ? doc(firestore, 'jobs', application.jobId) : null),
+    [firestore, application]
+  );
+  const { data: job, isLoading: isLoadingJob } = useDoc<Job>(jobRef);
 
   const menuItems = useMemo(() => {
     const defaultItems = ALL_MENU_ITEMS[userProfile?.role as keyof typeof ALL_MENU_ITEMS] || [];
@@ -104,7 +112,7 @@ export default function ApplicationDetailPage() {
     return defaultItems;
   }, [navSettings, isLoadingSettings, userProfile]);
 
-  const isLoading = isLoadingApp || isLoadingProfile || isLoadingSettings;
+  const isLoading = isLoadingApp || isLoadingProfile || isLoadingSettings || isLoadingJob;
 
   if (!hasAccess) {
     return <DashboardLayout pageTitle="Loading..." menuItems={[]}><ApplicationDetailSkeleton /></DashboardLayout>;
@@ -114,8 +122,8 @@ export default function ApplicationDetailPage() {
     <DashboardLayout pageTitle="Application Detail" menuItems={menuItems}>
       {isLoading ? (
         <ApplicationDetailSkeleton />
-      ) : !application || !profile ? (
-        <p>Application or profile not found.</p>
+      ) : !application || !profile || !job ? (
+        <p>Application, profile, or job details not found.</p>
       ) : (
         <div className="space-y-6">
           <div className="flex items-center justify-between gap-4">
@@ -170,6 +178,8 @@ export default function ApplicationDetailPage() {
                  </div>
             </CardContent>
           </Card>
+          <CandidateDocumentsCard application={application} />
+          <CandidateFitAnalysis profile={profile} job={job} />
           <ProfileView profile={profile} />
         </div>
       )}

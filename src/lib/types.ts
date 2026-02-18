@@ -1,3 +1,4 @@
+
 import type { Timestamp } from 'firebase/firestore';
 
 export const ROLES = ['super-admin', 'hrd', 'manager', 'kandidat', 'karyawan'] as const;
@@ -267,4 +268,11 @@ export type AssessmentSession = {
   startedAt: Timestamp;
   updatedAt: Timestamp;
   completedAt?: Timestamp;
+};
+
+export type CandidateFitAnalysisOutput = {
+    summary: string;
+    score: number;
+    strengths: string[];
+    weaknesses: string[];
 };
