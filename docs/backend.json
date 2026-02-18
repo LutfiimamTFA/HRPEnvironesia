@@ -369,12 +369,24 @@
                         "id": { "type": "string" },
                         "company": { "type": "string" },
                         "position": { "type": "string" },
+                        "jobType": {
+                            "type": "string",
+                            "description": "Tipe pekerjaan, misal: Internship, Kontrak, Tetap.",
+                            "enum": [
+                                "internship",
+                                "pkwt",
+                                "kwtt",
+                                "outsourcing",
+                                "freelance"
+                            ]
+                        },
                         "startDate": { "type": "string" },
                         "endDate": { "type": "string" },
                         "isCurrent": { "type": "boolean" },
-                        "description": { "type": "string" }
+                        "description": { "type": "string", "description": "Peran dan tanggung jawab selama bekerja." },
+                        "reasonForLeaving": { "type": "string", "description": "Alasan berhenti dari pekerjaan ini." }
                     },
-                    "required": ["id", "company", "position", "startDate"]
+                    "required": ["id", "company", "position", "startDate", "jobType"]
                 }
             },
             "organizationalExperience": {
@@ -414,6 +426,10 @@
               "type": "string",
               "description": "The candidate's motivation and reasons for choosing the desired position."
             },
+            "declaration": {
+              "type": "boolean",
+              "description": "Confirmation that the provided data is true and accurate."
+            },
             "profileStatus": {
               "type": "string",
               "description": "The completion status of the profile.",
@@ -434,7 +450,7 @@
               "description": "Timestamp when the profile was marked as complete."
             }
         },
-        "required": ["fullName", "nickname", "email", "phone", "eKtpNumber", "gender", "birthPlace", "birthDate", "addressKtp", "willingToWfo", "education"]
+        "required": ["fullName", "nickname", "email", "phone", "eKtpNumber", "gender", "birthPlace", "birthDate", "addressKtp", "willingToWfo", "education", "declaration"]
     }
   },
   "auth": {

@@ -79,14 +79,26 @@ export type Education = {
     isCurrent: boolean;
 }
 
+export const JOB_TYPES = ['internship', 'pkwt', 'kwtt', 'outsourcing', 'freelance'] as const;
+export type JobType = (typeof JOB_TYPES)[number];
+export const JOB_TYPE_LABELS: Record<JobType, string> = {
+    internship: 'Internship (Magang)',
+    pkwt: 'PKWT (Kontrak)',
+    kwtt: 'KWTT (Tetap)',
+    outsourcing: 'Outsourcing',
+    freelance: 'Freelance/Kontrak Harian'
+};
+
 export type WorkExperience = {
     id: string;
     company: string;
     position: string;
+    jobType?: JobType;
     startDate: string;
     endDate?: string;
     isCurrent: boolean;
     description?: string;
+    reasonForLeaving?: string;
 }
 
 export type OrganizationalExperience = {
@@ -149,4 +161,6 @@ export type Profile = {
     profileStep?: number;
     updatedAt?: Timestamp;
     completedAt?: Timestamp | null;
+    
+    declaration?: boolean;
 }

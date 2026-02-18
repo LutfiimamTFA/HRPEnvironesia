@@ -8,7 +8,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { Button } from '@/components/ui/button';
 import { Loader2, PlusCircle, Trash2 } from 'lucide-react';
-import type { WorkExperience } from '@/lib/types';
+import { JOB_TYPES, JOB_TYPE_LABELS, type JobType, type WorkExperience } from '@/lib/types';
 import { Checkbox } from '../ui/checkbox';
 import { Separator } from '../ui/separator';
 import { Textarea } from '../ui/textarea';
@@ -17,18 +17,24 @@ import { useAuth } from '@/providers/auth-provider';
 import { useFirestore, setDocumentNonBlocking } from '@/firebase';
 import { doc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 
 const experienceSchema = z.object({
   id: z.string(),
   company: z.string().min(1, "Nama perusahaan harus diisi"),
   position: z.string().min(1, "Posisi harus diisi"),
+  jobType: z.enum(JOB_TYPES, { required_error: "Tipe pekerjaan harus dipilih" }),
   startDate: z.string().min(4, "Tahun mulai harus diisi"),
   endDate: z.string().optional(),
   isCurrent: z.boolean().default(false),
   description: z.string().optional(),
+  reasonForLeaving: z.string().optional(),
 }).refine(data => data.isCurrent || (data.endDate && data.endDate.length > 0), {
     message: "Tahun selesai harus diisi jika tidak sedang bekerja di sini.",
     path: ["endDate"],
+}).refine(data => data.isCurrent || (data.reasonForLeaving && data.reasonForLeaving.length > 0), {
+    message: "Alasan berhenti harus diisi jika sudah tidak bekerja di sini.",
+    path: ["reasonForLeaving"],
 });
 
 const formSchema = z.object({
@@ -103,18 +109,41 @@ export function WorkExperienceForm({ initialData, onSaveSuccess, onBack }: WorkE
                                         <FormField control={form.control} name={`experience.${index}.company`} render={({ field }) => (<FormItem><FormLabel>Nama Perusahaan <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
                                         <FormField control={form.control} name={`experience.${index}.position`} render={({ field }) => (<FormItem><FormLabel>Posisi <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
                                     </div>
+                                    <FormField control={form.control} name={`experience.${index}.jobType`} render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Tipe Pekerjaan <span className="text-destructive">*</span></FormLabel>
+                                            <Select onValueChange={field.onChange} value={field.value}>
+                                                <FormControl><SelectTrigger><SelectValue placeholder="Pilih tipe pekerjaan" /></SelectTrigger></FormControl>
+                                                <SelectContent>
+                                                    {JOB_TYPES.map(type => (
+                                                        <SelectItem key={type} value={type}>{JOB_TYPE_LABELS[type]}</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )} />
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <FormField control={form.control} name={`experience.${index}.startDate`} render={({ field }) => (<FormItem><FormLabel>Tahun Mulai <span className="text-destructive">*</span></FormLabel><FormControl><Input type="number" {...field} placeholder="YYYY" /></FormControl><FormMessage /></FormItem>)} />
                                         <FormField control={form.control} name={`experience.${index}.endDate`} render={({ field }) => (<FormItem><FormLabel>Tahun Selesai <span className="text-destructive">*</span></FormLabel><FormControl><Input type="number" {...field} value={field.value || ''} placeholder="YYYY" disabled={form.watch(`experience.${index}.isCurrent`)} /></FormControl><FormMessage /></FormItem>)} />
                                     </div>
                                     <FormField control={form.control} name={`experience.${index}.isCurrent`} render={({ field }) => (<FormItem className="flex flex-row items-start space-x-3 space-y-0"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><div className="space-y-1 leading-none"><FormLabel>Saat ini masih bekerja di sini</FormLabel></div></FormItem>)} />
-                                    <FormField control={form.control} name={`experience.${index}.description`} render={({ field }) => (<FormItem><FormLabel>Deskripsi (Opsional)</FormLabel><FormControl><Textarea {...field} value={field.value ?? ''} placeholder="Jelaskan tanggung jawab Anda..." /></FormControl><FormMessage /></FormItem>)} />
+                                    <FormField control={form.control} name={`experience.${index}.description`} render={({ field }) => (<FormItem><FormLabel>Peran dan Tanggung Jawab (Opsional)</FormLabel><FormControl><Textarea {...field} value={field.value ?? ''} placeholder="Jelaskan tanggung jawab Anda..." /></FormControl><FormMessage /></FormItem>)} />
+                                    {!form.watch(`experience.${index}.isCurrent`) && (
+                                        <FormField control={form.control} name={`experience.${index}.reasonForLeaving`} render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel>Alasan Berhenti <span className="text-destructive">*</span></FormLabel>
+                                                <FormControl><Textarea {...field} value={field.value ?? ''} placeholder="Jelaskan alasan Anda berhenti..." /></FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )} />
+                                    )}
                                     {index < fields.length - 1 && <Separator className="!mt-6" />}
                                 </div>
                             ))}
                         </div>
                         
-                        <Button type="button" variant="outline" onClick={() => append({ id: crypto.randomUUID(), company: '', position: '', startDate: '', endDate: '', isCurrent: false, description: '' })}>
+                        <Button type="button" variant="outline" onClick={() => append({ id: crypto.randomUUID(), company: '', position: '', jobType: undefined, startDate: '', endDate: '', isCurrent: false, description: '', reasonForLeaving: '' })}>
                             <PlusCircle className="mr-2 h-4 w-4" /> Tambah Pengalaman
                         </Button>
                         
