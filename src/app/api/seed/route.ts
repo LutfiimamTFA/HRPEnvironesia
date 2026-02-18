@@ -43,7 +43,38 @@ async function seedAssessment(db: admin.firestore.Firestore) {
                 weaknesses: ['Cenderung kaku', 'Bisa jadi perfeksionis', 'Sulit beradaptasi dengan perubahan mendadak'],
                 roleFit: ['Manajer Proyek', 'Akuntan', 'Analis Data'],
             },
-            // ... add other dimension templates
+            EXTRAVERSION: {
+                title: 'Sang Komunikator yang Energik',
+                subtitle: 'Ramah, Antusias, dan Suka Berinteraksi dengan Orang Lain',
+                descBlocks: ['Anda mendapatkan energi dari interaksi sosial dan menikmati menjadi bagian dari sebuah tim. Anda adalah pembicara yang alami dan mudah membangun hubungan.', 'Peran yang melibatkan banyak komunikasi, kerja tim, dan interaksi dengan klien sangat cocok untuk Anda.'],
+                strengths: ['Mudah bergaul', 'Antusias', 'Pandai berkomunikasi'],
+                weaknesses: ['Bisa jadi kurang mandiri', 'Cepat bosan saat sendiri', 'Terkadang terlalu banyak bicara'],
+                roleFit: ['Sales & Marketing', 'Public Relations', 'Customer Service'],
+            },
+            AGREEABLENESS: {
+                title: 'Si Kolaborator yang Suportif',
+                subtitle: 'Kooperatif, Penuh Empati, dan Suka Membantu Orang Lain',
+                descBlocks: ['Anda adalah pemain tim yang hebat, selalu siap membantu rekan kerja, dan cenderung menghindari konflik. Anda menciptakan lingkungan kerja yang harmonis.', 'Anda unggul dalam peran yang membutuhkan kerja sama tim, mediasi, dan pelayanan terhadap orang lain.'],
+                strengths: ['Kooperatif', 'Empatik', 'Dapat dipercaya'],
+                weaknesses: ['Cenderung menghindari konflik', 'Sulit mengatakan \'tidak\'', 'Bisa jadi kurang tegas'],
+                roleFit: ['HR Generalist', 'Guru/Trainer', 'Perawat'],
+            },
+            NEUROTICISM: {
+                title: 'Sang Pemikir yang Teliti',
+                subtitle: 'Peka, Waspada, dan Mampu Mengantisipasi Masalah',
+                descBlocks: ['Anda memiliki kepekaan yang tinggi terhadap lingkungan dan potensi masalah, membuat Anda menjadi perencana yang baik dalam mengantisipasi risiko.', 'Meskipun Anda mungkin mengalami stres, kehati-hatian Anda sangat berharga dalam peran yang membutuhkan analisis risiko dan perhatian terhadap detail.'],
+                strengths: ['Waspada', 'Penuh persiapan', 'Mampu melihat potensi risiko'],
+                weaknesses: ['Mudah cemas', 'Cenderung overthinking', 'Bereaksi kuat terhadap stres'],
+                roleFit: ['Quality Assurance', 'Analis Keamanan', 'Auditor'],
+            },
+            DEFAULT: {
+                title: 'Kepribadian Seimbang',
+                subtitle: 'Adaptif dan Fleksibel dalam Berbagai Situasi',
+                descBlocks: ['Anda menunjukkan keseimbangan di berbagai dimensi kepribadian, membuat Anda menjadi individu yang fleksibel dan mampu beradaptasi di berbagai lingkungan kerja.', 'Anda dapat menyesuaikan pendekatan Anda tergantung pada tugas dan tim yang Anda hadapi.'],
+                strengths: ['Adaptif', 'Fleksibel', 'Penengah yang baik'],
+                weaknesses: ['Terkadang sulit diprediksi', 'Kurang memiliki spesialisasi yang menonjol'],
+                roleFit: ['Generalis', 'Staf Administrasi', 'Operations Support'],
+            }
         },
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
@@ -56,7 +87,11 @@ async function seedAssessment(db: admin.firestore.Firestore) {
         { order: 3, text: 'Saya tidak suka menjadi pusat perhatian.', dimensionKey: 'EXTRAVERSION', weight: 1, reverse: true },
         { order: 4, text: 'Saya mudah merasa empati terhadap orang lain.', dimensionKey: 'AGREEABLENESS', weight: 1, reverse: false },
         { order: 5, text: 'Saya sering merasa cemas tentang banyak hal.', dimensionKey: 'NEUROTICISM', weight: 1, reverse: false },
-        // ... add more questions (e.g., 20-50 questions for a basic test)
+        { order: 6, text: 'Saya lebih suka rutinitas yang sudah pasti daripada hal-hal yang tidak terduga.', dimensionKey: 'OPENNESS', weight: 1, reverse: true },
+        { order: 7, text: 'Saya sering lalai menempatkan barang kembali ke tempatnya.', dimensionKey: 'CONSCIENTIOUSNESS', weight: 1, reverse: true },
+        { order: 8, text: 'Saya mudah memulai percakapan dengan orang asing.', dimensionKey: 'EXTRAVERSION', weight: 1, reverse: false },
+        { order: 9, text: 'Saya tidak terlalu peduli dengan perasaan orang lain.', dimensionKey: 'AGREEABLENESS', weight: 1, reverse: true },
+        { order: 10, text: 'Suasana hati saya sering berubah-ubah.', dimensionKey: 'NEUROTICISM', weight: 1, reverse: false },
     ];
 
     const questionsBatch = db.batch();
