@@ -129,18 +129,37 @@ export async function POST(req: NextRequest) {
 
         // --- 3. Bootstrap Default Questions (only if assessment is new) ---
         const questions = [
-            // Big Five Questions
-            { engineKey: "bigfive", dimensionKey: "O", text: "Saya memiliki imajinasi yang kaya.", reverse: false, weight: 1, order: 1 },
-            { engineKey: "bigfive", dimensionKey: "C", text: "Saya selalu mempersiapkan segala sesuatu.", reverse: false, weight: 1, order: 2 },
-            { engineKey: "bigfive", dimensionKey: "E", text: "Saya tidak banyak bicara.", reverse: true, weight: 1, order: 3 },
-            { engineKey: "bigfive", dimensionKey: "A", text: "Saya menaruh simpati pada perasaan orang lain.", reverse: false, weight: 1, order: 4 },
-            { engineKey: "bigfive", dimensionKey: "N", text: "Saya jarang merasa sedih atau murung.", reverse: true, weight: 1, order: 5 },
-            // DISC Questions
-            { engineKey: "disc", dimensionKey: "D", text: "Saya suka mengambil alih dalam situasi kelompok.", reverse: false, weight: 1, order: 6 },
-            { engineKey: "disc", dimensionKey: "I", text: "Saya mudah membujuk orang lain.", reverse: false, weight: 1, order: 7 },
-            { engineKey: "disc", dimensionKey: "S", text: "Saya lebih suka bekerja dengan kecepatan yang stabil dan dapat diprediksi.", reverse: false, weight: 1, order: 8 },
-            { engineKey: "disc", dimensionKey: "C", text: "Saya memperhatikan detail dan memastikan pekerjaan akurat.", reverse: false, weight: 1, order: 9 },
-            { engineKey: "disc", dimensionKey: "D", text: "Saya cenderung menghindari memimpin sebuah diskusi.", reverse: true, weight: 1, order: 10 },
+            // Big Five - Openness
+            { order: 1, engineKey: "bigfive", dimensionKey: "O", text: "Saya memiliki imajinasi yang kaya dan sering melamun.", reverse: false, weight: 1 },
+            { order: 2, engineKey: "bigfive", dimensionKey: "O", text: "Saya lebih suka rutinitas yang terprediksi daripada perubahan yang mendadak.", reverse: true, weight: 1 },
+            // Big Five - Conscientiousness
+            { order: 3, engineKey: "bigfive", dimensionKey: "C", text: "Saya selalu memastikan pekerjaan saya selesai dengan sempurna.", reverse: false, weight: 1 },
+            { order: 4, engineKey: "bigfive", dimensionKey: "C", text: "Saya sering menunda-nunda pekerjaan penting.", reverse: true, weight: 1 },
+            // Big Five - Extraversion
+            { order: 5, engineKey: "bigfive", dimensionKey: "E", text: "Saya tidak suka menjadi pusat perhatian.", reverse: true, weight: 1 },
+            { order: 6, engineKey: "bigfive", dimensionKey: "E", text: "Saya mudah bergaul dan memulai percakapan dengan orang baru.", reverse: false, weight: 1 },
+            // Big Five - Agreeableness
+            { order: 7, engineKey: "bigfive", dimensionKey: "A", text: "Saya lebih mementingkan keharmonisan daripada menyampaikan pendapat yang bisa menimbulkan konflik.", reverse: false, weight: 1 },
+            { order: 8, engineKey: "bigfive", dimensionKey: "A", text: "Saya tidak ragu mengkritik orang lain jika memang diperlukan.", reverse: true, weight: 1 },
+            // Big Five - Neuroticism
+            { order: 9, engineKey: "bigfive", dimensionKey: "N", text: "Saya sering merasa cemas atau khawatir tentang masa depan.", reverse: false, weight: 1 },
+            { order: 10, engineKey: "bigfive", dimensionKey: "N", text: "Saya merasa santai dan tenang dalam banyak situasi.", reverse: true, weight: 1 },
+            
+            // DISC - Dominance
+            { order: 11, engineKey: "disc", dimensionKey: "D", text: "Saya suka mengambil kendali dalam sebuah proyek atau diskusi.", reverse: false, weight: 1 },
+            { order: 12, engineKey: "disc", dimensionKey: "D", text: "Saya lebih memilih untuk mengikuti arahan daripada memimpin.", reverse: true, weight: 1 },
+            // DISC - Influence
+            { order: 13, engineKey: "disc", dimensionKey: "I", text: "Saya antusias dan pandai memotivasi orang lain.", reverse: false, weight: 1 },
+            { order: 14, engineKey: "disc", dimensionKey: "I", text: "Saya lebih suka bekerja sendiri daripada berkolaborasi secara intensif.", reverse: true, weight: 1 },
+            // DISC - Steadiness
+            { order: 15, engineKey: "disc", dimensionKey: "S", text: "Saya adalah pendengar yang baik dan sabar.", reverse: false, weight: 1 },
+            { order: 16, engineKey: "disc", dimensionKey: "S", text: "Saya menyukai lingkungan kerja yang dinamis dan selalu berubah.", reverse: true, weight: 1 },
+            // DISC - Conscientiousness
+            { order: 17, engineKey: "disc", dimensionKey: "C", text: "Saya selalu memeriksa kembali pekerjaan saya untuk memastikan tidak ada kesalahan.", reverse: false, weight: 1 },
+            { order: 18, engineKey: "disc", dimensionKey: "C", text: "Saya lebih fokus pada gambaran besar daripada detail-detail kecil.", reverse: true, weight: 1 },
+             // Mixed
+            { order: 19, engineKey: "bigfive", dimensionKey: "E", text: "Di sebuah pesta, saya cenderung berdiam diri di sudut.", reverse: true, weight: 1 },
+            { order: 20, engineKey: "disc", dimensionKey: "D", text: "Saya tidak takut untuk menghadapi tantangan yang sulit.", reverse: false, weight: 1 },
         ];
         
         for (const q of questions) {

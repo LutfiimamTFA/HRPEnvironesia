@@ -3,26 +3,41 @@
 import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
-import { useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
-import { doc, serverTimestamp } from 'firebase/firestore';
-import type { AssessmentSession, NavigationSetting, Profile } from '@/lib/types';
+import { useCollection, useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
+import { collection, doc, serverTimestamp, query, where } from 'firebase/firestore';
+import type { AssessmentSession, NavigationSetting, Profile, AssessmentQuestion } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { ALL_MENU_ITEMS, ALL_UNIQUE_MENU_ITEMS } from '@/lib/menu-config';
-import { Loader2, CheckCircle, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Loader2, ArrowLeft } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { getInitials } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-
+import { AnswerAnalysis } from '@/components/dashboard/AnswerAnalysis';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Separator } from '@/components/ui/separator';
 
 function ResultSkeleton() {
-    return <div className="h-96 flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>
+    return (
+        <div className="space-y-6">
+            <Skeleton className="h-10 w-40" />
+            <Skeleton className="h-32 w-full" />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2 space-y-6">
+                    <Skeleton className="h-64 w-full" />
+                    <Skeleton className="h-48 w-full" />
+                </div>
+                <div className="space-y-6">
+                    <Skeleton className="h-48 w-full" />
+                    <Skeleton className="h-32 w-full" />
+                </div>
+            </div>
+        </div>
+    );
 }
 
 function HrdNoteManager({ session }: { session: AssessmentSession }) {
@@ -113,13 +128,12 @@ export default function HrdAssessmentResultPage() {
         return defaultItems;
     }, [navSettings, isLoadingSettings, userProfile]);
 
-
     // Get session
     const sessionRef = useMemoFirebase(
         () => (sessionId ? doc(firestore, 'assessment_sessions', sessionId) : null),
         [firestore, sessionId]
     );
-    const { data: session, isLoading, error } = useDoc<AssessmentSession>(sessionRef);
+    const { data: session, isLoading: isLoadingSession, error } = useDoc<AssessmentSession>(sessionRef);
     
     // Get candidate profile
     const profileRef = useMemoFirebase(
@@ -128,6 +142,14 @@ export default function HrdAssessmentResultPage() {
     );
     const { data: profile } = useDoc<Profile>(profileRef);
 
+    // Get assessment questions
+    const questionsQuery = useMemoFirebase(() => {
+        if (!session) return null;
+        return query(collection(firestore, 'assessment_questions'), where('assessmentId', '==', session.assessmentId));
+    }, [firestore, session]);
+    const { data: questions, isLoading: isLoadingQuestions } = useCollection<AssessmentQuestion>(questionsQuery);
+
+    const isLoading = isLoadingSettings || isLoadingSession || isLoadingQuestions;
 
     if (!hasAccess || isLoading) {
         return (
@@ -210,8 +232,12 @@ export default function HrdAssessmentResultPage() {
                             </CardContent>
                         </Card>
                     </div>
-
                 </div>
+
+                <Separator />
+                
+                {questions && <AnswerAnalysis session={session} questions={questions} />}
+
             </div>
         </DashboardLayout>
     )
