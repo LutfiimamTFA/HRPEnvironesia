@@ -9,7 +9,7 @@ import type { JobApplication } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { FileUp, Loader2, UploadCloud, CheckCircle, XCircle, FileCheck, Info, Eye, Trash2 } from 'lucide-react';
+import { FileUp, Loader2, UploadCloud, CheckCircle, XCircle, FileCheck, Info, Eye, Trash2, ClipboardCheck } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -20,6 +20,54 @@ interface UploadedFile {
   url: string;
   name: string;
 }
+
+// Read-only view for submitted documents
+function SubmittedDocumentsView({ application }: { application: JobApplication }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Dokumen Terkirim: {application.jobPosition}</CardTitle>
+        <CardDescription>
+          Dokumen Anda untuk lamaran ini telah berhasil dikirim dan sedang dalam proses verifikasi oleh tim HRD.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Alert variant="default">
+          <ClipboardCheck className="h-4 w-4" />
+          <AlertTitle>Status: Sedang Diverifikasi</AlertTitle>
+          <AlertDescription>
+            Anda tidak dapat mengubah dokumen setelah dikirim. Tim kami akan menghubungi Anda jika ada informasi lebih lanjut.
+          </AlertDescription>
+        </Alert>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+          {application.cvUrl && application.cvFileName && (
+            <div className="p-4 border rounded-lg">
+              <p className="font-medium text-sm">Curriculum Vitae (CV)</p>
+              <p className="text-muted-foreground text-sm truncate" title={application.cvFileName}>{application.cvFileName}</p>
+              <Button asChild variant="outline" size="sm" className="mt-2">
+                <a href={application.cvUrl} target="_blank" rel="noopener noreferrer">
+                  <Eye className="mr-2 h-4 w-4" /> Lihat File
+                </a>
+              </Button>
+            </div>
+          )}
+          {application.ijazahUrl && application.ijazahFileName && (
+            <div className="p-4 border rounded-lg">
+              <p className="font-medium text-sm">Ijazah / SKL</p>
+              <p className="text-muted-foreground text-sm truncate" title={application.ijazahFileName}>{application.ijazahFileName}</p>
+              <Button asChild variant="outline" size="sm" className="mt-2">
+                <a href={application.ijazahUrl} target="_blank" rel="noopener noreferrer">
+                  <Eye className="mr-2 h-4 w-4" /> Lihat File
+                </a>
+              </Button>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 
 interface DocumentUploadSlotProps {
   label: string;
@@ -67,7 +115,10 @@ function DocumentUploadSlot({ label, fileType, userId, applicationId, initialFil
 
     uploadTask.on('state_changed',
       (snapshot) => setProgress((snapshot.bytesTransferred / snapshot.totalBytes) * 100),
-      (error) => setError('Gagal mengunggah file. Silakan coba lagi.'),
+      (error) => {
+        setError('Gagal mengunggah file. Coba segarkan halaman dan unggah kembali.');
+        setTask(null);
+      },
       () => {
         getDownloadURL(uploadTask.snapshot.ref).then((downloadURL) => {
           onUploadComplete(fileType, { url: downloadURL, name: selectedFile.name });
@@ -116,7 +167,6 @@ function DocumentUploadSlot({ label, fileType, userId, applicationId, initialFil
             <XCircle className="mx-auto h-10 w-10" />
             <p className="mt-2 font-semibold">Unggah Gagal</p>
             <p className="text-xs">{error}</p>
-            <Button variant="outline" size="sm" className="mt-4" onClick={handleDelete}>Coba Lagi</Button>
           </div>
         ) : isUploading ? (
           <div className="w-full text-center">
@@ -146,27 +196,37 @@ export default function DocumentsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploads, setUploads] = useState<{ cv: UploadedFile | null, ijazah: UploadedFile | null }>({ cv: null, ijazah: null });
 
-  const applicationsToProcessQuery = useMemoFirebase(() => {
+  const applicationsQuery = useMemoFirebase(() => {
     if (!userProfile?.uid) return null;
     return query(
       collection(firestore, 'applications'),
       where('candidateUid', '==', userProfile.uid),
-      where('status', '==', 'document_submission')
+      where('status', 'in', ['document_submission', 'verification', 'interview', 'hired'])
     );
   }, [userProfile?.uid, firestore]);
 
-  const { data: applicationsToProcess, isLoading: appsLoading } = useCollection<JobApplication>(applicationsToProcessQuery);
+  const { data: applications, isLoading: appsLoading } = useCollection<JobApplication>(applicationsQuery);
   const isLoading = authLoading || appsLoading;
 
+  const applicationsForUpload = useMemo(() => 
+    applications?.filter(app => app.status === 'document_submission') || [], 
+    [applications]
+  );
+  
+  const applicationsUnderReview = useMemo(() => 
+    applications?.filter(app => ['verification', 'interview', 'hired'].includes(app.status)) || [],
+    [applications]
+  );
+
   useEffect(() => {
-    if (applicationsToProcess && applicationsToProcess.length > 0) {
-      const app = applicationsToProcess[0];
+    if (applicationsForUpload && applicationsForUpload.length > 0) {
+      const app = applicationsForUpload[0];
       setUploads({
         cv: app.cvUrl && app.cvFileName ? { url: app.cvUrl, name: app.cvFileName } : null,
         ijazah: app.ijazahUrl && app.ijazahFileName ? { url: app.ijazahUrl, name: app.ijazahFileName } : null,
       });
     }
-  }, [appsLoading, applicationsToProcess]);
+  }, [appsLoading, applicationsForUpload]);
 
   const handleUploadComplete = (fileType: 'cv' | 'ijazah', file: UploadedFile) => {
     setUploads(prev => ({ ...prev, [fileType]: file }));
@@ -177,11 +237,11 @@ export default function DocumentsPage() {
   }
 
   const handleSubmitDocuments = async () => {
-    if (!applicationsToProcess || applicationsToProcess.length === 0 || !uploads.cv || !uploads.ijazah) return;
+    if (!applicationsForUpload || applicationsForUpload.length === 0 || !uploads.cv || !uploads.ijazah) return;
     setIsSubmitting(true);
     
     const batch = writeBatch(firestore);
-    applicationsToProcess.forEach(app => {
+    applicationsForUpload.forEach(app => {
       const appRef = doc(firestore, 'applications', app.id!);
       batch.update(appRef, {
         cvUrl: uploads.cv?.url,
@@ -215,7 +275,7 @@ export default function DocumentsPage() {
     return <Skeleton className="h-96 w-full" />;
   }
 
-  if (!applicationsToProcess || applicationsToProcess.length === 0) {
+  if (applicationsForUpload.length === 0 && applicationsUnderReview.length === 0) {
     return (
       <Card>
         <CardHeader>
@@ -236,56 +296,69 @@ export default function DocumentsPage() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Pengumpulan Dokumen</CardTitle>
-        <CardDescription>
-          Selamat! Anda telah maju ke tahap pengumpulan dokumen. Silakan unggah file yang diminta di bawah ini.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <Alert>
-          <Info className="h-4 w-4" />
-          <AlertTitle>Perhatian</AlertTitle>
-          <AlertDescription>
-            Dokumen yang Anda unggah di sini akan digunakan untuk semua lamaran yang sedang dalam tahap ini ({applicationsToProcess.length} lamaran).
-          </AlertDescription>
-        </Alert>
+    <div className="space-y-6">
+        {applicationsForUpload.length > 0 && (
+             <Card>
+                <CardHeader>
+                    <CardTitle>Pengumpulan Dokumen</CardTitle>
+                    <CardDescription>
+                    Selamat! Anda telah maju ke tahap pengumpulan dokumen. Silakan unggah file yang diminta di bawah ini.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                    <Alert>
+                    <Info className="h-4 w-4" />
+                    <AlertTitle>Perhatian</AlertTitle>
+                    <AlertDescription>
+                        Dokumen yang Anda unggah di sini akan digunakan untuk semua lamaran yang sedang dalam tahap ini ({applicationsForUpload.length} lamaran).
+                    </AlertDescription>
+                    </Alert>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <DocumentUploadSlot
-            label="Curriculum Vitae (CV)"
-            fileType="cv"
-            initialFile={uploads.cv}
-            onUploadComplete={handleUploadComplete}
-            onDelete={handleUploadDelete}
-            userId={userProfile!.uid}
-            applicationId={applicationsToProcess[0].id!}
-          />
-          <DocumentUploadSlot
-            label="Ijazah / SKL"
-            fileType="ijazah"
-            initialFile={uploads.ijazah}
-            onUploadComplete={handleUploadComplete}
-            onDelete={handleUploadDelete}
-            userId={userProfile!.uid}
-            applicationId={applicationsToProcess[0].id!}
-          />
-        </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <DocumentUploadSlot
+                        label="Curriculum Vitae (CV)"
+                        fileType="cv"
+                        initialFile={uploads.cv}
+                        onUploadComplete={handleUploadComplete}
+                        onDelete={handleUploadDelete}
+                        userId={userProfile!.uid}
+                        applicationId={applicationsForUpload[0].id!}
+                    />
+                    <DocumentUploadSlot
+                        label="Ijazah / SKL"
+                        fileType="ijazah"
+                        initialFile={uploads.ijazah}
+                        onUploadComplete={handleUploadComplete}
+                        onDelete={handleUploadDelete}
+                        userId={userProfile!.uid}
+                        applicationId={applicationsForUpload[0].id!}
+                    />
+                    </div>
 
-        <Separator />
+                    <Separator />
 
-        <div className="flex justify-end">
-          <Button
-            size="lg"
-            disabled={!uploads.cv || !uploads.ijazah || isSubmitting}
-            onClick={handleSubmitDocuments}
-          >
-            {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileUp className="mr-2 h-4 w-4" />}
-            Kirim Dokumen
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
+                    <div className="flex justify-end">
+                    <Button
+                        size="lg"
+                        disabled={!uploads.cv || !uploads.ijazah || isSubmitting}
+                        onClick={handleSubmitDocuments}
+                    >
+                        {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileUp className="mr-2 h-4 w-4" />}
+                        Kirim Dokumen
+                    </Button>
+                    </div>
+                </CardContent>
+            </Card>
+        )}
+        
+        {applicationsUnderReview.length > 0 && (
+            <div className="space-y-4">
+                 {applicationsForUpload.length > 0 && <Separator />}
+                 {applicationsUnderReview.map(app => (
+                    <SubmittedDocumentsView key={app.id} application={app} />
+                 ))}
+            </div>
+        )}
+    </div>
+  )
 }
