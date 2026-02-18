@@ -1,8 +1,8 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
+import { useCollection, useFirestore, useMemoFirebase, deleteDocumentNonBlocking, doc } from '@/firebase';
 import { collection } from 'firebase/firestore';
 import type { Assessment } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -12,6 +12,15 @@ import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AssessmentBootstrapClient } from './AssessmentBootstrapClient';
+import { MoreHorizontal, Trash2 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { DeleteConfirmationDialog } from './DeleteConfirmationDialog';
+import { useToast } from '@/hooks/use-toast';
 
 function AssessmentListSkeleton() {
   return (
@@ -25,6 +34,10 @@ function AssessmentListSkeleton() {
 export function AssessmentManagementClient() {
   const firestore = useFirestore();
   const router = useRouter();
+  const { toast } = useToast();
+
+  const [assessmentToDelete, setAssessmentToDelete] = useState<Assessment | null>(null);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
   const assessmentsQuery = useMemoFirebase(
     () => collection(firestore, 'assessments'),
@@ -32,6 +45,32 @@ export function AssessmentManagementClient() {
   );
 
   const { data: assessments, isLoading, error } = useCollection<Assessment>(assessmentsQuery);
+
+  const handleDelete = (assessment: Assessment) => {
+    setAssessmentToDelete(assessment);
+    setIsDeleteConfirmOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!assessmentToDelete) return;
+    try {
+      await deleteDocumentNonBlocking(doc(firestore, 'assessments', assessmentToDelete.id!));
+      toast({
+        title: 'Assessment Deleted',
+        description: `The assessment "${assessmentToDelete.name}" has been deleted.`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error deleting assessment",
+        description: error.message,
+      });
+    } finally {
+      setIsDeleteConfirmOpen(false);
+      setAssessmentToDelete(null);
+    }
+  };
+
 
   if (isLoading) {
     return <AssessmentListSkeleton />;
@@ -63,9 +102,24 @@ export function AssessmentManagementClient() {
                   <CardTitle>{assessment.name}</CardTitle>
                   <CardDescription>Version {assessment.version}</CardDescription>
                 </div>
-                 <Badge variant={assessment.isActive && assessment.publishStatus === 'published' ? 'default' : 'secondary'}>
-                  {assessment.isActive && assessment.publishStatus === 'published' ? 'Active & Published' : 'Inactive/Draft'}
-                </Badge>
+                 <div className="flex items-center gap-2">
+                  <Badge variant={assessment.isActive && assessment.publishStatus === 'published' ? 'default' : 'secondary'}>
+                    {assessment.isActive && assessment.publishStatus === 'published' ? 'Active & Published' : 'Inactive/Draft'}
+                  </Badge>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onSelect={() => handleDelete(assessment)} className="text-destructive focus:text-destructive focus:bg-destructive/10">
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -81,6 +135,13 @@ export function AssessmentManagementClient() {
       ) : (
         <AssessmentBootstrapClient onBootstrapSuccess={router.refresh} />
       )}
+       <DeleteConfirmationDialog
+        open={isDeleteConfirmOpen}
+        onOpenChange={setIsDeleteConfirmOpen}
+        onConfirm={confirmDelete}
+        itemName={assessmentToDelete?.name}
+        itemType="Assessment"
+      />
     </div>
   );
 }
