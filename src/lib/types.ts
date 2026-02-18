@@ -75,7 +75,7 @@ export type Education = {
     fieldOfStudy?: string;
     gpa?: string;
     startDate: string;
-    endDate: string;
+    endDate?: string;
     isCurrent: boolean;
 }
 
@@ -84,9 +84,19 @@ export type WorkExperience = {
     company: string;
     position: string;
     startDate: string;
-    endDate: string;
+    endDate?: string;
     isCurrent: boolean;
-    description: string;
+    description?: string;
+}
+
+export type OrganizationalExperience = {
+    id: string;
+    organization: string;
+    position: string;
+    startDate: string;
+    endDate?: string;
+    isCurrent: boolean;
+    description?: string;
 }
 
 export type Certification = {
@@ -127,9 +137,16 @@ export type Profile = {
     websiteUrl?: string;
     education: Education[];
     workExperience?: WorkExperience[];
+    organizationalExperience?: OrganizationalExperience[];
     skills?: string[];
     certifications?: Certification[];
     selfDescription?: string;
     salaryExpectation?: string;
     motivation?: string;
+    
+    // Wizard metadata
+    profileStatus?: 'draft' | 'completed';
+    profileStep?: number;
+    updatedAt?: Timestamp;
+    completedAt?: Timestamp | null;
 }

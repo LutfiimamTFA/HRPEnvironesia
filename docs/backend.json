@@ -301,6 +301,21 @@
         },
         "required": ["street", "rt", "rw", "village", "district", "city", "province", "postalCode"]
     },
+    "OrganizationalExperience": {
+      "title": "Organizational Experience",
+      "type": "object",
+      "description": "Represents a candidate's organizational experience.",
+      "properties": {
+        "id": { "type": "string" },
+        "organization": { "type": "string" },
+        "position": { "type": "string" },
+        "startDate": { "type": "string" },
+        "endDate": { "type": "string" },
+        "isCurrent": { "type": "boolean" },
+        "description": { "type": "string" }
+      },
+      "required": ["id", "organization", "position", "startDate"]
+    },
     "Profile": {
         "title": "Candidate Profile",
         "type": "object",
@@ -362,6 +377,12 @@
                     "required": ["id", "company", "position", "startDate"]
                 }
             },
+            "organizationalExperience": {
+              "type": "array",
+              "items": {
+                "$ref": "#/backend/entities/OrganizationalExperience"
+              }
+            },
             "skills": {
                 "type": "array",
                 "items": { "type": "string" }
@@ -392,6 +413,25 @@
             "motivation": {
               "type": "string",
               "description": "The candidate's motivation and reasons for choosing the desired position."
+            },
+            "profileStatus": {
+              "type": "string",
+              "description": "The completion status of the profile.",
+              "enum": ["draft", "completed"]
+            },
+            "profileStep": {
+              "type": "number",
+              "description": "The last completed step in the profile wizard."
+            },
+            "updatedAt": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Timestamp of the last profile update."
+            },
+            "completedAt": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Timestamp when the profile was marked as complete."
             }
         },
         "required": ["fullName", "nickname", "email", "phone", "eKtpNumber", "gender", "birthPlace", "birthDate", "addressKtp", "willingToWfo", "education"]

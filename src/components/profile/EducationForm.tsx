@@ -11,10 +11,12 @@ import { Loader2, PlusCircle, Trash2 } from 'lucide-react';
 import type { Education } from '@/lib/types';
 import { Checkbox } from '../ui/checkbox';
 import { Separator } from '../ui/separator';
-import { useEffect } from 'react';
+import { useState } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-
-const DRAFT_KEY = 'education-form-draft';
+import { useAuth } from '@/providers/auth-provider';
+import { doc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { useFirestore, setDocumentNonBlocking } from '@/firebase';
+import { useToast } from '@/hooks/use-toast';
 
 const EDUCATION_LEVELS = ['SMA/SMK', 'D3', 'S1', 'S2', 'S3'] as const;
 
@@ -25,66 +27,63 @@ const educationSchema = z.object({
   fieldOfStudy: z.string().optional(),
   gpa: z.string().optional(),
   startDate: z.string().min(4, "Tahun mulai harus diisi"),
-  endDate: z.string().min(4, "Tahun selesai harus diisi").optional().or(z.literal('')),
+  endDate: z.string().optional(),
   isCurrent: z.boolean().default(false),
 }).refine(data => data.isCurrent || (data.endDate && data.endDate.length > 0), {
     message: "Tahun selesai harus diisi jika tidak sedang menempuh pendidikan ini.",
     path: ["endDate"],
 });
 
-
 const formSchema = z.object({
-  education: z.array(educationSchema),
+  education: z.array(educationSchema).min(1, "Minimal harus ada satu riwayat pendidikan."),
 });
 
 type FormValues = z.infer<typeof formSchema>;
 
 interface EducationFormProps {
     initialData: Education[];
-    onSave: (data: Education[]) => Promise<void>;
-    isSaving: boolean;
+    onSaveSuccess: () => void;
+    onBack: () => void;
 }
 
-export function EducationForm({ initialData, onSave, isSaving }: EducationFormProps) {
+export function EducationForm({ initialData, onSaveSuccess, onBack }: EducationFormProps) {
+    const [isSaving, setIsSaving] = useState(false);
+    const { firebaseUser } = useAuth();
+    const firestore = useFirestore();
+    const { toast } = useToast();
+
     const form = useForm<FormValues>({
         resolver: zodResolver(formSchema),
-        defaultValues: (() => {
-            try {
-                const savedDraft = localStorage.getItem(DRAFT_KEY);
-                if (savedDraft) {
-                    return JSON.parse(savedDraft);
-                }
-            } catch (e) { console.error("Failed to load education draft", e); }
-            return { education: initialData || [] };
-        })(),
+        defaultValues: { education: initialData || [] },
     });
-    
-    useEffect(() => {
-        const savedDraft = localStorage.getItem(DRAFT_KEY);
-        if (!savedDraft) {
-            form.reset({ education: initialData || [] });
-        }
-    }, [initialData, form]);
     
     const { fields, append, remove } = useFieldArray({
         control: form.control,
         name: "education",
     });
 
-    const { watch } = form;
-    useEffect(() => {
-        const subscription = watch((value) => {
-            localStorage.setItem(DRAFT_KEY, JSON.stringify(value));
-        });
-        return () => subscription.unsubscribe();
-    }, [watch]);
-
     const handleSubmit = async (values: FormValues) => {
+        if (!firebaseUser) {
+            toast({ variant: 'destructive', title: 'Error', description: 'You must be logged in.' });
+            return;
+        }
+        setIsSaving(true);
         try {
-            await onSave(values.education);
-            localStorage.removeItem(DRAFT_KEY);
-        } catch (error) {
-            console.error("Failed to save education data:", error);
+            const payload = {
+                education: values.education,
+                profileStatus: 'draft',
+                profileStep: 3,
+                updatedAt: serverTimestamp() as Timestamp,
+            };
+            const profileDocRef = doc(firestore, 'profiles', firebaseUser.uid);
+            await setDocumentNonBlocking(profileDocRef, payload, { merge: true });
+            
+            toast({ title: 'Pendidikan Disimpan', description: 'Melanjutkan ke langkah berikutnya...' });
+            onSaveSuccess();
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: "Gagal Menyimpan", description: error.message });
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -92,118 +91,40 @@ export function EducationForm({ initialData, onSave, isSaving }: EducationFormPr
         <Card>
             <CardHeader>
                 <CardTitle>Riwayat Pendidikan</CardTitle>
-                <CardDescription>Tambahkan riwayat pendidikan formal Anda.</CardDescription>
+                <CardDescription>Tambahkan riwayat pendidikan formal Anda. Minimal satu.</CardDescription>
             </CardHeader>
             <CardContent>
                 <Form {...form}>
                     <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8">
-                        {fields.map((field, index) => (
-                            <div key={field.id} className="space-y-4 p-4 border rounded-md relative">
-                                <Button 
-                                    type="button"
-                                    variant="ghost" 
-                                    size="icon" 
-                                    className="absolute top-2 right-2 text-destructive hover:bg-destructive/10"
-                                    onClick={() => remove(index)}
-                                >
-                                    <Trash2 className="h-4 w-4" />
-                                </Button>
-                                
-                                <FormField
-                                    control={form.control}
-                                    name={`education.${index}.institution`}
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>Nama Institusi</FormLabel>
-                                            <FormControl><Input {...field} placeholder="Contoh: Universitas Gadjah Mada, SMAN 1 Yogyakarta" /></FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
+                        <div className="space-y-6">
+                            {fields.map((field, index) => (
+                                <div key={field.id} className="space-y-4 p-4 border rounded-md relative">
+                                    <Button 
+                                        type="button"
+                                        variant="ghost" 
+                                        size="icon" 
+                                        className="absolute top-2 right-2 text-destructive hover:bg-destructive/10"
+                                        onClick={() => remove(index)}
+                                    >
+                                        <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                    
+                                    <FormField control={form.control} name={`education.${index}.institution`} render={({ field }) => (<FormItem><FormLabel>Nama Institusi</FormLabel><FormControl><Input {...field} placeholder="Contoh: Universitas Gadjah Mada" /></FormControl><FormMessage /></FormItem>)} />
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                     <FormField
-                                        control={form.control}
-                                        name={`education.${index}.level`}
-                                        render={({ field }) => (
-                                            <FormItem>
-                                                <FormLabel>Jenjang</FormLabel>
-                                                <Select onValueChange={field.onChange} value={field.value}>
-                                                    <FormControl>
-                                                        <SelectTrigger><SelectValue placeholder="Pilih jenjang pendidikan" /></SelectTrigger>
-                                                    </FormControl>
-                                                    <SelectContent>
-                                                        {EDUCATION_LEVELS.map(level => (
-                                                            <SelectItem key={level} value={level}>{level}</SelectItem>
-                                                        ))}
-                                                    </SelectContent>
-                                                </Select>
-                                                <FormMessage />
-                                            </FormItem>
-                                        )}
-                                    />
-                                    <FormField
-                                        control={form.control}
-                                        name={`education.${index}.fieldOfStudy`}
-                                        render={({ field }) => (
-                                            <FormItem>
-                                                <FormLabel>Jurusan (Opsional)</FormLabel>
-                                                <FormControl><Input {...field} value={field.value || ''} placeholder="Contoh: Akuntansi, IPA" /></FormControl>
-                                                <FormMessage />
-                                            </FormItem>
-                                        )}
-                                    />
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <FormField control={form.control} name={`education.${index}.level`} render={({ field }) => (<FormItem><FormLabel>Jenjang</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Pilih jenjang" /></SelectTrigger></FormControl><SelectContent>{EDUCATION_LEVELS.map(level => (<SelectItem key={level} value={level}>{level}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)} />
+                                        <FormField control={form.control} name={`education.${index}.fieldOfStudy`} render={({ field }) => (<FormItem><FormLabel>Jurusan (Opsional)</FormLabel><FormControl><Input {...field} value={field.value || ''} placeholder="Contoh: Akuntansi" /></FormControl><FormMessage /></FormItem>)} />
+                                    </div>
+                                    <FormField control={form.control} name={`education.${index}.gpa`} render={({ field }) => (<FormItem><FormLabel>IPK / Nilai (Opsional)</FormLabel><FormControl><Input {...field} value={field.value || ''} placeholder="Contoh: 3.85" /></FormControl><FormMessage /></FormItem>)} />
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <FormField control={form.control} name={`education.${index}.startDate`} render={({ field }) => (<FormItem><FormLabel>Tahun Mulai</FormLabel><FormControl><Input type="number" {...field} placeholder="YYYY" /></FormControl><FormMessage /></FormItem>)} />
+                                        <FormField control={form.control} name={`education.${index}.endDate`} render={({ field }) => (<FormItem><FormLabel>Tahun Selesai</FormLabel><FormControl><Input type="number" {...field} value={field.value || ''} placeholder="YYYY" disabled={form.watch(`education.${index}.isCurrent`)} /></FormControl><FormMessage /></FormItem>)} />
+                                    </div>
+                                    <FormField control={form.control} name={`education.${index}.isCurrent`} render={({ field }) => (<FormItem className="flex flex-row items-start space-x-3 space-y-0"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><div className="space-y-1 leading-none"><FormLabel>Saat ini sedang menempuh</FormLabel></div></FormItem>)} />
+                                    {index < fields.length - 1 && <Separator className="!mt-6" />}
                                 </div>
-                                 <FormField
-                                    control={form.control}
-                                    name={`education.${index}.gpa`}
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>IPK / Nilai Rata-Rata (Opsional)</FormLabel>
-                                            <FormControl><Input {...field} value={field.value || ''} placeholder="Contoh: 3.85 atau 87.5" /></FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                     <FormField
-                                        control={form.control}
-                                        name={`education.${index}.startDate`}
-                                        render={({ field }) => (
-                                            <FormItem>
-                                                <FormLabel>Tahun Mulai</FormLabel>
-                                                <FormControl><Input type="number" {...field} placeholder="YYYY" /></FormControl>
-                                                <FormMessage />
-                                            </FormItem>
-                                        )}
-                                    />
-                                     <FormField
-                                        control={form.control}
-                                        name={`education.${index}.endDate`}
-                                        render={({ field }) => (
-                                            <FormItem>
-                                                <FormLabel>Tahun Selesai</FormLabel>
-                                                <FormControl><Input type="number" {...field} placeholder="YYYY" disabled={form.watch(`education.${index}.isCurrent`)} /></FormControl>
-                                                <FormMessage />
-                                            </FormItem>
-                                        )}
-                                    />
-                                </div>
-                                <FormField
-                                    control={form.control}
-                                    name={`education.${index}.isCurrent`}
-                                    render={({ field }) => (
-                                        <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                                            <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                                            <div className="space-y-1 leading-none">
-                                                <FormLabel>Saat ini sedang menempuh pendidikan di sini</FormLabel>
-                                            </div>
-                                        </FormItem>
-                                    )}
-                                />
-                                {index < fields.length - 1 && <Separator />}
-                            </div>
-                        ))}
+                            ))}
+                        </div>
                         
                         <Button
                             type="button"
@@ -212,11 +133,15 @@ export function EducationForm({ initialData, onSave, isSaving }: EducationFormPr
                         >
                             <PlusCircle className="mr-2 h-4 w-4" /> Tambah Pendidikan
                         </Button>
+                        <FormMessage>{form.formState.errors.education?.message}</FormMessage>
                         
-                        <div className="flex justify-end">
+                        <div className="flex justify-between pt-4">
+                             <Button type="button" variant="secondary" onClick={onBack}>
+                                Kembali
+                            </Button>
                             <Button type="submit" disabled={isSaving}>
                                 {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                Simpan Pendidikan
+                                Simpan & Lanjut
                             </Button>
                         </div>
                     </form>

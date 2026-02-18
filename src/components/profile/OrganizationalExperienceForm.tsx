@@ -8,7 +8,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { Button } from '@/components/ui/button';
 import { Loader2, PlusCircle, Trash2 } from 'lucide-react';
-import type { WorkExperience } from '@/lib/types';
+import type { OrganizationalExperience } from '@/lib/types';
 import { Checkbox } from '../ui/checkbox';
 import { Separator } from '../ui/separator';
 import { Textarea } from '../ui/textarea';
@@ -20,14 +20,14 @@ import { useToast } from '@/hooks/use-toast';
 
 const experienceSchema = z.object({
   id: z.string(),
-  company: z.string().min(1, "Nama perusahaan harus diisi"),
-  position: z.string().min(1, "Posisi harus diisi"),
+  organization: z.string().min(1, "Nama organisasi harus diisi"),
+  position: z.string().min(1, "Jabatan harus diisi"),
   startDate: z.string().min(4, "Tahun mulai harus diisi"),
   endDate: z.string().optional(),
   isCurrent: z.boolean().default(false),
   description: z.string().optional(),
 }).refine(data => data.isCurrent || (data.endDate && data.endDate.length > 0), {
-    message: "Tahun selesai harus diisi jika tidak sedang bekerja di sini.",
+    message: "Tahun selesai harus diisi jika tidak aktif saat ini.",
     path: ["endDate"],
 });
 
@@ -37,13 +37,13 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
-interface WorkExperienceFormProps {
-    initialData: WorkExperience[];
+interface OrganizationalExperienceFormProps {
+    initialData: OrganizationalExperience[];
     onSaveSuccess: () => void;
     onBack: () => void;
 }
 
-export function WorkExperienceForm({ initialData, onSaveSuccess, onBack }: WorkExperienceFormProps) {
+export function OrganizationalExperienceForm({ initialData, onSaveSuccess, onBack }: OrganizationalExperienceFormProps) {
     const [isSaving, setIsSaving] = useState(false);
     const { firebaseUser } = useAuth();
     const firestore = useFirestore();
@@ -67,15 +67,15 @@ export function WorkExperienceForm({ initialData, onSaveSuccess, onBack }: WorkE
         setIsSaving(true);
         try {
             const payload = {
-                workExperience: values.experience,
+                organizationalExperience: values.experience,
                 profileStatus: 'draft',
-                profileStep: 4,
+                profileStep: 5,
                 updatedAt: serverTimestamp() as Timestamp,
             };
             const profileDocRef = doc(firestore, 'profiles', firebaseUser.uid);
             await setDocumentNonBlocking(profileDocRef, payload, { merge: true });
             
-            toast({ title: 'Pengalaman Kerja Disimpan', description: 'Melanjutkan ke langkah berikutnya...' });
+            toast({ title: 'Pengalaman Organisasi Disimpan', description: 'Melanjutkan ke langkah berikutnya...' });
             onSaveSuccess();
         } catch (error: any) {
             toast({ variant: 'destructive', title: "Gagal Menyimpan", description: error.message });
@@ -87,8 +87,8 @@ export function WorkExperienceForm({ initialData, onSaveSuccess, onBack }: WorkE
     return (
         <Card>
             <CardHeader>
-                <CardTitle>Pengalaman Kerja</CardTitle>
-                <CardDescription>Tambahkan pengalaman kerja yang relevan. Kosongkan jika belum ada.</CardDescription>
+                <CardTitle>Pengalaman Organisasi</CardTitle>
+                <CardDescription>Tambahkan pengalaman organisasi Anda. Kosongkan jika belum ada.</CardDescription>
             </CardHeader>
             <CardContent>
                 <Form {...form}>
@@ -100,21 +100,21 @@ export function WorkExperienceForm({ initialData, onSaveSuccess, onBack }: WorkE
                                         <Trash2 className="h-4 w-4" />
                                     </Button>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <FormField control={form.control} name={`experience.${index}.company`} render={({ field }) => (<FormItem><FormLabel>Nama Perusahaan</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
-                                        <FormField control={form.control} name={`experience.${index}.position`} render={({ field }) => (<FormItem><FormLabel>Posisi</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                        <FormField control={form.control} name={`experience.${index}.organization`} render={({ field }) => (<FormItem><FormLabel>Nama Organisasi</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                        <FormField control={form.control} name={`experience.${index}.position`} render={({ field }) => (<FormItem><FormLabel>Jabatan</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <FormField control={form.control} name={`experience.${index}.startDate`} render={({ field }) => (<FormItem><FormLabel>Tahun Mulai</FormLabel><FormControl><Input type="number" {...field} placeholder="YYYY" /></FormControl><FormMessage /></FormItem>)} />
                                         <FormField control={form.control} name={`experience.${index}.endDate`} render={({ field }) => (<FormItem><FormLabel>Tahun Selesai</FormLabel><FormControl><Input type="number" {...field} value={field.value || ''} placeholder="YYYY" disabled={form.watch(`experience.${index}.isCurrent`)} /></FormControl><FormMessage /></FormItem>)} />
                                     </div>
-                                    <FormField control={form.control} name={`experience.${index}.isCurrent`} render={({ field }) => (<FormItem className="flex flex-row items-start space-x-3 space-y-0"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><div className="space-y-1 leading-none"><FormLabel>Saat ini masih bekerja di sini</FormLabel></div></FormItem>)} />
-                                    <FormField control={form.control} name={`experience.${index}.description`} render={({ field }) => (<FormItem><FormLabel>Deskripsi (Opsional)</FormLabel><FormControl><Textarea {...field} value={field.value ?? ''} placeholder="Jelaskan tanggung jawab Anda..." /></FormControl><FormMessage /></FormItem>)} />
+                                    <FormField control={form.control} name={`experience.${index}.isCurrent`} render={({ field }) => (<FormItem className="flex flex-row items-start space-x-3 space-y-0"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><div className="space-y-1 leading-none"><FormLabel>Saat ini masih aktif</FormLabel></div></FormItem>)} />
+                                    <FormField control={form.control} name={`experience.${index}.description`} render={({ field }) => (<FormItem><FormLabel>Deskripsi (Opsional)</FormLabel><FormControl><Textarea {...field} value={field.value ?? ''} placeholder="Jelaskan peran Anda..." /></FormControl><FormMessage /></FormItem>)} />
                                     {index < fields.length - 1 && <Separator className="!mt-6" />}
                                 </div>
                             ))}
                         </div>
                         
-                        <Button type="button" variant="outline" onClick={() => append({ id: crypto.randomUUID(), company: '', position: '', startDate: '', endDate: '', isCurrent: false, description: '' })}>
+                        <Button type="button" variant="outline" onClick={() => append({ id: crypto.randomUUID(), organization: '', position: '', startDate: '', endDate: '', isCurrent: false, description: '' })}>
                             <PlusCircle className="mr-2 h-4 w-4" /> Tambah Pengalaman
                         </Button>
                         
