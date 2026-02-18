@@ -153,7 +153,7 @@ export default function DocumentsPage() {
       batch.update(appRef, {
         cvUrl: uploads.cvUrl,
         ijazahUrl: uploads.ijazahUrl,
-        status: 'interview',
+        status: 'verification',
         updatedAt: serverTimestamp(),
       });
     });
@@ -162,7 +162,7 @@ export default function DocumentsPage() {
       await batch.commit();
       toast({
         title: "Dokumen Berhasil Dikirim",
-        description: "Lamaran Anda telah maju ke tahap selanjutnya.",
+        description: "Dokumen Anda akan diverifikasi oleh tim HRD.",
       });
       // The useCollection hook will update automatically
     } catch (error: any) {

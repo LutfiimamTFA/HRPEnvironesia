@@ -171,7 +171,7 @@ service cloud.firestore {
             let allowedKeys = ['cvUrl', 'ijazahUrl', 'status', 'updatedAt'];
             return isOwner()
                 && resource.data.status == 'document_submission'
-                && request.resource.data.status == 'interview'
+                && request.resource.data.status == 'verification'
                 && changedKeys.hasOnly(allowedKeys)
                 && request.resource.data.cvUrl is string
                 && request.resource.data.ijazahUrl is string;
