@@ -151,8 +151,14 @@ export async function POST(req: NextRequest) {
         discType,
         report: finalReport
     };
+
+    // --- 5. Denormalize candidate info ---
+    const userDocRef = db.collection('users').doc(session.candidateUid);
+    const userDoc = await userDocRef.get();
+    const candidateName = userDoc.exists ? userDoc.data()?.fullName || null : null;
+    const candidateEmail = userDoc.exists ? userDoc.data()?.email || null : null;
     
-    // --- 5. Update Session Document ---
+    // --- 6. Update Session Document ---
     await sessionRef.update({
         status: 'submitted',
         scores,
@@ -160,6 +166,8 @@ export async function POST(req: NextRequest) {
         result: resultPayload,
         completedAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
+        candidateName,
+        candidateEmail,
     });
 
     return NextResponse.json({ message: 'Assessment submitted successfully.', result: resultPayload });

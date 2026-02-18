@@ -31,13 +31,9 @@ export function AssessmentSubmissionsClient() {
   );
   const { data: sessions, isLoading } = useCollection<AssessmentSession>(sessionsQuery);
 
-  // Use the denormalized candidateName from the session, with a fallback to the UID
-  const sessionsWithNames = useMemo(() => {
+  const sortedSessions = useMemo(() => {
     if (!sessions) return [];
-    return sessions.map(session => ({
-      ...session,
-      candidateName: session.candidateName || session.candidateUid,
-    })).sort((a, b) => {
+    return [...sessions].sort((a, b) => {
       const timeA = a.completedAt?.toMillis() || a.updatedAt.toMillis();
       const timeB = b.completedAt?.toMillis() || b.updatedAt.toMillis();
       return timeB - timeA;
@@ -62,10 +58,12 @@ export function AssessmentSubmissionsClient() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {sessionsWithNames && sessionsWithNames.length > 0 ? (
-            sessionsWithNames.map(session => (
+          {sortedSessions && sortedSessions.length > 0 ? (
+            sortedSessions.map(session => (
               <TableRow key={session.id}>
-                <TableCell className="font-medium">{session.candidateName}</TableCell>
+                <TableCell className="font-medium">
+                  {session.candidateName ?? session.candidateEmail ?? session.candidateUid}
+                </TableCell>
                 <TableCell>
                   {session.result?.discType ? <Badge variant="secondary">{session.result.discType}</Badge> : '-'}
                 </TableCell>
