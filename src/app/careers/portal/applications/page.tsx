@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 
 
-const allStatuses: JobApplication['status'][] = ['draft', 'submitted', 'psychotest', 'verification', 'document_submission', 'interview', 'hired'];
+const allStatuses: JobApplication['status'][] = ['draft', 'submitted', 'psychotest', 'verification', 'document_submission', 'interview', 'hired', 'rejected'];
 const visibleSteps = [
   { status: 'draft', label: 'Draf', icon: FileSignature },
   { status: 'submitted', label: 'Terkirim', icon: FileUp },
@@ -45,6 +45,13 @@ function ApplicationCard({ application }: { application: JobApplication }) {
 
   const canContinue = application.status === 'draft';
   const jobIsExpired = application.jobApplyDeadline && application.jobApplyDeadline.toDate() < new Date();
+  
+  const timelineSteps = useMemo(() => {
+    if (isRejected) {
+      return [...visibleSteps, { status: 'rejected', label: 'Tidak Lolos', icon: XCircle }];
+    }
+    return visibleSteps;
+  }, [isRejected]);
 
   return (
     <Card className="flex flex-col">
@@ -64,9 +71,11 @@ function ApplicationCard({ application }: { application: JobApplication }) {
       <CardContent className="flex-grow space-y-4">
         <Separator />
         <div className="w-full overflow-x-auto pb-4">
-            <div className="flex items-center min-w-[600px]">
-            {visibleSteps.map((step, index) => {
+            <div className={cn("flex items-center", isRejected ? "min-w-[800px]" : "min-w-[700px]")}>
+            {timelineSteps.map((step, index) => {
               const stepStatusIndex = allStatuses.indexOf(step.status as JobApplication['status']);
+              const isCurrentRejectedStep = isRejected && step.status === 'rejected';
+
               const isActive = !isRejected && currentStatusIndex === stepStatusIndex;
               const isCompleted = !isRejected && currentStatusIndex > stepStatusIndex;
 
@@ -76,23 +85,29 @@ function ApplicationCard({ application }: { application: JobApplication }) {
                     <div
                       className={cn(
                         'h-10 w-10 rounded-full flex items-center justify-center border-2 transition-all duration-300',
-                        isCompleted ? 'bg-primary border-primary' : (isActive ? 'bg-primary/10 border-primary' : 'bg-card border-border')
+                        isCompleted ? 'bg-primary border-primary' : 
+                        (isActive ? 'bg-primary/10 border-primary' : 
+                        (isCurrentRejectedStep ? 'border-destructive bg-destructive/10' : 'bg-card border-border'))
                       )}
                     >
                       {isCompleted ? 
                         <Check className="h-5 w-5 text-primary-foreground" /> :
-                        <step.icon className={cn('h-5 w-5', isActive ? 'text-primary' : 'text-muted-foreground')} />
+                        <step.icon className={cn('h-5 w-5', 
+                            isActive ? 'text-primary' : 
+                            (isCurrentRejectedStep ? 'text-destructive' : 'text-muted-foreground')
+                        )} />
                       }
                     </div>
                     <p className={cn(
                       'mt-2 text-xs font-medium transition-colors duration-300',
-                      (isCompleted || isActive) ? 'text-primary' : 'text-muted-foreground'
+                      (isCompleted || isActive) ? 'text-primary' : 
+                      (isCurrentRejectedStep ? 'text-destructive' : 'text-muted-foreground')
                     )}>
                       {step.label}
                     </p>
                   </div>
 
-                  {index < visibleSteps.length - 1 && (
+                  {index < timelineSteps.length - 1 && (
                     <div className={cn(
                       "flex-1 h-1 transition-colors duration-300 -mx-1",
                       isCompleted ? 'bg-primary' : 'bg-border'
