@@ -3,8 +3,8 @@
 import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
-import { useCollection, useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
-import { collection, doc, query, where, serverTimestamp } from 'firebase/firestore';
+import { useCollection, useDoc, useFirestore, useMemoFirebase } from '@/firebase';
+import { collection, doc, query, where, serverTimestamp, getDocs, writeBatch } from 'firebase/firestore';
 import type { AssessmentSession, NavigationSetting, Profile, AssessmentQuestion } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
@@ -18,7 +18,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { AnswerAnalysis } from '@/components/dashboard/AnswerAnalysis';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
-import { Badge } from '@/components/ui/badge';
+import { AssessmentStatusBadge } from '@/components/dashboard/AssessmentStatusBadge';
 
 
 function HrdDecisionManager({ session }: { session: AssessmentSession }) {
@@ -28,23 +28,56 @@ function HrdDecisionManager({ session }: { session: AssessmentSession }) {
   const { firebaseUser } = useAuth();
 
   const handleUpdateDecision = async (decision: 'approved' | 'rejected') => {
-    if (!firebaseUser) {
-        toast({ variant: 'destructive', title: 'Error', description: 'User not authenticated.' });
+    if (!firebaseUser || !session?.candidateUid) {
+        toast({ variant: 'destructive', title: 'Error', description: 'User or session data is missing.' });
         return;
     }
 
     setIsUpdating(true);
+    const batch = writeBatch(firestore);
+
     try {
+      // 1. Update the assessment session itself
       const sessionRef = doc(firestore, 'assessment_sessions', session.id!);
-      await updateDocumentNonBlocking(sessionRef, {
+      batch.update(sessionRef, {
         hrdDecision: decision,
         hrdDecisionAt: serverTimestamp(),
         hrdDecisionBy: firebaseUser.uid,
         updatedAt: serverTimestamp(),
       });
-      toast({ title: 'Success', description: `Assessment marked as ${decision}.` });
+
+      // 2. Find and update the corresponding job application(s)
+      const newAppStatus = decision === 'approved' ? 'document_submission' : 'rejected';
+      
+      const appsQuery = query(
+        collection(firestore, 'applications'),
+        where('candidateUid', '==', session.candidateUid),
+        where('status', '==', 'psychotest')
+      );
+      
+      const appsSnapshot = await getDocs(appsQuery);
+      
+      let updatedAppsCount = 0;
+      appsSnapshot.forEach(appDoc => {
+        batch.update(appDoc.ref, {
+            status: newAppStatus,
+            updatedAt: serverTimestamp()
+        });
+        updatedAppsCount++;
+      });
+      
+      // 3. Commit all updates
+      await batch.commit();
+      
+      let successMessage = `Assessment marked as ${decision}.`;
+      if (updatedAppsCount > 0) {
+        successMessage += ` And ${updatedAppsCount} application(s) moved to '${newAppStatus}'.`;
+      }
+      
+      toast({ title: 'Success', description: successMessage });
+
     } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Error', description: error.message });
+      toast({ variant: 'destructive', title: 'Error updating status', description: error.message });
     } finally {
       setIsUpdating(false);
     }
@@ -56,15 +89,11 @@ function HrdDecisionManager({ session }: { session: AssessmentSession }) {
     <Card>
       <CardHeader>
         <CardTitle>HRD Decision</CardTitle>
-        <CardDescription>Mark the result of this assessment.</CardDescription>
+        <CardDescription>Mark the result of this assessment. This will update the candidate's application status.</CardDescription>
       </CardHeader>
       <CardContent className="flex items-center gap-2">
         <p className="font-medium">Status:</p>
-        <Badge variant={
-          currentDecision === 'approved' ? 'default'
-          : currentDecision === 'rejected' ? 'destructive'
-          : 'secondary'
-        } className={cn('capitalize', currentDecision === 'approved' && 'bg-green-600 hover:bg-green-700')}>{currentDecision}</Badge>
+         <AssessmentStatusBadge status={currentDecision === 'pending' ? session.status : currentDecision} />
       </CardContent>
       <CardFooter className="gap-2">
         <Button 
@@ -73,7 +102,7 @@ function HrdDecisionManager({ session }: { session: AssessmentSession }) {
           className="bg-green-600 hover:bg-green-700 w-full"
         >
           {isUpdating && currentDecision !== 'approved' ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Check className="mr-2 h-4 w-4"/>}
-          Approve
+          Approve & Next Stage
         </Button>
         <Button 
           onClick={() => handleUpdateDecision('rejected')} 
