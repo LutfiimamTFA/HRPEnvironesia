@@ -2,16 +2,23 @@
 
 import { useMemo, useState } from 'react';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection } from 'firebase/firestore';
+import { collection, query, where } from 'firebase/firestore';
 import type { Assessment } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { AssessmentBootstrapClient } from './AssessmentBootstrapClient';
 
 function AssessmentListSkeleton() {
-  return <Skeleton className="h-24 w-full" />;
+  return (
+    <div className="space-y-4">
+      <Skeleton className="h-24 w-full" />
+      <Skeleton className="h-24 w-full" />
+    </div>
+  );
 }
 
 export function AssessmentManagementClient() {
@@ -21,10 +28,23 @@ export function AssessmentManagementClient() {
     () => collection(firestore, 'assessments'),
     [firestore]
   );
-  const { data: assessments, isLoading } = useCollection<Assessment>(assessmentsQuery);
+  // Using mutate to allow child components to trigger a re-fetch
+  const { data: assessments, isLoading, error, mutate } = useCollection<Assessment>(assessmentsQuery);
 
   if (isLoading) {
     return <AssessmentListSkeleton />;
+  }
+
+  if (error) {
+    return (
+        <Alert variant="destructive">
+            <AlertTitle>Error Loading Assessments</AlertTitle>
+            <AlertDescription>
+                <p>There was an issue fetching assessment data. This could be a network issue or a problem with Firestore permissions.</p>
+                <p className="mt-2 text-xs">Error: {error.message}</p>
+            </AlertDescription>
+        </Alert>
+    );
   }
 
   return (
@@ -41,8 +61,8 @@ export function AssessmentManagementClient() {
                   <CardTitle>{assessment.name}</CardTitle>
                   <CardDescription>Version {assessment.version}</CardDescription>
                 </div>
-                <Badge variant={assessment.isActive ? 'default' : 'secondary'}>
-                  {assessment.isActive ? 'Active' : 'Inactive'}
+                 <Badge variant={assessment.isActive && assessment.publishStatus === 'published' ? 'default' : 'secondary'}>
+                  {assessment.isActive && assessment.publishStatus === 'published' ? 'Active & Published' : 'Inactive/Draft'}
                 </Badge>
               </div>
             </CardHeader>
@@ -57,7 +77,7 @@ export function AssessmentManagementClient() {
           </Card>
         ))
       ) : (
-        <p className="text-muted-foreground text-center py-8">No assessments found. Run the seeder to create a default assessment.</p>
+        <AssessmentBootstrapClient onBootstrapSuccess={mutate} />
       )}
     </div>
   );

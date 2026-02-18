@@ -166,19 +166,54 @@ export type Profile = {
     declaration?: boolean;
 };
 
-// Assessment Types
+// --- ASSESSMENT TYPES ---
+
+export type AssessmentTemplate = {
+  id?: string;
+  name: string;
+  engine: 'dual' | 'disc' | 'bigfive';
+  scale: {
+    type: 'likert';
+    points: number;
+    leftLabel: string;
+    rightLabel: string;
+    ui: 'bubbles';
+  };
+  dimensions: {
+    disc: { key: string; label: string }[];
+    bigfive: { key: string; label: string }[];
+  };
+  scoring: {
+    method: 'sum';
+    reverseEnabled: boolean;
+  };
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+};
+
 export type Assessment = {
-    id?: string;
-    name: string;
-    version: number;
-    isActive: boolean;
-    scoringConfig: {
-      dimensions: string[];
-      rules: Record<string, any>;
+  id?: string;
+  templateId: string;
+  name: string;
+  version: number;
+  isActive: boolean;
+  publishStatus: 'draft' | 'published';
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  resultTemplates: {
+    disc: Record<string, Partial<ResultTemplate>>;
+    bigfive: Record<string, { highText: string; midText: string; lowText: string }>;
+    overall: {
+      summaryBlocks: string[];
+      interviewQuestions: string[];
+      redFlags: string[];
+      developmentTips: string[];
     };
-    resultTemplates: Record<string, ResultTemplate>;
-    createdAt: Timestamp;
-    updatedAt: Timestamp;
+  };
+  rules?: {
+    discRule?: 'highest';
+    bigfiveNormalization?: 'minmax';
+  };
 };
 
 export type ResultTemplate = {
@@ -191,29 +226,41 @@ export type ResultTemplate = {
 };
 
 export type AssessmentQuestion = {
-    id?: string;
-    assessmentId: string;
-    order: number;
-    text: string;
-    choices: { text: string; value: number }[];
-    dimensionKey: string;
-    weight: number;
-    reverse: boolean;
+  id?: string;
+  assessmentId: string;
+  engineKey: 'disc' | 'bigfive';
+  dimensionKey: string;
+  text: string;
+  reverse: boolean;
+  weight: number;
+  order: number;
+  isActive: boolean;
 };
 
 export type AssessmentSession = {
-    id?: string;
-    assessmentId: string;
-    candidateUid: string;
-    applicationId?: string;
-    status: 'draft' | 'submitted';
-    answers: Record<string, number>; // questionId: value
-    scores: Record<string, number>; // dimensionKey: score
-    resultType?: string;
-    report?: ResultTemplate;
-    startedAt: Timestamp;
-    updatedAt: Timestamp;
-    completedAt?: Timestamp;
-    hrdNote?: string;
-    hrdStatus?: 'pending' | 'reviewed' | 'approved';
+  id?: string;
+  assessmentId: string;
+  candidateUid: string;
+  applicationId?: string;
+  status: 'draft' | 'submitted';
+  answers: { [questionId: string]: number };
+  scores: {
+    disc: Record<string, number>;
+    bigfive: Record<string, number>;
+  };
+  normalized?: {
+    bigfive: Record<string, number>;
+  };
+  result?: {
+    discType: string;
+    report: Partial<ResultTemplate> & { bigfiveSummary?: any[], interviewQuestions?: any[] };
+  };
+  startedAt: Timestamp;
+  updatedAt: Timestamp;
+  completedAt?: Timestamp;
+  hrdReview?: {
+    status: 'pending' | 'reviewed' | 'approved';
+    note?: string;
+    reviewedAt?: Timestamp;
+  };
 };
