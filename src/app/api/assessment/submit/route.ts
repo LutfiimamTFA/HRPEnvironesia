@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     if (!sessionDoc.exists) {
       return NextResponse.json({ error: 'Session not found.' }, { status: 404 });
     }
-    const session = sessionDoc.data() as AssessmentSession;
+    const session = { ...sessionDoc.data(), id: sessionDoc.id } as AssessmentSession;
 
     // Prevent re-submission
     if (session.status === 'submitted') {
@@ -50,18 +50,18 @@ export async function POST(req: NextRequest) {
     if (!assessmentDoc.exists) {
         throw new Error(`Assessment configuration '${session.assessmentId}' not found.`);
     }
-    const assessment = assessmentDoc.data() as Assessment;
+    const assessment = { ...assessmentDoc.data(), id: assessmentDoc.id } as Assessment;
 
     const templateRef = db.collection('assessment_templates').doc(assessment.templateId);
     const templateDoc = await templateRef.get();
     if (!templateDoc.exists) {
         throw new Error(`Assessment template '${assessment.templateId}' not found.`);
     }
-    const template = templateDoc.data() as AssessmentTemplate;
+    const template = { ...templateDoc.data(), id: templateDoc.id } as AssessmentTemplate;
 
     // Guard against malformed template
     if (!template || !template.dimensions || !template.scale) {
-        throw new Error(`Assessment template '${assessment.templateId}' is malformed or missing key properties like 'dimensions' or 'scale'.`);
+        throw new Error(`Assessment template '${template.id}' is malformed or missing key properties like 'dimensions' or 'scale'.`);
     }
     if (!assessment.resultTemplates || !assessment.resultTemplates.disc || !assessment.resultTemplates.bigfive || !assessment.rules) {
         throw new Error(`Assessment '${assessment.id}' is malformed or missing key properties like 'resultTemplates' or 'rules'.`);
