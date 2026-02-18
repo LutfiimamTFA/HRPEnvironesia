@@ -19,8 +19,8 @@ import { AnswerAnalysis } from '@/components/dashboard/AnswerAnalysis';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import { AssessmentStatusBadge } from '@/components/dashboard/AssessmentStatusBadge';
-import { Badge } from '@/components/ui/badge';
 import { FirestorePermissionError, errorEmitter } from '@/firebase';
+import { Badge } from '@/components/ui/badge';
 
 
 function HrdDecisionManager({ session }: { session: AssessmentSession }) {
@@ -52,7 +52,7 @@ function HrdDecisionManager({ session }: { session: AssessmentSession }) {
       batch.update(sessionRef, sessionUpdateData);
 
       // 2. Find and queue the application updates
-      const newAppStatus = decision === 'approved' ? 'verification' : 'rejected';
+      const newAppStatus = decision === 'approved' ? 'document_submission' : 'rejected';
       
       const appsQuery = query(
         collection(firestore, 'applications'),
