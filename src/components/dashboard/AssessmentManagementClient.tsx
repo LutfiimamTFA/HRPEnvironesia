@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useCollection, useFirestore, useMemoFirebase, deleteDocumentNonBlocking, doc } from '@/firebase';
-import { collection } from 'firebase/firestore';
+import { useCollection, useFirestore, useMemoFirebase, deleteDocumentNonBlocking } from '@/firebase';
+import { collection, doc } from 'firebase/firestore';
 import type { Assessment } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -44,7 +44,7 @@ export function AssessmentManagementClient() {
     [firestore]
   );
 
-  const { data: assessments, isLoading, error } = useCollection<Assessment>(assessmentsQuery);
+  const { data: assessments, isLoading, error, mutate } = useCollection<Assessment>(assessmentsQuery);
 
   const handleDelete = (assessment: Assessment) => {
     setAssessmentToDelete(assessment);
@@ -133,7 +133,7 @@ export function AssessmentManagementClient() {
           </Card>
         ))
       ) : (
-        <AssessmentBootstrapClient onBootstrapSuccess={router.refresh} />
+        <AssessmentBootstrapClient onBootstrapSuccess={mutate} />
       )}
        <DeleteConfirmationDialog
         open={isDeleteConfirmOpen}
