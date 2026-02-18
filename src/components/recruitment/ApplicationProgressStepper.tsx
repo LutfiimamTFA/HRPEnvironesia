@@ -8,8 +8,8 @@ import { Check, BrainCircuit, ClipboardCheck, Users, Award, FileUp, FileText } f
 const applicationSteps = [
   { status: 'submitted', label: 'Terkirim', icon: FileUp },
   { status: 'psychotest', label: 'Psikotes', icon: BrainCircuit },
-  { status: 'verification', label: 'Verifikasi', icon: ClipboardCheck },
   { status: 'document_submission', label: 'Dokumen', icon: FileText },
+  { status: 'verification', label: 'Verifikasi', icon: ClipboardCheck },
   { status: 'interview', label: 'Wawancara', icon: Users },
   { status: 'hired', label: 'Diterima', icon: Award },
 ];

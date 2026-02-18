@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 
 
-const allStatuses: JobApplication['status'][] = ['draft', 'submitted', 'psychotest', 'verification', 'document_submission', 'interview', 'hired', 'rejected'];
+const allStatuses: JobApplication['status'][] = ['draft', 'submitted', 'psychotest', 'document_submission', 'verification', 'interview', 'hired', 'rejected'];
 const visibleSteps = [
   { status: 'draft', label: 'Draf', icon: FileSignature },
   { status: 'submitted', label: 'Terkirim', icon: FileUp },
