@@ -270,10 +270,62 @@ export type AssessmentSession = {
   completedAt?: Timestamp;
 };
 
-export type CandidateFitAnalysisOutput = {
-    summary: string;
+
+// --- AI ANALYSIS TYPES ---
+
+export type RecommendedDecision = 'advance_interview' | 'advance_test' | 'hold' | 'reject';
+
+export type Confidence = {
+  level: 'high' | 'medium' | 'low';
+  reasons: string[];
+};
+
+export type RequirementMatch = {
+  requirement: string;
+  type: 'must-have' | 'nice-to-have';
+  match: 'yes' | 'partial' | 'no';
+  evidence_from_cv: string;
+  risk_note?: string;
+};
+
+export type ScoreBreakdown = {
+  relevantExperience: number;
+  adminDocumentation: number;
+  communicationTeamwork: number;
+  analyticalProblemSolving: number;
+  toolsHardSkills: number;
+  initiativeOwnership: number;
+  cultureFit: {
     score: number;
-    strengths: string[];
-    weaknesses: string[];
-    roleSuggestions?: string[];
+    reason: string;
+  };
+};
+
+export type Strength = {
+  strength: string;
+  evidence_from_cv: string;
+};
+
+export type GapRisk = {
+  gap: string;
+  impact: string;
+  onboarding_mitigation: string;
+};
+
+export type InterviewQuestion = {
+  question: string;
+  ideal_answer: string;
+};
+
+export type CandidateFitAnalysisOutput = {
+  recommendedDecision: RecommendedDecision;
+  confidence: Confidence;
+  requirementMatchMatrix: RequirementMatch[];
+  scoreBreakdown: ScoreBreakdown;
+  strengths: Strength[];
+  gapsRisks: GapRisk[];
+  redFlags?: string[];
+  interviewQuestions: InterviewQuestion[];
+  quickTestRecommendation: string[];
+  missingInformation: string[];
 };

@@ -18,52 +18,45 @@ const prompt = ai.definePrompt({
   name: 'analyzeCandidateFitPrompt',
   input: {schema: CandidateFitAnalysisInputSchema},
   output: {schema: CandidateFitAnalysisOutputSchema},
-  prompt: `Anda adalah seorang Direktur HR yang sangat bijaksana dan berpengalaman, dengan keahlian khusus dalam psikologi industri dan pengembangan talenta. Tugas Anda adalah memberikan analisis yang mendalam, holistik, dan strategis terhadap seorang kandidat.
+  prompt: `KAMU ADALAH HR ANALYST. JANGAN BERASUMSI. DILARANG menulis “diasumsikan/mungkin” tanpa bukti dari CV.
 
-Analisis Anda harus menarik "benang merah" antara profil profesional (pengalaman, keahlian) dan profil kepribadian (dari hasil psikotes) untuk memberikan gambaran utuh tentang kandidat.
-
-Output harus dalam Bahasa Indonesia.
-
-**Konteks:**
-Seorang kandidat telah melamar untuk sebuah posisi. Anda diberikan data profil profesional, kualifikasi pekerjaan, dan (jika tersedia) hasil tes kepribadian mereka.
-
-**Tugas Anda:**
-
-1.  **Analisis Holistik (summary):** Berikan ringkasan 2-3 kalimat yang tajam dan insightful. Jangan hanya merangkum CV, tetapi temukan **"benang merah"** yang menghubungkan pengalaman kerja, keahlian, dan tipe kepribadian mereka. Jelaskan bagaimana kombinasi ini membentuk potret kandidat secara keseluruhan.
-
-2.  **Skor Kecocokan (score):** Berikan skor numerik antara 1 hingga 100 yang merepresentasikan tingkat kecocokan kandidat **untuk posisi yang sedang dilamar ini**.
-    -   **1-40:** Kurang cocok.
-    -   **41-70:** Cukup cocok.
-    -   **71-90:** Sangat cocok.
-    -   **91-100:** Kandidat ideal.
-
-3.  **Sinergi Kekuatan (strengths):** Identifikasi 3-5 poin sinergi di mana profil profesional dan kepribadian kandidat saling menguatkan dan sangat cocok dengan kebutuhan pekerjaan. Jadilah spesifik. Contoh: "Sifat dominan (tipe D) dari hasil psikotes sangat mendukung pengalamannya selama 5 tahun sebagai Manajer Proyek dalam mengambil keputusan tegas."
-
-4.  **Potensi Area Pengembangan (weaknesses):** Identifikasi 2-3 area di mana kombinasi profil dan kepribadian kandidat mungkin menjadi tantangan untuk peran ini. Sampaikan dengan cara yang konstruktif dan strategis. Contoh: "Kecenderungan untuk kurang detail (tipe I) mungkin perlu diwaspadai mengingat peran ini membutuhkan akurasi data yang tinggi."
-
-5.  **Saran Peran Alternatif (roleSuggestions):** Berdasarkan analisis holistik Anda, sarankan 2-3 peran **alternatif lain** (di luar posisi yang dilamar) yang mungkin sangat cocok untuk kandidat ini di masa depan. Berpikir out-of-the-box. Contoh: "Analis Data", "Business Development", "Product Manager".
-
-**Data untuk Dianalisis:**
-
-**1. Kualifikasi Khusus Pekerjaan:**
+INPUT:
+1) Job Requirement (teks):
 \`\`\`html
 {{{jobRequirements}}}
 \`\`\`
-
-**2. Profil Profesional Kandidat (CV):**
+2) CV Kandidat (teks):
 \`\`\`json
 {{{candidateProfile}}}
 \`\`\`
 
-{{#if personalityAnalysis}}
-**3. Hasil Analisis Kepribadian:**
-\`\`\`json
-{{{personalityAnalysis}}}
-\`\`\`
-{{/if}}
+OUTPUT WAJIB (format terstruktur, ringkas, bisa dipakai HRD ambil keputusan):
+A. Recommended Decision: {advance_interview | advance_test | hold | reject}
+B. Confidence: {high | medium | low} + alasan 3 bullet
+C. Requirement Match Matrix (WAJIB):
+   - requirement
+   - type: must-have / nice-to-have
+   - match: yes / partial / no
+   - evidence_from_cv: kutip teks CV atau sebut bagian spesifik CV
+   - risk_note (jika partial/no)
+D. Score Breakdown (0-100) per dimensi:
+   - Relevant Experience
+   - Admin/Documentation
+   - Communication/Teamwork
+   - Analytical/Problem Solving
+   - Tools/Hard Skills
+   - Initiative/Ownership
+   - Culture Fit (dengan alasan)
+E. Strengths (maks 5) — setiap poin wajib ada evidence_from_cv
+F. Gaps/Risks (maks 5) — setiap poin wajib ada dampak + mitigasi onboarding
+G. Red Flags (jika ada)
+H. Interview Questions (10) + “jawaban ideal singkat”
+I. Quick Test Recommendation (maks 3) sesuai role (misal excel, writing, case)
+J. Missing Information to Ask Candidate (maks 5)
 
-Lakukan analisis mendalam Anda sekarang.
-`,
+KETENTUAN:
+- Jika must-have tidak terpenuhi -> Recommended Decision minimal “hold” atau “reject” dengan alasan jelas.
+- Semua klaim harus punya evidence_from_cv. Jika tidak ada, tulis “NOT FOUND IN CV”.`,
 });
 
 const analyzeCandidateFitFlow = ai.defineFlow(

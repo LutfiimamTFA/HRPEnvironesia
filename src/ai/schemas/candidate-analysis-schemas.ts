@@ -23,27 +23,70 @@ const SimplifiedProfileSchema = z.object({
   education: z.array(SimplifiedEducationSchema).optional().describe("Riwayat pendidikan kandidat."),
 });
 
-const PersonalityAnalysisSchema = z.object({
-  typeTitle: z.string().describe("Judul tipe kepribadian dari hasil tes, misal: 'Tipe Dominan'."),
-  typeSubtitle: z.string().describe("Sub-judul atau deskripsi singkat tipe kepribadian."),
-  strengths: z.array(z.string()).describe("Kekuatan berdasarkan hasil tes kepribadian."),
-  risks: z.array(z.string()).describe("Potensi risiko atau area pengembangan berdasarkan tes."),
-  roleFit: z.array(z.string()).describe("Rekomendasi peran yang cocok berdasarkan tes."),
-}).optional();
-
-
 export const CandidateFitAnalysisInputSchema = z.object({
     candidateProfile: SimplifiedProfileSchema.describe("Objek JSON yang berisi profil kandidat (CV, pengalaman, dll)."),
     jobRequirements: z.string().describe("String HTML yang berisi kualifikasi khusus untuk pekerjaan yang dilamar."),
-    personalityAnalysis: PersonalityAnalysisSchema.describe("Hasil dari tes kepribadian kandidat (jika tersedia)."),
+    personalityAnalysis: z.any().optional(), // This is no longer used by the new prompt, but kept for compatibility.
 });
 export type CandidateFitAnalysisInput = z.infer<typeof CandidateFitAnalysisInputSchema>;
 
+
+// --- NEW DETAILED OUTPUT SCHEMA ---
+
+const RecommendedDecisionSchema = z.enum(['advance_interview', 'advance_test', 'hold', 'reject']);
+
+const ConfidenceSchema = z.object({
+  level: z.enum(['high', 'medium', 'low']),
+  reasons: z.array(z.string()).max(3),
+});
+
+const RequirementMatchSchema = z.object({
+  requirement: z.string(),
+  type: z.enum(['must-have', 'nice-to-have']),
+  match: z.enum(['yes', 'partial', 'no']),
+  evidence_from_cv: z.string(),
+  risk_note: z.string().optional(),
+});
+
+const ScoreBreakdownSchema = z.object({
+  relevantExperience: z.number().int().min(0).max(100),
+  adminDocumentation: z.number().int().min(0).max(100),
+  communicationTeamwork: z.number().int().min(0).max(100),
+  analyticalProblemSolving: z.number().int().min(0).max(100),
+  toolsHardSkills: z.number().int().min(0).max(100),
+  initiativeOwnership: z.number().int().min(0).max(100),
+  cultureFit: z.object({
+    score: z.number().int().min(0).max(100),
+    reason: z.string(),
+  }),
+});
+
+const StrengthSchema = z.object({
+  strength: z.string(),
+  evidence_from_cv: z.string(),
+});
+
+const GapRiskSchema = z.object({
+  gap: z.string(),
+  impact: z.string(),
+  onboarding_mitigation: z.string(),
+});
+
+const InterviewQuestionSchema = z.object({
+  question: z.string(),
+  ideal_answer: z.string(),
+});
+
 export const CandidateFitAnalysisOutputSchema = z.object({
-  summary: z.string().describe("Ringkasan analisis 2-3 kalimat yang holistik, menarik 'benang merah' antara profil profesional dan kepribadian kandidat."),
-  score: z.number().int().min(1).max(100).describe("Skor kecocokan numerik dari 1 hingga 100 untuk posisi yang dilamar."),
-  strengths: z.array(z.string()).describe("Daftar 3-5 poin kekuatan utama kandidat yang cocok dengan pekerjaan, gabungkan aspek profesional dan kepribadian."),
-  weaknesses: z.array(z.string()).describe("Daftar 2-3 potensi kesenjangan atau area yang kurang cocok, gabungkan aspek profesional dan kepribadian."),
-  roleSuggestions: z.array(z.string()).describe("Saran 2-3 peran alternatif lain yang mungkin cocok untuk kandidat berdasarkan profil keseluruhan, di luar posisi yang dilamar saat ini."),
+  recommendedDecision: RecommendedDecisionSchema.describe('A. Recommended Decision'),
+  confidence: ConfidenceSchema.describe('B. Confidence level and reasons'),
+  requirementMatchMatrix: z.array(RequirementMatchSchema).describe('C. Requirement Match Matrix'),
+  scoreBreakdown: ScoreBreakdownSchema.describe('D. Score Breakdown (0-100) per dimension'),
+  strengths: z.array(StrengthSchema).max(5).describe('E. Strengths with evidence from CV'),
+  gapsRisks: z.array(GapRiskSchema).max(5).describe('F. Gaps/Risks with impact and mitigation'),
+  redFlags: z.array(z.string()).optional().describe('G. Red Flags, if any'),
+  interviewQuestions: z.array(InterviewQuestionSchema).max(10).describe('H. Interview Questions with ideal answers'),
+  quickTestRecommendation: z.array(z.string()).max(3).describe('I. Quick Test Recommendation based on role'),
+  missingInformation: z.array(z.string()).max(5).describe('J. Missing Information to ask the candidate'),
 });
 export type CandidateFitAnalysisOutput = z.infer<typeof CandidateFitAnalysisOutputSchema>;

@@ -2,22 +2,49 @@
 'use client';
 
 import { useState } from 'react';
-import type { Profile, Job, CandidateFitAnalysisOutput, AssessmentSession } from '@/lib/types';
+import type { Profile, Job, CandidateFitAnalysisOutput, RequirementMatch } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from '../ui/button';
-import { Sparkles, Loader2, AlertCircle, CheckCircle, XCircle, Briefcase } from 'lucide-react';
+import { Sparkles, Loader2, AlertCircle, CheckCircle, XCircle, FileQuestion, Lightbulb, FlaskConical, Target } from 'lucide-react';
 import { analyzeCandidateFit } from '@/ai/flows/analyze-candidate-fit-flow';
 import { useToast } from '@/hooks/use-toast';
-import { Progress } from '../ui/progress';
 import { Badge } from '../ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { cn } from '@/lib/utils';
+import { Separator } from '../ui/separator';
 
 interface CandidateFitAnalysisProps {
   profile: Profile;
   job: Job;
-  assessmentSession: AssessmentSession | null;
 }
 
-export function CandidateFitAnalysis({ profile, job, assessmentSession }: CandidateFitAnalysisProps) {
+const decisionConfig = {
+    advance_interview: { label: 'Advance to Interview', icon: CheckCircle, className: 'text-green-600' },
+    advance_test: { label: 'Advance to Test', icon: CheckCircle, className: 'text-blue-600' },
+    hold: { label: 'Hold', icon: AlertCircle, className: 'text-yellow-600' },
+    reject: { label: 'Reject', icon: XCircle, className: 'text-red-600' },
+};
+
+const matchConfig = {
+    yes: { label: 'Yes', icon: CheckCircle, className: 'text-green-600' },
+    partial: { label: 'Partial', icon: AlertCircle, className: 'text-yellow-600' },
+    no: { label: 'No', icon: XCircle, className: 'text-red-600' },
+};
+
+const AnalysisSection = ({ title, icon, children }: { title: string, icon: React.ReactNode, children: React.ReactNode }) => (
+    <Card>
+        <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+                {icon}
+                {title}
+            </CardTitle>
+        </CardHeader>
+        <CardContent>{children}</CardContent>
+    </Card>
+);
+
+export function CandidateFitAnalysis({ profile, job }: CandidateFitAnalysisProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [analysis, setAnalysis] = useState<CandidateFitAnalysisOutput | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -47,18 +74,9 @@ export function CandidateFitAnalysis({ profile, job, assessmentSession }: Candid
         })) || []
       };
 
-      const personalityData = assessmentSession?.result?.report ? {
-          typeTitle: assessmentSession.result.report.title || '',
-          typeSubtitle: assessmentSession.result.report.subtitle || '',
-          strengths: assessmentSession.result.report.strengths || [],
-          risks: assessmentSession.result.report.risks || [],
-          roleFit: assessmentSession.result.report.roleFit || [],
-      } : undefined;
-
       const result = await analyzeCandidateFit({
         candidateProfile: profileForAnalysis,
         jobRequirements: job.specialRequirementsHtml,
-        personalityAnalysis: personalityData,
       });
       setAnalysis(result);
     } catch (e: any) {
@@ -73,6 +91,8 @@ export function CandidateFitAnalysis({ profile, job, assessmentSession }: Candid
     }
   };
 
+  const Decision = analysis ? decisionConfig[analysis.recommendedDecision] : null;
+
   return (
     <Card>
       <CardHeader>
@@ -80,13 +100,13 @@ export function CandidateFitAnalysis({ profile, job, assessmentSession }: Candid
           <div>
             <CardTitle className="flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-primary" />
-              Analisis AI
+              Analisis AI (HR Analyst)
             </CardTitle>
             <CardDescription>Analisis kesesuaian kandidat dengan kualifikasi khusus (didukung oleh AI).</CardDescription>
           </div>
            <Button onClick={handleAnalyze} disabled={isLoading}>
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-            {isLoading ? 'Menganalisis...' : 'Lakukan Analisis AI'}
+            {isLoading ? 'Menganalisis...' : 'Lakukan Analisis'}
           </Button>
         </div>
       </CardHeader>
@@ -108,55 +128,152 @@ export function CandidateFitAnalysis({ profile, job, assessmentSession }: Candid
                 <p className="font-semibold">{error}</p>
             </div>
         )}
-        {analysis && (
+        {analysis && Decision && (
             <div className="space-y-6">
-                <div>
-                    <div className="flex justify-between items-center mb-1">
-                        <span className="text-sm font-medium text-muted-foreground">Skor Kecocokan</span>
-                        <span className="font-bold text-lg text-primary">{analysis.score}/100</span>
+                 {/* Section A & B: Decision and Confidence */}
+                <div className="grid md:grid-cols-2 gap-6">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="text-base">A. Recommended Decision</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                             <div className={cn("flex items-center gap-2 text-lg font-semibold", Decision.className)}>
+                                <Decision.icon className="h-6 w-6" />
+                                <span>{Decision.label}</span>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="text-base">B. Confidence</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="flex items-center gap-4">
+                                <Badge variant="outline" className="capitalize text-base py-1 px-3">{analysis.confidence.level}</Badge>
+                                <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
+                                    {analysis.confidence.reasons.map((reason, i) => <li key={i}>{reason}</li>)}
+                                </ul>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+
+                {/* Section C: Requirement Match Matrix */}
+                <AnalysisSection title="C. Requirement Match Matrix" icon={<Target className="h-5 w-5" />}>
+                    <div className="overflow-x-auto">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Requirement</TableHead>
+                                    <TableHead>Type</TableHead>
+                                    <TableHead>Match</TableHead>
+                                    <TableHead>Evidence from CV</TableHead>
+                                    <TableHead>Risk Note</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {analysis.requirementMatchMatrix.map((item, i) => {
+                                    const match = matchConfig[item.match];
+                                    return (
+                                        <TableRow key={i}>
+                                            <TableCell className="font-medium">{item.requirement}</TableCell>
+                                            <TableCell><Badge variant={item.type === 'must-have' ? 'destructive' : 'secondary'}>{item.type}</Badge></TableCell>
+                                            <TableCell>
+                                                <div className={cn("flex items-center gap-1 font-medium", match.className)}>
+                                                    <match.icon className="h-4 w-4" />
+                                                    <span>{match.label}</span>
+                                                </div>
+                                            </TableCell>
+                                            <TableCell className="text-xs text-muted-foreground italic">"{item.evidence_from_cv}"</TableCell>
+                                            <TableCell className="text-xs text-destructive">{item.risk_note}</TableCell>
+                                        </TableRow>
+                                    )
+                                })}
+                            </TableBody>
+                        </Table>
                     </div>
-                    <Progress value={analysis.score} className="h-3" />
-                </div>
-                <div>
-                    <h4 className="font-semibold mb-2">Ringkasan Analisis</h4>
-                    <p className="text-sm text-muted-foreground italic p-4 bg-muted/50 rounded-lg">{analysis.summary}</p>
-                </div>
-                 <div className="grid md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                        <h4 className="font-semibold flex items-center gap-2"><CheckCircle className="h-5 w-5 text-green-600" /> Sinergi Kekuatan</h4>
-                        <ul className="list-none space-y-2">
-                            {analysis.strengths.map((item, index) => (
-                                <li key={index} className="flex items-start gap-2 text-sm p-2 bg-green-50 dark:bg-green-900/20 rounded-md">
-                                    <CheckCircle className="h-4 w-4 mt-0.5 text-green-600 flex-shrink-0" /> 
-                                    <span>{item}</span>
+                </AnalysisSection>
+
+                {/* Section D, E, F */}
+                <div className="grid lg:grid-cols-3 gap-6 items-start">
+                    <AnalysisSection title="D. Score Breakdown" icon={<Sparkles className="h-5 w-5" />}>
+                        <ul className="space-y-2 text-sm">
+                            {Object.entries(analysis.scoreBreakdown).map(([key, value]) => {
+                                const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                                if (key === 'cultureFit') {
+                                    return (
+                                        <li key={key} className="flex justify-between items-start">
+                                            <span>{label}: <strong className="text-primary">{value.score}</strong></span>
+                                            <p className="text-xs text-muted-foreground text-right ml-2">({value.reason})</p>
+                                        </li>
+                                    )
+                                }
+                                return (
+                                    <li key={key} className="flex justify-between items-center">
+                                        <span>{label}</span> <strong className="text-primary">{value}</strong>
+                                    </li>
+                                )
+                            })}
+                        </ul>
+                    </AnalysisSection>
+                     <AnalysisSection title="E. Strengths" icon={<CheckCircle className="h-5 w-5 text-green-600" />}>
+                         <ul className="space-y-3 text-sm">
+                            {analysis.strengths.map((item, i) => (
+                                <li key={i}>
+                                    <p className="font-medium">{item.strength}</p>
+                                    <p className="text-xs text-muted-foreground italic">Evidence: "{item.evidence_from_cv}"</p>
                                 </li>
                             ))}
                         </ul>
-                    </div>
-                     <div className="space-y-2">
-                        <h4 className="font-semibold flex items-center gap-2"><XCircle className="h-5 w-5 text-red-600" /> Potensi Area Pengembangan</h4>
-                        <ul className="list-none space-y-2">
-                            {analysis.weaknesses.map((item, index) => (
-                               <li key={index} className="flex items-start gap-2 text-sm p-2 bg-red-50 dark:bg-red-900/20 rounded-md">
-                                    <XCircle className="h-4 w-4 mt-0.5 text-red-600 flex-shrink-0" />
-                                    <span>{item}</span>
+                     </AnalysisSection>
+                     <AnalysisSection title="F. Gaps & Risks" icon={<XCircle className="h-5 w-5 text-red-600" />}>
+                         <ul className="space-y-3 text-sm">
+                            {analysis.gapsRisks.map((item, i) => (
+                                <li key={i}>
+                                    <p className="font-medium">{item.gap}</p>
+                                    <p className="text-xs text-muted-foreground"><strong>Impact:</strong> {item.impact}</p>
+                                    <p className="text-xs text-muted-foreground"><strong>Mitigation:</strong> {item.onboarding_mitigation}</p>
                                 </li>
                             ))}
                         </ul>
-                    </div>
+                     </AnalysisSection>
                 </div>
-                {analysis.roleSuggestions && analysis.roleSuggestions.length > 0 && (
-                     <div className="space-y-2">
-                        <h4 className="font-semibold flex items-center gap-2"><Briefcase className="h-5 w-5 text-indigo-600" /> Saran Peran Alternatif</h4>
-                        <div className="flex flex-wrap gap-2">
-                            {analysis.roleSuggestions.map((role, index) => (
-                                <Badge key={index} variant="outline" className="text-base py-1 px-3 bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-700 text-indigo-800 dark:text-indigo-200">
-                                    {role}
-                                </Badge>
-                            ))}
-                        </div>
-                    </div>
-                )}
+                 {analysis.redFlags && analysis.redFlags.length > 0 && (
+                     <AnalysisSection title="G. Red Flags" icon={<AlertCircle className="h-5 w-5 text-destructive" />}>
+                         <ul className="list-disc list-inside space-y-1 text-sm text-destructive font-medium">
+                            {analysis.redFlags.map((flag, i) => <li key={i}>{flag}</li>)}
+                        </ul>
+                    </AnalysisSection>
+                 )}
+                 <Separator />
+
+                {/* Section H: Interview Questions */}
+                 <AnalysisSection title="H. Interview Questions" icon={<FileQuestion className="h-5 w-5" />}>
+                     <Accordion type="single" collapsible className="w-full">
+                        {analysis.interviewQuestions.map((item, i) => (
+                            <AccordionItem value={`item-${i}`} key={i}>
+                                <AccordionTrigger>{i+1}. {item.question}</AccordionTrigger>
+                                <AccordionContent>
+                                    <p className="text-xs text-muted-foreground italic">Jawaban ideal: {item.ideal_answer}</p>
+                                </AccordionContent>
+                            </AccordionItem>
+                        ))}
+                    </Accordion>
+                </AnalysisSection>
+
+                {/* Section I & J */}
+                 <div className="grid md:grid-cols-2 gap-6 items-start">
+                    <AnalysisSection title="I. Quick Test Recommendation" icon={<FlaskConical className="h-5 w-5" />}>
+                        <ul className="list-disc list-inside text-sm space-y-1">
+                            {analysis.quickTestRecommendation.map((item, i) => <li key={i}>{item}</li>)}
+                        </ul>
+                    </AnalysisSection>
+                     <AnalysisSection title="J. Missing Information" icon={<Lightbulb className="h-5 w-5" />}>
+                         <ul className="list-disc list-inside text-sm space-y-1">
+                            {analysis.missingInformation.map((item, i) => <li key={i}>{item}</li>)}
+                        </ul>
+                    </AnalysisSection>
+                 </div>
             </div>
         )}
       </CardContent>

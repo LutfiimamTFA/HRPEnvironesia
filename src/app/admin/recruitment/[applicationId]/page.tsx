@@ -4,9 +4,9 @@
 import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
-import { useCollection, useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
-import { doc, serverTimestamp, collection, query, where } from 'firebase/firestore';
-import type { JobApplication, Profile, NavigationSetting, Job, AssessmentSession } from '@/lib/types';
+import { useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
+import { doc, serverTimestamp } from 'firebase/firestore';
+import type { JobApplication, Profile, NavigationSetting, Job } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -103,22 +103,6 @@ export default function ApplicationDetailPage() {
   );
   const { data: job, isLoading: isLoadingJob } = useDoc<Job>(jobRef);
 
-  const assessmentSessionsQuery = useMemoFirebase(() => {
-    if (!application) return null;
-    return query(
-      collection(firestore, 'assessment_sessions'),
-      where('candidateUid', '==', application.candidateUid),
-      where('status', '==', 'submitted')
-    );
-  }, [firestore, application]);
-  const { data: assessmentSessions, isLoading: isLoadingSessions } = useCollection<AssessmentSession>(assessmentSessionsQuery);
-
-  const latestAssessmentSession = useMemo(() => {
-    if (!assessmentSessions || assessmentSessions.length === 0) return null;
-    return [...assessmentSessions].sort((a, b) => (b.completedAt?.toMillis() || 0) - (a.completedAt?.toMillis() || 0))[0];
-  }, [assessmentSessions]);
-
-
   const menuItems = useMemo(() => {
     const defaultItems = ALL_MENU_ITEMS[userProfile?.role as keyof typeof ALL_MENU_ITEMS] || [];
     if (isLoadingSettings) return defaultItems;
@@ -128,7 +112,7 @@ export default function ApplicationDetailPage() {
     return defaultItems;
   }, [navSettings, isLoadingSettings, userProfile]);
 
-  const isLoading = isLoadingApp || isLoadingProfile || isLoadingSettings || isLoadingJob || isLoadingSessions;
+  const isLoading = isLoadingApp || isLoadingProfile || isLoadingSettings || isLoadingJob;
 
   if (!hasAccess) {
     return <DashboardLayout pageTitle="Loading..." menuItems={[]}><ApplicationDetailSkeleton /></DashboardLayout>;
@@ -195,7 +179,7 @@ export default function ApplicationDetailPage() {
             </CardContent>
           </Card>
           <CandidateDocumentsCard application={application} />
-          <CandidateFitAnalysis profile={profile} job={job} assessmentSession={latestAssessmentSession} />
+          <CandidateFitAnalysis profile={profile} job={job} />
           <ProfileView profile={profile} />
         </div>
       )}
