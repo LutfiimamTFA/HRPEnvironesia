@@ -167,6 +167,7 @@ function DocumentUploadSlot({ label, fileType, userId, applicationId, initialFil
             <XCircle className="mx-auto h-10 w-10" />
             <p className="mt-2 font-semibold">Unggah Gagal</p>
             <p className="text-xs">{error}</p>
+            <Button variant="destructive" size="sm" className="mt-4" onClick={handleDelete}>Coba lagi</Button>
           </div>
         ) : isUploading ? (
           <div className="w-full text-center">
@@ -208,25 +209,25 @@ export default function DocumentsPage() {
   const { data: applications, isLoading: appsLoading } = useCollection<JobApplication>(applicationsQuery);
   const isLoading = authLoading || appsLoading;
 
-  const applicationsForUpload = useMemo(() => 
-    applications?.filter(app => app.status === 'document_submission') || [], 
+  const applicationsForEditing = useMemo(() => 
+    applications?.filter(app => ['document_submission', 'verification'].includes(app.status)) || [], 
     [applications]
   );
   
-  const applicationsUnderReview = useMemo(() => 
-    applications?.filter(app => ['verification', 'interview', 'hired'].includes(app.status)) || [],
+  const applicationsReadOnly = useMemo(() => 
+    applications?.filter(app => ['interview', 'hired'].includes(app.status)) || [],
     [applications]
   );
 
   useEffect(() => {
-    if (applicationsForUpload && applicationsForUpload.length > 0) {
-      const app = applicationsForUpload[0];
+    if (applicationsForEditing && applicationsForEditing.length > 0) {
+      const app = applicationsForEditing[0];
       setUploads({
         cv: app.cvUrl && app.cvFileName ? { url: app.cvUrl, name: app.cvFileName } : null,
         ijazah: app.ijazahUrl && app.ijazahFileName ? { url: app.ijazahUrl, name: app.ijazahFileName } : null,
       });
     }
-  }, [appsLoading, applicationsForUpload]);
+  }, [appsLoading, applicationsForEditing]);
 
   const handleUploadComplete = (fileType: 'cv' | 'ijazah', file: UploadedFile) => {
     setUploads(prev => ({ ...prev, [fileType]: file }));
@@ -237,27 +238,36 @@ export default function DocumentsPage() {
   }
 
   const handleSubmitDocuments = async () => {
-    if (!applicationsForUpload || applicationsForUpload.length === 0 || !uploads.cv || !uploads.ijazah) return;
+    if (!applicationsForEditing || applicationsForEditing.length === 0 || !uploads.cv || !uploads.ijazah) return;
     setIsSubmitting(true);
     
+    const currentStatus = applicationsForEditing[0].status;
+    const isFirstSubmission = currentStatus === 'document_submission';
+
     const batch = writeBatch(firestore);
-    applicationsForUpload.forEach(app => {
+    
+    const updatePayload: any = {
+      cvUrl: uploads.cv?.url,
+      ijazahUrl: uploads.ijazah?.url,
+      cvFileName: uploads.cv?.name,
+      ijazahFileName: uploads.ijazah?.name,
+      updatedAt: serverTimestamp(),
+    };
+
+    if (isFirstSubmission) {
+      updatePayload.status = 'verification';
+    }
+
+    applicationsForEditing.forEach(app => {
       const appRef = doc(firestore, 'applications', app.id!);
-      batch.update(appRef, {
-        cvUrl: uploads.cv?.url,
-        ijazahUrl: uploads.ijazah?.url,
-        cvFileName: uploads.cv?.name,
-        ijazahFileName: uploads.ijazah?.name,
-        status: 'verification',
-        updatedAt: serverTimestamp(),
-      });
+      batch.update(appRef, updatePayload);
     });
 
     try {
       await batch.commit();
       toast({
-        title: "Dokumen Berhasil Dikirim",
-        description: "Dokumen Anda akan diverifikasi oleh tim HRD.",
+        title: isFirstSubmission ? "Dokumen Berhasil Dikirim" : "Dokumen Diperbarui",
+        description: isFirstSubmission ? "Dokumen Anda akan diverifikasi oleh tim HRD." : "Perubahan dokumen Anda telah disimpan.",
       });
       // The useCollection hook will update automatically
     } catch (error: any) {
@@ -270,12 +280,15 @@ export default function DocumentsPage() {
       setIsSubmitting(false);
     }
   };
+  
+  const currentStatus = applicationsForEditing.length > 0 ? applicationsForEditing[0].status : null;
+  const isFirstSubmission = currentStatus === 'document_submission';
 
   if (isLoading) {
     return <Skeleton className="h-96 w-full" />;
   }
 
-  if (applicationsForUpload.length === 0 && applicationsUnderReview.length === 0) {
+  if (applicationsForEditing.length === 0 && applicationsReadOnly.length === 0) {
     return (
       <Card>
         <CardHeader>
@@ -297,7 +310,7 @@ export default function DocumentsPage() {
 
   return (
     <div className="space-y-6">
-        {applicationsForUpload.length > 0 && (
+        {applicationsForEditing.length > 0 && (
              <Card>
                 <CardHeader>
                     <CardTitle>Pengumpulan Dokumen</CardTitle>
@@ -310,7 +323,7 @@ export default function DocumentsPage() {
                     <Info className="h-4 w-4" />
                     <AlertTitle>Perhatian</AlertTitle>
                     <AlertDescription>
-                        Dokumen yang Anda unggah di sini akan digunakan untuk semua lamaran yang sedang dalam tahap ini ({applicationsForUpload.length} lamaran).
+                        Dokumen yang Anda unggah di sini akan digunakan untuk semua lamaran yang sedang dalam tahap ini ({applicationsForEditing.length} lamaran).
                     </AlertDescription>
                     </Alert>
 
@@ -322,7 +335,7 @@ export default function DocumentsPage() {
                         onUploadComplete={handleUploadComplete}
                         onDelete={handleUploadDelete}
                         userId={userProfile!.uid}
-                        applicationId={applicationsForUpload[0].id!}
+                        applicationId={applicationsForEditing[0].id!}
                     />
                     <DocumentUploadSlot
                         label="Ijazah / SKL"
@@ -331,7 +344,7 @@ export default function DocumentsPage() {
                         onUploadComplete={handleUploadComplete}
                         onDelete={handleUploadDelete}
                         userId={userProfile!.uid}
-                        applicationId={applicationsForUpload[0].id!}
+                        applicationId={applicationsForEditing[0].id!}
                     />
                     </div>
 
@@ -344,17 +357,17 @@ export default function DocumentsPage() {
                         onClick={handleSubmitDocuments}
                     >
                         {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileUp className="mr-2 h-4 w-4" />}
-                        Kirim Final Dokumen
+                         {isFirstSubmission ? 'Kirim Final Dokumen' : 'Simpan Perubahan'}
                     </Button>
                     </div>
                 </CardContent>
             </Card>
         )}
         
-        {applicationsUnderReview.length > 0 && (
+        {applicationsReadOnly.length > 0 && (
             <div className="space-y-4">
-                 {applicationsForUpload.length > 0 && <Separator />}
-                 {applicationsUnderReview.map(app => (
+                 {applicationsForEditing.length > 0 && <Separator />}
+                 {applicationsReadOnly.map(app => (
                     <SubmittedDocumentsView key={app.id} application={app} />
                  ))}
             </div>
@@ -362,5 +375,3 @@ export default function DocumentsPage() {
     </div>
   )
 }
-
-    

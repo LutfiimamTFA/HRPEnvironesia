@@ -153,6 +153,7 @@ service cloud.firestore {
         allow update: if (
                         (isOwner() && resource.data.status == "draft") ||
                         isSubmittingDocuments() ||
+                        isUpdatingSubmittedDocuments() ||
                         (isInternal() && isInternalStatusUpdate())
                       ) && request.resource.data.candidateUid == resource.data.candidateUid;
 
@@ -168,13 +169,21 @@ service cloud.firestore {
         }
         function isSubmittingDocuments() {
             let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
-            let allowedKeys = ['cvUrl', 'ijazahUrl', 'status', 'updatedAt'];
+            let allowedKeys = ['cvUrl', 'ijazahUrl', 'cvFileName', 'ijazahFileName', 'status', 'updatedAt'];
             return isOwner()
                 && resource.data.status == 'document_submission'
                 && request.resource.data.status == 'verification'
                 && changedKeys.hasOnly(allowedKeys)
                 && request.resource.data.cvUrl is string
                 && request.resource.data.ijazahUrl is string;
+        }
+        function isUpdatingSubmittedDocuments() {
+            let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
+            let allowedKeys = ['cvUrl', 'ijazahUrl', 'cvFileName', 'ijazahFileName', 'updatedAt'];
+            return isOwner()
+                && resource.data.status == 'verification'
+                && request.resource.data.status == 'verification'
+                && changedKeys.hasOnly(allowedKeys);
         }
         function isInternalStatusUpdate() {
             let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
