@@ -20,9 +20,9 @@ export const SUPER_ADMIN_MENU_ITEMS: MenuItem[] = [
 export const ALL_MENU_ITEMS: Record<string, MenuItem[]> = {
   'super-admin': SUPER_ADMIN_MENU_ITEMS,
   hrd: [
+    { href: '/admin/hrd', label: 'Dashboard', icon: createElement(LayoutDashboard, { className: "h-4 w-4" }) },
     { href: '/admin/jobs', label: 'Job Postings', icon: createElement(Briefcase, { className: "h-4 w-4" }) },
-    { href: '#', label: 'Recruitment', icon: createElement(Users, { className: "h-4 w-4" }) },
-    { href: '#', label: 'Applications', icon: createElement(FileText, { className: "h-4 w-4" }) },
+    { href: '/admin/recruitment', label: 'Recruitment', icon: createElement(Users, { className: "h-4 w-4" }) },
   ],
   manager: [
     { href: '#', label: 'My Team', icon: createElement(Users, { className: "h-4 w-4" }) },
