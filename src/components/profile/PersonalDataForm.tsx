@@ -37,6 +37,7 @@ const formSchema = z.object({
     phone: z.string().min(10, { message: "Nomor telepon tidak valid." }),
     eKtpNumber: z.string().length(16, { message: "Nomor e-KTP harus 16 digit." }),
     gender: z.enum(['Laki-laki', 'Perempuan'], { required_error: "Jenis kelamin harus dipilih." }),
+    birthPlace: z.string().min(2, { message: "Tempat lahir harus diisi." }),
     birthDate: z.date({ required_error: "Tanggal lahir harus diisi."}),
     addressKtp: addressObjectSchema,
     isDomicileSameAsKtp: z.boolean().default(false),
@@ -123,6 +124,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                 phone: initialData.phone || '',
                 eKtpNumber: initialData.eKtpNumber || '',
                 gender: initialData.gender,
+                birthPlace: initialData.birthPlace || '',
                 birthDate: initialData.birthDate instanceof Timestamp ? initialData.birthDate.toDate() : initialData.birthDate,
                 addressKtp: getAddressObject(initialData.addressKtp),
                 isDomicileSameAsKtp: initialData.isDomicileSameAsKtp || false,
@@ -146,6 +148,7 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                 phone: initialData.phone || '',
                 eKtpNumber: initialData.eKtpNumber || '',
                 gender: initialData.gender,
+                birthPlace: initialData.birthPlace || '',
                 birthDate: initialData.birthDate instanceof Timestamp ? initialData.birthDate.toDate() : initialData.birthDate,
                 addressKtp: getAddressObject(initialData.addressKtp),
                 isDomicileSameAsKtp: initialData.isDomicileSameAsKtp || false,
@@ -260,6 +263,39 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                         </div>
                         
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                             <FormField
+                                control={form.control}
+                                name="birthPlace"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Tempat Lahir <span className="text-destructive">*</span></FormLabel>
+                                        <FormControl>
+                                            <Input {...field} value={field.value ?? ''} placeholder="Kota lahir" />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                            <FormField
+                                control={form.control}
+                                name="birthDate"
+                                render={({ field }) => (
+                                    <FormItem className="flex flex-col">
+                                        <FormLabel>Tanggal Lahir <span className="text-destructive">*</span></FormLabel>
+                                        <FormControl>
+                                            <GoogleDatePicker
+                                                mode="dob"
+                                                value={field.value}
+                                                onChange={field.onChange}
+                                            />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <FormField
                                 control={form.control}
                                 name="eKtpNumber"
@@ -300,24 +336,6 @@ export function PersonalDataForm({ initialData, onSave, isSaving }: PersonalData
                                 )}
                             />
                         </div>
-
-                        <FormField
-                            control={form.control}
-                            name="birthDate"
-                            render={({ field }) => (
-                                <FormItem className="flex flex-col">
-                                    <FormLabel>Tanggal Lahir <span className="text-destructive">*</span></FormLabel>
-                                    <FormControl>
-                                        <GoogleDatePicker
-                                            mode="dob"
-                                            value={field.value}
-                                            onChange={field.onChange}
-                                        />
-                                    </FormControl>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
 
                         {/* KTP Address */}
                         <div className="space-y-4">

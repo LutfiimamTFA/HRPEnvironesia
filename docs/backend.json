@@ -312,6 +312,7 @@
             "phone": { "type": "string", "description": "Candidate's phone number." },
             "eKtpNumber": { "type": "string", "description": "16-digit e-KTP number." },
             "gender": { "type": "string", "description": "Candidate's gender.", "enum": ["Laki-laki", "Perempuan"] },
+            "birthPlace": { "type": "string", "description": "Candidate's place of birth." },
             "birthDate": { "type": "string", "format": "date-time", "description": "Candidate's date of birth." },
             "addressKtp": { "$ref": "#/backend/entities/Address", "description": "Candidate's address as per e-KTP." },
             "addressDomicile": { "$ref": "#/backend/entities/Address", "description": "Candidate's current domicile address." },
@@ -393,7 +394,7 @@
               "description": "The candidate's motivation and reasons for choosing the desired position."
             }
         },
-        "required": ["fullName", "nickname", "email", "phone", "eKtpNumber", "gender", "birthDate", "addressKtp", "willingToWfo", "education"]
+        "required": ["fullName", "nickname", "email", "phone", "eKtpNumber", "gender", "birthPlace", "birthDate", "addressKtp", "willingToWfo", "education"]
     }
   },
   "auth": {

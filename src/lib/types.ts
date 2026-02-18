@@ -115,6 +115,7 @@ export type Profile = {
     phone: string;
     eKtpNumber: string;
     gender: 'Laki-laki' | 'Perempuan';
+    birthPlace: string;
     birthDate: Timestamp;
     addressKtp: Address;
     addressDomicile: Address;
@@ -132,5 +133,3 @@ export type Profile = {
     salaryExpectation?: string;
     motivation?: string;
 }
-
-    
