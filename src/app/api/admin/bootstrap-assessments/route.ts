@@ -36,9 +36,10 @@ export async function POST(req: NextRequest) {
     const db = admin.firestore();
     const batch = db.batch();
 
-    let createdTemplate = false;
-    let createdAssessment = false;
-    let createdQuestions = 0;
+    const results = {
+        created: { template: false, assessment: false, questions: 0 },
+        existing: { template: true, assessment: true, questions: 'Not Checked' },
+    };
 
     // --- 1. Bootstrap Default Template (Idempotent) ---
     const templateRef = db.collection('assessment_templates').doc('default_dual');
@@ -68,7 +69,8 @@ export async function POST(req: NextRequest) {
             createdAt: Timestamp.now(),
             updatedAt: Timestamp.now(),
         });
-        createdTemplate = true;
+        results.created.template = true;
+        results.existing.template = false;
     }
 
     // --- 2. Bootstrap Default Assessment (Idempotent) ---
@@ -110,7 +112,8 @@ export async function POST(req: NextRequest) {
             createdAt: Timestamp.now(),
             updatedAt: Timestamp.now(),
         });
-        createdAssessment = true;
+        results.created.assessment = true;
+        results.existing.assessment = false;
 
         // --- 3. Bootstrap Default Questions (only if assessment is new) ---
         const questions = [
@@ -132,17 +135,14 @@ export async function POST(req: NextRequest) {
             const qRef = db.collection('assessment_questions').doc();
             batch.set(qRef, { ...q, assessmentId: 'default', isActive: true });
         }
-        createdQuestions = questions.length;
+        results.created.questions = questions.length;
+        results.existing.questions = "Created";
     }
     
     await batch.commit();
 
     return NextResponse.json({
         ok: true,
-        created: {
-            template: createdTemplate,
-            assessment: createdAssessment,
-            questions: createdQuestions
-        }
+        ...results
     });
 }

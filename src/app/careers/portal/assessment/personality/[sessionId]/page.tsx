@@ -130,7 +130,7 @@ function TakeAssessmentPage() {
   if (isLoading || !sortedQuestions.length) return <AssessmentSkeleton />;
   
   const currentQuestion = sortedQuestions[currentQuestionIndex];
-  const progress = (currentQuestionIndex / sortedQuestions.length) * 100;
+  const progress = ((currentQuestionIndex + 1) / sortedQuestions.length) * 100;
   const isLastQuestion = currentQuestionIndex === sortedQuestions.length - 1;
 
   return (
