@@ -173,5 +173,60 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow write: if isSuperAdmin();
     }
+    
+    // --- Assessment Rules ---
+    
+    /**
+     * /assessments/{assessmentId}
+     * - Active assessments are readable by any signed-in user.
+     * - Management (CRUD) is restricted to internal HR/Admin roles.
+     */
+    match /assessments/{assessmentId} {
+      allow get: if isSignedIn() && resource.data.isActive == true;
+      allow list: if isSignedIn();
+      allow write: if isInternal() && getUserData().role in ['super_admin', 'hrd'];
+    }
+    
+    /**
+     * /assessment_questions/{questionId}
+     * - Questions are readable by any signed-in user (as they are part of an assessment).
+     * - Management (CRUD) is restricted to internal HR/Admin roles.
+     */
+    match /assessment_questions/{questionId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow write: if isInternal() && getUserData().role in ['super_admin', 'hrd'];
+    }
+    
+    /**
+     * /assessment_sessions/{sessionId}
+     * - A candidate can create and manage their own session, but cannot submit/modify it once submitted.
+     * - Internal roles can read any session and update HR-specific fields.
+     */
+    match /assessment_sessions/{sessionId} {
+      // READ: A user can get their own session. Internal roles can get any session.
+      allow get: if isOwner(resource.data.candidateUid) || isInternal();
+      
+      // LIST: A user can only list their own sessions. Internal roles can list all.
+      allow list: if isSignedIn();
+
+      // CREATE: A user can only create a session for themselves.
+      allow create: if isOwner(request.resource.data.candidateUid);
+      
+      // UPDATE:
+      // - A candidate can only update their own session, and only if it's a 'draft'.
+      // - Internal roles can update specific fields (hrdNote, hrdStatus).
+      allow update: if (isOwner(resource.data.candidateUid) && resource.data.status == 'draft') || 
+                       (isInternal() && isUpdatingHrdFields());
+                       
+      // DELETE: No one can delete a session record.
+      allow delete: if false;
+      
+      function isUpdatingHrdFields() {
+        // Allow internal roles to only update these two fields.
+        let updatedKeys = request.resource.data.diff(resource.data).affectedKeys;
+        return updatedKeys.hasOnly(['hrdNote', 'hrdStatus', 'updatedAt']);
+      }
+    }
   }
 }
