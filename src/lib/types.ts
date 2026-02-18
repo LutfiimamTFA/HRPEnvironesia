@@ -69,6 +69,8 @@ export type JobApplication = {
   submittedAt?: Timestamp;
   cvUrl?: string;
   ijazahUrl?: string;
+  cvFileName?: string;
+  ijazahFileName?: string;
 };
 
 export type Education = {
