@@ -455,6 +455,73 @@
             }
         },
         "required": ["fullName", "nickname", "email", "phone", "eKtpNumber", "gender", "birthPlace", "birthDate", "addressKtp", "willingToWfo", "education", "declaration"]
+    },
+    "Assessment": {
+      "title": "Assessment",
+      "type": "object",
+      "description": "Defines the structure and configuration of a personality assessment.",
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "scoringConfig": {
+          "type": "object",
+          "properties": {
+            "dimensions": { "type": "array", "items": { "type": "string" } },
+            "rules": { "type": "object" }
+          }
+        },
+        "resultTemplates": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "version", "isActive", "scoringConfig", "resultTemplates"]
+    },
+    "AssessmentQuestion": {
+      "title": "Assessment Question",
+      "type": "object",
+      "description": "A single question within an assessment.",
+      "properties": {
+        "assessmentId": { "type": "string" },
+        "order": { "type": "number" },
+        "text": { "type": "string" },
+        "choices": { 
+          "type": "array", 
+          "items": { 
+            "type": "object",
+            "properties": {
+              "text": { "type": "string" },
+              "value": { "type": "number" }
+            },
+            "required": ["text", "value"]
+          }
+        },
+        "dimensionKey": { "type": "string" },
+        "weight": { "type": "number" },
+        "reverse": { "type": "boolean" }
+      },
+      "required": ["assessmentId", "order", "text", "choices", "dimensionKey", "weight"]
+    },
+    "AssessmentSession": {
+      "title": "Assessment Session",
+      "type": "object",
+      "description": "Represents a candidate's attempt at an assessment.",
+      "properties": {
+        "assessmentId": { "type": "string" },
+        "candidateUid": { "type": "string" },
+        "applicationId": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "submitted"] },
+        "answers": { "type": "object" },
+        "scores": { "type": "object" },
+        "resultType": { "type": "string" },
+        "report": { "type": "object" },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "hrdNote": { "type": "string" },
+        "hrdStatus": { "type": "string", "enum": ["pending", "reviewed", "approved"] }
+      },
+      "required": ["assessmentId", "candidateUid", "status", "startedAt"]
     }
   },
   "auth": {
@@ -576,6 +643,33 @@
               "description": "Unique ID for the application."
             }
           ]
+        }
+      },
+      {
+        "path": "/assessments/{assessmentId}",
+        "definition": {
+          "entityName": "Assessment",
+          "schema": { "$ref": "#/backend/entities/Assessment" },
+          "description": "Stores assessment configurations.",
+          "params": [{ "name": "assessmentId", "description": "The unique ID of the assessment." }]
+        }
+      },
+      {
+        "path": "/assessment_questions/{questionId}",
+        "definition": {
+          "entityName": "AssessmentQuestion",
+          "schema": { "$ref": "#/backend/entities/AssessmentQuestion" },
+          "description": "Stores questions for assessments.",
+          "params": [{ "name": "questionId", "description": "The unique ID for the question." }]
+        }
+      },
+      {
+        "path": "/assessment_sessions/{sessionId}",
+        "definition": {
+          "entityName": "AssessmentSession",
+          "schema": { "$ref": "#/backend/entities/AssessmentSession" },
+          "description": "Stores candidate assessment attempts and results.",
+          "params": [{ "name": "sessionId", "description": "The unique ID for the session." }]
         }
       }
     ],

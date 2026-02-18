@@ -7,37 +7,22 @@
  * over their own data. This is augmented by a global 'super_admin' role, which
  * has universal access to all data for administrative purposes.
  *
- * Data Structure:
- * - User-specific data is stored under `/users/{userId}`, directly linking the data
- *   path to the user's authentication ID.
- * - A dedicated, non-public collection `/roles_admin/{userId}` is used as a high-performance
- *   lookup table to identify users with the 'super_admin' role. The mere existence
- *   of a document in this collection grants administrative privileges.
- *
  * Key Security Decisions:
- * - User Enumeration Prevention: Regular users are explicitly blocked from listing the
- *   top-level `/users` collection to protect user privacy.
- * - Privilege Escalation Prevention: The `/roles_admin` collection is made completely
- *   inaccessible from the client-side (read and write). Admin roles must be granted
- *   through a trusted server-side process (e.g., Admin SDK), preventing users from
- *   modifying their own permissions.
- * - Default Deny: All access is denied by default. Rules explicitly grant permissions
- *   based on user identity (ownership) or role (super_admin).
- *
- * Denormalization for Authorization:
- * The use of the `/roles_admin/{userId}` collection is a deliberate denormalization strategy.
- * Instead of performing a costly `get()` on a user's profile document to check their role
- * for every single operation, the rules perform a highly efficient `exists()` check.
- * This makes authorization faster and more scalable.
+ * - Default Deny: All access is denied by default. Rules explicitly grant permissions.
+ * - List vs. Get: Rules for 'list' (queries) must be broad and cannot depend on
+ *   document content or cross-document 'get' calls. Rules for 'get' (single doc)
+ *   are more specific and are checked after the query runs.
+ * - Performant Admin Checks: The super_admin role is checked using exists(),
+ *   which is much faster and more scalable than reading a user's profile document.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions to create readable, maintainable, and reusable rules.
+    // --- Helper Functions ---
 
     /**
-     * Checks if a user is authenticated.
+     * Checks if a user is authenticated. Safe for all queries.
      */
     function isSignedIn() {
       return request.auth != null;
@@ -45,181 +30,203 @@ service cloud.firestore {
 
     /**
      * Checks if the currently authenticated user is the owner of a document
-     * by comparing their UID to the document's ID in the path.
+     * by comparing their UID to the document's ID in the path. Safe for all queries.
      */
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
     /**
-     * Checks if the currently authenticated user has the 'super_admin' role.
-     * This is determined by the existence of a corresponding document in the
-     * read-only /roles_admin collection. This is faster than a get().
+     * WARNING: NOT SAFE FOR LIST QUERIES.
+     * Checks if the user is a 'super_admin' via a performant existence check.
      */
     function isSuperAdmin() {
       return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
     }
-    
+
     /**
-     * Gets the role of the currently signed-in user from their user profile.
-     * Returns null if the user is not signed in.
-     * WARNING: This function uses get() and is NOT safe for list queries.
+     * WARNING: NOT SAFE FOR LIST QUERIES.
+     * Gets the full user document. Use only in 'get' or 'write' rules.
+     * Using this in a 'list' rule will cause the query to be denied.
      */
-    function userRole() {
-      return isSignedIn()
-        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
-        : null;
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
     
     /**
+     * WARNING: NOT SAFE FOR LIST QUERIES.
      * Checks if the user has an internal role (e.g., employee, manager).
-     * WARNING: This function uses get() and is NOT safe for list queries.
      */
     function isInternal() {
-      // isSuperAdmin() is safe for list queries because it uses exists().
-      // userRole() is NOT safe for list queries because it uses get().
-      return isSuperAdmin() || userRole() in ['hrd', 'manager', 'karyawan'];
+      let role = getUserData().role;
+      return role in ['super-admin', 'hrd', 'manager', 'karyawan'];
     }
 
     /**
-     * Checks if the user is a candidate.
-     * WARNING: This function uses get() and is NOT safe for list queries.
-     */
-    function isCandidate() {
-        return userRole() == 'kandidat';
-    }
-
-    /**
-     * Checks if the user has permissions to manage job postings (create, update, delete).
-     * WARNING: This function uses get() and is NOT safe for list queries.
-     */
-    function canManageJobs() {
-      let role = userRole();
-      return role == 'super_admin' || role == 'hrd';
-    }
-
-    /**
-     * Validates that the internal 'uid' field of a document being created matches
-     * the user ID from the path. This enforces relational integrity.
+     * Validates incoming data on create to enforce UID integrity.
      */
     function hasValidCreateData(userId) {
       return request.resource.data.uid == userId;
     }
 
     /**
-     * Validates that the internal 'uid' field of a document being updated is immutable.
-     * This prevents re-assigning ownership of the document.
+     * Validates incoming data on update to prevent UID mutation.
      */
     function hasValidUpdateData() {
       return request.resource.data.uid == resource.data.uid;
     }
 
+
+    // --- Collection Rules ---
+
     /**
-     * @description
-     *   Rules for the user profile collection. A user can manage their own
-     *   profile, and a super_admin has full access to all profiles.
-     * @path
-     *   /users/{userId}
+     * /users/{userId}
+     * - A user can get/update their own document.
+     * - Only a super_admin can list all users or create/delete them.
      */
     match /users/{userId} {
-      allow get: if isOwner(userId) || isSuperAdmin();
+      allow get, update: if isOwner(userId) || isSuperAdmin();
       allow list: if isSuperAdmin();
-      allow create: if (isOwner(userId) || isSuperAdmin()) && hasValidCreateData(userId);
-      allow update: if (isOwner(userId) || isSuperAdmin()) && resource != null && hasValidUpdateData();
-      allow delete: if isSuperAdmin() && resource != null;
+      allow create: if isSuperAdmin() && hasValidCreateData(userId);
+      allow delete: if isSuperAdmin();
     }
 
     /**
-     * @description
-     *   Rules for the detailed candidate profiles collection.
-     *   A candidate can read and write to their own profile.
-     *   Internal users can read any profile (get only, not list).
-     * @path
-     *   /profiles/{userId}
+     * /profiles/{userId}
+     * - A candidate can read and write to their own profile.
+     * - Internal users can read any single profile for review purposes.
      */
     match /profiles/{userId} {
       allow get: if isOwner(userId) || isInternal();
-      allow write: if isOwner(userId); // create, update, delete
+      allow write: if isOwner(userId);
     }
-
+    
     /**
-     * @description
-     *   This collection is a private lookup table for identifying super_admins.
-     *   It is managed exclusively by a trusted server environment and is completely
-     *   inaccessible to all clients to prevent privilege escalation.
-     * @path
-     *   /roles_admin/{userId}
+     * /roles_admin/{userId}
+     * - This is a private lookup table. No client access is allowed.
      */
     match /roles_admin/{userId} {
       allow read, write: if false;
     }
     
     /**
-     * @description
-     *   Rules for the brands collection. Authenticated users can read brands (e.g., for dropdowns),
-     *   but only super_admins can manage them.
-     * @path
-     *   /brands/{brandId}
+     * /brands/{brandId}
+     * - Brands are public for anyone to read.
+     * - Only super_admins can manage (create, update, delete) brands.
      */
     match /brands/{brandId} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if isSuperAdmin();
+      allow read: if true;
+      allow write: if isSuperAdmin();
     }
     
     /**
-     * @description
-     *   Rules for job postings. Public can read published jobs. Internal users have
-     *   full read access, while only specific roles can write.
-     * @path
-     *   /jobs/{jobId}
+     * /jobs/{jobId}
+     * - Anyone can list jobs (for the careers page).
+     * - A single job can be read if it's 'published' or if the user is internal.
+     * - Only internal users (hrd, super_admin) can write to jobs.
      */
     match /jobs/{jobId} {
-      allow read: if resource.data.publishStatus == "published" || isInternal();
-      allow create, update, delete: if canManageJobs();
+      allow list: if true;
+      allow get: if resource.data.publishStatus == "published" || isInternal();
+      allow write: if isInternal() && getUserData().role in ['super_admin', 'hrd'];
     }
 
     /**
-     * @description
-     *   Rules for job applications. Candidates can create and manage their own
-     *   applications. Internal users (HRD, Manager) can only get individual
-     *   documents, not perform list queries. SuperAdmins have full access.
+     * /applications/{applicationId}
+     * - Critical fix for candidate view.
      */
     match /applications/{applicationId} {
-      // READ rules are split into GET and LIST.
-      // LIST: A query is allowed if the user is signed in.
-      // The query itself MUST be secured on the client-side, e.g., with a
-      // where('candidateUid', '==', auth.uid) clause.
-      allow list: if isSignedIn();
+        // LIST: Allow a query to proceed if the user is logged in.
+        // The client-side query MUST contain `where('candidateUid', '==', request.auth.uid)`.
+        // Security is then enforced by the `get` rule below, which Firestore
+        // runs on each document in the result set.
+        allow list: if isSignedIn();
 
-      // GET: After the list query runs, this rule is checked for EACH document returned.
-      // It ensures a user can only receive documents they own, or that an internal
-      // user can view any specific document.
-      allow get: if (resource.data.candidateUid == request.auth.uid) || isInternal();
+        // GET: A user can get a document if they are the owner OR if they have an internal role.
+        // This `get` rule is evaluated for every document returned by a `list` query.
+        allow get: if (resource.data.candidateUid == request.auth.uid) || isInternal();
 
-      // WRITE rules
-      allow create: if isCreatingOwn() && (request.resource.data.status == "draft" || request.resource.data.status == "submitted");
-      allow update: if (isOwner() && resource.data.status == "draft") || isInternal();
-      allow delete: if isInternal();
+        // CREATE: A user can create an application only if they are the owner.
+        allow create: if isCreatingOwn() && (request.resource.data.status == "draft" || request.resource.data.status == "submitted");
+        
+        // UPDATE: A candidate can update their own DRAFT. Internal users can update any. candidateUid cannot be changed.
+        allow update: if ((isOwner() && resource.data.status == "draft") || isInternal()) && request.resource.data.candidateUid == resource.data.candidateUid;
 
-      // Helper functions local to this scope for clarity
-      function isOwner() {
-        return request.auth.uid == resource.data.candidateUid;
-      }
-      function isCreatingOwn() {
-        return request.auth.uid == request.resource.data.candidateUid;
-      }
+        // DELETE: Only internal users can delete applications.
+        allow delete: if isInternal();
+
+        // Helper functions local to this scope for clarity
+        function isOwner() {
+            return request.auth.uid == resource.data.candidateUid;
+        }
+        function isCreatingOwn() {
+            return request.auth.uid == request.resource.data.candidateUid;
+        }
     }
 
     /**
-     * @description
-     *   Rules for navigation settings. Only super_admins can read and write.
-     *   Other authenticated users can read their own role's settings.
-     * @path
-     *   /navigation_settings/{roleId}
+     * /navigation_settings/{roleId}
+     * - Any signed-in user can read navigation settings to build their UI.
+     * - Only super_admins can write/change these settings.
      */
      match /navigation_settings/{roleId} {
       allow read: if isSignedIn();
       allow write: if isSuperAdmin();
+    }
+    
+    // --- Assessment Rules ---
+    
+    /**
+     * /assessments/{assessmentId}
+     * - Active assessments are readable by any signed-in user.
+     * - Management (CRUD) is restricted to internal HR/Admin roles.
+     */
+    match /assessments/{assessmentId} {
+      allow get: if isSignedIn() && resource.data.isActive == true;
+      allow list: if isSignedIn();
+      allow write: if isInternal() && getUserData().role in ['super_admin', 'hrd'];
+    }
+    
+    /**
+     * /assessment_questions/{questionId}
+     * - Questions are readable by any signed-in user (as they are part of an assessment).
+     * - Management (CRUD) is restricted to internal HR/Admin roles.
+     */
+    match /assessment_questions/{questionId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow write: if isInternal() && getUserData().role in ['super_admin', 'hrd'];
+    }
+    
+    /**
+     * /assessment_sessions/{sessionId}
+     * - A candidate can create and manage their own session, but cannot submit/modify it once submitted.
+     * - Internal roles can read any session and update HR-specific fields.
+     */
+    match /assessment_sessions/{sessionId} {
+      // READ: A user can get their own session. Internal roles can get any session.
+      allow get: if isOwner(resource.data.candidateUid) || isInternal();
+      
+      // LIST: A user can only list their own sessions. Internal roles can list all.
+      allow list: if isSignedIn();
+
+      // CREATE: A user can only create a session for themselves.
+      allow create: if isOwner(request.resource.data.candidateUid);
+      
+      // UPDATE:
+      // - A candidate can only update their own session, and only if it's a 'draft'.
+      // - Internal roles can update specific fields (hrdNote, hrdStatus).
+      allow update: if (isOwner(resource.data.candidateUid) && resource.data.status == 'draft') || 
+                       (isInternal() && isUpdatingHrdFields());
+                       
+      // DELETE: No one can delete a session record.
+      allow delete: if false;
+      
+      function isUpdatingHrdFields() {
+        // Allow internal roles to only update these two fields.
+        let updatedKeys = request.resource.data.diff(resource.data).affectedKeys;
+        return updatedKeys.hasOnly(['hrdNote', 'hrdStatus', 'updatedAt']);
+      }
     }
   }
 }

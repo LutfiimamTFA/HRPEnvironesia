@@ -11,6 +11,74 @@ const seedUsers: { email: string; password: string; fullName: string; role: User
   { email: 'karyawan@gmail.com', password: '12345678', fullName: 'Karyawan', role: 'karyawan' },
 ];
 
+async function seedAssessment(db: admin.firestore.Firestore) {
+    const assessmentId = 'personality-v1';
+    const assessmentRef = db.collection('assessments').doc(assessmentId);
+
+    const assessmentData = {
+        name: 'Tes Kepribadian Internal',
+        version: 1,
+        isActive: true,
+        scoringConfig: {
+            dimensions: ['OPENNESS', 'CONSCIENTIOUSNESS', 'EXTRAVERSION', 'AGREEABLENESS', 'NEUROTICISM'],
+            rules: {
+                resultType: 'highest_score', // Simple rule: result is the dimension with the highest score
+            },
+        },
+        resultTemplates: {
+            // Placeholder result templates
+            OPENNESS: {
+                title: 'Si Penjelajah Kreatif',
+                subtitle: 'Imajinatif, Penuh Rasa Ingin Tahu, dan Terbuka pada Pengalaman Baru',
+                descBlocks: ['Anda adalah individu yang sangat imajinatif dan kreatif. Anda tidak takut untuk mencoba hal-hal baru dan sering kali memiliki minat yang luas.', 'Di tempat kerja, Anda unggul dalam peran yang membutuhkan pemikiran out-of-the-box dan kemampuan untuk beradaptasi dengan perubahan.'],
+                strengths: ['Inovatif', 'Berpikiran Terbuka', 'Cepat Belajar'],
+                weaknesses: ['Kurang praktis', 'Bisa jadi tidak fokus', 'Tidak menyukai rutinitas'],
+                roleFit: ['Desainer Grafis', 'Spesialis R&D', 'Content Creator'],
+            },
+            CONSCIENTIOUSNESS: {
+                title: 'Sang Organisator yang Andal',
+                subtitle: 'Disiplin, Bertanggung Jawab, dan Berorientasi pada Tujuan',
+                descBlocks: ['Anda adalah seorang perencana yang ulung dan sangat dapat diandalkan. Anda memiliki standar tinggi untuk diri sendiri dan selalu menyelesaikan apa yang Anda mulai.', 'Anda berkembang dalam lingkungan yang terstruktur dan unggul dalam peran yang membutuhkan ketelitian dan manajemen proyek.'],
+                strengths: ['Terorganisir', 'Dapat Diandalkan', 'Penuh Perhatian'],
+                weaknesses: ['Cenderung kaku', 'Bisa jadi perfeksionis', 'Sulit beradaptasi dengan perubahan mendadak'],
+                roleFit: ['Manajer Proyek', 'Akuntan', 'Analis Data'],
+            },
+            // ... add other dimension templates
+        },
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+    };
+    await assessmentRef.set(assessmentData);
+
+    const questions = [
+        { order: 1, text: 'Saya suka mencoba hal-hal baru dan berbeda.', dimensionKey: 'OPENNESS', weight: 1, reverse: false },
+        { order: 2, text: 'Saya selalu mempersiapkan segala sesuatu dengan matang.', dimensionKey: 'CONSCIENTIOUSNESS', weight: 1, reverse: false },
+        { order: 3, text: 'Saya tidak suka menjadi pusat perhatian.', dimensionKey: 'EXTRAVERSION', weight: 1, reverse: true },
+        { order: 4, text: 'Saya mudah merasa empati terhadap orang lain.', dimensionKey: 'AGREEABLENESS', weight: 1, reverse: false },
+        { order: 5, text: 'Saya sering merasa cemas tentang banyak hal.', dimensionKey: 'NEUROTICISM', weight: 1, reverse: false },
+        // ... add more questions (e.g., 20-50 questions for a basic test)
+    ];
+
+    const questionsBatch = db.batch();
+    for (const q of questions) {
+        const questionRef = db.collection('assessment_questions').doc();
+        questionsBatch.set(questionRef, {
+            ...q,
+            assessmentId: assessmentId,
+            choices: [
+                { text: 'Sangat Tidak Setuju', value: 1 },
+                { text: 'Tidak Setuju', value: 2 },
+                { text: 'Netral', value: 3 },
+                { text: 'Setuju', value: 4 },
+                { text: 'Sangat Setuju', value: 5 },
+            ],
+        });
+    }
+    await questionsBatch.commit();
+    return { assessmentId: assessmentId, questionsCount: questions.length };
+}
+
+
 export async function POST(req: NextRequest) {
   // Gracefully handle cases where the Admin SDK is not initialized.
   if (!admin.apps.length) {
@@ -30,7 +98,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid secret.' }, { status: 401 });
   }
 
-  const results = [];
+  const results: any[] = [];
   const db = admin.firestore();
 
   for (const userData of seedUsers) {
@@ -86,6 +154,21 @@ export async function POST(req: NextRequest) {
       console.error(`Failed to seed user ${userData.email}:`, error);
       results.push({ email: userData.email, status: 'error', message: error.message });
     }
+  }
+
+  try {
+    const assessmentResult = await seedAssessment(db);
+    results.push({
+        type: 'assessment',
+        status: 'seeded',
+        ...assessmentResult,
+    });
+  } catch(error: any) {
+     results.push({
+        type: 'assessment',
+        status: 'error',
+        message: error.message
+    });
   }
 
   return NextResponse.json({ message: 'Seeding complete.', results });

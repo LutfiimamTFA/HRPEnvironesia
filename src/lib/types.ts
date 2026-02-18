@@ -164,4 +164,56 @@ export type Profile = {
     completedAt?: Timestamp | null;
     
     declaration?: boolean;
-}
+};
+
+// Assessment Types
+export type Assessment = {
+    id?: string;
+    name: string;
+    version: number;
+    isActive: boolean;
+    scoringConfig: {
+      dimensions: string[];
+      rules: Record<string, any>;
+    };
+    resultTemplates: Record<string, ResultTemplate>;
+    createdAt: Timestamp;
+    updatedAt: Timestamp;
+};
+
+export type ResultTemplate = {
+    title: string;
+    subtitle: string;
+    descBlocks: string[];
+    strengths: string[];
+    weaknesses: string[];
+    roleFit: string[];
+};
+
+export type AssessmentQuestion = {
+    id?: string;
+    assessmentId: string;
+    order: number;
+    text: string;
+    choices: { text: string; value: number }[];
+    dimensionKey: string;
+    weight: number;
+    reverse: boolean;
+};
+
+export type AssessmentSession = {
+    id?: string;
+    assessmentId: string;
+    candidateUid: string;
+    applicationId?: string;
+    status: 'draft' | 'submitted';
+    answers: Record<string, number>; // questionId: value
+    scores: Record<string, number>; // dimensionKey: score
+    resultType?: string;
+    report?: ResultTemplate;
+    startedAt: Timestamp;
+    updatedAt: Timestamp;
+    completedAt?: Timestamp;
+    hrdNote?: string;
+    hrdStatus?: 'pending' | 'reviewed' | 'approved';
+};
