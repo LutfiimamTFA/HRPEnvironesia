@@ -208,25 +208,32 @@ service cloud.firestore {
       // - A candidate can only update their own session, and only if it's a 'draft'.
       // - Internal roles can update the decision.
       allow update: if (isOwner(resource.data.candidateUid) && resource.data.status == 'draft') || 
-                       (isInternal() && isUpdatingHrdDecision());
+                       isUpdatingHrdDecision();
                        
       // DELETE: No one can delete a session record.
       allow delete: if false;
 
       function isUpdatingHrdDecision() {
-        let allowedUpdateKeys = ['hrdDecision', 'hrdDecisionAt', 'hrdDecisionBy', 'updatedAt'];
-        let incomingKeys = request.resource.data.keys();
-        let existingKeys = resource.data.keys();
-        
-        // This combines all keys and removes duplicates to check against.
-        let allKeys = incomingKeys.union(existingKeys);
-
-        // This checks that every key in the combined set is either one of the allowed update keys
-        // or a key that hasn't changed.
-        return resource.data.status == 'submitted'
-          && request.resource.data.hrdDecisionBy == request.auth.uid
-          && request.resource.data.hrdDecision in ['pending', 'approved', 'rejected']
-          && allKeys.hasOnly(existingKeys.union(allowedUpdateKeys));
+          let incoming = request.resource.data;
+          let existing = resource.data;
+          
+          return isInternal()
+            && existing.status == 'submitted'
+            && incoming.hrdDecisionBy == request.auth.uid
+            && incoming.hrdDecision in ['pending', 'approved', 'rejected']
+            // Immutable fields
+            && incoming.assessmentId == existing.assessmentId
+            && incoming.candidateUid == existing.candidateUid
+            && incoming.applicationId == existing.applicationId
+            && incoming.status == existing.status
+            && incoming.answers == existing.answers
+            && incoming.scores == existing.scores
+            && incoming.result == existing.result
+            && incoming.startedAt == existing.startedAt
+            && incoming.completedAt == existing.completedAt
+            && incoming.candidateName == existing.candidateName
+            && incoming.candidateEmail == existing.candidateEmail
+            && incoming.normalized == existing.normalized;
       }
     }
   }
