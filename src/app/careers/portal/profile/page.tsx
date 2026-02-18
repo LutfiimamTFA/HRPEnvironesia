@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useAuth } from "@/providers/auth-provider";
 import { Skeleton } from '@/components/ui/skeleton';
-import { useDoc, useFirestore, useMemoFirebase } from '@/firebase';
+import { useDoc, useFirestore, useMemoFirebase, setDocumentNonBlocking } from '@/firebase';
 import { doc } from 'firebase/firestore';
 import type { Profile } from '@/lib/types';
 import { PersonalDataForm } from '@/components/profile/PersonalDataForm';
@@ -15,8 +15,9 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ProfileStepper } from '@/components/profile/ProfileStepper';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { CheckCircle } from 'lucide-react';
+import { CheckCircle, Edit, Loader2 } from 'lucide-react';
 import { OrganizationalExperienceForm } from '@/components/profile/OrganizationalExperienceForm';
+import { useToast } from '@/hooks/use-toast';
 
 const steps = [
     { id: 1, name: 'Data Pribadi' },
@@ -32,6 +33,8 @@ function ProfileWizardContent() {
     const firestore = useFirestore();
     const router = useRouter();
     const searchParams = useSearchParams();
+    const { toast } = useToast();
+    const [isEditing, setIsEditing] = useState(false);
 
     const profileDocRef = useMemoFirebase(() => {
         if (!firestore || !firebaseUser) return null;
@@ -50,20 +53,20 @@ function ProfileWizardContent() {
 
         const profileStep = profile?.profileStep || 1;
         
-        if (profile?.profileStatus === 'completed') {
+        if (profile?.profileStatus === 'completed' && !searchParams.has('step')) {
             setEffectiveStep(steps.length + 1); // A step beyond the last to show completion screen
             return;
         }
 
         const targetStep = urlStep > profileStep ? profileStep : urlStep;
         
-        if (targetStep !== urlStep) {
+        if (targetStep !== urlStep && profile?.profileStatus !== 'completed') {
             router.replace(`/careers/portal/profile?step=${targetStep}`);
         }
         
-        setEffectiveStep(targetStep);
+        setEffectiveStep(profile?.profileStatus === 'completed' ? urlStep : targetStep);
 
-    }, [urlStep, profile, isLoading, router]);
+    }, [urlStep, profile, isLoading, router, searchParams]);
 
 
     const handleSaveSuccess = () => {
@@ -73,7 +76,7 @@ function ProfileWizardContent() {
         if (nextStep <= steps.length) {
             router.push(`/careers/portal/profile?step=${nextStep}`);
         } else {
-             router.push('/careers/portal/profile?step=completed');
+             router.push('/careers/portal/profile');
         }
     };
 
@@ -87,8 +90,34 @@ function ProfileWizardContent() {
     const handleFinish = () => {
         refreshProfile();
         refreshUserProfile();
-        router.push('/careers/portal');
+        router.push('/careers/portal/profile');
     }
+
+    const handleEdit = async () => {
+        if (!firebaseUser) {
+            toast({
+                variant: 'destructive',
+                title: 'Gagal memulai edit',
+                description: 'User tidak ditemukan. Silakan login kembali.',
+            });
+            return;
+        }
+
+        setIsEditing(true);
+        const profileDocRef = doc(firestore, 'profiles', firebaseUser.uid);
+        try {
+            await setDocumentNonBlocking(profileDocRef, { profileStatus: 'draft' }, { merge: true });
+            router.push('/careers/portal/profile?step=1');
+        } catch (error: any) {
+            toast({
+                variant: 'destructive',
+                title: 'Gagal memulai mode edit',
+                description: error.message || 'Terjadi kesalahan pada server.',
+            });
+        } finally {
+            setIsEditing(false);
+        }
+    };
 
     if (isLoading || !authProfile) {
         return (
@@ -108,13 +137,19 @@ function ProfileWizardContent() {
                     </div>
                     <CardTitle className="mt-4 text-2xl">Profil Anda Sudah Lengkap!</CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="w-full max-w-sm">
                     <p className="text-muted-foreground mb-6">
-                        Terima kasih telah melengkapi profil Anda. Anda sekarang dapat melamar pekerjaan.
+                        Terima kasih telah melengkapi profil Anda. Anda sekarang dapat melamar pekerjaan atau mengedit profil Anda jika ada perubahan.
                     </p>
-                    <Button onClick={() => router.push('/careers/portal/jobs')}>
-                        Cari Lowongan Sekarang
-                    </Button>
+                    <div className="flex flex-col sm:flex-row gap-4">
+                        <Button variant="outline" className="w-full" onClick={handleEdit} disabled={isEditing}>
+                            {isEditing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Edit className="mr-2 h-4 w-4" />}
+                            Edit Profil
+                        </Button>
+                        <Button className="w-full" onClick={() => router.push('/careers/portal/jobs')}>
+                            Cari Lowongan
+                        </Button>
+                    </div>
                 </CardContent>
             </Card>
        )
