@@ -67,6 +67,8 @@ export type JobApplication = {
   createdAt: Timestamp;
   updatedAt: Timestamp;
   submittedAt?: Timestamp;
+  cvUrl?: string;
+  ijazahUrl?: string;
 };
 
 export type Education = {

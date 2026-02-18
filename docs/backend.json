@@ -273,6 +273,16 @@
           "type": "string",
           "format": "date-time",
           "description": "Timestamp when the application was formally submitted."
+        },
+        "cvUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to the candidate's CV for this application."
+        },
+        "ijazahUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to the candidate's Ijazah/SKL for this application."
         }
       },
       "required": [
