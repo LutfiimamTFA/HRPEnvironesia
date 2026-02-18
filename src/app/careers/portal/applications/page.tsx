@@ -22,6 +22,7 @@ const visibleSteps = [
   { status: 'submitted', label: 'Terkirim', icon: FileUp },
   { status: 'psychotest', label: 'Psikotes', icon: BrainCircuit },
   { status: 'document_submission', label: 'Pengumpulan Dokumen', icon: FileText },
+  { status: 'verification', label: 'Verifikasi', icon: ClipboardCheck },
   { status: 'interview', label: 'Wawancara', icon: Users },
   { status: 'hired', label: 'Diterima', icon: Award },
 ];
