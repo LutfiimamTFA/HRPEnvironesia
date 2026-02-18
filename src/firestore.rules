@@ -175,34 +175,24 @@ service cloud.firestore {
     }
     
     // --- Assessment Rules ---
-    
-    /**
-     * /assessments/{assessmentId}
-     * - Active assessments are readable by any signed-in user.
-     * - Management (CRUD) is restricted to internal HR/Admin roles.
-     */
+
+    match /assessment_templates/{templateId} {
+      allow read: if isSignedIn();
+      allow write: if isInternal() && getUserData().role in ['super_admin', 'hrd'];
+    }
+
     match /assessments/{assessmentId} {
-      allow get: if isSignedIn() && resource.data.isActive == true;
+      allow get: if isSignedIn() && (resource.data.isActive == true || isInternal());
       allow list: if isSignedIn();
       allow write: if isInternal() && getUserData().role in ['super_admin', 'hrd'];
     }
     
-    /**
-     * /assessment_questions/{questionId}
-     * - Questions are readable by any signed-in user (as they are part of an assessment).
-     * - Management (CRUD) is restricted to internal HR/Admin roles.
-     */
     match /assessment_questions/{questionId} {
-      allow get: if isSignedIn();
       allow list: if isSignedIn();
+      allow get: if isSignedIn();
       allow write: if isInternal() && getUserData().role in ['super_admin', 'hrd'];
     }
     
-    /**
-     * /assessment_sessions/{sessionId}
-     * - A candidate can create and manage their own session, but cannot submit/modify it once submitted.
-     * - Internal roles can read any session and update HR-specific fields.
-     */
     match /assessment_sessions/{sessionId} {
       // READ: A user can get their own session. Internal roles can get any session.
       allow get: if isOwner(resource.data.candidateUid) || isInternal();
@@ -223,9 +213,9 @@ service cloud.firestore {
       allow delete: if false;
       
       function isUpdatingHrdFields() {
-        // Allow internal roles to only update these two fields.
+        // Allow internal roles to only update the hrdReview map.
         let updatedKeys = request.resource.data.diff(resource.data).affectedKeys;
-        return updatedKeys.hasOnly(['hrdNote', 'hrdStatus', 'updatedAt']);
+        return updatedKeys.hasOnly(['hrdReview', 'updatedAt']);
       }
     }
   }

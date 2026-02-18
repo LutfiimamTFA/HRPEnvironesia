@@ -26,8 +26,8 @@ function ResultSkeleton() {
 }
 
 function HrdNoteManager({ session }: { session: AssessmentSession }) {
-  const [note, setNote] = useState(session.hrdNote || '');
-  const [status, setStatus] = useState(session.hrdStatus || 'pending');
+  const [note, setNote] = useState(session.hrdReview?.note || '');
+  const [status, setStatus] = useState(session.hrdReview?.status || 'pending');
   const [isUpdating, setIsUpdating] = useState(false);
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -36,9 +36,13 @@ function HrdNoteManager({ session }: { session: AssessmentSession }) {
     setIsUpdating(true);
     try {
       const sessionRef = doc(firestore, 'assessment_sessions', session.id!);
+       const newHrdReview = {
+        status: status as 'pending' | 'reviewed' | 'approved',
+        note: note,
+        reviewedAt: serverTimestamp(),
+      };
       await updateDocumentNonBlocking(sessionRef, {
-        hrdNote: note,
-        hrdStatus: status,
+        hrdReview: newHrdReview,
         updatedAt: serverTimestamp(),
       });
       toast({ title: 'Success', description: 'HRD notes have been updated.' });
@@ -49,7 +53,7 @@ function HrdNoteManager({ session }: { session: AssessmentSession }) {
     }
   };
 
-  const hasChanges = note !== (session.hrdNote || '') || status !== (session.hrdStatus || 'pending');
+  const hasChanges = note !== (session.hrdReview?.note || '') || status !== (session.hrdReview?.status || 'pending');
 
   return (
     <Card>
@@ -133,7 +137,7 @@ export default function HrdAssessmentResultPage() {
         )
     }
 
-    if (error || !session || !session.report) {
+    if (error || !session || !session.result?.report) {
         return (
              <DashboardLayout pageTitle="Error" menuItems={menuItems}>
                 <p>Could not load assessment results. The session may be invalid or not yet completed.</p>
@@ -141,7 +145,7 @@ export default function HrdAssessmentResultPage() {
         );
     }
     
-    const { report } = session;
+    const { report } = session.result;
 
     return (
         <DashboardLayout pageTitle="Assessment Result" menuItems={menuItems}>
@@ -182,7 +186,7 @@ export default function HrdAssessmentResultPage() {
                          <Card>
                             <CardHeader><CardTitle>Description</CardTitle></CardHeader>
                             <CardContent className="prose max-w-none dark:prose-invert">
-                                {report.descBlocks?.map((block, i) => <p key={i}>{block}</p>)}
+                                {report.blocks?.map((block, i) => <p key={i}>{block}</p>)}
                             </CardContent>
                         </Card>
                          <div className="grid md:grid-cols-2 gap-6">
@@ -192,7 +196,7 @@ export default function HrdAssessmentResultPage() {
                             </Card>
                             <Card>
                                 <CardHeader><CardTitle>Areas for Development</CardTitle></CardHeader>
-                                <CardContent><ul className="list-disc list-inside space-y-2">{report.weaknesses?.map(item => <li key={item}>{item}</li>)}</ul></CardContent>
+                                <CardContent><ul className="list-disc list-inside space-y-2">{report.risks?.map(item => <li key={item}>{item}</li>)}</ul></CardContent>
                             </Card>
                         </div>
                     </div>
