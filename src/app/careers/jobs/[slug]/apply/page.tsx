@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase, setDocumentNonBlocking } from '@/firebase';
-import { collection, query, where, limit, doc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, limit, doc, getDoc, getDocs, serverTimestamp } from 'firebase/firestore';
 import type { Job, JobApplication } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -91,7 +91,23 @@ export default function JobApplyPage() {
             return;
         }
 
-        // 3. Construct application data
+        // 3. Check if candidate has already completed a psychotest
+        const psychotestQuery = query(
+            collection(firestore, 'assessment_sessions'),
+            where('candidateUid', '==', userProfile.uid),
+            where('status', '==', 'submitted'),
+            limit(1)
+        );
+        const psychotestSnap = await getDocs(psychotestQuery);
+        const hasCompletedTest = !psychotestSnap.empty;
+
+        // 4. Determine initial status based on psychotest completion
+        const initialStatus = hasCompletedTest ? 'verification' : 'submitted';
+        const toastMessage = hasCompletedTest 
+            ? 'Lamaran Anda telah dikirim dan akan langsung diverifikasi oleh tim HRD karena Anda sudah pernah menyelesaikan psikotes.'
+            : `Lamaran Anda untuk posisi ${job.position} telah berhasil dikirim.`;
+
+        // 5. Construct application data
         const applicationData: Omit<JobApplication, 'id'> = {
             candidateUid: userProfile.uid,
             candidateName: userProfile.fullName,
@@ -103,19 +119,19 @@ export default function JobApplyPage() {
             brandName: job.brandName || '',
             jobType: job.statusJob,
             location: job.location,
-            status: 'submitted',
+            status: initialStatus,
             jobApplyDeadline: job.applyDeadline || null,
             createdAt: serverTimestamp() as any,
             updatedAt: serverTimestamp() as any,
             submittedAt: serverTimestamp() as any,
         };
 
-        // 4. Submit application
+        // 6. Submit application
         await setDocumentNonBlocking(applicationRef, applicationData, { merge: false });
 
         toast({
             title: 'Lamaran Terkirim!',
-            description: `Lamaran Anda untuk posisi ${job.position} telah berhasil dikirim.`,
+            description: toastMessage,
         });
 
         router.push('/careers/portal/applications');
