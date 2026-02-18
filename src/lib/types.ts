@@ -275,4 +275,5 @@ export type CandidateFitAnalysisOutput = {
     score: number;
     strengths: string[];
     weaknesses: string[];
+    roleSuggestions?: string[];
 };

@@ -18,40 +18,51 @@ const prompt = ai.definePrompt({
   name: 'analyzeCandidateFitPrompt',
   input: {schema: CandidateFitAnalysisInputSchema},
   output: {schema: CandidateFitAnalysisOutputSchema},
-  prompt: `Anda adalah seorang analis HR yang sangat berpengalaman dan ahli dalam mengevaluasi kesesuaian kandidat dengan lowongan pekerjaan. Tugas Anda adalah memberikan analisis yang tajam, seimbang, dan komprehensif berdasarkan data yang diberikan.
+  prompt: `Anda adalah seorang Direktur HR yang sangat bijaksana dan berpengalaman, dengan keahlian khusus dalam psikologi industri dan pengembangan talenta. Tugas Anda adalah memberikan analisis yang mendalam, holistik, dan strategis terhadap seorang kandidat.
+
+Analisis Anda harus menarik "benang merah" antara profil profesional (pengalaman, keahlian) dan profil kepribadian (dari hasil psikotes) untuk memberikan gambaran utuh tentang kandidat.
 
 Output harus dalam Bahasa Indonesia.
 
 **Konteks:**
-Seorang kandidat telah melamar untuk sebuah posisi. Anda diberikan data profil kandidat (pengalaman kerja, pendidikan, keahlian) dan juga kualifikasi khusus yang dibutuhkan untuk posisi tersebut.
+Seorang kandidat telah melamar untuk sebuah posisi. Anda diberikan data profil profesional, kualifikasi pekerjaan, dan (jika tersedia) hasil tes kepribadian mereka.
 
 **Tugas Anda:**
 
-1.  **Analisis Keseluruhan (summary):** Berikan ringkasan 2-3 kalimat yang mengevaluasi seberapa cocok kandidat ini untuk peran tersebut. Pertimbangkan semua aspek: pengalaman kerja yang relevan, latar belakang pendidikan, dan keahlian yang dimiliki. Bersikaplah objektif.
+1.  **Analisis Holistik (summary):** Berikan ringkasan 2-3 kalimat yang tajam dan insightful. Jangan hanya merangkum CV, tetapi temukan **"benang merah"** yang menghubungkan pengalaman kerja, keahlian, dan tipe kepribadian mereka. Jelaskan bagaimana kombinasi ini membentuk potret kandidat secara keseluruhan.
 
-2.  **Skor Kecocokan (score):** Berikan skor numerik antara 1 hingga 100 yang merepresentasikan tingkat kecocokan kandidat.
-    -   **1-40:** Kurang cocok. Banyak kualifikasi penting yang tidak terpenuhi.
-    -   **41-70:** Cukup cocok. Memenuhi sebagian kualifikasi, namun ada beberapa kesenjangan.
-    -   **71-90:** Sangat cocok. Memenuhi sebagian besar kualifikasi penting.
-    -   **91-100:** Kandidat ideal. Hampir semua kualifikasi terpenuhi dengan sangat baik.
+2.  **Skor Kecocokan (score):** Berikan skor numerik antara 1 hingga 100 yang merepresentasikan tingkat kecocokan kandidat **untuk posisi yang sedang dilamar ini**.
+    -   **1-40:** Kurang cocok.
+    -   **41-70:** Cukup cocok.
+    -   **71-90:** Sangat cocok.
+    -   **91-100:** Kandidat ideal.
 
-3.  **Kekuatan (strengths):** Identifikasi dan sebutkan 3-5 poin paling relevan di mana profil kandidat sangat cocok dengan kualifikasi yang dibutuhkan. Jadilah spesifik. Contoh: "Pengalaman sebagai Manajer Proyek selama 5 tahun cocok dengan kebutuhan."
+3.  **Sinergi Kekuatan (strengths):** Identifikasi 3-5 poin sinergi di mana profil profesional dan kepribadian kandidat saling menguatkan dan sangat cocok dengan kebutuhan pekerjaan. Jadilah spesifik. Contoh: "Sifat dominan (tipe D) dari hasil psikotes sangat mendukung pengalamannya selama 5 tahun sebagai Manajer Proyek dalam mengambil keputusan tegas."
 
-4.  **Potensi Kesenjangan (weaknesses):** Identifikasi dan sebutkan 2-3 area di mana profil kandidat mungkin kurang atau tidak memenuhi kualifikasi. Sampaikan dengan cara yang konstruktif. Contoh: "Belum memiliki pengalaman dengan framework 'Vue.js' yang disebutkan."
+4.  **Potensi Area Pengembangan (weaknesses):** Identifikasi 2-3 area di mana kombinasi profil dan kepribadian kandidat mungkin menjadi tantangan untuk peran ini. Sampaikan dengan cara yang konstruktif dan strategis. Contoh: "Kecenderungan untuk kurang detail (tipe I) mungkin perlu diwaspadai mengingat peran ini membutuhkan akurasi data yang tinggi."
+
+5.  **Saran Peran Alternatif (roleSuggestions):** Berdasarkan analisis holistik Anda, sarankan 2-3 peran **alternatif lain** (di luar posisi yang dilamar) yang mungkin sangat cocok untuk kandidat ini di masa depan. Berpikir out-of-the-box. Contoh: "Analis Data", "Business Development", "Product Manager".
 
 **Data untuk Dianalisis:**
 
-**Kualifikasi Khusus Pekerjaan:**
+**1. Kualifikasi Khusus Pekerjaan:**
 \`\`\`html
 {{{jobRequirements}}}
 \`\`\`
 
-**Profil Kandidat:**
+**2. Profil Profesional Kandidat (CV):**
 \`\`\`json
 {{{candidateProfile}}}
 \`\`\`
 
-Lakukan analisis Anda sekarang.
+{{#if personalityAnalysis}}
+**3. Hasil Analisis Kepribadian:**
+\`\`\`json
+{{{personalityAnalysis}}}
+\`\`\`
+{{/if}}
+
+Lakukan analisis mendalam Anda sekarang.
 `,
 });
 

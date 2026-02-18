@@ -2,10 +2,10 @@
 'use client';
 
 import { useState } from 'react';
-import type { Profile, Job, CandidateFitAnalysisOutput } from '@/lib/types';
+import type { Profile, Job, CandidateFitAnalysisOutput, AssessmentSession } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from '../ui/button';
-import { Sparkles, Loader2, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
+import { Sparkles, Loader2, AlertCircle, CheckCircle, XCircle, Briefcase } from 'lucide-react';
 import { analyzeCandidateFit } from '@/ai/flows/analyze-candidate-fit-flow';
 import { useToast } from '@/hooks/use-toast';
 import { Progress } from '../ui/progress';
@@ -14,9 +14,10 @@ import { Badge } from '../ui/badge';
 interface CandidateFitAnalysisProps {
   profile: Profile;
   job: Job;
+  assessmentSession: AssessmentSession | null;
 }
 
-export function CandidateFitAnalysis({ profile, job }: CandidateFitAnalysisProps) {
+export function CandidateFitAnalysis({ profile, job, assessmentSession }: CandidateFitAnalysisProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [analysis, setAnalysis] = useState<CandidateFitAnalysisOutput | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -46,9 +47,18 @@ export function CandidateFitAnalysis({ profile, job }: CandidateFitAnalysisProps
         })) || []
       };
 
+      const personalityData = assessmentSession?.result?.report ? {
+          typeTitle: assessmentSession.result.report.title || '',
+          typeSubtitle: assessmentSession.result.report.subtitle || '',
+          strengths: assessmentSession.result.report.strengths || [],
+          risks: assessmentSession.result.report.risks || [],
+          roleFit: assessmentSession.result.report.roleFit || [],
+      } : undefined;
+
       const result = await analyzeCandidateFit({
         candidateProfile: profileForAnalysis,
         jobRequirements: job.specialRequirementsHtml,
+        personalityAnalysis: personalityData,
       });
       setAnalysis(result);
     } catch (e: any) {
@@ -72,7 +82,7 @@ export function CandidateFitAnalysis({ profile, job }: CandidateFitAnalysisProps
               <Sparkles className="h-5 w-5 text-primary" />
               Analisis AI
             </CardTitle>
-            <CardDescription>Analisis kesesuaian kandidat dengan kualifikasi khusus.</CardDescription>
+            <CardDescription>Analisis kesesuaian kandidat dengan kualifikasi khusus (didukung oleh AI).</CardDescription>
           </div>
            <Button onClick={handleAnalyze} disabled={isLoading}>
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
@@ -113,7 +123,7 @@ export function CandidateFitAnalysis({ profile, job }: CandidateFitAnalysisProps
                 </div>
                  <div className="grid md:grid-cols-2 gap-6">
                     <div className="space-y-2">
-                        <h4 className="font-semibold flex items-center gap-2"><CheckCircle className="h-5 w-5 text-green-600" /> Kekuatan</h4>
+                        <h4 className="font-semibold flex items-center gap-2"><CheckCircle className="h-5 w-5 text-green-600" /> Sinergi Kekuatan</h4>
                         <ul className="list-none space-y-2">
                             {analysis.strengths.map((item, index) => (
                                 <li key={index} className="flex items-start gap-2 text-sm p-2 bg-green-50 dark:bg-green-900/20 rounded-md">
@@ -124,7 +134,7 @@ export function CandidateFitAnalysis({ profile, job }: CandidateFitAnalysisProps
                         </ul>
                     </div>
                      <div className="space-y-2">
-                        <h4 className="font-semibold flex items-center gap-2"><XCircle className="h-5 w-5 text-red-600" /> Potensi Kesenjangan</h4>
+                        <h4 className="font-semibold flex items-center gap-2"><XCircle className="h-5 w-5 text-red-600" /> Potensi Area Pengembangan</h4>
                         <ul className="list-none space-y-2">
                             {analysis.weaknesses.map((item, index) => (
                                <li key={index} className="flex items-start gap-2 text-sm p-2 bg-red-50 dark:bg-red-900/20 rounded-md">
@@ -135,6 +145,18 @@ export function CandidateFitAnalysis({ profile, job }: CandidateFitAnalysisProps
                         </ul>
                     </div>
                 </div>
+                {analysis.roleSuggestions && analysis.roleSuggestions.length > 0 && (
+                     <div className="space-y-2">
+                        <h4 className="font-semibold flex items-center gap-2"><Briefcase className="h-5 w-5 text-indigo-600" /> Saran Peran Alternatif</h4>
+                        <div className="flex flex-wrap gap-2">
+                            {analysis.roleSuggestions.map((role, index) => (
+                                <Badge key={index} variant="outline" className="text-base py-1 px-3 bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-700 text-indigo-800 dark:text-indigo-200">
+                                    {role}
+                                </Badge>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
         )}
       </CardContent>
