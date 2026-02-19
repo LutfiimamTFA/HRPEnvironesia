@@ -51,71 +51,18 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
         }
 
         const handleStart = async () => {
-            const sessionsQuery = query(
-                collection(firestore, 'assessment_sessions'),
-                where('applicationId', '==', applicationId),
-                limit(1)
-            );
-            const existingSessionsSnap = await getDocs(sessionsQuery);
-
-            if (!existingSessionsSnap.empty) {
-                const existingSessionDoc = existingSessionsSnap.docs[0];
-                const existingSessionData = existingSessionDoc.data() as AssessmentSession;
-
-                // **NEW LOGIC: Check for and repair incomplete sessions**
-                if (!existingSessionData.selectedQuestionIds?.forcedChoice || existingSessionData.selectedQuestionIds.forcedChoice.length === 0) {
-                    toast({ title: 'Memperbaiki Sesi Tes', description: 'Sesi Anda tidak lengkap. Menyiapkan bagian kedua dari tes...' });
-
-                    const forcedChoiceQuery = query(collection(firestore, 'assessment_questions'),
-                        where('assessmentId', '==', 'default'),
-                        where('isActive', '==', true),
-                        where('type', '==', 'forced-choice')
-                    );
-                    const forcedChoiceQuestionsSnap = await getDocs(forcedChoiceQuery);
-                    const forcedChoiceIds = forcedChoiceQuestionsSnap.docs.map(doc => doc.id);
-                    const forcedChoiceCount = assessmentConfig?.forcedChoiceCount || 20;
-
-                    if (forcedChoiceIds.length < forcedChoiceCount) {
-                        toast({ variant: 'destructive', title: 'Bank Soal Tidak Cukup', description: `Soal Forced-Choice tidak mencukupi untuk perbaikan. Hubungi HRD.` });
-                        router.push('/careers/portal/applications');
-                        return;
-                    }
-
-                    const shuffle = (array: string[]) => {
-                      for (let i = array.length - 1; i > 0; i--) {
-                        const j = Math.floor(Math.random() * (i + 1));
-                        [array[i], array[j]] = [array[j], array[i]];
-                      }
-                      return array;
-                    };
-                    const selectedForcedChoiceIds = shuffle(forcedChoiceIds).slice(0, forcedChoiceCount);
-
-                    await setDocumentNonBlocking(existingSessionDoc.ref, {
-                        selectedQuestionIds: {
-                            ...existingSessionData.selectedQuestionIds,
-                            forcedChoice: selectedForcedChoiceIds,
-                        },
-                        currentTestPart: 'forced-choice', // Direct them to the second part
-                        updatedAt: serverTimestamp()
-                    }, { merge: true });
-
-                    toast({ title: 'Sesi Diperbarui', description: 'Silakan lanjutkan ke bagian kedua.' });
-                    router.push(`/careers/portal/assessment/personality/${existingSessionDoc.id}`);
-                    return;
-                }
-
-                if (existingSessionData.status === 'submitted') {
-                    toast({ title: 'Tes Selesai', description: 'Anda sudah menyelesaikan tes untuk lowongan ini. Melihat hasil...' });
-                    router.push(`/careers/portal/assessment/personality/result/${existingSessionDoc.id}`);
-                } else {
-                    toast({ title: 'Melanjutkan Sesi', description: 'Anda akan melanjutkan tes yang sedang berjalan.' });
-                    router.push(`/careers/portal/assessment/personality/${existingSessionDoc.id}`);
-                }
-                return;
-            }
-
-            // Fetch question banks
             const questionsCollection = collection(firestore, 'assessment_questions');
+            
+            // Helper function to shuffle an array
+            const shuffle = (array: string[]) => {
+              for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+              }
+              return array;
+            };
+
+            // Fetch latest question banks
             const likertQuery = query(questionsCollection, where('assessmentId', '==', 'default'), where('isActive', '==', true), where('type', '==', 'likert'));
             const forcedChoiceQuery = query(questionsCollection, where('assessmentId', '==', 'default'), where('isActive', '==', true), where('type', '==', 'forced-choice'));
             
@@ -126,7 +73,7 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
 
             const likertIds = likertQuestionsSnap.docs.map(d => d.id);
             const forcedChoiceIds = forcedChoiceQuestionsSnap.docs.map(doc => doc.id);
-
+            
             const likertCount = (assessmentConfig?.bigfiveCount || 30) + (assessmentConfig?.discCount || 20);
             const forcedChoiceCount = assessmentConfig?.forcedChoiceCount || 20;
 
@@ -136,14 +83,51 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
                 return;
             }
 
-            const shuffle = (array: string[]) => {
-              for (let i = array.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [array[i], array[j]] = [array[j], array[i]];
-              }
-              return array;
-            };
+            const sessionsQuery = query(
+                collection(firestore, 'assessment_sessions'),
+                where('applicationId', '==', applicationId),
+                limit(1)
+            );
+            const existingSessionsSnap = await getDocs(sessionsQuery);
 
+            if (!existingSessionsSnap.empty) {
+                const existingSessionDoc = existingSessionsSnap.docs[0];
+                const existingSessionData = existingSessionDoc.data() as AssessmentSession;
+                
+                const isOldSession = !existingSessionData.selectedQuestionIds?.forcedChoice || existingSessionData.selectedQuestionIds.forcedChoice.length === 0;
+
+                if (isOldSession) {
+                    toast({ title: 'Sesi Tes Diperbarui', description: 'Sesi lama Anda tidak valid. Membuat ulang sesi tes untuk Anda.' });
+                    
+                    const newSelectedQuestionIds = {
+                        likert: shuffle(likertIds).slice(0, likertCount),
+                        forcedChoice: shuffle(forcedChoiceIds).slice(0, forcedChoiceCount),
+                    };
+
+                    await setDocumentNonBlocking(existingSessionDoc.ref, {
+                        selectedQuestionIds: newSelectedQuestionIds,
+                        answers: {}, // Reset answers
+                        currentTestPart: 'likert', // Start from the beginning
+                        status: 'draft',
+                        updatedAt: serverTimestamp()
+                    }, { merge: true });
+
+                    router.push(`/careers/portal/assessment/personality/${existingSessionDoc.id}`);
+                    return;
+                }
+
+                // If session is valid and already submitted
+                if (existingSessionData.status === 'submitted') {
+                    toast({ title: 'Tes Selesai', description: 'Anda sudah menyelesaikan tes untuk lowongan ini. Melihat hasil...' });
+                    router.push(`/careers/portal/assessment/personality/result/${existingSessionDoc.id}`);
+                } else { // If session is valid and in draft
+                    toast({ title: 'Melanjutkan Sesi', description: 'Anda akan melanjutkan tes yang sedang berjalan.' });
+                    router.push(`/careers/portal/assessment/personality/${existingSessionDoc.id}`);
+                }
+                return;
+            }
+
+            // If no existing session, create a new one
             const sessionData: Omit<AssessmentSession, 'id'> = {
                 assessmentId: activeAssessment.id!,
                 candidateUid: userProfile.uid,
