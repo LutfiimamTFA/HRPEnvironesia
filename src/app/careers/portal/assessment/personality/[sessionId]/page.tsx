@@ -260,18 +260,18 @@ function TakeAssessmentPage() {
           onValueChange={(value) => handleAnswerChange(currentQuestion.id!, value)}
           className="flex justify-between items-center max-w-xl mx-auto"
         >
-          <span className="text-green-600 font-medium">Setuju</span>
+          <span className="text-purple-600 font-medium">Tidak Setuju</span>
           <div className="flex items-center gap-2 md:gap-4">
             {likertOptions.map(opt => (
               <RadioGroupItem 
                 key={opt.value} 
                 value={opt.value.toString()} 
                 id={`${currentQuestion.id}-${opt.value}`}
-                className={cn('rounded-full transition-all duration-200 ease-in-out transform hover:scale-110', opt.size, opt.color, 'data-[state=checked]:text-white data-[state=unchecked]:text-transparent' )}
+                className={cn('rounded-full transition-all duration-200 ease-in-out transform hover:scale-110', opt.size, opt.color, 'data-[state=checked]:text-transparent data-[state=unchecked]:text-transparent' )}
               />
             ))}
           </div>
-          <span className="text-purple-600 font-medium">Tidak Setuju</span>
+          <span className="text-green-600 font-medium">Setuju</span>
         </RadioGroup>
 
         <div className="mt-16 flex justify-center">
