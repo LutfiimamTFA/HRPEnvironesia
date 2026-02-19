@@ -2,21 +2,20 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { format } from 'date-fns';
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, query, where, doc } from 'firebase/firestore';
-import type { JobApplication, NavigationSetting, Brand } from '@/lib/types';
+import { collection, query, doc } from 'firebase/firestore';
+import type { Job, JobApplication, NavigationSetting, Brand } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Eye } from 'lucide-react';
+import { Users } from 'lucide-react';
 import { ALL_MENU_ITEMS, ALL_UNIQUE_MENU_ITEMS } from '@/lib/menu-config';
 import { useDoc } from '@/firebase/firestore/use-doc';
-import { ApplicationStatusBadge } from '@/components/recruitment/ApplicationStatusBadge';
+import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 function RecruitmentTableSkeleton() {
@@ -27,13 +26,13 @@ function RecruitmentTableSkeleton() {
         <Table>
           <TableHeader>
             <TableRow>
-              {[...Array(6)].map((_, i) => <TableHead key={i}><Skeleton className="h-5 w-full" /></TableHead>)}
+              {[...Array(5)].map((_, i) => <TableHead key={i}><Skeleton className="h-5 w-full" /></TableHead>)}
             </TableRow>
           </TableHeader>
           <TableBody>
             {[...Array(5)].map((_, i) => (
               <TableRow key={i}>
-                {[...Array(6)].map((_, j) => <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>)}
+                {[...Array(5)].map((_, j) => <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>)}
               </TableRow>
             ))}
           </TableBody>
@@ -43,7 +42,7 @@ function RecruitmentTableSkeleton() {
   );
 }
 
-export default function RecruitmentPage() {
+export default function RecruitmentJobsPage() {
   const hasAccess = useRoleGuard(['hrd', 'super-admin']);
   const { userProfile } = useAuth();
   const firestore = useFirestore();
@@ -54,22 +53,16 @@ export default function RecruitmentPage() {
     [userProfile, firestore]
   );
   const { data: navSettings, isLoading: isLoadingSettings } = useDoc<NavigationSetting>(settingsDocRef);
-  
-  const applicationsQuery = useMemoFirebase(
-    () => {
-        if (!firestore) return null;
-        return query(collection(firestore, 'applications'), where('status', 'in', ['submitted', 'psychotest', 'verification', 'document_submission', 'interview', 'hired', 'rejected']));
-    },
-    [firestore]
-  );
-  const { data: applications, isLoading: isLoadingApps, error } = useCollection<JobApplication>(applicationsQuery);
 
-  const brandsQuery = useMemoFirebase(
-    () => (firestore ? collection(firestore, 'brands') : null),
-    [firestore]
-  );
+  const jobsQuery = useMemoFirebase(() => query(collection(firestore, 'jobs')), [firestore]);
+  const { data: jobs, isLoading: isLoadingJobs, error: jobsError } = useCollection<Job>(jobsQuery);
+
+  const applicationsQuery = useMemoFirebase(() => query(collection(firestore, 'applications')), [firestore]);
+  const { data: applications, isLoading: isLoadingApps, error: appsError } = useCollection<JobApplication>(applicationsQuery);
+
+  const brandsQuery = useMemoFirebase(() => (firestore ? collection(firestore, 'brands') : null), [firestore]);
   const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(brandsQuery);
-
+  
   const menuItems = useMemo(() => {
     const defaultItems = ALL_MENU_ITEMS[userProfile?.role as keyof typeof ALL_MENU_ITEMS] || [];
     if (isLoadingSettings) return defaultItems;
@@ -79,6 +72,14 @@ export default function RecruitmentPage() {
     return defaultItems;
   }, [navSettings, isLoadingSettings, userProfile]);
 
+  const applicantCounts = useMemo(() => {
+    if (!applications) return new Map<string, number>();
+    return applications.reduce((acc, app) => {
+      acc.set(app.jobId, (acc.get(app.jobId) || 0) + 1);
+      return acc;
+    }, new Map<string, number>());
+  }, [applications]);
+  
   const brandsForFilter = useMemo(() => {
     if (!brands || !userProfile) return [];
     if (userProfile.role === 'super-admin' || !userProfile.brandId || (Array.isArray(userProfile.brandId) && userProfile.brandId.length === 0)) {
@@ -88,31 +89,30 @@ export default function RecruitmentPage() {
     return brands.filter(brand => hrdBrands.includes(brand.id!));
   }, [brands, userProfile]);
 
-  const filteredApplications = useMemo(() => {
-    if (!applications || !userProfile) return [];
+  const jobsWithCounts = useMemo(() => {
+    if (!jobs) return [];
 
-    let permissionFilteredApps;
-    if (userProfile.role === 'super-admin' || !userProfile.brandId || (Array.isArray(userProfile.brandId) && userProfile.brandId.length === 0)) {
-      permissionFilteredApps = applications;
-    } else if (userProfile.role === 'hrd') {
+    let permissionFilteredJobs;
+    if (userProfile?.role === 'super-admin' || !userProfile?.brandId || (Array.isArray(userProfile.brandId) && userProfile.brandId.length === 0)) {
+      permissionFilteredJobs = jobs;
+    } else if (userProfile?.role === 'hrd') {
       const hrdBrands = Array.isArray(userProfile.brandId) ? userProfile.brandId : [userProfile.brandId];
-      permissionFilteredApps = applications.filter(app => hrdBrands.includes(app.brandId));
+      permissionFilteredJobs = jobs.filter(job => hrdBrands.includes(job.brandId));
     } else {
-        permissionFilteredApps = [];
+        permissionFilteredJobs = [];
     }
 
-    const brandFilteredApps = brandFilter && brandFilter !== 'all'
-      ? permissionFilteredApps.filter(app => app.brandId === brandFilter)
-      : permissionFilteredApps;
+    const brandFilteredJobs = brandFilter && brandFilter !== 'all'
+      ? permissionFilteredJobs.filter(job => job.brandId === brandFilter)
+      : permissionFilteredJobs;
 
-    return [...brandFilteredApps].sort((a, b) => {
-      const timeA = a.submittedAt?.toMillis() || a.createdAt.toMillis();
-      const timeB = b.submittedAt?.toMillis() || b.createdAt.toMillis();
-      return timeB - timeA;
-    });
-  }, [applications, userProfile, brandFilter]);
+    return brandFilteredJobs.map(job => ({
+      ...job,
+      applicantCount: applicantCounts.get(job.id!) || 0
+    })).sort((a, b) => b.applicantCount - a.applicantCount);
+  }, [jobs, applicantCounts, userProfile, brandFilter]);
   
-  const isLoading = isLoadingApps || isLoadingSettings || isLoadingBrands;
+  const isLoading = isLoadingSettings || isLoadingJobs || isLoadingApps || isLoadingBrands;
 
   if (!hasAccess || isLoading) {
     return (
@@ -122,11 +122,12 @@ export default function RecruitmentPage() {
     );
   }
 
+  const error = jobsError || appsError;
   if (error) {
     return (
       <DashboardLayout pageTitle="Recruitment" menuItems={menuItems}>
         <Alert variant="destructive">
-          <AlertTitle>Error Loading Applications</AlertTitle>
+          <AlertTitle>Error Loading Data</AlertTitle>
           <AlertDescription>{error.message}</AlertDescription>
         </Alert>
       </DashboardLayout>
@@ -134,7 +135,7 @@ export default function RecruitmentPage() {
   }
 
   return (
-    <DashboardLayout pageTitle="Recruitment" menuItems={menuItems}>
+    <DashboardLayout pageTitle="Recruitment: Select Job Posting" menuItems={menuItems}>
       <div className="space-y-4">
         <div className="flex justify-start">
             <Select value={brandFilter} onValueChange={setBrandFilter} disabled={brandsForFilter.length === 0}>
@@ -153,37 +154,45 @@ export default function RecruitmentPage() {
             <Table>
             <TableHeader>
                 <TableRow>
-                <TableHead>Candidate</TableHead>
                 <TableHead>Position</TableHead>
                 <TableHead>Company</TableHead>
-                <TableHead>Submitted</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Total Applicants</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
             </TableHeader>
             <TableBody>
-                {filteredApplications.length > 0 ? (
-                filteredApplications.map(app => (
-                    <TableRow key={app.id}>
-                    <TableCell className="font-medium">{app.candidateName}</TableCell>
-                    <TableCell>{app.jobPosition}</TableCell>
-                    <TableCell>{app.brandName}</TableCell>
-                    <TableCell>{app.submittedAt ? format(app.submittedAt.toDate(), 'dd MMM yyyy') : '-'}</TableCell>
-                    <TableCell><ApplicationStatusBadge status={app.status} /></TableCell>
+                {jobsWithCounts.length > 0 ? (
+                jobsWithCounts.map(job => (
+                    <TableRow key={job.id}>
+                    <TableCell className="font-medium">{job.position}</TableCell>
+                    <TableCell>{job.brandName}</TableCell>
+                    <TableCell>
+                      <Badge variant={
+                        job.publishStatus === 'published' ? 'default' 
+                        : job.publishStatus === 'closed' ? 'destructive' 
+                        : 'secondary'
+                      } className="capitalize">
+                        {job.publishStatus}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="flex items-center gap-2">
+                      <Users className="h-4 w-4 text-muted-foreground" /> 
+                      {job.applicantCount}
+                    </TableCell>
                     <TableCell className="text-right">
-                        <Button asChild variant="ghost" size="icon">
-                        <Link href={`/admin/recruitment/${app.id}`}>
-                            <Eye className="h-4 w-4" />
-                            <span className="sr-only">View Application</span>
-                        </Link>
+                        <Button asChild variant="outline" size="sm">
+                          <Link href={`/admin/recruitment/jobs/${job.id}`}>
+                            View Applicants
+                          </Link>
                         </Button>
                     </TableCell>
                     </TableRow>
                 ))
                 ) : (
                 <TableRow>
-                    <TableCell colSpan={6} className="h-24 text-center">
-                    No submitted applications found for the selected filter.
+                    <TableCell colSpan={5} className="h-24 text-center">
+                    No job postings found for the selected filter.
                     </TableCell>
                 </TableRow>
                 )}
