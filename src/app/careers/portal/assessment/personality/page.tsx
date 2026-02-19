@@ -96,9 +96,20 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
             }
 
             // Fetch question banks
-            const baseQuery = query(collection(firestore, 'assessment_questions'), where('assessmentId', '==', 'default'), where('isActive', '==', true), where('type', '==', 'likert'));
-            const bigfiveQuestionsSnap = await getDocs(query(baseQuery, where('engineKey', '==', 'bigfive')));
-            const discQuestionsSnap = await getDocs(query(baseQuery, where('engineKey', '==', 'disc')));
+            const questionsCollection = collection(firestore, 'assessment_questions');
+            const baseConditions = [
+                where('assessmentId', '==', 'default'),
+                where('isActive', '==', true),
+                where('type', '==', 'likert')
+            ];
+
+            const bigfiveQuery = query(questionsCollection, ...baseConditions, where('engineKey', '==', 'bigfive'));
+            const discQuery = query(questionsCollection, ...baseConditions, where('engineKey', '==', 'disc'));
+            
+            const [bigfiveQuestionsSnap, discQuestionsSnap] = await Promise.all([
+                getDocs(bigfiveQuery),
+                getDocs(discQuery)
+            ]);
 
             const bigfiveIds = bigfiveQuestionsSnap.docs.map(doc => doc.id);
             const discIds = discQuestionsSnap.docs.map(doc => doc.id);
