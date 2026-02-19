@@ -15,30 +15,6 @@ import { CheckCircle, Info } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 
-function CompletedTestView({ sessionId }: { sessionId: string }) {
-    return (
-        <Card className="max-w-3xl mx-auto">
-            <CardHeader className="items-center text-center">
-                <CheckCircle className="h-12 w-12 text-green-500" />
-                <CardTitle className="text-2xl mt-4">Tes Telah Diselesaikan</CardTitle>
-                <CardDescription>
-                    Anda sudah pernah menyelesaikan tes kepribadian ini.
-                </CardDescription>
-            </CardHeader>
-            <CardContent className="text-center">
-                <p className="text-muted-foreground mb-6">
-                    Anda dapat melihat kembali hasil tes Anda atau melanjutkan proses lamaran lainnya.
-                </p>
-                <Button asChild size="lg">
-                    <Link href={`/careers/portal/assessment/personality/result/${sessionId}`}>
-                        Lihat Hasil Tes
-                    </Link>
-                </Button>
-            </CardContent>
-        </Card>
-    );
-}
-
 function StartTestForApplication({ applicationId }: { applicationId: string }) {
     const { userProfile, loading: authLoading } = useAuth();
     const firestore = useFirestore();
@@ -84,12 +60,11 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
 
             if (!existingSessionsSnap.empty) {
                 const existingSession = existingSessionsSnap.docs[0];
-                // Check if the session is complete
                 if (existingSession.data().status === 'submitted') {
-                    toast({ title: 'Sesi Selesai', description: 'Anda sudah menyelesaikan tes untuk lowongan ini.' });
+                    toast({ title: 'Tes Selesai', description: 'Anda sudah menyelesaikan tes untuk lowongan ini. Melihat hasil...' });
                     router.push(`/careers/portal/assessment/personality/result/${existingSession.id}`);
                 } else {
-                    toast({ title: 'Melanjutkan Sesi', description: 'Anda akan melanjutkan tes untuk lowongan ini.' });
+                    toast({ title: 'Melanjutkan Sesi', description: 'Anda akan melanjutkan tes yang sedang berjalan.' });
                     router.push(`/careers/portal/assessment/personality/${existingSession.id}`);
                 }
                 return;
@@ -97,14 +72,19 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
 
             // Fetch question banks
             const questionsCollection = collection(firestore, 'assessment_questions');
-            const baseConditions = [
+            
+            const bigfiveQuery = query(questionsCollection, 
+                where('assessmentId', '==', 'default'), 
+                where('isActive', '==', true), 
+                where('type', '==', 'likert'), 
+                where('engineKey', '==', 'bigfive')
+            );
+            const discQuery = query(questionsCollection, 
                 where('assessmentId', '==', 'default'),
                 where('isActive', '==', true),
-                where('type', '==', 'likert')
-            ];
-
-            const bigfiveQuery = query(questionsCollection, ...baseConditions, where('engineKey', '==', 'bigfive'));
-            const discQuery = query(questionsCollection, ...baseConditions, where('engineKey', '==', 'disc'));
+                where('type', '==', 'likert'),
+                where('engineKey', '==', 'disc')
+            );
             
             const [bigfiveQuestionsSnap, discQuestionsSnap] = await Promise.all([
                 getDocs(bigfiveQuery),
@@ -194,20 +174,7 @@ function AssessmentStartPageContent() {
   const { data: activeTestApplications, isLoading: activeTestAppsLoading } = useCollection<JobApplication>(activeTestApplicationQuery);
   const activeTestApplication = activeTestApplications?.[0];
 
-  const sessionsQuery = useMemoFirebase(() => {
-    if (!userProfile) return null;
-    return query(
-        collection(firestore, 'assessment_sessions'),
-        where('candidateUid', '==', userProfile.uid),
-        where('status', '==', 'submitted'),
-        limit(1)
-    );
-  }, [firestore, userProfile]);
-
-  const { data: sessions, isLoading: sessionsLoading } = useCollection<AssessmentSession>(sessionsQuery);
-  const submittedSession = useMemo(() => sessions?.find(s => s.status === 'submitted' && !s.applicationId), [sessions]);
-
-  const isLoading = authLoading || sessionsLoading || activeTestAppsLoading;
+  const isLoading = authLoading || activeTestAppsLoading;
 
   // If an applicationId is in the URL, that takes top priority.
   if (applicationId) {
@@ -225,10 +192,6 @@ function AssessmentStartPageContent() {
         <Loader2 className="h-8 w-8 animate-spin" />
       </div>
     );
-  }
-  
-  if (submittedSession) {
-    return <CompletedTestView sessionId={submittedSession.id!} />;
   }
 
   return (

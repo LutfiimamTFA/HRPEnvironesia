@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
 import { collection, doc, query, where, getDocs } from 'firebase/firestore';
-import type { Assessment, AssessmentQuestion, AssessmentSession, AssessmentTemplate } from '@/lib/types';
+import type { Assessment, AssessmentQuestion, AssessmentSession, AssessmentTemplate, ForcedChoice } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -42,14 +42,57 @@ function AssessmentSkeleton() {
 }
 
 const likertOptions = [
-  { value: 7, size: 'h-14 w-14', color: 'border-green-500 bg-green-500/10 data-[state=checked]:bg-green-500' },
-  { value: 6, size: 'h-12 w-12', color: 'border-green-400 bg-green-400/10 data-[state=checked]:bg-green-400' },
-  { value: 5, size: 'h-10 w-10', color: 'border-green-300 bg-green-300/10 data-[state=checked]:bg-green-300' },
-  { value: 4, size: 'h-8 w-8', color: 'border-gray-400 bg-gray-400/10 data-[state=checked]:bg-gray-400' },
-  { value: 3, size: 'h-10 w-10', color: 'border-purple-300 bg-purple-300/10 data-[state=checked]:bg-purple-300' },
-  { value: 2, size: 'h-12 w-12', color: 'border-purple-400 bg-purple-400/10 data-[state=checked]:bg-purple-400' },
   { value: 1, size: 'h-14 w-14', color: 'border-purple-500 bg-purple-500/10 data-[state=checked]:bg-purple-500' },
-].reverse();
+  { value: 2, size: 'h-12 w-12', color: 'border-purple-400 bg-purple-400/10 data-[state=checked]:bg-purple-400' },
+  { value: 3, size: 'h-10 w-10', color: 'border-purple-300 bg-purple-300/10 data-[state=checked]:bg-purple-300' },
+  { value: 4, size: 'h-8 w-8', color: 'border-gray-400 bg-gray-400/10 data-[state=checked]:bg-gray-400' },
+  { value: 5, size: 'h-10 w-10', color: 'border-green-300 bg-green-300/10 data-[state=checked]:bg-green-300' },
+  { value: 6, size: 'h-12 w-12', color: 'border-green-400 bg-green-400/10 data-[state=checked]:bg-green-400' },
+  { value: 7, size: 'h-14 w-14', color: 'border-green-500 bg-green-500/10 data-[state=checked]:bg-green-500' },
+];
+
+function ForcedChoiceSelector({
+  statements,
+  value,
+  onChange,
+}: {
+  statements: ForcedChoice[];
+  value: { most: string; least: string };
+  onChange: (value: { most: string; least: string }) => void;
+}) {
+    const handleSelect = (type: 'most' | 'least', text: string) => {
+        const otherType = type === 'most' ? 'least' : 'most';
+        if (value[otherType] === text) {
+            onChange({ ...value, [type]: text, [otherType]: '' });
+        } else {
+            onChange({ ...value, [type]: text });
+        }
+    };
+    
+  return (
+    <div className="space-y-3">
+      {statements.map((stmt, index) => (
+        <div key={index} className="flex items-center justify-between rounded-lg border p-3">
+          <span className="flex-1 pr-4">{stmt.text}</span>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant={value.most === stmt.text ? 'default' : 'outline'}
+              className={cn("w-10 h-10 rounded-full", value.most === stmt.text && 'bg-green-600 hover:bg-green-700')}
+              onClick={() => handleSelect('most', stmt.text)}
+            >V</Button>
+            <Button
+              size="sm"
+              variant={value.least === stmt.text ? 'destructive' : 'outline'}
+              className="w-10 h-10 rounded-full"
+              onClick={() => handleSelect('least', stmt.text)}
+            >X</Button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function TakeAssessmentPage() {
   const router = useRouter();
@@ -61,12 +104,15 @@ function TakeAssessmentPage() {
   const sessionId = params.sessionId as string;
 
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, number | { most: string, least: string }>>({});
+  const [answers, setAnswers] = useState<Record<string, number | { most: string; least: string }>>({});
   const [isFinishing, setIsFinishing] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
   
   const [questions, setQuestions] = useState<AssessmentQuestion[]>([]);
   const [questionsLoading, setQuestionsLoading] = useState(true);
   const [questionsError, setQuestionsError] = useState<string | null>(null);
+
+  const [currentPart, setCurrentPart] = useState<'bigfive' | 'disc' | null>(null);
 
   // 1. Fetch session
   const sessionRef = useMemoFirebase(() => doc(firestore, 'assessment_sessions', sessionId), [firestore, sessionId]);
@@ -90,7 +136,9 @@ function TakeAssessmentPage() {
   useEffect(() => {
     const fetchQuestions = async () => {
       if (!session?.selectedQuestionIds) {
-        setQuestionsError('Sesi asesmen tidak valid atau tidak memiliki daftar soal.');
+        if (!sessionLoading) { // Only show error if session has loaded and is invalid
+          setQuestionsError('Sesi asesmen tidak valid atau tidak memiliki daftar soal.');
+        }
         setQuestionsLoading(false);
         return;
       }
@@ -134,7 +182,7 @@ function TakeAssessmentPage() {
     if (session) {
       fetchQuestions();
     }
-  }, [session, firestore]);
+  }, [session, firestore, sessionLoading]);
   
   // 5. Reconstruct the question order based on the session's ID list
   const sortedQuestions = useMemo(() => {
@@ -146,14 +194,21 @@ function TakeAssessmentPage() {
 
   useEffect(() => {
     if (session) {
+      setCurrentPart(session.currentTestPart || 'bigfive');
       setAnswers(session.answers || {});
     }
   }, [session]);
+
+  const questionsForCurrentPart = useMemo(() => {
+      if (!sortedQuestions.length || !currentPart) return [];
+      const partQuestions = sortedQuestions.filter(q => q.engineKey === currentPart || q.type === 'forced-choice');
+      return partQuestions;
+  }, [sortedQuestions, currentPart]);
   
   const isLoading = authLoading || sessionLoading || assessmentLoading || templateLoading || questionsLoading;
 
-  const handleAnswerChange = async (questionId: string, value: string) => {
-    const numericValue = parseInt(value, 10);
+  const handleAnswerChange = async (questionId: string, value: string | { most: string, least: string }) => {
+    const numericValue = typeof value === 'string' ? parseInt(value, 10) : value;
     const newAnswers = { ...answers, [questionId]: numericValue };
     setAnswers(newAnswers);
 
@@ -167,7 +222,7 @@ function TakeAssessmentPage() {
   };
 
   const handleNext = () => {
-    if (currentQuestionIndex < sortedQuestions.length - 1) {
+    if (currentQuestionIndex < questionsForCurrentPart.length - 1) {
       setCurrentQuestionIndex(prev => prev + 1);
     }
   };
@@ -175,6 +230,23 @@ function TakeAssessmentPage() {
   const handlePrev = () => {
     if (currentQuestionIndex > 0) {
       setCurrentQuestionIndex(prev => prev - 1);
+    }
+  };
+
+  const moveToNextPart = async () => {
+    setIsTransitioning(true);
+    try {
+        await updateDocumentNonBlocking(sessionRef, { 
+            answers: answers,
+            currentTestPart: 'disc' 
+        });
+        setCurrentPart('disc');
+        setCurrentQuestionIndex(0);
+        toast({ title: "Bagian 1 Selesai", description: "Lanjut ke bagian 2." });
+    } catch (e: any) {
+        toast({ variant: 'destructive', title: 'Error', description: 'Gagal pindah ke bagian selanjutnya.' });
+    } finally {
+        setIsTransitioning(false);
     }
   };
 
@@ -219,27 +291,33 @@ function TakeAssessmentPage() {
     );
   }
 
-  if (template?.format === 'forced-choice' || sortedQuestions.length === 0) {
-    const message = template?.format === 'forced-choice' 
-        ? 'Pengerjaan untuk format tes ini belum tersedia di portal kandidat.'
-        : 'Tidak ada pertanyaan yang dapat dimuat untuk sesi ini.';
-
+  if (questionsForCurrentPart.length === 0) {
     return (
       <Card className="max-w-2xl mx-auto">
         <CardContent className="p-8 text-center">
             <Alert variant="destructive">
                 <AlertTriangle className="h-4 w-4" />
                 <AlertTitle>Format Tes Tidak Didukung</AlertTitle>
-                <AlertDescription>{message}</AlertDescription>
+                <AlertDescription>Tidak ada pertanyaan yang dapat dimuat untuk sesi ini.</AlertDescription>
             </Alert>
         </CardContent>
       </Card>
     );
   }
   
-  const currentQuestion = sortedQuestions[currentQuestionIndex];
-  const progress = ((currentQuestionIndex + 1) / sortedQuestions.length) * 100;
-  const isLastQuestion = currentQuestionIndex === sortedQuestions.length - 1;
+  const currentQuestion = questionsForCurrentPart[currentQuestionIndex];
+  const progress = ((currentQuestionIndex + 1) / questionsForCurrentPart.length) * 100;
+  const isLastQuestion = currentQuestionIndex === questionsForCurrentPart.length - 1;
+  const isLikert = currentQuestion.type === 'likert';
+
+  let currentAnswer = answers[currentQuestion.id!];
+  let isAnswered = false;
+  if (isLikert) {
+      isAnswered = !!currentAnswer;
+  } else {
+      const fcAnswer = currentAnswer as { most: string; least: string } | undefined;
+      isAnswered = !!(fcAnswer && fcAnswer.most && fcAnswer.least);
+  }
 
   return (
     <Card className="max-w-4xl mx-auto shadow-lg">
@@ -248,39 +326,58 @@ function TakeAssessmentPage() {
             <Button variant="ghost" size="sm" onClick={handlePrev} disabled={currentQuestionIndex === 0}>
                 <ArrowLeft className="h-4 w-4 mr-2" /> Halaman Sebelumnya
             </Button>
-            <p className="text-sm text-muted-foreground">Langkah {currentQuestionIndex + 1} dari {sortedQuestions.length}</p>
+            <div className='text-center'>
+                 <p className="text-sm font-medium">Bagian: {currentPart === 'bigfive' ? '1 dari 2' : '2 dari 2'}</p>
+                 <p className="text-sm text-muted-foreground">Langkah {currentQuestionIndex + 1} dari {questionsForCurrentPart.length}</p>
+            </div>
+            <span></span>
         </div>
         <Progress value={progress} className="w-full h-2" />
       </div>
       <CardContent className="p-6 md:p-12 text-center">
-        <p className="text-lg md:text-xl text-foreground mb-12 max-w-2xl mx-auto">{currentQuestion.text}</p>
-        
-        <RadioGroup
-          value={answers[currentQuestion.id!]?.toString()}
-          onValueChange={(value) => handleAnswerChange(currentQuestion.id!, value)}
-          className="flex justify-between items-center max-w-xl mx-auto"
-        >
-          <span className="text-purple-600 font-medium">Tidak Setuju</span>
-          <div className="flex items-center gap-2 md:gap-4">
-            {likertOptions.map(opt => (
-              <RadioGroupItem 
-                key={opt.value} 
-                value={opt.value.toString()} 
-                id={`${currentQuestion.id}-${opt.value}`}
-                className={cn('rounded-full transition-all duration-200 ease-in-out transform hover:scale-110', opt.size, opt.color, 'data-[state=checked]:text-transparent data-[state=unchecked]:text-transparent' )}
-              />
-            ))}
-          </div>
-          <span className="text-green-600 font-medium">Setuju</span>
-        </RadioGroup>
+        {isLikert ? (
+            <>
+                <p className="text-lg md:text-xl text-foreground mb-12 max-w-2xl mx-auto">{currentQuestion.text}</p>
+                <RadioGroup
+                value={currentAnswer?.toString()}
+                onValueChange={(value) => handleAnswerChange(currentQuestion.id!, value)}
+                className="flex justify-between items-center max-w-xl mx-auto"
+                >
+                    <span className="text-purple-600 font-medium">Tidak Setuju</span>
+                    <div className="flex items-center gap-2 md:gap-4">
+                        {likertOptions.map(opt => (
+                        <RadioGroupItem 
+                            key={opt.value} 
+                            value={opt.value.toString()} 
+                            id={`${currentQuestion.id}-${opt.value}`}
+                            className={cn('rounded-full transition-all duration-200 ease-in-out transform hover:scale-110', opt.size, opt.color, 'data-[state=checked]:text-primary-foreground text-primary-foreground' )}
+                        />
+                        ))}
+                    </div>
+                    <span className="text-green-600 font-medium">Setuju</span>
+                </RadioGroup>
+            </>
+        ) : (
+             <ForcedChoiceSelector
+                statements={currentQuestion.forcedChoices || []}
+                value={(currentAnswer as { most: string; least: string }) || { most: '', least: '' }}
+                onChange={(value) => handleAnswerChange(currentQuestion.id!, value)}
+             />
+        )}
+
 
         <div className="mt-16 flex justify-center">
             {!isLastQuestion ? (
-                <Button size="lg" onClick={handleNext} disabled={!answers[currentQuestion.id!]}>
+                <Button size="lg" onClick={handleNext} disabled={!isAnswered}>
                     Lanjut
                 </Button>
+            ) : currentPart === 'bigfive' ? (
+                <Button size="lg" onClick={moveToNextPart} disabled={isTransitioning || !isAnswered}>
+                    {isTransitioning && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Lanjut ke Bagian 2
+                </Button>
             ) : (
-                <Button size="lg" onClick={handleFinish} disabled={isFinishing || !answers[currentQuestion.id!]}>
+                <Button size="lg" onClick={handleFinish} disabled={isFinishing || !isAnswered}>
                     {isFinishing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Selesaikan Tes
                 </Button>
