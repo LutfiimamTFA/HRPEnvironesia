@@ -8,11 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Loader2, PlusCircle } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
-interface AssessmentBootstrapClientProps {
-  onBootstrapSuccess?: () => void;
-}
-
-export function AssessmentBootstrapClient({ onBootstrapSuccess }: AssessmentBootstrapClientProps) {
+export function AssessmentBootstrapClient() {
   const { firebaseUser } = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
@@ -46,11 +42,7 @@ export function AssessmentBootstrapClient({ onBootstrapSuccess }: AssessmentBoot
         title: 'Bootstrap Successful',
         description: 'Default assessment template and test have been created.',
       });
-
-      if (typeof onBootstrapSuccess === 'function') {
-        onBootstrapSuccess();
-      }
-
+      // The parent component will automatically re-render thanks to useCollection's real-time listener.
     } catch (e: any) {
       setError(e.message);
       toast({

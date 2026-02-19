@@ -36,7 +36,7 @@ export function AssessmentManagementClient() {
     () => collection(firestore, 'assessments'),
     [firestore]
   );
-  const { data: assessments, isLoading: isLoadingAssessments, error: assessmentError, mutate } = useCollection<Assessment>(assessmentsQuery);
+  const { data: assessments, isLoading: isLoadingAssessments, error: assessmentError } = useCollection<Assessment>(assessmentsQuery);
 
   const templatesQuery = useMemoFirebase(
     () => collection(firestore, 'assessment_templates'),
@@ -77,7 +77,7 @@ export function AssessmentManagementClient() {
         throw new Error(result.error || 'Failed to delete assessments.');
       }
       toast({ title: 'Assessments Deleted', description: 'Default assessment data has been cleared.' });
-      mutate(); // Re-fetch data
+      // No mutate() call needed. The useCollection hook's onSnapshot will automatically update the UI.
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Deletion Failed', description: e.message });
     } finally {
@@ -103,7 +103,7 @@ export function AssessmentManagementClient() {
   }
 
   if (isSetupIncomplete) {
-    return <AssessmentBootstrapClient onBootstrapSuccess={mutate} />;
+    return <AssessmentBootstrapClient />;
   }
 
   return (
