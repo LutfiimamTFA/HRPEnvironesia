@@ -102,9 +102,9 @@ export default function CareersPage() {
     <div className="flex min-h-dvh flex-col bg-background font-body text-foreground">
       
       {/* Hero Section */}
-      <section id="hero" className="relative w-full overflow-hidden bg-[#0B2A1C] text-primary-foreground">
-        <LeafBlob className="left-[-250px] top-[-150px] h-[544px] w-[578px] text-green-400" />
-        <LeafBlob className="right-[-350px] bottom-[-150px] h-[644px] w-[678px] text-green-400" />
+      <section id="hero" className="relative w-full overflow-hidden bg-[#003C43] text-primary-foreground">
+        <LeafBlob className="left-[-250px] top-[-150px] h-[544px] w-[578px] text-cyan-400/30" />
+        <LeafBlob className="right-[-350px] bottom-[-150px] h-[644px] w-[678px] text-cyan-400/30" />
         
         <header className="absolute top-0 z-50 w-full">
             <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -294,6 +294,11 @@ export default function CareersPage() {
                 <p className="text-sm text-muted-foreground">
                     © {new Date().getFullYear()} Environesia. All Rights Reserved.
                 </p>
+                 <div>
+                    <a href="https://environesia.co.id/" target="_blank" rel="noopener noreferrer" className="text-sm text-muted-foreground hover:text-primary">
+                        Website Perusahaan
+                    </a>
+                </div>
                 <p className="text-sm text-muted-foreground">
                   Karyawan Environesia?{' '}
                   <Link href="/admin/login" className="font-medium text-primary underline-offset-4 hover:underline">
