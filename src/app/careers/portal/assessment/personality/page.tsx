@@ -48,9 +48,8 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
     const appRef = useMemoFirebase(() => doc(firestore, 'applications', applicationId), [firestore, applicationId]);
     const { data: application, isLoading: appLoading, error: appError } = useDoc<JobApplication>(appRef);
 
-    const assessmentQuery = useMemoFirebase(() => query(collection(firestore, 'assessments'), where('isActive', '==', true), limit(1)), [firestore]);
-    const { data: assessments, isLoading: assessmentLoading } = useCollection<Assessment>(assessmentQuery);
-    const activeAssessment = assessments?.[0];
+    const assessmentRef = useMemoFirebase(() => doc(firestore, 'assessments', 'default'), [firestore]);
+    const { data: activeAssessment, isLoading: assessmentLoading } = useDoc<Assessment>(assessmentRef);
 
     const configDocRef = useMemoFirebase(() => doc(firestore, 'assessment_config', 'main'), [firestore]);
     const { data: assessmentConfig, isLoading: configLoading } = useDoc<AssessmentConfig>(configDocRef);
@@ -59,11 +58,11 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
     useEffect(() => {
         if (appLoading || assessmentLoading || authLoading || configLoading) return;
 
-        if (!application || !userProfile || !activeAssessment || !assessmentConfig) {
+        if (!application || !userProfile || !activeAssessment || !assessmentConfig || !activeAssessment.isActive || activeAssessment.publishStatus !== 'published') {
             if (appError) {
                 toast({ variant: 'destructive', title: 'Error', description: `Gagal memuat detail lamaran: ${appError.message}` });
             } else {
-                toast({ variant: 'destructive', title: 'Error', description: 'Gagal mempersiapkan tes. Lamaran, tes, atau konfigurasi tidak ditemukan.' });
+                toast({ variant: 'destructive', title: 'Error', description: 'Gagal mempersiapkan tes. Lamaran, tes, atau konfigurasi tidak valid.' });
             }
             router.push('/careers/portal/applications');
             return;
@@ -97,11 +96,19 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
             }
 
             // Fetch question banks
-            const bigfiveQuestionsSnap = await getDocs(query(collection(firestore, 'assessment_questions'), where('assessmentId', '==', 'default'), where('engineKey', '==', 'bigfive')));
-            const discQuestionsSnap = await getDocs(query(collection(firestore, 'assessment_questions'), where('assessmentId', '==', 'default'), where('engineKey', '==', 'disc')));
+            const baseQuery = query(collection(firestore, 'assessment_questions'), where('assessmentId', '==', 'default'), where('isActive', '==', true), where('type', '==', 'likert'));
+            const bigfiveQuestionsSnap = await getDocs(query(baseQuery, where('engineKey', '==', 'bigfive')));
+            const discQuestionsSnap = await getDocs(query(baseQuery, where('engineKey', '==', 'disc')));
 
             const bigfiveIds = bigfiveQuestionsSnap.docs.map(doc => doc.id);
             const discIds = discQuestionsSnap.docs.map(doc => doc.id);
+
+            // Validate question bank size
+            if (bigfiveIds.length < assessmentConfig.bigfiveCount || discIds.length < assessmentConfig.discCount) {
+                toast({ variant: 'destructive', title: 'Bank Soal Tidak Cukup', description: 'Jumlah soal yang tersedia tidak mencukupi untuk memulai tes. Hubungi HRD.' });
+                router.push('/careers/portal/applications');
+                return;
+            }
 
             // Fisher-Yates shuffle
             const shuffle = (array: string[]) => {

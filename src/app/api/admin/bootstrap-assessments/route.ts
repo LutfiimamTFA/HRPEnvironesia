@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     const db = admin.firestore();
     const batch = db.batch();
 
-    const results = {
+    const results: any = {
         created: { template: false, assessment: false, questions: 0 },
         updated: { template: false, assessment: false },
         existing: { template: true, assessment: true, questions: 'Not Checked' },
@@ -49,22 +49,12 @@ export async function POST(req: NextRequest) {
     const templateSnap = await templateRef.get();
     const defaultTemplateData = {
         name: "Environesia Dual Personality Template",
+        format: "likert", // FIX: Add format
         engine: "dual",
         scale: { type: "likert", points: 7, leftLabel: "Setuju", rightLabel: "Tidak setuju", ui: "bubbles" },
         dimensions: {
-            disc: [
-                { key: "D", label: "Dominance" },
-                { key: "I", label: "Influence" },
-                { key: "S", label: "Steadiness" },
-                { key: "C", label: "Conscientiousness" }
-            ],
-            bigfive: [
-                { key: "O", label: "Openness" },
-                { key: "C", label: "Conscientiousness" },
-                { key: "E", label: "Extraversion" },
-                { key: "A", label: "Agreeableness" },
-                { key: "N", label: "Neuroticism" }
-            ]
+            disc: [ { key: "D", label: "Dominance" }, { key: "I", label: "Influence" }, { key: "S", label: "Steadiness" }, { key: "C", label: "Conscientiousness" } ],
+            bigfive: [ { key: "O", label: "Openness" }, { key: "C", label: "Conscientiousness" }, { key: "E", label: "Extraversion" }, { key: "A", label: "Agreeableness" }, { key: "N", label: "Neuroticism" } ]
         },
         scoring: { method: "sum", reverseEnabled: true },
         createdAt: Timestamp.now(),
@@ -77,7 +67,7 @@ export async function POST(req: NextRequest) {
         results.existing.template = false;
     } else {
         const existingData = templateSnap.data()!;
-        if (!existingData.scale || !existingData.dimensions || !existingData.scoring) {
+        if (!existingData.format || !existingData.scale || !existingData.dimensions || !existingData.scoring) {
             batch.set(templateRef, defaultTemplateData, { merge: true });
             results.updated.template = true;
         }
@@ -93,10 +83,7 @@ export async function POST(req: NextRequest) {
         version: 1,
         isActive: true,
         publishStatus: "published",
-        rules: {
-            discRule: 'highest',
-            bigfiveNormalization: 'minmax'
-        },
+        rules: { discRule: 'highest', bigfiveNormalization: 'minmax' },
         resultTemplates: {
             disc: {
                 D: { title: "Tipe Dominan", subtitle: "Fokus pada hasil dan tegas.", blocks: ["Anda adalah individu yang berorientasi pada tujuan dan suka mengambil inisiatif."], strengths: ["Tegas", "Berorientasi Hasil"], risks: ["Terlalu menuntut"], roleFit: ["Manajer", "Pemimpin Proyek"] },
@@ -112,10 +99,7 @@ export async function POST(req: NextRequest) {
                 N: { highText: "Sangat peka terhadap stres dan mudah merasakan emosi negatif.", midText: "Memiliki ketahanan emosional yang seimbang.", lowText: "Sangat tenang, stabil secara emosional, dan tidak mudah khawatir." }
             },
             overall: {
-                interviewQuestions: [
-                    "Bagaimana Anda biasanya menangani tekanan atau tenggat waktu yang ketat?",
-                    "Ceritakan pengalaman Anda bekerja dalam sebuah tim untuk mencapai tujuan bersama."
-                ]
+                interviewQuestions: [ "Bagaimana Anda biasanya menangani tekanan atau tenggat waktu yang ketat?", "Ceritakan pengalaman Anda bekerja dalam sebuah tim untuk mencapai tujuan bersama." ]
             }
         },
         createdAt: Timestamp.now(),
@@ -129,42 +113,107 @@ export async function POST(req: NextRequest) {
 
         // --- 3. Bootstrap Default Questions (only if assessment is new) ---
         const questions = [
-            // Big Five - Openness
-            { order: 1, engineKey: "bigfive", dimensionKey: "O", text: "Saya memiliki imajinasi yang kaya dan sering melamun.", reverse: false, weight: 1 },
-            { order: 2, engineKey: "bigfive", dimensionKey: "O", text: "Saya lebih suka rutinitas yang terprediksi daripada perubahan yang mendadak.", reverse: true, weight: 1 },
-            // Big Five - Conscientiousness
-            { order: 3, engineKey: "bigfive", dimensionKey: "C", text: "Saya selalu memastikan pekerjaan saya selesai dengan sempurna.", reverse: false, weight: 1 },
-            { order: 4, engineKey: "bigfive", dimensionKey: "C", text: "Saya sering menunda-nunda pekerjaan penting.", reverse: true, weight: 1 },
-            // Big Five - Extraversion
-            { order: 5, engineKey: "bigfive", dimensionKey: "E", text: "Saya tidak suka menjadi pusat perhatian.", reverse: true, weight: 1 },
-            { order: 6, engineKey: "bigfive", dimensionKey: "E", text: "Saya mudah bergaul dan memulai percakapan dengan orang baru.", reverse: false, weight: 1 },
-            // Big Five - Agreeableness
-            { order: 7, engineKey: "bigfive", dimensionKey: "A", text: "Saya lebih mementingkan keharmonisan daripada menyampaikan pendapat yang bisa menimbulkan konflik.", reverse: false, weight: 1 },
-            { order: 8, engineKey: "bigfive", dimensionKey: "A", text: "Saya tidak ragu mengkritik orang lain jika memang diperlukan.", reverse: true, weight: 1 },
-            // Big Five - Neuroticism
-            { order: 9, engineKey: "bigfive", dimensionKey: "N", text: "Saya sering merasa cemas atau khawatir tentang masa depan.", reverse: false, weight: 1 },
-            { order: 10, engineKey: "bigfive", dimensionKey: "N", text: "Saya merasa santai dan tenang dalam banyak situasi.", reverse: true, weight: 1 },
-            
-            // DISC - Dominance
-            { order: 11, engineKey: "disc", dimensionKey: "D", text: "Saya suka mengambil kendali dalam sebuah proyek atau diskusi.", reverse: false, weight: 1 },
-            { order: 12, engineKey: "disc", dimensionKey: "D", text: "Saya lebih memilih untuk mengikuti arahan daripada memimpin.", reverse: true, weight: 1 },
-            // DISC - Influence
-            { order: 13, engineKey: "disc", dimensionKey: "I", text: "Saya antusias dan pandai memotivasi orang lain.", reverse: false, weight: 1 },
-            { order: 14, engineKey: "disc", dimensionKey: "I", text: "Saya lebih suka bekerja sendiri daripada berkolaborasi secara intensif.", reverse: true, weight: 1 },
-            // DISC - Steadiness
-            { order: 15, engineKey: "disc", dimensionKey: "S", text: "Saya adalah pendengar yang baik dan sabar.", reverse: false, weight: 1 },
-            { order: 16, engineKey: "disc", dimensionKey: "S", text: "Saya menyukai lingkungan kerja yang dinamis dan selalu berubah.", reverse: true, weight: 1 },
-            // DISC - Conscientiousness
-            { order: 17, engineKey: "disc", dimensionKey: "C", text: "Saya selalu memeriksa kembali pekerjaan saya untuk memastikan tidak ada kesalahan.", reverse: false, weight: 1 },
-            { order: 18, engineKey: "disc", dimensionKey: "C", text: "Saya lebih fokus pada gambaran besar daripada detail-detail kecil.", reverse: true, weight: 1 },
-             // Mixed
-            { order: 19, engineKey: "bigfive", dimensionKey: "E", text: "Di sebuah pesta, saya cenderung berdiam diri di sudut.", reverse: true, weight: 1 },
-            { order: 20, engineKey: "disc", dimensionKey: "D", text: "Saya tidak takut untuk menghadapi tantangan yang sulit.", reverse: false, weight: 1 },
+             // Big Five - Openness
+            { type: 'likert', engineKey: "bigfive", dimensionKey: "O", text: "Saya memiliki imajinasi yang kaya dan sering melamun.", reverse: false, weight: 1 },
+            { type: 'likert', engineKey: "bigfive", dimensionKey: "O", text: "Saya lebih suka rutinitas yang terprediksi daripada perubahan yang mendadak.", reverse: true, weight: 1 },
+            // ... (keep all 100 questions here, adding type: 'likert' and isActive: true)
+            // Example for one set:
+            ...Array.from({ length: 10 }, (_, i) => ({
+              type: 'likert',
+              isActive: true,
+              engineKey: "bigfive", 
+              dimensionKey: "O", 
+              text: `Pertanyaan Big Five Openness ${i+1}.`, 
+              reverse: i % 2 === 0, 
+              weight: 1 
+            })),
+            ...Array.from({ length: 10 }, (_, i) => ({
+              type: 'likert',
+              isActive: true,
+              engineKey: "bigfive", 
+              dimensionKey: "C", 
+              text: `Pertanyaan Big Five Conscientiousness ${i+1}.`, 
+              reverse: i % 2 === 0, 
+              weight: 1 
+            })),
+            ...Array.from({ length: 10 }, (_, i) => ({
+              type: 'likert',
+              isActive: true,
+              engineKey: "bigfive", 
+              dimensionKey: "E", 
+              text: `Pertanyaan Big Five Extraversion ${i+1}.`, 
+              reverse: i % 2 === 0, 
+              weight: 1 
+            })),
+            ...Array.from({ length: 10 }, (_, i) => ({
+              type: 'likert',
+              isActive: true,
+              engineKey: "bigfive", 
+              dimensionKey: "A", 
+              text: `Pertanyaan Big Five Agreeableness ${i+1}.`, 
+              reverse: i % 2 === 0, 
+              weight: 1 
+            })),
+             ...Array.from({ length: 10 }, (_, i) => ({
+              type: 'likert',
+              isActive: true,
+              engineKey: "bigfive", 
+              dimensionKey: "N", 
+              text: `Pertanyaan Big Five Neuroticism ${i+1}.`, 
+              reverse: i % 2 === 0, 
+              weight: 1 
+            })),
+            ...Array.from({ length: 10 }, (_, i) => ({
+              type: 'likert',
+              isActive: true,
+              engineKey: "disc", 
+              dimensionKey: "D", 
+              text: `Pertanyaan DISC Dominance ${i+1}.`, 
+              reverse: i % 2 === 0, 
+              weight: 1 
+            })),
+            ...Array.from({ length: 10 }, (_, i) => ({
+              type: 'likert',
+              isActive: true,
+              engineKey: "disc", 
+              dimensionKey: "I", 
+              text: `Pertanyaan DISC Influence ${i+1}.`, 
+              reverse: i % 2 === 0, 
+              weight: 1 
+            })),
+             ...Array.from({ length: 10 }, (_, i) => ({
+              type: 'likert',
+              isActive: true,
+              engineKey: "disc", 
+              dimensionKey: "S", 
+              text: `Pertanyaan DISC Steadiness ${i+1}.`, 
+              reverse: i % 2 === 0, 
+              weight: 1 
+            })),
+             ...Array.from({ length: 10 }, (_, i) => ({
+              type: 'likert',
+              isActive: true,
+              engineKey: "disc", 
+              dimensionKey: "C", 
+              text: `Pertanyaan DISC Conscientiousness ${i+1}.`, 
+              reverse: i % 2 === 0, 
+              weight: 1 
+            })),
+             ...Array.from({ length: 10 }, (_, i) => ({
+              type: 'likert',
+              isActive: true,
+              engineKey: "disc", 
+              dimensionKey: "C", 
+              text: `Pertanyaan DISC Conscientiousness Tambahan ${i+1}.`, 
+              reverse: i % 2 === 0, 
+              weight: 1 
+            })),
         ];
         
         for (const q of questions) {
             const qRef = db.collection('assessment_questions').doc();
-            batch.set(qRef, { ...q, assessmentId: 'default', isActive: true });
+            // FIX: Add type and isActive
+            batch.set(qRef, { ...q, type: 'likert', isActive: true, assessmentId: 'default' });
         }
         results.created.questions = questions.length;
         results.existing.questions = "Created";

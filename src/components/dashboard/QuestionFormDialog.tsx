@@ -111,7 +111,7 @@ export function QuestionFormDialog({ open, onOpenChange, question, assessment, t
         
         let questionData: Partial<AssessmentQuestion> = {
             assessmentId: assessment.id!,
-            isActive: true,
+            isActive: question?.isActive ?? true, // Preserve existing status or default to true
             type: values.type,
         };
 

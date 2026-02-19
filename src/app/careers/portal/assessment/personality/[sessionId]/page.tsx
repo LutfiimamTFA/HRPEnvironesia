@@ -3,8 +3,8 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
-import { useCollection, useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
-import { collection, doc, query, where } from 'firebase/firestore';
+import { useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
+import { collection, doc, query, where, getDocs } from 'firebase/firestore';
 import type { Assessment, AssessmentQuestion, AssessmentSession, AssessmentTemplate } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -15,6 +15,12 @@ import { ArrowLeft, Loader2, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+
+// Helper function to chunk an array into smaller arrays of a specified size.
+const chunkArray = <T,>(arr: T[], size: number): T[][] =>
+  Array.from({ length: Math.ceil(arr.length / size) }, (v, i) =>
+    arr.slice(i * size, i * size + size)
+  );
 
 function AssessmentSkeleton() {
   return (
@@ -58,6 +64,10 @@ function TakeAssessmentPage() {
   const [answers, setAnswers] = useState<Record<string, number | { most: string, least: string }>>({});
   const [isFinishing, setIsFinishing] = useState(false);
   
+  const [questions, setQuestions] = useState<AssessmentQuestion[]>([]);
+  const [questionsLoading, setQuestionsLoading] = useState(true);
+  const [questionsError, setQuestionsError] = useState<string | null>(null);
+
   // 1. Fetch session
   const sessionRef = useMemoFirebase(() => doc(firestore, 'assessment_sessions', sessionId), [firestore, sessionId]);
   const { data: session, isLoading: sessionLoading } = useDoc<AssessmentSession>(sessionRef);
@@ -74,33 +84,57 @@ function TakeAssessmentPage() {
     if (!assessment) return null;
     return doc(firestore, 'assessment_templates', assessment.templateId);
   }, [firestore, assessment]);
-  const { data: template, isLoading: templateLoading } = useDoc<AssessmentTemplate>(templateRef)
+  const { data: template, isLoading: templateLoading } = useDoc<AssessmentTemplate>(templateRef);
   
-  // 4. Fetch the specific questions selected for this session, respecting Firestore's 'in' query limits (max 30 per query).
-  const bigfiveQuestionIds = useMemo(() => session?.selectedQuestionIds?.bigfive || [], [session]);
-  const discQuestionIds = useMemo(() => session?.selectedQuestionIds?.disc || [], [session]);
+  // 4. Fetch questions using chunking
+  useEffect(() => {
+    const fetchQuestions = async () => {
+      if (!session?.selectedQuestionIds) {
+        setQuestionsError('Sesi asesmen tidak valid atau tidak memiliki daftar soal.');
+        setQuestionsLoading(false);
+        return;
+      }
+      setQuestionsLoading(true);
+      setQuestionsError(null);
+      
+      try {
+        const allIds = [
+            ...(session.selectedQuestionIds.bigfive || []), 
+            ...(session.selectedQuestionIds.disc || [])
+        ];
+        
+        if (allIds.length === 0) {
+          setQuestions([]);
+          setQuestionsLoading(false);
+          return;
+        }
 
-  const bigfiveQuery = useMemoFirebase(() => {
-    if (!firestore || bigfiveQuestionIds.length === 0) return null;
-    return query(collection(firestore, 'assessment_questions'), where('__name__', 'in', bigfiveQuestionIds));
-  }, [firestore, bigfiveQuestionIds]);
-  
-  const discQuery = useMemoFirebase(() => {
-    if (!firestore || discQuestionIds.length === 0) return null;
-    return query(collection(firestore, 'assessment_questions'), where('__name__', 'in', discQuestionIds));
-  }, [firestore, discQuestionIds]);
+        const idChunks = chunkArray(allIds, 30);
+        const promises = idChunks.map(chunk =>
+          getDocs(query(collection(firestore, 'assessment_questions'), where('__name__', 'in', chunk)))
+        );
+        const querySnapshots = await Promise.all(promises);
+        const fetchedQuestions = querySnapshots.flatMap(snap => 
+          snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as AssessmentQuestion))
+        );
 
-  const { data: bigfiveQuestions, isLoading: bigfiveLoading } = useCollection<AssessmentQuestion>(bigfiveQuery);
-  const { data: discQuestions, isLoading: discLoading } = useCollection<AssessmentQuestion>(discQuery);
+        if (fetchedQuestions.length === 0) {
+          setQuestionsError('Bank soal kosong atau soal tidak ditemukan untuk sesi ini.');
+        } else {
+          setQuestions(fetchedQuestions);
+        }
+      } catch (e: any) {
+        console.error("Error fetching questions:", e);
+        setQuestionsError(`Gagal memuat soal: ${e.message}`);
+      } finally {
+        setQuestionsLoading(false);
+      }
+    };
 
-  const questions = useMemo(() => {
-    const allQuestions = [];
-    if (bigfiveQuestions) allQuestions.push(...bigfiveQuestions);
-    if (discQuestions) allQuestions.push(...discQuestions);
-    return allQuestions;
-  }, [bigfiveQuestions, discQuestions]);
-
-  const questionsLoading = bigfiveLoading || discLoading;
+    if (session) {
+      fetchQuestions();
+    }
+  }, [session, firestore]);
   
   // 5. Reconstruct the question order based on the session's ID list
   const sortedQuestions = useMemo(() => {
@@ -116,7 +150,7 @@ function TakeAssessmentPage() {
     }
   }, [session]);
   
-  const isLoading = authLoading || sessionLoading || assessmentLoading || templateLoading || (session && questionsLoading);
+  const isLoading = authLoading || sessionLoading || assessmentLoading || templateLoading || questionsLoading;
 
   const handleAnswerChange = async (questionId: string, value: string) => {
     const numericValue = parseInt(value, 10);
@@ -167,18 +201,36 @@ function TakeAssessmentPage() {
     }
   };
   
-  if (isLoading || !sortedQuestions.length) return <AssessmentSkeleton />;
+  if (isLoading) return <AssessmentSkeleton />;
+  
+  if (questionsError) {
+     return (
+      <Card className="max-w-2xl mx-auto">
+        <CardContent className="p-8 text-center">
+            <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Gagal Memuat Tes</AlertTitle>
+                <AlertDescription>
+                    {questionsError}
+                </AlertDescription>
+            </Alert>
+        </CardContent>
+      </Card>
+    );
+  }
 
-  if (template?.format === 'forced-choice') {
+  if (template?.format === 'forced-choice' || sortedQuestions.length === 0) {
+    const message = template?.format === 'forced-choice' 
+        ? 'Pengerjaan untuk format tes ini belum tersedia di portal kandidat.'
+        : 'Tidak ada pertanyaan yang dapat dimuat untuk sesi ini.';
+
     return (
       <Card className="max-w-2xl mx-auto">
         <CardContent className="p-8 text-center">
             <Alert variant="destructive">
                 <AlertTriangle className="h-4 w-4" />
                 <AlertTitle>Format Tes Tidak Didukung</AlertTitle>
-                <AlertDescription>
-                    Pengerjaan untuk format tes ini belum tersedia di portal kandidat.
-                </AlertDescription>
+                <AlertDescription>{message}</AlertDescription>
             </Alert>
         </CardContent>
       </Card>

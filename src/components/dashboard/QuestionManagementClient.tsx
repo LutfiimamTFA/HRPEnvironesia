@@ -99,7 +99,7 @@ export function QuestionManagementClient({ assessment, template }: QuestionManag
   if (isLoading) return <TableSkeleton />;
   if (error) return <Alert variant="destructive"><AlertTitle>Error</AlertTitle><AlertDescription>{error.message}</AlertDescription></Alert>;
 
-  const isForcedChoice = template.format === 'forced-choice';
+  const isForcedChoiceTemplate = template.format === 'forced-choice';
 
   return (
     <div className="space-y-4">
@@ -122,28 +122,31 @@ export function QuestionManagementClient({ assessment, template }: QuestionManag
             <TableRow>
               <TableHead className="w-16">#</TableHead>
               <TableHead>Content</TableHead>
-              {!isForcedChoice && <TableHead>Engine</TableHead>}
-              {!isForcedChoice && <TableHead>Dimension</TableHead>}
+              {!isForcedChoiceTemplate && <TableHead>Engine</TableHead>}
+              {!isForcedChoiceTemplate && <TableHead>Dimension</TableHead>}
               <TableHead>Status</TableHead>
               <TableHead className="w-[100px] text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {sortedQuestions && sortedQuestions.length > 0 ? (
-              sortedQuestions.map((q, index) => (
+              sortedQuestions.map((q, index) => {
+                const isLikert = q.type === 'likert' || (q.type === undefined && q.text);
+                
+                return (
                 <TableRow key={q.id}>
                   <TableCell className="font-medium">{index + 1}</TableCell>
                   <TableCell>
                     <div className="max-w-md break-words text-foreground whitespace-pre-wrap">
-                      {q.type === 'likert' ? q.text : (
+                      {isLikert ? (q.text || '[No question text]') : (
                           <ul className="list-disc list-inside text-xs space-y-1">
                               {q.forcedChoices?.map((choice, i) => <li key={i}>{choice.text}</li>)}
                           </ul>
                       )}
                     </div>
                   </TableCell>
-                  {!isForcedChoice && <TableCell><Badge variant="secondary" className="capitalize">{q.engineKey}</Badge></TableCell>}
-                  {!isForcedChoice && <TableCell><Badge variant="outline">{q.dimensionKey}</Badge></TableCell>}
+                  {!isForcedChoiceTemplate && <TableCell><Badge variant="secondary" className="capitalize">{q.engineKey}</Badge></TableCell>}
+                  {!isForcedChoiceTemplate && <TableCell><Badge variant="outline">{q.dimensionKey}</Badge></TableCell>}
                   <TableCell>
                     <Badge variant={q.isActive ? 'default' : 'secondary'}>
                       {q.isActive ? 'Active' : 'Inactive'}
@@ -161,9 +164,9 @@ export function QuestionManagementClient({ assessment, template }: QuestionManag
                     </DropdownMenu>
                   </TableCell>
                 </TableRow>
-              ))
+              )})
             ) : (
-              <TableRow><TableCell colSpan={isForcedChoice ? 4 : 6} className="h-24 text-center">No questions found for the selected filter.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={isForcedChoiceTemplate ? 4 : 6} className="h-24 text-center">No questions found for the selected filter.</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
