@@ -12,6 +12,10 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AssessmentBootstrapClient } from './AssessmentBootstrapClient';
 import { AssessmentSettingsClient } from './AssessmentSettingsClient';
 import { Separator } from '../ui/separator';
+import { DeleteConfirmationDialog } from './DeleteConfirmationDialog';
+import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/providers/auth-provider';
+import { Loader2, Trash2 } from 'lucide-react';
 
 function AssessmentManagementSkeleton() {
   return (
@@ -23,6 +27,10 @@ function AssessmentManagementSkeleton() {
 
 export function AssessmentManagementClient() {
   const firestore = useFirestore();
+  const { toast } = useToast();
+  const { firebaseUser } = useAuth();
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
   const assessmentsQuery = useMemoFirebase(
     () => collection(firestore, 'assessments'),
@@ -49,6 +57,34 @@ export function AssessmentManagementClient() {
   const personalityTestTemplate = templates?.find(t => t.id === personalityTest?.templateId);
 
   const isSetupIncomplete = !personalityTest || !personalityTestTemplate;
+
+  const handleDelete = async () => {
+    if (!firebaseUser) {
+      toast({ variant: 'destructive', title: 'Error', description: 'You must be logged in.' });
+      return;
+    }
+    setIsDeleting(true);
+    try {
+      const idToken = await firebaseUser.getIdToken();
+      const response = await fetch('/api/admin/delete-assessments', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${idToken}`,
+        },
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to delete assessments.');
+      }
+      toast({ title: 'Assessments Deleted', description: 'Default assessment data has been cleared.' });
+      mutate(); // Re-fetch data
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Deletion Failed', description: e.message });
+    } finally {
+      setIsDeleting(false);
+      setIsDeleteConfirmOpen(false);
+    }
+  };
 
   if (isLoadingData) {
     return <AssessmentManagementSkeleton />;
@@ -87,6 +123,10 @@ export function AssessmentManagementClient() {
                 <Button asChild variant="outline">
                   <Link href={`/admin/hrd/assessments/default`}>Kelola Bank Soal</Link>
                 </Button>
+                <Button onClick={() => setIsDeleteConfirmOpen(true)} variant="destructive" className="ml-auto">
+                    {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                    Hapus
+                </Button>
               </div>
           </CardContent>
        </Card>
@@ -94,6 +134,14 @@ export function AssessmentManagementClient() {
        <Separator />
        
        <AssessmentSettingsClient config={assessmentConfig || undefined} />
+
+       <DeleteConfirmationDialog
+        open={isDeleteConfirmOpen}
+        onOpenChange={setIsDeleteConfirmOpen}
+        onConfirm={handleDelete}
+        itemName="default assessment, its template, and all associated questions"
+        itemType="Data"
+      />
     </div>
   );
 }
