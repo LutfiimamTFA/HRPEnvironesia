@@ -204,9 +204,8 @@ service cloud.firestore {
     // --- Assessment Rules ---
 
     match /assessment_config/{configId} {
-        allow get: if isInternal();
-        allow list: if isSignedIn();
-        allow write: if isInternal() && getUserData().role in ['super_admin', 'hrd'];
+      allow get: if isSignedIn();
+      allow write: if isInternal() && getUserData().role in ['super_admin', 'hrd'];
     }
 
     match /assessment_templates/{templateId} {
