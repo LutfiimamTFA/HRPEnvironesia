@@ -76,21 +76,35 @@ function TakeAssessmentPage() {
   }, [firestore, assessment]);
   const { data: template, isLoading: templateLoading } = useDoc<AssessmentTemplate>(templateRef)
   
-  // 4. Fetch the specific questions selected for this session
-  const questionsQuery = useMemoFirebase(() => {
-    if (!session) return null;
-    const allIds = [
-      ...(session.selectedQuestionIds?.bigfive || []),
-      ...(session.selectedQuestionIds?.disc || [])
-    ];
-    if (allIds.length === 0) return null;
-    return query(collection(firestore, 'assessment_questions'), where('__name__', 'in', allIds));
-  }, [firestore, session]);
-  const { data: questions, isLoading: questionsLoading } = useCollection<AssessmentQuestion>(questionsQuery);
+  // 4. Fetch the specific questions selected for this session, respecting Firestore's 'in' query limits (max 30 per query).
+  const bigfiveQuestionIds = useMemo(() => session?.selectedQuestionIds?.bigfive || [], [session]);
+  const discQuestionIds = useMemo(() => session?.selectedQuestionIds?.disc || [], [session]);
+
+  const bigfiveQuery = useMemoFirebase(() => {
+    if (!firestore || bigfiveQuestionIds.length === 0) return null;
+    return query(collection(firestore, 'assessment_questions'), where('__name__', 'in', bigfiveQuestionIds));
+  }, [firestore, bigfiveQuestionIds]);
+  
+  const discQuery = useMemoFirebase(() => {
+    if (!firestore || discQuestionIds.length === 0) return null;
+    return query(collection(firestore, 'assessment_questions'), where('__name__', 'in', discQuestionIds));
+  }, [firestore, discQuestionIds]);
+
+  const { data: bigfiveQuestions, isLoading: bigfiveLoading } = useCollection<AssessmentQuestion>(bigfiveQuery);
+  const { data: discQuestions, isLoading: discLoading } = useCollection<AssessmentQuestion>(discQuery);
+
+  const questions = useMemo(() => {
+    const allQuestions = [];
+    if (bigfiveQuestions) allQuestions.push(...bigfiveQuestions);
+    if (discQuestions) allQuestions.push(...discQuestions);
+    return allQuestions;
+  }, [bigfiveQuestions, discQuestions]);
+
+  const questionsLoading = bigfiveLoading || discLoading;
   
   // 5. Reconstruct the question order based on the session's ID list
   const sortedQuestions = useMemo(() => {
-      if (!questions || !session?.selectedQuestionIds) return [];
+      if (questions.length === 0 || !session?.selectedQuestionIds) return [];
       const questionMap = new Map(questions.map(q => [q.id, q]));
       const allIds = [...(session.selectedQuestionIds.bigfive || []), ...(session.selectedQuestionIds.disc || [])];
       return allIds.map(id => questionMap.get(id)).filter((q): q is AssessmentQuestion => !!q);
