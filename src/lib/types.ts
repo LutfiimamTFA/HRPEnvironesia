@@ -50,7 +50,7 @@ export type Job = {
   updatedBy: string;
 };
 
-export const APPLICATION_STATUSES = ['submitted', 'tes_kepribadian', 'verification', 'document_submission', 'interview', 'hired', 'rejected'] as const;
+export const APPLICATION_STATUSES = ['draft', 'submitted', 'tes_kepribadian', 'verification', 'document_submission', 'interview', 'hired', 'rejected'] as const;
 export type ApplicationStatus = (typeof APPLICATION_STATUSES)[number];
 
 export type JobApplication = {

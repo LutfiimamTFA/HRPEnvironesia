@@ -17,11 +17,11 @@ import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 
 
-const allStatuses: JobApplication['status'][] = ['draft', 'submitted', 'psychotest', 'document_submission', 'verification', 'interview', 'hired', 'rejected'];
+const allStatuses: JobApplication['status'][] = ['draft', 'submitted', 'tes_kepribadian', 'document_submission', 'verification', 'interview', 'hired', 'rejected'];
 const visibleSteps = [
   { status: 'draft', label: 'Draf', icon: FileSignature },
   { status: 'submitted', label: 'Terkirim', icon: FileUp },
-  { status: 'psychotest', label: 'Tes Kepribadian', icon: BrainCircuit },
+  { status: 'tes_kepribadian', label: 'Tes Kepribadian', icon: BrainCircuit },
   { status: 'document_submission', label: 'Pengumpulan Dokumen', icon: FileText },
   { status: 'verification', label: 'Verifikasi', icon: ClipboardCheck },
   { status: 'interview', label: 'Wawancara', icon: Users },
@@ -32,7 +32,7 @@ const visibleSteps = [
 const statusLabels: Record<JobApplication['status'], string> = {
   draft: 'Draf',
   submitted: 'Lamaran Terkirim',
-  psychotest: 'Tahap Tes Kepribadian',
+  tes_kepribadian: 'Tahap Tes Kepribadian',
   verification: 'Verifikasi HRD',
   document_submission: 'Pengumpulan Dokumen',
   interview: 'Tahap Wawancara',
@@ -60,7 +60,7 @@ function ApplicationCard({ application }: { application: JobApplication }) {
   const isTestExpired = deadline ? now > deadline : false;
   
   const canContinue = application.status === 'draft';
-  const canTakeTest = application.status === 'psychotest' && !isTestExpired;
+  const canTakeTest = application.status === 'tes_kepribadian' && !isTestExpired;
   
   const timelineSteps = useMemo(() => {
     if (isRejected) {
@@ -153,7 +153,7 @@ function ApplicationCard({ application }: { application: JobApplication }) {
       </CardContent>
       <CardFooter className="bg-muted/50 p-4 border-t flex justify-between items-center min-h-[76px]">
         <div className="flex-1">
-          {application.status === 'psychotest' && deadline ? (
+          {application.status === 'tes_kepribadian' && deadline ? (
             isTestExpired ? (
               <p className="text-sm text-destructive font-medium">Waktu pengerjaan tes telah habis.</p>
             ) : (

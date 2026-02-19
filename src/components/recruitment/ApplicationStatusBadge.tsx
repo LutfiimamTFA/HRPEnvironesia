@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { JobApplication } from "@/lib/types";
 
-export const APPLICATION_STATUSES: JobApplication['status'][] = ['submitted', 'tes_kepribadian', 'verification', 'document_submission', 'interview', 'hired', 'rejected'];
+export const APPLICATION_STATUSES: JobApplication['status'][] = ['draft', 'submitted', 'tes_kepribadian', 'verification', 'document_submission', 'interview', 'hired', 'rejected'];
 
 export const statusDisplayLabels: Record<JobApplication['status'], string> = {
     draft: 'Draf',
