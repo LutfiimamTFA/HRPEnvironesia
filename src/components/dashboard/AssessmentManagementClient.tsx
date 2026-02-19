@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useCollection, useFirestore, useMemoFirebase, useDoc } from '@/firebase';
 import { collection, doc } from 'firebase/firestore';
-import type { Assessment, AssessmentConfig } from '@/lib/types';
+import type { Assessment, AssessmentConfig, AssessmentTemplate } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -28,7 +28,13 @@ export function AssessmentManagementClient() {
     () => collection(firestore, 'assessments'),
     [firestore]
   );
-  const { data: assessments, isLoading, error, mutate } = useCollection<Assessment>(assessmentsQuery);
+  const { data: assessments, isLoading: isLoadingAssessments, error: assessmentError, mutate } = useCollection<Assessment>(assessmentsQuery);
+
+  const templatesQuery = useMemoFirebase(
+    () => collection(firestore, 'assessment_templates'),
+    [firestore]
+  );
+  const { data: templates, isLoading: isLoadingTemplates, error: templateError } = useCollection<AssessmentTemplate>(templatesQuery);
 
   const configDocRef = useMemoFirebase(
     () => doc(firestore, 'assessment_config', 'main'),
@@ -36,9 +42,13 @@ export function AssessmentManagementClient() {
   );
   const { data: assessmentConfig, isLoading: isLoadingConfig, error: configError } = useDoc<AssessmentConfig>(configDocRef);
   
-  const isLoadingData = isLoading || isLoadingConfig;
-  const dataError = error || configError;
+  const isLoadingData = isLoadingAssessments || isLoadingTemplates || isLoadingConfig;
+  const dataError = assessmentError || templateError || configError;
+
   const personalityTest = assessments?.find(a => a.id === 'default');
+  const personalityTestTemplate = templates?.find(t => t.id === personalityTest?.templateId);
+
+  const isSetupIncomplete = !personalityTest || !personalityTestTemplate;
 
   if (isLoadingData) {
     return <AssessmentManagementSkeleton />;
@@ -56,7 +66,7 @@ export function AssessmentManagementClient() {
     );
   }
 
-  if (!personalityTest) {
+  if (isSetupIncomplete) {
     return <AssessmentBootstrapClient onBootstrapSuccess={mutate} />;
   }
 
