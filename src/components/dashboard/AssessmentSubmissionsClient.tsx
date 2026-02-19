@@ -1,15 +1,17 @@
 'use client';
 
 import { useMemo } from 'react';
+import Link from 'next/link';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, query } from 'firebase/firestore';
-import type { AssessmentSession } from '@/lib/types';
+import type { Assessment, AssessmentSession } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
-import Link from 'next/link';
-import { AssessmentStatusBadge } from './AssessmentStatusBadge';
+import { Users } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { AssessmentBootstrapClient } from './AssessmentBootstrapClient';
+import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
 
 function SubmissionsSkeleton() {
   return (
@@ -24,25 +26,52 @@ function SubmissionsSkeleton() {
 export function AssessmentSubmissionsClient() {
   const firestore = useFirestore();
 
-  // Get All Assessment Sessions
+  const assessmentsQuery = useMemoFirebase(
+    () => query(collection(firestore, 'assessments')),
+    [firestore]
+  );
+  const { data: assessments, isLoading: isLoadingAssessments, error: assessmentError, mutate } = useCollection<Assessment>(assessmentsQuery);
+
   const sessionsQuery = useMemoFirebase(
     () => query(collection(firestore, 'assessment_sessions')),
     [firestore]
   );
-  const { data: sessions, isLoading } = useCollection<AssessmentSession>(sessionsQuery);
+  const { data: sessions, isLoading: isLoadingSessions, error: sessionError } = useCollection<AssessmentSession>(sessionsQuery);
 
-  const sortedSessions = useMemo(() => {
-    if (!sessions) return [];
-    return [...sessions].sort((a, b) => {
-      const timeA = a.completedAt?.toMillis() || a.updatedAt.toMillis();
-      const timeB = b.completedAt?.toMillis() || b.updatedAt.toMillis();
-      return timeB - timeA;
-    });
+  const submissionCounts = useMemo(() => {
+    if (!sessions) return new Map<string, number>();
+    return sessions.reduce((acc, session) => {
+      acc.set(session.assessmentId, (acc.get(session.assessmentId) || 0) + 1);
+      return acc;
+    }, new Map<string, number>());
   }, [sessions]);
 
+  const assessmentsWithCounts = useMemo(() => {
+    if (!assessments) return [];
+    return assessments.map(assessment => ({
+      ...assessment,
+      submissionCount: submissionCounts.get(assessment.id!) || 0,
+    }));
+  }, [assessments, submissionCounts]);
+  
+  const isLoading = isLoadingAssessments || isLoadingSessions;
+  const error = assessmentError || sessionError;
 
   if (isLoading) {
     return <SubmissionsSkeleton />;
+  }
+
+  if (error) {
+    return (
+        <Alert variant="destructive">
+            <AlertTitle>Error Loading Data</AlertTitle>
+            <AlertDescription>{error.message}</AlertDescription>
+        </Alert>
+    );
+  }
+
+  if (!assessments || assessments.length === 0) {
+    return <AssessmentBootstrapClient onBootstrapSuccess={mutate} />;
   }
   
   return (
@@ -50,43 +79,36 @@ export function AssessmentSubmissionsClient() {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Candidate</TableHead>
-            <TableHead>Result Type</TableHead>
-            <TableHead>Completed On</TableHead>
+            <TableHead>Assessment Name</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead>Total Submissions</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {sortedSessions && sortedSessions.length > 0 ? (
-            sortedSessions.map(session => (
-              <TableRow key={session.id}>
-                <TableCell className="font-medium">
-                  {session.candidateName ?? session.candidateEmail ?? session.candidateUid}
-                </TableCell>
-                <TableCell>
-                  {session.result?.discType ? <AssessmentStatusBadge status="result" label={session.result.discType} /> : '-'}
-                </TableCell>
-                <TableCell>
-                  {session.completedAt ? format(session.completedAt.toDate(), 'dd MMM yyyy') : '-'}
-                </TableCell>
-                <TableCell>
-                    <AssessmentStatusBadge status={session.hrdDecision || session.status} />
-                </TableCell>
-                <TableCell className="text-right">
-                    <Button asChild variant="outline" size="sm" disabled={session.status !== 'submitted'}>
-                      <Link href={`/admin/hrd/assessments/result/${session.id}`}>View</Link>
-                    </Button>
-                </TableCell>
-              </TableRow>
-            ))
-          ) : (
-            <TableRow>
-              <TableCell colSpan={5} className="h-24 text-center">
-                No assessment sessions found.
+          {assessmentsWithCounts.map(assessment => (
+            <TableRow key={assessment.id}>
+              <TableCell className="font-medium">{assessment.name}</TableCell>
+              <TableCell>
+                <Badge variant={assessment.isActive ? 'default' : 'secondary'}>
+                  {assessment.isActive ? 'Active' : 'Inactive'}
+                </Badge>
+              </TableCell>
+              <TableCell>
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                  {assessment.submissionCount}
+                </div>
+              </TableCell>
+              <TableCell className="text-right">
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/admin/hrd/assessments/${assessment.id}/submissions`}>
+                    View Submissions
+                  </Link>
+                </Button>
               </TableCell>
             </TableRow>
-          )}
+          ))}
         </TableBody>
       </Table>
     </div>
