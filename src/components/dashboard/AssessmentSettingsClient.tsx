@@ -90,7 +90,7 @@ export function AssessmentSettingsClient({ config }: AssessmentSettingsClientPro
                         min={10}
                         max={100}
                         step={5}
-                        value={[field.value]}
+                        value={[isNaN(field.value) ? 10 : field.value]}
                         onValueChange={(vals) => field.onChange(vals[0])}
                         className="flex-1"
                       />
@@ -98,7 +98,7 @@ export function AssessmentSettingsClient({ config }: AssessmentSettingsClientPro
                         type="number"
                         min={10}
                         max={100}
-                        value={field.value}
+                        value={isNaN(field.value) ? '' : field.value}
                         onChange={(e) => field.onChange(parseInt(e.target.value, 10))}
                         className="w-20"
                       />
@@ -121,7 +121,7 @@ export function AssessmentSettingsClient({ config }: AssessmentSettingsClientPro
                         min={10}
                         max={100}
                         step={5}
-                        value={[field.value]}
+                        value={[isNaN(field.value) ? 10 : field.value]}
                         onValueChange={(vals) => field.onChange(vals[0])}
                         className="flex-1"
                       />
@@ -129,7 +129,7 @@ export function AssessmentSettingsClient({ config }: AssessmentSettingsClientPro
                         type="number"
                         min={10}
                         max={100}
-                        value={field.value}
+                        value={isNaN(field.value) ? '' : field.value}
                         onChange={(e) => field.onChange(parseInt(e.target.value, 10))}
                         className="w-20"
                       />
@@ -152,7 +152,7 @@ export function AssessmentSettingsClient({ config }: AssessmentSettingsClientPro
                         min={10}
                         max={100}
                         step={5}
-                        value={[field.value]}
+                        value={[isNaN(field.value) ? 10 : field.value]}
                         onValueChange={(vals) => field.onChange(vals[0])}
                         className="flex-1"
                       />
@@ -160,7 +160,7 @@ export function AssessmentSettingsClient({ config }: AssessmentSettingsClientPro
                         type="number"
                         min={10}
                         max={100}
-                        value={field.value}
+                        value={isNaN(field.value) ? '' : field.value}
                         onChange={(e) => field.onChange(parseInt(e.target.value, 10))}
                         className="w-20"
                       />
