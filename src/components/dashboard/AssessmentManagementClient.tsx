@@ -12,7 +12,7 @@ import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AssessmentBootstrapClient } from './AssessmentBootstrapClient';
-import { MoreHorizontal, Trash2, PlusCircle } from 'lucide-react';
+import { MoreHorizontal, Trash2 } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,7 +20,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { DeleteConfirmationDialog } from './DeleteConfirmationDialog';
-import { CreateAssessmentDialog } from './CreateAssessmentDialog';
 import { useToast } from '@/hooks/use-toast';
 
 function AssessmentListSkeleton() {
@@ -39,7 +38,6 @@ export function AssessmentManagementClient() {
 
   const [assessmentToDelete, setAssessmentToDelete] = useState<Assessment | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
 
   const assessmentsQuery = useMemoFirebase(
     () => collection(firestore, 'assessments'),
@@ -92,14 +90,10 @@ export function AssessmentManagementClient() {
 
   return (
     <div className="space-y-4">
-       <div className="flex justify-between items-start">
+       <div>
          <CardDescription>
           Manage internal assessments. You can edit assessment details and manage the question bank for each.
         </CardDescription>
-         <Button onClick={() => setIsCreateDialogOpen(true)}>
-            <PlusCircle className="mr-2 h-4 w-4" />
-            Create Assessment
-          </Button>
        </div>
       {assessments && assessments.length > 0 ? (
         assessments.map(assessment => (
@@ -143,11 +137,6 @@ export function AssessmentManagementClient() {
       ) : (
         <AssessmentBootstrapClient onBootstrapSuccess={mutate} />
       )}
-      <CreateAssessmentDialog 
-        open={isCreateDialogOpen}
-        onOpenChange={setIsCreateDialogOpen}
-        onSuccess={mutate}
-      />
        <DeleteConfirmationDialog
         open={isDeleteConfirmOpen}
         onOpenChange={setIsDeleteConfirmOpen}
