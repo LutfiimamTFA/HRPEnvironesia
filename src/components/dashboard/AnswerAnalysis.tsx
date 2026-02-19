@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -40,7 +40,7 @@ function AnalysisItem({ question, answerValue }: AnalysisItemProps) {
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  useMemo(() => {
+  useEffect(() => {
     async function getAnalysis() {
       setIsLoading(true);
       try {
@@ -126,7 +126,7 @@ export function AnswerAnalysis({ session, questions }: AnswerAnalysisProps) {
       <CardHeader>
         <CardTitle>Analisis Jawaban per Pertanyaan</CardTitle>
         <CardDescription>
-          Rincian setiap jawaban yang diberikan oleh kandidat, dipisahkan berdasarkan jenis tes.
+          Rincian setiap jawaban yang diberikan oleh kandidat. Analisis AI hanya tersedia untuk tes skala (Likert).
         </CardDescription>
       </CardHeader>
       <CardContent>
