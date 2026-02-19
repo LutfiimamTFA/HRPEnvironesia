@@ -5,10 +5,10 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase, addDocumentNonBlocking, useDoc, setDocumentNonBlocking } from '@/firebase';
-import { collection, query, where, limit, serverTimestamp, Timestamp, getDocs, doc } from 'firebase/firestore';
+import { collection, query, where, limit, serverTimestamp, Timestamp, getDocs, doc, orderBy } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2 } from 'lucide-react';
+import { Loader2, BrainCircuit } from 'lucide-react';
 import type { Assessment, AssessmentSession, JobApplication, AssessmentConfig } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { CheckCircle, Info } from 'lucide-react';
@@ -177,6 +177,126 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
     );
 }
 
+function StartGeneralTest() {
+    const { userProfile } = useAuth();
+    const firestore = useFirestore();
+    const router = useRouter();
+    const { toast } = useToast();
+    const [isStarting, setIsStarting] = useState(false);
+
+    const handleStartTest = async () => {
+        if (!userProfile) {
+            toast({ variant: "destructive", title: "Error", description: "Anda harus login untuk memulai tes." });
+            return;
+        }
+        setIsStarting(true);
+        try {
+            // Check for any existing session first
+            const existingSessionQuery = query(
+                collection(firestore, 'assessment_sessions'),
+                where('candidateUid', '==', userProfile.uid),
+                orderBy('startedAt', 'desc'),
+                limit(1)
+            );
+            const existingSessionsSnap = await getDocs(existingSessionQuery);
+            if (!existingSessionsSnap.empty) {
+                const session = existingSessionsSnap.docs[0];
+                toast({ title: "Sesi Ditemukan", description: "Anda akan diarahkan ke sesi tes yang sudah ada." });
+                if (session.data().status === 'submitted') {
+                    router.push(`/careers/portal/assessment/personality/result/${session.id}`);
+                } else {
+                    router.push(`/careers/portal/assessment/personality/${session.id}`);
+                }
+                return;
+            }
+
+            // If no existing session, create a new one.
+            const assessmentDoc = await getDoc(doc(firestore, 'assessments', 'default'));
+            if (!assessmentDoc.exists() || !assessmentDoc.data().isActive) {
+                throw new Error("Default assessment is not active or not found.");
+            }
+            const activeAssessment = {id: assessmentDoc.id, ...assessmentDoc.data()} as Assessment;
+
+            const configDoc = await getDoc(doc(firestore, 'assessment_config', 'main'));
+            if (!configDoc.exists()) {
+                throw new Error("Assessment configuration not found.");
+            }
+            const assessmentConfig = configDoc.data() as AssessmentConfig;
+
+            const questionsCollection = collection(firestore, 'assessment_questions');
+            const shuffle = (array: string[]) => {
+              for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+              }
+              return array;
+            };
+
+            const likertQuery = query(questionsCollection, where('assessmentId', '==', 'default'), where('isActive', '==', true), where('type', '==', 'likert'));
+            const forcedChoiceQuery = query(questionsCollection, where('assessmentId', '==', 'default'), where('isActive', '==', true), where('type', '==', 'forced-choice'));
+            
+            const [likertQuestionsSnap, forcedChoiceQuestionsSnap] = await Promise.all([getDocs(likertQuery), getDocs(forcedChoiceQuery)]);
+            const likertIds = likertQuestionsSnap.docs.map(d => d.id);
+            const forcedChoiceIds = forcedChoiceQuestionsSnap.docs.map(doc => doc.id);
+            
+            const likertCount = (assessmentConfig?.bigfiveCount || 30) + (assessmentConfig?.discCount || 20);
+            const forcedChoiceCount = assessmentConfig?.forcedChoiceCount || 20;
+
+            if (likertIds.length < likertCount || forcedChoiceIds.length < forcedChoiceCount) {
+                throw new Error(`Bank soal tidak mencukupi. Hubungi HRD.`);
+            }
+
+            const sessionData: Omit<AssessmentSession, 'id'> = {
+                assessmentId: activeAssessment.id,
+                candidateUid: userProfile.uid,
+                candidateName: userProfile.fullName,
+                candidateEmail: userProfile.email,
+                status: 'draft',
+                currentTestPart: 'likert',
+                selectedQuestionIds: {
+                    likert: shuffle(likertIds).slice(0, likertCount),
+                    forcedChoice: shuffle(forcedChoiceIds).slice(0, forcedChoiceCount),
+                },
+                answers: {},
+                scores: { disc: {}, bigfive: {} },
+                startedAt: serverTimestamp() as Timestamp,
+                updatedAt: serverTimestamp() as Timestamp,
+            };
+
+            const docRef = await addDocumentNonBlocking(collection(firestore, 'assessment_sessions'), sessionData);
+            toast({ title: 'Tes Dimulai!', description: 'Selamat mengerjakan.' });
+            router.push(`/careers/portal/assessment/personality/${docRef.id}`);
+
+        } catch (error: any) {
+            console.error("Failed to start general assessment:", error);
+            toast({ variant: 'destructive', title: 'Gagal Memulai Tes', description: error.message });
+        } finally {
+            setIsStarting(false);
+        }
+    };
+    
+    return (
+        <Card className="max-w-3xl mx-auto">
+            <CardHeader>
+                <CardTitle className="text-2xl">Tes Kepribadian</CardTitle>
+                <CardDescription>Tes ini dirancang untuk membantu kami memahami preferensi dan gaya kerja Anda. Hasil tes ini akan menjadi patokan umum untuk semua lamaran Anda.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+                <Alert>
+                    <CheckCircle className="h-4 w-4" />
+                    <AlertTitle>Hanya Satu Kali Pengerjaan</AlertTitle>
+                    <AlertDescription>Anda hanya perlu mengerjakan tes ini satu kali. Hasilnya akan kami simpan dan gunakan sebagai referensi untuk lamaran-lamaran Anda selanjutnya. Jika Anda sudah pernah mengerjakan, kami akan melanjutkan sesi Anda atau menampilkan hasilnya.</AlertDescription>
+                </Alert>
+                <div className="text-center pt-4">
+                    <Button size="lg" onClick={handleStartTest} disabled={isStarting}>
+                        {isStarting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BrainCircuit className="mr-2 h-4 w-4" />}
+                        {isStarting ? "Mempersiapkan..." : "Mulai atau Lanjutkan Tes"}
+                    </Button>
+                </div>
+            </CardContent>
+        </Card>
+    );
+}
 
 function AssessmentStartPageContent() {
   const { userProfile, loading: authLoading } = useAuth();
@@ -217,25 +337,7 @@ function AssessmentStartPageContent() {
     );
   }
 
-  return (
-    <Card className="max-w-3xl mx-auto">
-      <CardHeader>
-        <CardTitle className="text-2xl">Tes Kepribadian</CardTitle>
-        <CardDescription>
-          Tes ini dirancang untuk membantu kami memahami preferensi dan gaya kerja Anda.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <Alert>
-            <Info className="h-4 w-4" />
-            <AlertTitle>Petunjuk Memulai Tes</AlertTitle>
-            <AlertDescription>
-              Untuk mengerjakan tes, silakan akses melalui tombol "Kerjakan Tes" pada lamaran Anda yang berstatus "Tahap Tes Kepribadian" di halaman <Link href="/careers/portal/applications" className="font-bold underline">Lamaran Saya</Link>.
-            </AlertDescription>
-        </Alert>
-      </CardContent>
-    </Card>
-  );
+  return <StartGeneralTest />;
 }
 
 export default function AssessmentPage() {
