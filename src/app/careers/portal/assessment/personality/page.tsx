@@ -20,6 +20,8 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
     const firestore = useFirestore();
     const router = useRouter();
     const { toast } = useToast();
+    const searchParams = useSearchParams();
+    const isRetry = searchParams.get('retry') === 'true';
 
     const appRef = useMemoFirebase(() => doc(firestore, 'applications', applicationId), [firestore, applicationId]);
     const { data: application, isLoading: appLoading, error: appError } = useDoc<JobApplication>(appRef);
@@ -78,7 +80,12 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
             const forcedChoiceCount = assessmentConfig?.forcedChoiceCount || 20;
 
             if (likertIds.length < likertCount || forcedChoiceIds.length < forcedChoiceCount) {
-                toast({ variant: 'destructive', title: 'Bank Soal Tidak Cukup', description: `Soal tidak mencukupi. Likert: ${likertIds.length}/${likertCount}, Forced-Choice: ${forcedChoiceIds.length}/${forcedChoiceCount}. Hubungi HRD.` });
+                const errorMessage = `Bank soal tidak mencukupi. Likert: ${likertIds.length}/${likertCount}, Forced-Choice: ${forcedChoiceIds.length}/${forcedChoiceCount}. Hubungi HRD.`;
+                if (isRetry) {
+                    toast({ variant: 'destructive', title: 'Gagal Memperbaiki Sesi', description: errorMessage });
+                } else {
+                    toast({ variant: 'destructive', title: 'Bank Soal Tidak Cukup', description: errorMessage });
+                }
                 router.push('/careers/portal/applications');
                 return;
             }
@@ -96,7 +103,7 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
                 
                 const isOldSession = !existingSessionData.selectedQuestionIds?.forcedChoice || existingSessionData.selectedQuestionIds.forcedChoice.length === 0;
 
-                if (isOldSession) {
+                if (isOldSession || isRetry) {
                     toast({ title: 'Sesi Tes Diperbarui', description: 'Sesi lama Anda tidak valid. Membuat ulang sesi tes untuk Anda.' });
                     
                     const newSelectedQuestionIds = {
@@ -155,11 +162,12 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
 
         handleStart().catch(e => {
             console.error("Failed to start assessment:", e);
-            toast({ variant: 'destructive', title: 'Gagal Memulai Tes', description: e.message });
+            const title = isRetry ? 'Gagal Memperbaiki Sesi' : 'Gagal Memulai Tes';
+            toast({ variant: 'destructive', title: title, description: e.message });
             router.push('/careers/portal/applications');
         });
 
-    }, [appLoading, assessmentLoading, authLoading, configLoading, application, userProfile, activeAssessment, assessmentConfig, applicationId, router, toast, firestore, appError]);
+    }, [appLoading, assessmentLoading, authLoading, configLoading, application, userProfile, activeAssessment, assessmentConfig, applicationId, router, toast, firestore, appError, isRetry]);
 
     return (
       <div className="flex h-64 flex-col items-center justify-center text-center">

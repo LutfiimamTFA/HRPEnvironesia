@@ -42,13 +42,13 @@ function AssessmentSkeleton() {
 }
 
 const likertOptions = [
-  { value: 1, size: 'h-14 w-14', color: 'border-purple-500 bg-purple-500/10 data-[state=checked]:bg-purple-500' },
-  { value: 2, size: 'h-12 w-12', color: 'border-purple-400 bg-purple-400/10 data-[state=checked]:bg-purple-400' },
-  { value: 3, size: 'h-10 w-10', color: 'border-purple-300 bg-purple-300/10 data-[state=checked]:bg-purple-300' },
-  { value: 4, size: 'h-8 w-8', color: 'border-gray-400 bg-gray-400/10 data-[state=checked]:bg-gray-400' },
-  { value: 5, size: 'h-10 w-10', color: 'border-green-300 bg-green-300/10 data-[state=checked]:bg-green-300' },
-  { value: 6, size: 'h-12 w-12', color: 'border-green-400 bg-green-400/10 data-[state=checked]:bg-green-400' },
   { value: 7, size: 'h-14 w-14', color: 'border-green-500 bg-green-500/10 data-[state=checked]:bg-green-500' },
+  { value: 6, size: 'h-12 w-12', color: 'border-green-400 bg-green-400/10 data-[state=checked]:bg-green-400' },
+  { value: 5, size: 'h-10 w-10', color: 'border-green-300 bg-green-300/10 data-[state=checked]:bg-green-300' },
+  { value: 4, size: 'h-8 w-8', color: 'border-gray-400 bg-gray-400/10 data-[state=checked]:bg-gray-400' },
+  { value: 3, size: 'h-10 w-10', color: 'border-purple-300 bg-purple-300/10 data-[state=checked]:bg-purple-300' },
+  { value: 2, size: 'h-12 w-12', color: 'border-purple-400 bg-purple-400/10 data-[state=checked]:bg-purple-400' },
+  { value: 1, size: 'h-14 w-14', color: 'border-purple-500 bg-purple-500/10 data-[state=checked]:bg-purple-500' },
 ];
 
 function ForcedChoiceSelector({
@@ -117,6 +117,7 @@ function TakeAssessmentPage() {
   // 1. Fetch session
   const sessionRef = useMemoFirebase(() => doc(firestore, 'assessment_sessions', sessionId), [firestore, sessionId]);
   const { data: session, isLoading: sessionLoading } = useDoc<AssessmentSession>(sessionRef);
+  const applicationId = session?.applicationId;
   
   // 2. Fetch the assessment document using the ID from the session
   const assessmentRef = useMemoFirebase(() => {
@@ -135,11 +136,10 @@ function TakeAssessmentPage() {
   // 4. Fetch questions using chunking
   useEffect(() => {
     const fetchQuestions = async () => {
+      if (sessionLoading) return;
       if (!session?.selectedQuestionIds) {
-        if (!sessionLoading) { // Only show error if session has loaded and is invalid
           setQuestionsError('Sesi asesmen tidak valid atau tidak memiliki daftar soal.');
-        }
-        setQuestionsLoading(false);
+          setQuestionsLoading(false);
         return;
       }
       setQuestionsLoading(true);
@@ -154,6 +154,7 @@ function TakeAssessmentPage() {
         if (allIds.length === 0) {
           setQuestions([]);
           setQuestionsLoading(false);
+          setQuestionsError('Bank soal kosong atau soal tidak ditemukan untuk sesi ini.'); 
           return;
         }
 
@@ -167,7 +168,13 @@ function TakeAssessmentPage() {
         );
 
         if (fetchedQuestions.length === 0) {
-          setQuestionsError('Bank soal kosong atau soal tidak ditemukan untuk sesi ini.');
+          toast({ variant: 'destructive', title: 'Sesi Tes Usang', description: 'Mencoba memperbaiki dan memulai ulang sesi...' });
+          if (applicationId) {
+            router.replace(`/careers/portal/assessment/personality?applicationId=${applicationId}&retry=true`);
+          } else {
+            setQuestionsError('Sesi tidak valid dan tidak dapat diperbaiki secara otomatis. Silakan kembali ke halaman Lamaran Saya.');
+          }
+          return;
         } else {
           setQuestions(fetchedQuestions);
         }
@@ -179,10 +186,10 @@ function TakeAssessmentPage() {
       }
     };
 
-    if (session) {
+    if (!sessionLoading) {
       fetchQuestions();
     }
-  }, [session, firestore, sessionLoading]);
+  }, [session, sessionLoading, firestore, applicationId, router, toast]);
   
   // 5. Reconstruct the question order based on the session's ID list
   const sortedQuestions = useMemo(() => {
@@ -296,7 +303,7 @@ function TakeAssessmentPage() {
     );
   }
 
-  if (questionsForCurrentPart.length === 0) {
+  if (!isTransitioning && questionsForCurrentPart.length === 0) {
     return (
       <Card className="max-w-2xl mx-auto">
         <CardContent className="p-8 text-center">
@@ -355,7 +362,7 @@ function TakeAssessmentPage() {
                             key={opt.value} 
                             value={opt.value.toString()} 
                             id={`${currentQuestion.id}-${opt.value}`}
-                            className={cn('rounded-full transition-all duration-200 ease-in-out transform hover:scale-110', opt.size, opt.color, 'data-[state=checked]:text-primary-foreground text-primary-foreground' )}
+                            className={cn('rounded-full transition-all duration-200 ease-in-out transform hover:scale-110 data-[state=checked]:text-white', opt.size, opt.color )}
                         />
                         ))}
                     </div>
