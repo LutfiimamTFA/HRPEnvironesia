@@ -58,7 +58,7 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
     useEffect(() => {
         if (appLoading || assessmentLoading || authLoading || configLoading) return;
 
-        if (!application || !userProfile || !activeAssessment || !assessmentConfig || !activeAssessment.isActive || activeAssessment.publishStatus !== 'published') {
+        if (!application || !userProfile || !activeAssessment || !activeAssessment.isActive || activeAssessment.publishStatus !== 'published') {
             if (appError) {
                 toast({ variant: 'destructive', title: 'Error', description: `Gagal memuat detail lamaran: ${appError.message}` });
             } else {
@@ -114,8 +114,11 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
             const bigfiveIds = bigfiveQuestionsSnap.docs.map(doc => doc.id);
             const discIds = discQuestionsSnap.docs.map(doc => doc.id);
 
+            const bigfiveCount = assessmentConfig?.bigfiveCount || 30;
+            const discCount = assessmentConfig?.discCount || 20;
+
             // Validate question bank size
-            if (bigfiveIds.length < assessmentConfig.bigfiveCount || discIds.length < assessmentConfig.discCount) {
+            if (bigfiveIds.length < bigfiveCount || discIds.length < discCount) {
                 toast({ variant: 'destructive', title: 'Bank Soal Tidak Cukup', description: 'Jumlah soal yang tersedia tidak mencukupi untuk memulai tes. Hubungi HRD.' });
                 router.push('/careers/portal/applications');
                 return;
@@ -141,8 +144,8 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
                 status: 'draft',
                 currentTestPart: 'bigfive',
                 selectedQuestionIds: {
-                    bigfive: shuffle(bigfiveIds).slice(0, assessmentConfig.bigfiveCount),
-                    disc: shuffle(discIds).slice(0, assessmentConfig.discCount),
+                    bigfive: shuffle(bigfiveIds).slice(0, bigfiveCount),
+                    disc: shuffle(discIds).slice(0, discCount),
                 },
                 answers: {},
                 scores: { disc: {}, bigfive: {} },

@@ -11,110 +11,6 @@ const seedUsers: { email: string; password: string; fullName: string; role: User
   { email: 'karyawan@gmail.com', password: '12345678', fullName: 'Karyawan', role: 'karyawan' },
 ];
 
-async function seedAssessment(db: admin.firestore.Firestore) {
-    const assessmentId = 'personality-v1';
-    const assessmentRef = db.collection('assessments').doc(assessmentId);
-
-    const assessmentData = {
-        name: 'Tes Kepribadian Internal',
-        version: 1,
-        isActive: true,
-        scoringConfig: {
-            dimensions: ['OPENNESS', 'CONSCIENTIOUSNESS', 'EXTRAVERSION', 'AGREEABLENESS', 'NEUROTICISM'],
-            rules: {
-                resultType: 'highest_score', // Simple rule: result is the dimension with the highest score
-            },
-        },
-        resultTemplates: {
-            // Placeholder result templates
-            OPENNESS: {
-                title: 'Si Penjelajah Kreatif',
-                subtitle: 'Imajinatif, Penuh Rasa Ingin Tahu, dan Terbuka pada Pengalaman Baru',
-                descBlocks: ['Anda adalah individu yang sangat imajinatif dan kreatif. Anda tidak takut untuk mencoba hal-hal baru dan sering kali memiliki minat yang luas.', 'Di tempat kerja, Anda unggul dalam peran yang membutuhkan pemikiran out-of-the-box dan kemampuan untuk beradaptasi dengan perubahan.'],
-                strengths: ['Inovatif', 'Berpikiran Terbuka', 'Cepat Belajar'],
-                weaknesses: ['Kurang praktis', 'Bisa jadi tidak fokus', 'Tidak menyukai rutinitas'],
-                roleFit: ['Desainer Grafis', 'Spesialis R&D', 'Content Creator'],
-            },
-            CONSCIENTIOUSNESS: {
-                title: 'Sang Organisator yang Andal',
-                subtitle: 'Disiplin, Bertanggung Jawab, dan Berorientasi pada Tujuan',
-                descBlocks: ['Anda adalah seorang perencana yang ulung dan sangat dapat diandalkan. Anda memiliki standar tinggi untuk diri sendiri dan selalu menyelesaikan apa yang Anda mulai.', 'Anda berkembang dalam lingkungan yang terstruktur dan unggul dalam peran yang membutuhkan ketelitian dan manajemen proyek.'],
-                strengths: ['Terorganisir', 'Dapat Diandalkan', 'Penuh Perhatian'],
-                weaknesses: ['Cenderung kaku', 'Bisa jadi perfeksionis', 'Sulit beradaptasi dengan perubahan mendadak'],
-                roleFit: ['Manajer Proyek', 'Akuntan', 'Analis Data'],
-            },
-            EXTRAVERSION: {
-                title: 'Sang Komunikator yang Energik',
-                subtitle: 'Ramah, Antusias, dan Suka Berinteraksi dengan Orang Lain',
-                descBlocks: ['Anda mendapatkan energi dari interaksi sosial dan menikmati menjadi bagian dari sebuah tim. Anda adalah pembicara yang alami dan mudah membangun hubungan.', 'Peran yang melibatkan banyak komunikasi, kerja tim, dan interaksi dengan klien sangat cocok untuk Anda.'],
-                strengths: ['Mudah bergaul', 'Antusias', 'Pandai berkomunikasi'],
-                weaknesses: ['Bisa jadi kurang mandiri', 'Cepat bosan saat sendiri', 'Terkadang terlalu banyak bicara'],
-                roleFit: ['Sales & Marketing', 'Public Relations', 'Customer Service'],
-            },
-            AGREEABLENESS: {
-                title: 'Si Kolaborator yang Suportif',
-                subtitle: 'Kooperatif, Penuh Empati, dan Suka Membantu Orang Lain',
-                descBlocks: ['Anda adalah pemain tim yang hebat, selalu siap membantu rekan kerja, dan cenderung menghindari konflik. Anda menciptakan lingkungan kerja yang harmonis.', 'Anda unggul dalam peran yang membutuhkan kerja sama tim, mediasi, dan pelayanan terhadap orang lain.'],
-                strengths: ['Kooperatif', 'Empatik', 'Dapat dipercaya'],
-                weaknesses: ['Cenderung menghindari konflik', 'Sulit mengatakan \'tidak\'', 'Bisa jadi kurang tegas'],
-                roleFit: ['HR Generalist', 'Guru/Trainer', 'Perawat'],
-            },
-            NEUROTICISM: {
-                title: 'Sang Pemikir yang Teliti',
-                subtitle: 'Peka, Waspada, dan Mampu Mengantisipasi Masalah',
-                descBlocks: ['Anda memiliki kepekaan yang tinggi terhadap lingkungan dan potensi masalah, membuat Anda menjadi perencana yang baik dalam mengantisipasi risiko.', 'Meskipun Anda mungkin mengalami stres, kehati-hatian Anda sangat berharga dalam peran yang membutuhkan analisis risiko dan perhatian terhadap detail.'],
-                strengths: ['Waspada', 'Penuh persiapan', 'Mampu melihat potensi risiko'],
-                weaknesses: ['Mudah cemas', 'Cenderung overthinking', 'Bereaksi kuat terhadap stres'],
-                roleFit: ['Quality Assurance', 'Analis Keamanan', 'Auditor'],
-            },
-            DEFAULT: {
-                title: 'Kepribadian Seimbang',
-                subtitle: 'Adaptif dan Fleksibel dalam Berbagai Situasi',
-                descBlocks: ['Anda menunjukkan keseimbangan di berbagai dimensi kepribadian, membuat Anda menjadi individu yang fleksibel dan mampu beradaptasi di berbagai lingkungan kerja.', 'Anda dapat menyesuaikan pendekatan Anda tergantung pada tugas dan tim yang Anda hadapi.'],
-                strengths: ['Adaptif', 'Fleksibel', 'Penengah yang baik'],
-                weaknesses: ['Terkadang sulit diprediksi', 'Kurang memiliki spesialisasi yang menonjol'],
-                roleFit: ['Generalis', 'Staf Administrasi', 'Operations Support'],
-            }
-        },
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
-    };
-    await assessmentRef.set(assessmentData);
-
-    const questions = [
-        { order: 1, text: 'Saya suka mencoba hal-hal baru dan berbeda.', dimensionKey: 'OPENNESS', weight: 1, reverse: false },
-        { order: 2, text: 'Saya selalu mempersiapkan segala sesuatu dengan matang.', dimensionKey: 'CONSCIENTIOUSNESS', weight: 1, reverse: false },
-        { order: 3, text: 'Saya tidak suka menjadi pusat perhatian.', dimensionKey: 'EXTRAVERSION', weight: 1, reverse: true },
-        { order: 4, text: 'Saya mudah merasa empati terhadap orang lain.', dimensionKey: 'AGREEABLENESS', weight: 1, reverse: false },
-        { order: 5, text: 'Saya sering merasa cemas tentang banyak hal.', dimensionKey: 'NEUROTICISM', weight: 1, reverse: false },
-        { order: 6, text: 'Saya lebih suka rutinitas yang sudah pasti daripada hal-hal yang tidak terduga.', dimensionKey: 'OPENNESS', weight: 1, reverse: true },
-        { order: 7, text: 'Saya sering lalai menempatkan barang kembali ke tempatnya.', dimensionKey: 'CONSCIENTIOUSNESS', weight: 1, reverse: true },
-        { order: 8, text: 'Saya mudah memulai percakapan dengan orang asing.', dimensionKey: 'EXTRAVERSION', weight: 1, reverse: false },
-        { order: 9, text: 'Saya tidak terlalu peduli dengan perasaan orang lain.', dimensionKey: 'AGREEABLENESS', weight: 1, reverse: true },
-        { order: 10, text: 'Suasana hati saya sering berubah-ubah.', dimensionKey: 'NEUROTICISM', weight: 1, reverse: false },
-    ];
-
-    const questionsBatch = db.batch();
-    for (const q of questions) {
-        const questionRef = db.collection('assessment_questions').doc();
-        questionsBatch.set(questionRef, {
-            ...q,
-            assessmentId: assessmentId,
-            choices: [
-                { text: 'Sangat Tidak Setuju', value: 1 },
-                { text: 'Tidak Setuju', value: 2 },
-                { text: 'Agak Tidak Setuju', value: 3 },
-                { text: 'Netral', value: 4 },
-                { text: 'Agak Setuju', value: 5 },
-                { text: 'Setuju', value: 6 },
-                { text: 'Sangat Setuju', value: 7 },
-            ],
-        });
-    }
-    await questionsBatch.commit();
-    return { assessmentId: assessmentId, questionsCount: questions.length };
-}
-
 
 export async function POST(req: NextRequest) {
   // Gracefully handle cases where the Admin SDK is not initialized.
@@ -191,21 +87,6 @@ export async function POST(req: NextRequest) {
       console.error(`Failed to seed user ${userData.email}:`, error);
       results.push({ email: userData.email, status: 'error', message: error.message });
     }
-  }
-
-  try {
-    const assessmentResult = await seedAssessment(db);
-    results.push({
-        type: 'assessment',
-        status: 'seeded',
-        ...assessmentResult,
-    });
-  } catch(error: any) {
-     results.push({
-        type: 'assessment',
-        status: 'error',
-        message: error.message
-    });
   }
 
   return NextResponse.json({ message: 'Seeding complete.', results });
