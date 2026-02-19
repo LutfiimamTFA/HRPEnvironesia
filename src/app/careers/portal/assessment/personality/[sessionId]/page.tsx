@@ -113,7 +113,8 @@ function TakeAssessmentPage() {
   const [questionsError, setQuestionsError] = useState<string | null>(null);
 
   const [currentPart, setCurrentPart] = useState<'likert' | 'forced-choice' | null>(null);
-
+  const reversedLikertOptions = useMemo(() => [...likertOptions].reverse(), []);
+  
   // 1. Fetch session
   const sessionRef = useMemoFirebase(() => doc(firestore, 'assessment_sessions', sessionId), [firestore, sessionId]);
   const { data: session, isLoading: sessionLoading } = useDoc<AssessmentSession>(sessionRef);
@@ -152,9 +153,14 @@ function TakeAssessmentPage() {
         ];
         
         if (allIds.length === 0) {
+          toast({ variant: 'destructive', title: 'Sesi Tes Usang', description: 'Mencoba memperbaiki dan memulai ulang sesi...' });
+          if (applicationId) {
+            router.replace(`/careers/portal/assessment/personality?applicationId=${applicationId}&retry=true`);
+          } else {
+            setQuestionsError('Sesi tidak valid dan tidak dapat diperbaiki secara otomatis. Silakan kembali ke halaman Lamaran Saya.');
+          }
           setQuestions([]);
           setQuestionsLoading(false);
-          setQuestionsError('Bank soal kosong atau soal tidak ditemukan untuk sesi ini.'); 
           return;
         }
 
@@ -167,17 +173,8 @@ function TakeAssessmentPage() {
           snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as AssessmentQuestion))
         );
 
-        if (fetchedQuestions.length === 0) {
-          toast({ variant: 'destructive', title: 'Sesi Tes Usang', description: 'Mencoba memperbaiki dan memulai ulang sesi...' });
-          if (applicationId) {
-            router.replace(`/careers/portal/assessment/personality?applicationId=${applicationId}&retry=true`);
-          } else {
-            setQuestionsError('Sesi tidak valid dan tidak dapat diperbaiki secara otomatis. Silakan kembali ke halaman Lamaran Saya.');
-          }
-          return;
-        } else {
-          setQuestions(fetchedQuestions);
-        }
+        setQuestions(fetchedQuestions);
+
       } catch (e: any) {
         console.error("Error fetching questions:", e);
         setQuestionsError(`Gagal memuat soal: ${e.message}`);
@@ -206,10 +203,18 @@ function TakeAssessmentPage() {
 
   useEffect(() => {
     if (session) {
-      setCurrentPart(session.currentTestPart || 'likert');
-      setAnswers(session.answers || {});
+        const initialPart = session.currentTestPart || 'likert';
+        const likertQs = sortedQuestions.filter(q => q.type === 'likert');
+        const forcedChoiceQs = sortedQuestions.filter(q => q.type === 'forced-choice');
+
+        if (initialPart === 'likert' && likertQs.length === 0 && forcedChoiceQs.length > 0) {
+            setCurrentPart('forced-choice');
+        } else {
+            setCurrentPart(initialPart);
+        }
+        setAnswers(session.answers || {});
     }
-  }, [session]);
+  }, [session, sortedQuestions]);
 
   const questionsForCurrentPart = useMemo(() => {
       if (!sortedQuestions.length || !currentPart) return [];
@@ -304,22 +309,36 @@ function TakeAssessmentPage() {
   }
 
   if (!isTransitioning && questionsForCurrentPart.length === 0) {
-    return (
-      <Card className="max-w-2xl mx-auto">
-        <CardContent className="p-8 text-center">
-            <Alert variant="destructive">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertTitle>Format Tes Tidak Didukung</AlertTitle>
-                <AlertDescription>Tidak ada pertanyaan yang dapat dimuat untuk sesi ini.</AlertDescription>
-            </Alert>
-        </CardContent>
-      </Card>
-    );
+    const hasLikertQuestions = sortedQuestions.some(q => q.type === 'likert');
+    const hasForcedChoiceQuestions = sortedQuestions.some(q => q.type === 'forced-choice');
+    const isErrorState = (!hasLikertQuestions && !hasForcedChoiceQuestions);
+
+    if (isErrorState) {
+       return (
+        <Card className="max-w-2xl mx-auto">
+            <CardContent className="p-8 text-center">
+                <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>Bank Soal Kosong</AlertTitle>
+                    <AlertDescription>Tidak ada soal yang dapat dimuat untuk sesi ini. Sesi tes mungkin sudah usang atau rusak. Mencoba memperbaiki...</AlertDescription>
+                </Alert>
+            </CardContent>
+        </Card>
+       )
+    }
+    
+    // This case happens when one part is finished but the other part is empty.
+    if (currentPart === 'likert' && hasForcedChoiceQuestions) {
+        moveToNextPart();
+        return <AssessmentSkeleton />;
+    } else if (currentPart === 'forced-choice' || !hasForcedChoiceQuestions) {
+        handleFinish();
+        return <AssessmentSkeleton />;
+    }
   }
   
   const currentQuestion = questionsForCurrentPart[currentQuestionIndex];
   const progress = ((currentQuestionIndex + 1) / questionsForCurrentPart.length) * 100;
-  const isLastQuestion = currentQuestionIndex === questionsForCurrentPart.length - 1;
   const isLikert = currentQuestion.type === 'likert';
 
   let currentAnswer = answers[currentQuestion.id!];
@@ -330,6 +349,9 @@ function TakeAssessmentPage() {
       const fcAnswer = currentAnswer as { most: string; least: string } | undefined;
       isAnswered = !!(fcAnswer && fcAnswer.most && fcAnswer.least);
   }
+
+  const isLastQuestionOfPart = currentQuestionIndex === questionsForCurrentPart.length - 1;
+  const hasNextPart = currentPart === 'likert' && sortedQuestions.some(q => q.type === 'forced-choice');
 
   return (
     <Card className="max-w-4xl mx-auto shadow-lg">
@@ -353,11 +375,11 @@ function TakeAssessmentPage() {
                 <RadioGroup
                 value={currentAnswer?.toString()}
                 onValueChange={(value) => handleAnswerChange(currentQuestion.id!, value)}
-                className="flex justify-between items-center max-w-xl mx-auto"
+                className="flex justify-between items-center max-w-2xl mx-auto"
                 >
-                    <span className="text-purple-600 font-medium">Sangat Tidak Setuju</span>
+                    <span className="text-purple-600 font-medium text-right">Sangat<br/>Tidak Setuju</span>
                     <div className="flex items-center gap-2 md:gap-4">
-                        {likertOptions.map(opt => (
+                        {reversedLikertOptions.map(opt => (
                         <RadioGroupItem 
                             key={opt.value} 
                             value={opt.value.toString()} 
@@ -366,7 +388,7 @@ function TakeAssessmentPage() {
                         />
                         ))}
                     </div>
-                    <span className="text-green-600 font-medium">Sangat Setuju</span>
+                    <span className="text-green-600 font-medium">Sangat<br/>Setuju</span>
                 </RadioGroup>
             </>
         ) : (
@@ -379,11 +401,11 @@ function TakeAssessmentPage() {
 
 
         <div className="mt-16 flex justify-center">
-            {!isLastQuestion ? (
+            {!isLastQuestionOfPart ? (
                 <Button size="lg" onClick={handleNext} disabled={!isAnswered}>
                     Lanjut
                 </Button>
-            ) : currentPart === 'likert' ? (
+            ) : hasNextPart ? (
                 <Button size="lg" onClick={moveToNextPart} disabled={isTransitioning || !isAnswered}>
                     {isTransitioning && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Lanjut ke Bagian 2
