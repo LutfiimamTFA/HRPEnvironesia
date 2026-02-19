@@ -66,6 +66,7 @@ export type JobApplication = {
   location: string;
   status: 'draft' | 'submitted' | 'psychotest' | 'verification' | 'document_submission' | 'interview' | 'rejected' | 'hired';
   jobApplyDeadline?: Timestamp | null;
+  personalityTestAssignedAt?: Timestamp;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   submittedAt?: Timestamp;

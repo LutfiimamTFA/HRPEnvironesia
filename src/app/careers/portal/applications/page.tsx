@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
@@ -8,6 +8,7 @@ import { collection, query, where } from 'firebase/firestore';
 import type { JobApplication } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
+import { id } from 'date-fns/locale';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -20,7 +21,7 @@ const allStatuses: JobApplication['status'][] = ['draft', 'submitted', 'psychote
 const visibleSteps = [
   { status: 'draft', label: 'Draf', icon: FileSignature },
   { status: 'submitted', label: 'Terkirim', icon: FileUp },
-  { status: 'psychotest', label: 'Psikotes', icon: BrainCircuit },
+  { status: 'psychotest', label: 'Tes Kepribadian', icon: BrainCircuit },
   { status: 'document_submission', label: 'Pengumpulan Dokumen', icon: FileText },
   { status: 'verification', label: 'Verifikasi', icon: ClipboardCheck },
   { status: 'interview', label: 'Wawancara', icon: Users },
@@ -31,7 +32,7 @@ const visibleSteps = [
 const statusLabels: Record<JobApplication['status'], string> = {
   draft: 'Draf',
   submitted: 'Lamaran Terkirim',
-  psychotest: 'Tahap Psikotes',
+  psychotest: 'Tahap Tes Kepribadian',
   verification: 'Verifikasi HRD',
   document_submission: 'Pengumpulan Dokumen',
   interview: 'Tahap Wawancara',
@@ -40,13 +41,26 @@ const statusLabels: Record<JobApplication['status'], string> = {
 };
 
 function ApplicationCard({ application }: { application: JobApplication }) {
+  const [now, setNow] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(new Date());
+    }, 60000); // Update every minute to check expiry
+    return () => clearInterval(timer);
+  }, []);
+  
   const currentStatusIndex = allStatuses.indexOf(application.status);
   const isRejected = application.status === 'rejected';
   const isHired = application.status === 'hired';
 
-  const canContinue = application.status === 'draft';
-  const canTakeTest = application.status === 'psychotest';
   const jobIsExpired = application.jobApplyDeadline && application.jobApplyDeadline.toDate() < new Date();
+  
+  const deadline = application.personalityTestAssignedAt ? new Date(application.personalityTestAssignedAt.toDate().getTime() + 24 * 60 * 60 * 1000) : null;
+  const isTestExpired = deadline ? now > deadline : false;
+  
+  const canContinue = application.status === 'draft';
+  const canTakeTest = application.status === 'psychotest' && !isTestExpired;
   
   const timelineSteps = useMemo(() => {
     if (isRejected) {
@@ -137,29 +151,45 @@ function ApplicationCard({ application }: { application: JobApplication }) {
         )}
 
       </CardContent>
-      <CardFooter className="bg-muted/50 p-4 border-t flex justify-between items-center">
-         <p className="text-sm text-muted-foreground">
-            Batas Waktu: {application.jobApplyDeadline ? format(application.jobApplyDeadline.toDate(), 'dd MMM yyyy') : '-'}
-        </p>
-        {canContinue && !jobIsExpired && (
+      <CardFooter className="bg-muted/50 p-4 border-t flex justify-between items-center min-h-[76px]">
+        <div className="flex-1">
+          {application.status === 'psychotest' && deadline ? (
+            isTestExpired ? (
+              <p className="text-sm text-destructive font-medium">Waktu pengerjaan tes telah habis.</p>
+            ) : (
+              <div>
+                <p className="text-xs text-muted-foreground">Batas Waktu Tes:</p>
+                <p className="text-sm font-semibold">{format(deadline, 'dd MMM yyyy, HH:mm', { locale: id })} WIB</p>
+              </div>
+            )
+          ) : application.status === 'draft' ? (
+            <p className="text-sm text-muted-foreground">
+              Batas Lamaran: {application.jobApplyDeadline ? format(application.jobApplyDeadline.toDate(), 'dd MMM yyyy') : '-'}
+            </p>
+          ) : (
+            <div></div> // Placeholder for alignment
+          )}
+        </div>
+        
+        <div className="flex-shrink-0">
+          {canContinue && !jobIsExpired && (
             <Button asChild size="sm">
-                <Link href={`/careers/jobs/${application.jobSlug}/apply`}>
-                    Lanjutkan Draf
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                </Link>
+              <Link href={`/careers/jobs/${application.jobSlug}/apply`}>
+                Lanjutkan Draf <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
             </Button>
-        )}
-        {canTakeTest && (
-             <Button asChild size="sm">
-                <Link href={`/careers/portal/assessment/personality?applicationId=${application.id}`}>
-                    Kerjakan Tes
-                    <BrainCircuit className="ml-2 h-4 w-4" />
-                </Link>
+          )}
+          {canTakeTest && (
+            <Button asChild size="sm">
+              <Link href={`/careers/portal/assessment/personality?applicationId=${application.id}`}>
+                Kerjakan Tes <BrainCircuit className="ml-2 h-4 w-4" />
+              </Link>
             </Button>
-        )}
-        {canContinue && jobIsExpired && (
-             <Badge variant="outline">Lowongan ditutup</Badge>
-        )}
+          )}
+          {canContinue && jobIsExpired && (
+            <Badge variant="outline">Lowongan ditutup</Badge>
+          )}
+        </div>
       </CardFooter>
     </Card>
   );

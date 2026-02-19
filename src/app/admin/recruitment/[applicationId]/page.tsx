@@ -40,10 +40,18 @@ function StatusManager({ application }: { application: JobApplication }) {
     setIsUpdating(true);
     try {
       const appRef = doc(firestore, 'applications', application.id!);
-      await updateDocumentNonBlocking(appRef, {
+      const updatePayload: any = {
         status: selectedStatus,
         updatedAt: serverTimestamp(),
-      });
+      };
+
+      // If moving to psychotest stage and it hasn't been assigned before
+      if (selectedStatus === 'psychotest' && !application.personalityTestAssignedAt) {
+        updatePayload.personalityTestAssignedAt = serverTimestamp();
+      }
+
+      await updateDocumentNonBlocking(appRef, updatePayload);
+
       toast({ title: 'Success', description: 'Application status has been updated.' });
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Error', description: error.message });
@@ -60,7 +68,7 @@ function StatusManager({ application }: { application: JobApplication }) {
         </SelectTrigger>
         <SelectContent>
           {APPLICATION_STATUSES.map(status => (
-            <SelectItem key={status} value={status} className="capitalize">{status}</SelectItem>
+            <SelectItem key={status} value={status} className="capitalize">{status.replace('_', ' ')}</SelectItem>
           ))}
         </SelectContent>
       </Select>

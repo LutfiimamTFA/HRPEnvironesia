@@ -13,7 +13,7 @@ export function ApplicationStatusBadge({ status, className }: ApplicationStatusB
   const statusConfig = {
     draft: { label: 'Draft', variant: 'secondary' as const },
     submitted: { label: 'Submitted', variant: 'default' as const },
-    psychotest: { label: 'Psychotest', variant: 'default' as const, className: 'bg-blue-600 hover:bg-blue-700' },
+    psychotest: { label: 'Tes Kepribadian', variant: 'default' as const, className: 'bg-blue-600 hover:bg-blue-700' },
     verification: { label: 'Verification', variant: 'default' as const, className: 'bg-purple-600 hover:bg-purple-700' },
     document_submission: { label: 'Doc. Submission', variant: 'default' as const, className: 'bg-cyan-600 hover:bg-cyan-700' },
     interview: { label: 'Interview', variant: 'default' as const, className: 'bg-orange-500 hover:bg-orange-600' },

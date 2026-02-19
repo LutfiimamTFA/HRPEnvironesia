@@ -186,7 +186,7 @@ service cloud.firestore {
         }
         function isInternalStatusUpdate() {
             let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
-            let allowedKeys = ['status', 'updatedAt'];
+            let allowedKeys = ['status', 'updatedAt', 'personalityTestAssignedAt'];
             return isInternal() && changedKeys.hasOnly(allowedKeys);
         }
     }

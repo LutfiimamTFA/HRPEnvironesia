@@ -7,7 +7,7 @@ import { Check, BrainCircuit, ClipboardCheck, Users, Award, FileUp, FileText } f
 
 const applicationSteps = [
   { status: 'submitted', label: 'Terkirim', icon: FileUp },
-  { status: 'psychotest', label: 'Psikotes', icon: BrainCircuit },
+  { status: 'psychotest', label: 'Tes Kepribadian', icon: BrainCircuit },
   { status: 'document_submission', label: 'Dokumen', icon: FileText },
   { status: 'verification', label: 'Verifikasi', icon: ClipboardCheck },
   { status: 'interview', label: 'Wawancara', icon: Users },
