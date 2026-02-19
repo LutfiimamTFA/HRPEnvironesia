@@ -40,31 +40,29 @@ export async function POST(req: NextRequest) {
 
     const results = {
         created: { 
-            template_likert: false, 
-            template_forced_choice: false, 
-            questions_likert: 0,
-            questions_forced_choice: 0 
+            assessment: false,
+            template: false, 
+            questions: 0,
         },
         updated: { 
-            template_likert: false, 
-            template_forced_choice: false 
+            assessment: false,
+            template: false 
         },
         existing: { 
-            template_likert: true, 
-            template_forced_choice: true, 
-            questions_likert: 'Not Checked',
-            questions_forced_choice: 'Not Checked'
+            assessment: true, 
+            template: true,
+            questions: 'Not Checked'
         },
     };
 
-    // --- TEMPLATE 1: LIKERT (Big Five & DISC) ---
-    const templateLikertRef = db.collection('assessment_templates').doc('personality_test_1');
-    const templateLikertSnap = await templateLikertRef.get();
-    const likertTemplateData = {
-        name: "Tes Kepribadian 1 (Likert)",
-        format: "likert",
+    // --- TEMPLATE 1: DUAL ENGINE (Likert & Forced-Choice) ---
+    const templateRef = db.collection('assessment_templates').doc('default_dual');
+    const templateSnap = await templateRef.get();
+    const templateData = {
+        name: "Default Dual-Format Template",
+        format: "likert", // Default format, can be overridden by question type
         engine: "dual",
-        scale: { type: "likert", points: 7, leftLabel: "Setuju", rightLabel: "Tidak setuju", ui: "bubbles" },
+        scale: { type: "likert", points: 7, leftLabel: "Tidak Setuju", rightLabel: "Setuju", ui: "bubbles" },
         dimensions: {
             disc: [ { key: "D", label: "Dominance" }, { key: "I", label: "Influence" }, { key: "S", label: "Steadiness" }, { key: "C", label: "Conscientiousness" } ],
             bigfive: [ { key: "O", label: "Openness" }, { key: "C", label: "Conscientiousness" }, { key: "E", label: "Extraversion" }, { key: "A", label: "Agreeableness" }, { key: "N", label: "Neuroticism" } ]
@@ -74,42 +72,15 @@ export async function POST(req: NextRequest) {
         updatedAt: Timestamp.now(),
     };
 
-    if (!templateLikertSnap.exists) {
-        batch.set(templateLikertRef, likertTemplateData);
-        results.created.template_likert = true;
-        results.existing.template_likert = false;
+    if (!templateSnap.exists) {
+        batch.set(templateRef, templateData);
+        results.created.template = true;
+        results.existing.template = false;
     } else {
-        const existingData = templateLikertSnap.data()!;
-        if (!existingData.scale || !existingData.dimensions || !existingData.scoring) {
-            batch.set(templateLikertRef, likertTemplateData, { merge: true });
-            results.updated.template_likert = true;
-        }
-    }
-    
-    // --- TEMPLATE 2: FORCED-CHOICE ---
-    const templateForcedChoiceRef = db.collection('assessment_templates').doc('personality_test_2');
-    const templateForcedChoiceSnap = await templateForcedChoiceRef.get();
-    const forcedChoiceTemplateData = {
-        name: "Tes Kepribadian 2 (Forced-Choice)",
-        format: "forced-choice",
-        engine: "dual",
-        dimensions: {
-            disc: [ { key: 'D', label: 'Dominance' }, { key: 'I', label: 'Influence' }, { key: 'S', label: 'Steadiness' }, { key: 'C', label: 'Conscientiousness' } ],
-            bigfive: [],
-        },
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
-    };
-
-    if (!templateForcedChoiceSnap.exists) {
-        batch.set(templateForcedChoiceRef, forcedChoiceTemplateData);
-        results.created.template_forced_choice = true;
-        results.existing.template_forced_choice = false;
-    } else {
-        const existingData = templateForcedChoiceSnap.data()!;
-        if (!existingData.dimensions.disc) {
-            batch.set(templateForcedChoiceRef, forcedChoiceTemplateData, { merge: true });
-            results.updated.template_forced_choice = true;
+        const existingData = templateSnap.data()!;
+        if (!existingData.scale || !existingData.dimensions || !existingData.scoring || !existingData.format) {
+            batch.set(templateRef, { ...templateData, format: existingData.format || 'likert' }, { merge: true });
+            results.updated.template = true;
         }
     }
 
@@ -118,7 +89,7 @@ export async function POST(req: NextRequest) {
     const assessmentRef = db.collection('assessments').doc('default');
     const assessmentSnap = await assessmentRef.get();
     const defaultAssessmentData = {
-        templateId: "default_dual", // This should ideally be a multi-template system, but we adapt
+        templateId: "default_dual", 
         name: "Tes Kepribadian Internal (Gabungan)",
         version: 1,
         isActive: true,
@@ -279,20 +250,15 @@ export async function POST(req: NextRequest) {
             };
         });
         
-        for (const q of likertQuestions) {
+        const allQuestions = [...likertQuestions, ...forcedChoiceQuestions];
+
+        for (const q of allQuestions) {
             const qRef = db.collection('assessment_questions').doc();
             batch.set(qRef, { ...q, assessmentId: 'default', isActive: true });
         }
         
-        for (const q of forcedChoiceQuestions) {
-            const qRef = db.collection('assessment_questions').doc();
-            batch.set(qRef, q);
-        }
-
-        results.created.questions_likert = likertQuestions.length;
-        results.created.questions_forced_choice = forcedChoiceQuestions.length;
-        results.existing.questions_likert = "Created";
-        results.existing.questions_forced_choice = "Created";
+        results.created.questions = allQuestions.length;
+        results.existing.questions = "Created";
 
     } else {
         const existingData = assessmentSnap.data()!;
