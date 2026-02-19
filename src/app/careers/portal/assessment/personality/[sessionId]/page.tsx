@@ -112,7 +112,7 @@ function TakeAssessmentPage() {
   const [questionsLoading, setQuestionsLoading] = useState(true);
   const [questionsError, setQuestionsError] = useState<string | null>(null);
 
-  const [currentPart, setCurrentPart] = useState<'bigfive' | 'disc' | null>(null);
+  const [currentPart, setCurrentPart] = useState<'likert' | 'forced-choice' | null>(null);
 
   // 1. Fetch session
   const sessionRef = useMemoFirebase(() => doc(firestore, 'assessment_sessions', sessionId), [firestore, sessionId]);
@@ -147,8 +147,8 @@ function TakeAssessmentPage() {
       
       try {
         const allIds = [
-            ...(session.selectedQuestionIds.bigfive || []), 
-            ...(session.selectedQuestionIds.disc || [])
+            ...(session.selectedQuestionIds.likert || []), 
+            ...(session.selectedQuestionIds.forcedChoice || [])
         ];
         
         if (allIds.length === 0) {
@@ -188,20 +188,25 @@ function TakeAssessmentPage() {
   const sortedQuestions = useMemo(() => {
       if (questions.length === 0 || !session?.selectedQuestionIds) return [];
       const questionMap = new Map(questions.map(q => [q.id, q]));
-      const allIds = [...(session.selectedQuestionIds.bigfive || []), ...(session.selectedQuestionIds.disc || [])];
+      
+      const allIds = [
+        ...(session.selectedQuestionIds.likert || []), 
+        ...(session.selectedQuestionIds.forcedChoice || [])
+      ];
+
       return allIds.map(id => questionMap.get(id)).filter((q): q is AssessmentQuestion => !!q);
   }, [questions, session]);
 
   useEffect(() => {
     if (session) {
-      setCurrentPart(session.currentTestPart || 'bigfive');
+      setCurrentPart(session.currentTestPart || 'likert');
       setAnswers(session.answers || {});
     }
   }, [session]);
 
   const questionsForCurrentPart = useMemo(() => {
       if (!sortedQuestions.length || !currentPart) return [];
-      const partQuestions = sortedQuestions.filter(q => q.engineKey === currentPart || q.type === 'forced-choice');
+      const partQuestions = sortedQuestions.filter(q => q.type === currentPart);
       return partQuestions;
   }, [sortedQuestions, currentPart]);
   
@@ -238,9 +243,9 @@ function TakeAssessmentPage() {
     try {
         await updateDocumentNonBlocking(sessionRef, { 
             answers: answers,
-            currentTestPart: 'disc' 
+            currentTestPart: 'forced-choice' 
         });
-        setCurrentPart('disc');
+        setCurrentPart('forced-choice');
         setCurrentQuestionIndex(0);
         toast({ title: "Bagian 1 Selesai", description: "Lanjut ke bagian 2." });
     } catch (e: any) {
@@ -327,7 +332,7 @@ function TakeAssessmentPage() {
                 <ArrowLeft className="h-4 w-4 mr-2" /> Halaman Sebelumnya
             </Button>
             <div className='text-center'>
-                 <p className="text-sm font-medium">Bagian: {currentPart === 'bigfive' ? '1 dari 2' : '2 dari 2'}</p>
+                 <p className="text-sm font-medium">Bagian: {currentPart === 'likert' ? '1 dari 2' : '2 dari 2'}</p>
                  <p className="text-sm text-muted-foreground">Langkah {currentQuestionIndex + 1} dari {questionsForCurrentPart.length}</p>
             </div>
             <span></span>
@@ -343,7 +348,7 @@ function TakeAssessmentPage() {
                 onValueChange={(value) => handleAnswerChange(currentQuestion.id!, value)}
                 className="flex justify-between items-center max-w-xl mx-auto"
                 >
-                    <span className="text-purple-600 font-medium">Tidak Setuju</span>
+                    <span className="text-purple-600 font-medium">Sangat Tidak Setuju</span>
                     <div className="flex items-center gap-2 md:gap-4">
                         {likertOptions.map(opt => (
                         <RadioGroupItem 
@@ -354,7 +359,7 @@ function TakeAssessmentPage() {
                         />
                         ))}
                     </div>
-                    <span className="text-green-600 font-medium">Setuju</span>
+                    <span className="text-green-600 font-medium">Sangat Setuju</span>
                 </RadioGroup>
             </>
         ) : (
@@ -371,7 +376,7 @@ function TakeAssessmentPage() {
                 <Button size="lg" onClick={handleNext} disabled={!isAnswered}>
                     Lanjut
                 </Button>
-            ) : currentPart === 'bigfive' ? (
+            ) : currentPart === 'likert' ? (
                 <Button size="lg" onClick={moveToNextPart} disabled={isTransitioning || !isAnswered}>
                     {isTransitioning && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Lanjut ke Bagian 2
