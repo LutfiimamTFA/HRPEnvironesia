@@ -1,3 +1,4 @@
+
 import type { Timestamp } from 'firebase/firestore';
 
 export const ROLES = ['super-admin', 'hrd', 'manager', 'kandidat', 'karyawan'] as const;
@@ -297,6 +298,10 @@ export type AssessmentSession = {
   };
   result?: {
     discType: string;
+    mbtiArchetype: {
+        archetype: string;
+        code: string;
+    } | null;
     report: Partial<ResultTemplate> & { bigfiveSummary?: any[], interviewQuestions?: any[] };
   };
   hrdDecision?: 'pending' | 'approved' | 'rejected';
@@ -366,3 +371,5 @@ export type CandidateFitAnalysisOutput = {
   quickTestRecommendation: string[];
   missingInformation: string[];
 };
+
+    

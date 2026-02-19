@@ -1,3 +1,4 @@
+
 import { z } from 'genkit';
 
 export const AnalyzeAnswerInputSchema = z.object({
@@ -13,3 +14,17 @@ export const AnalyzeAnswerOutputSchema = z.object({
   analysis: z.string().describe("A brief, one-sentence analysis of the candidate's answer in Bahasa Indonesia."),
 });
 export type AnalyzeAnswerOutput = z.infer<typeof AnalyzeAnswerOutputSchema>;
+
+export const ArchetypeAnalysisInputSchema = z.object({
+    discScores: z.record(z.number()).describe("DISC scores (D, I, S, C)."),
+    bigFiveScores: z.record(z.number()).describe("Normalized Big Five scores (O, C, E, A, N) from 0-100."),
+});
+export type ArchetypeAnalysisInput = z.infer<typeof ArchetypeAnalysisInputSchema>;
+
+export const ArchetypeAnalysisOutputSchema = z.object({
+  archetype: z.string().describe("The personality archetype name, e.g., 'Komandan', 'Logis', 'Advokat'."),
+  code: z.string().describe("The 4-letter personality code plus trait, e.g., 'ENTJ-T', 'INTP-A'."),
+});
+export type ArchetypeAnalysisOutput = z.infer<typeof ArchetypeAnalysisOutputSchema>;
+
+    

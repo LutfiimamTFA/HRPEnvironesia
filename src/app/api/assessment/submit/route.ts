@@ -1,9 +1,11 @@
+
 'use server';
 
 import { NextRequest, NextResponse } from 'next/server';
 import admin from '@/lib/firebase/admin';
 import { Timestamp } from 'firebase-admin/firestore';
 import type { Assessment, AssessmentTemplate, AssessmentQuestion, AssessmentSession } from '@/lib/types';
+import { analyzePersonalityArchetype } from '@/ai/flows/analyze-personality-archetype-flow';
 
 // Helper function to get the max possible score for a Likert dimension
 function getMaxScore(questions: AssessmentQuestion[], dimensionKey: string, engineKey: 'disc' | 'bigfive', scalePoints: number) {
@@ -151,8 +153,22 @@ export async function POST(req: NextRequest) {
             }
         }
     }
+    
+    // --- 4. Archetype Analysis (AI) ---
+    let mbtiArchetype = null;
+    try {
+        const archetypeResult = await analyzePersonalityArchetype({
+            discScores: scores.disc,
+            bigFiveScores: normalized.bigfive,
+        });
+        mbtiArchetype = archetypeResult;
+    } catch (aiError) {
+        console.error("AI Archetype Analysis failed:", aiError);
+        // We don't block submission if AI fails, just log it.
+    }
 
-    // --- 4. Report Generation ---
+
+    // --- 5. Report Generation ---
     const discReportTemplate = assessment.resultTemplates.disc[discType];
     if (!discReportTemplate) {
         throw new Error(`DISC result template for type "${discType}" not found.`);
@@ -182,16 +198,17 @@ export async function POST(req: NextRequest) {
     
     const resultPayload: AssessmentSession['result'] = {
         discType,
+        mbtiArchetype,
         report: finalReport
     };
 
-    // --- 5. Denormalize candidate info ---
+    // --- 6. Denormalize candidate info ---
     const userDocRef = db.collection('users').doc(session.candidateUid);
     const userDoc = await userDocRef.get();
     const candidateName = userDoc.exists ? userDoc.data()?.fullName || null : null;
     const candidateEmail = userDoc.exists ? userDoc.data()?.email || null : null;
     
-    // --- 6. Update Session Document ---
+    // --- 7. Update Session Document ---
     await sessionRef.update({
         status: 'submitted',
         scores,
@@ -203,7 +220,7 @@ export async function POST(req: NextRequest) {
         candidateEmail,
     });
 
-    // --- 7. Update Application Status if linked ---
+    // --- 8. Update Application Status if linked ---
     if (session.applicationId) {
       const appRef = db.collection('applications').doc(session.applicationId);
       const appDoc = await appRef.get();
@@ -227,3 +244,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to process assessment results. ' + error.message }, { status: 500 });
   }
 }
+
+    

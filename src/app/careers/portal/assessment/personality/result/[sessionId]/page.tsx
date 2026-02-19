@@ -1,10 +1,11 @@
+
 'use client';
 
 import { useParams } from 'next/navigation';
 import { useDoc, useFirestore, useMemoFirebase } from '@/firebase';
 import { doc } from 'firebase/firestore';
 import type { AssessmentSession } from '@/lib/types';
-import { Loader2, CheckCircle, ArrowRight } from 'lucide-react';
+import { Loader2, CheckCircle, ArrowRight, Atom } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -62,13 +63,25 @@ export default function AssessmentResultPage() {
         return <ProcessingState />;
     }
     
-    const { report } = session.result;
+    const { report, mbtiArchetype } = session.result;
 
     return (
         <div className="max-w-4xl mx-auto space-y-8">
+             {mbtiArchetype && (
+                <Card className="bg-violet-600 text-white shadow-xl overflow-hidden relative">
+                     <Atom className="absolute -right-10 -top-10 h-48 w-48 text-white/10" />
+                     <Atom className="absolute -left-16 bottom-4 h-48 w-48 text-white/10" />
+                    <CardContent className="p-8 md:p-12 relative z-10">
+                         <p className="text-violet-200">Tipe kepribadian Anda adalah:</p>
+                         <h2 className="text-4xl md:text-5xl font-bold tracking-tight mt-1">{mbtiArchetype.archetype}</h2>
+                         <p className="text-2xl text-violet-200 font-medium mt-2">{mbtiArchetype.code}</p>
+                    </CardContent>
+                </Card>
+            )}
+
             <Card className="bg-gradient-to-br from-primary/90 to-primary text-primary-foreground text-center shadow-xl overflow-hidden">
                 <CardHeader className="p-8 md:p-12">
-                     <Badge variant="secondary" className="mx-auto w-fit text-sm px-4 py-1 mb-4">Hasil Tes Kepribadian Anda</Badge>
+                     <Badge variant="secondary" className="mx-auto w-fit text-sm px-4 py-1 mb-4">Tipe Kepribadian DISC</Badge>
                     <CardTitle className="text-4xl md:text-5xl font-bold tracking-tight">{report.title}</CardTitle>
                     <CardDescription className="text-lg md:text-xl text-primary-foreground/80 mt-2 max-w-2xl mx-auto">
                         {report.subtitle}
@@ -134,3 +147,5 @@ export default function AssessmentResultPage() {
         </div>
     )
 }
+
+    

@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useMemo, useState } from 'react';
@@ -219,7 +220,7 @@ export default function HrdAssessmentResultPage() {
         );
     }
     
-    const { report } = session.result;
+    const { report, mbtiArchetype } = session.result;
 
     return (
         <DashboardLayout pageTitle="Assessment Result" menuItems={menuItems}>
@@ -246,11 +247,23 @@ export default function HrdAssessmentResultPage() {
                     </Card>
                 )}
 
+                 {mbtiArchetype && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Tipe Kepribadian (16 Personalities)</CardTitle>
+                        </CardHeader>
+                        <CardContent className="flex items-center gap-4">
+                            <h3 className="text-2xl font-bold text-primary">{mbtiArchetype.archetype}</h3>
+                            <Badge variant="secondary" className="text-lg">{mbtiArchetype.code}</Badge>
+                        </CardContent>
+                    </Card>
+                )}
+
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
                     <div className="lg:col-span-2 space-y-6">
                         <Card className="bg-gradient-to-br from-primary/90 to-primary text-primary-foreground text-center shadow-lg overflow-hidden">
                             <CardHeader className="p-8">
-                                <Badge variant="secondary" className="mx-auto w-fit text-sm px-3 py-1 mb-3">Personality Type</Badge>
+                                <Badge variant="secondary" className="mx-auto w-fit text-sm px-3 py-1 mb-3">Tipe Kepribadian DISC</Badge>
                                 <CardTitle className="text-3xl font-bold tracking-tight">{report.title}</CardTitle>
                                 <CardDescription className="text-base text-primary-foreground/80 mt-1 max-w-xl mx-auto">
                                     {report.subtitle}
@@ -294,3 +307,5 @@ export default function HrdAssessmentResultPage() {
         </DashboardLayout>
     )
 }
+
+    
