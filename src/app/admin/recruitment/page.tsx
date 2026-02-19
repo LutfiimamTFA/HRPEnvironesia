@@ -176,9 +176,11 @@ export default function RecruitmentJobsPage() {
                         {job.publishStatus}
                       </Badge>
                     </TableCell>
-                    <TableCell className="flex items-center gap-2">
-                      <Users className="h-4 w-4 text-muted-foreground" /> 
-                      {job.applicantCount}
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Users className="h-4 w-4 text-muted-foreground" /> 
+                        {job.applicantCount}
+                      </div>
                     </TableCell>
                     <TableCell className="text-right">
                         <Button asChild variant="outline" size="sm">
