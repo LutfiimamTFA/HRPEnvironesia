@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
-import { useCollection, useFirestore, useMemoFirebase, addDocumentNonBlocking, useDoc } from '@/firebase';
+import { useCollection, useFirestore, useMemoFirebase, addDocumentNonBlocking, useDoc, setDocumentNonBlocking } from '@/firebase';
 import { collection, query, where, limit, serverTimestamp, Timestamp, getDocs, doc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -59,57 +59,83 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
             const existingSessionsSnap = await getDocs(sessionsQuery);
 
             if (!existingSessionsSnap.empty) {
-                const existingSession = existingSessionsSnap.docs[0];
-                if (existingSession.data().status === 'submitted') {
+                const existingSessionDoc = existingSessionsSnap.docs[0];
+                const existingSessionData = existingSessionDoc.data() as AssessmentSession;
+
+                // **NEW LOGIC: Check for and repair incomplete sessions**
+                if (!existingSessionData.selectedQuestionIds?.forcedChoice || existingSessionData.selectedQuestionIds.forcedChoice.length === 0) {
+                    toast({ title: 'Memperbaiki Sesi Tes', description: 'Sesi Anda tidak lengkap. Menyiapkan bagian kedua dari tes...' });
+
+                    const forcedChoiceQuery = query(collection(firestore, 'assessment_questions'),
+                        where('assessmentId', '==', 'default'),
+                        where('isActive', '==', true),
+                        where('type', '==', 'forced-choice')
+                    );
+                    const forcedChoiceQuestionsSnap = await getDocs(forcedChoiceQuery);
+                    const forcedChoiceIds = forcedChoiceQuestionsSnap.docs.map(doc => doc.id);
+                    const forcedChoiceCount = assessmentConfig?.forcedChoiceCount || 20;
+
+                    if (forcedChoiceIds.length < forcedChoiceCount) {
+                        toast({ variant: 'destructive', title: 'Bank Soal Tidak Cukup', description: `Soal Forced-Choice tidak mencukupi untuk perbaikan. Hubungi HRD.` });
+                        router.push('/careers/portal/applications');
+                        return;
+                    }
+
+                    const shuffle = (array: string[]) => {
+                      for (let i = array.length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [array[i], array[j]] = [array[j], array[i]];
+                      }
+                      return array;
+                    };
+                    const selectedForcedChoiceIds = shuffle(forcedChoiceIds).slice(0, forcedChoiceCount);
+
+                    await setDocumentNonBlocking(existingSessionDoc.ref, {
+                        selectedQuestionIds: {
+                            ...existingSessionData.selectedQuestionIds,
+                            forcedChoice: selectedForcedChoiceIds,
+                        },
+                        currentTestPart: 'forced-choice', // Direct them to the second part
+                        updatedAt: serverTimestamp()
+                    }, { merge: true });
+
+                    toast({ title: 'Sesi Diperbarui', description: 'Silakan lanjutkan ke bagian kedua.' });
+                    router.push(`/careers/portal/assessment/personality/${existingSessionDoc.id}`);
+                    return;
+                }
+
+                if (existingSessionData.status === 'submitted') {
                     toast({ title: 'Tes Selesai', description: 'Anda sudah menyelesaikan tes untuk lowongan ini. Melihat hasil...' });
-                    router.push(`/careers/portal/assessment/personality/result/${existingSession.id}`);
+                    router.push(`/careers/portal/assessment/personality/result/${existingSessionDoc.id}`);
                 } else {
                     toast({ title: 'Melanjutkan Sesi', description: 'Anda akan melanjutkan tes yang sedang berjalan.' });
-                    router.push(`/careers/portal/assessment/personality/${existingSession.id}`);
+                    router.push(`/careers/portal/assessment/personality/${existingSessionDoc.id}`);
                 }
                 return;
             }
 
             // Fetch question banks
             const questionsCollection = collection(firestore, 'assessment_questions');
-            
-            const likertQuery = query(questionsCollection, 
-                where('assessmentId', '==', 'default'), 
-                where('isActive', '==', true), 
-                where('type', '==', 'likert'), 
-            );
-            const forcedChoiceQuery = query(questionsCollection, 
-                where('assessmentId', '==', 'default'),
-                where('isActive', '==', true),
-                where('type', '==', 'forced-choice')
-            );
+            const likertQuery = query(questionsCollection, where('assessmentId', '==', 'default'), where('isActive', '==', true), where('type', '==', 'likert'));
+            const forcedChoiceQuery = query(questionsCollection, where('assessmentId', '==', 'default'), where('isActive', '==', true), where('type', '==', 'forced-choice'));
             
             const [likertQuestionsSnap, forcedChoiceQuestionsSnap] = await Promise.all([
                 getDocs(likertQuery),
                 getDocs(forcedChoiceQuery)
             ]);
 
-            const bigfiveIds = likertQuestionsSnap.docs.filter(d => d.data().engineKey === 'bigfive').map(d => d.id);
-            const discIds = likertQuestionsSnap.docs.filter(d => d.data().engineKey === 'disc').map(d => d.id);
+            const likertIds = likertQuestionsSnap.docs.map(d => d.id);
             const forcedChoiceIds = forcedChoiceQuestionsSnap.docs.map(doc => doc.id);
 
-            const bigfiveCount = assessmentConfig?.bigfiveCount || 30;
-            const discCount = assessmentConfig?.discCount || 20;
+            const likertCount = (assessmentConfig?.bigfiveCount || 30) + (assessmentConfig?.discCount || 20);
+            const forcedChoiceCount = assessmentConfig?.forcedChoiceCount || 20;
 
-            // Validate question bank size
-            if (bigfiveIds.length < bigfiveCount || discIds.length < discCount) {
-                toast({ variant: 'destructive', title: 'Bank Soal Tidak Cukup', description: `Soal Likert tidak mencukupi. Big Five: ${bigfiveIds.length}/${bigfiveCount}, DISC: ${discIds.length}/${discCount}. Hubungi HRD.` });
-                router.push('/careers/portal/applications');
-                return;
-            }
-            if(forcedChoiceIds.length < (assessmentConfig?.forcedChoiceCount || 20)) {
-                toast({ variant: 'destructive', title: 'Bank Soal Tidak Cukup', description: `Soal Forced-Choice tidak mencukupi (${forcedChoiceIds.length}/${assessmentConfig?.forcedChoiceCount || 20}). Hubungi HRD.` });
+            if (likertIds.length < likertCount || forcedChoiceIds.length < forcedChoiceCount) {
+                toast({ variant: 'destructive', title: 'Bank Soal Tidak Cukup', description: `Soal tidak mencukupi. Likert: ${likertIds.length}/${likertCount}, Forced-Choice: ${forcedChoiceIds.length}/${forcedChoiceCount}. Hubungi HRD.` });
                 router.push('/careers/portal/applications');
                 return;
             }
 
-
-            // Fisher-Yates shuffle
             const shuffle = (array: string[]) => {
               for (let i = array.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
@@ -129,8 +155,8 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
                 status: 'draft',
                 currentTestPart: 'likert',
                 selectedQuestionIds: {
-                    likert: shuffle([...bigfiveIds.slice(0, bigfiveCount), ...discIds.slice(0, discCount)]),
-                    forcedChoice: shuffle(forcedChoiceIds).slice(0, assessmentConfig?.forcedChoiceCount || 20),
+                    likert: shuffle(likertIds).slice(0, likertCount),
+                    forcedChoice: shuffle(forcedChoiceIds).slice(0, forcedChoiceCount),
                 },
                 answers: {},
                 scores: { disc: {}, bigfive: {} },
