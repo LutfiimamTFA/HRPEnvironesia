@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { collection, query, where, doc } from 'firebase/firestore';
 import { useCollection, useFirestore, useMemoFirebase, deleteDocumentNonBlocking } from '@/firebase';
 import type { Assessment, AssessmentQuestion, AssessmentTemplate } from '@/lib/types';
@@ -45,7 +45,17 @@ export function QuestionManagementClient({ assessment, template }: QuestionManag
   );
   const { data: questions, isLoading, error } = useCollection<AssessmentQuestion>(questionsQuery);
   
-  const sortedQuestions = questions?.sort((a, b) => a.order - b.order);
+  const sortedQuestions = useMemo(() => {
+    if (!questions) return [];
+    // Sort by engine, then dimension, then by text to get a stable order
+    return [...questions].sort((a, b) => {
+        const engineCompare = (a.engineKey || '').localeCompare(b.engineKey || '');
+        if (engineCompare !== 0) return engineCompare;
+        const dimCompare = (a.dimensionKey || '').localeCompare(b.dimensionKey || '');
+        if (dimCompare !== 0) return dimCompare;
+        return (a.text || '').localeCompare(b.text || '');
+    });
+  }, [questions]);
 
   const handleCreate = () => {
     setSelectedQuestion(null);
@@ -94,7 +104,7 @@ export function QuestionManagementClient({ assessment, template }: QuestionManag
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-16">Order</TableHead>
+              <TableHead className="w-16">#</TableHead>
               <TableHead>Content</TableHead>
               {!isForcedChoice && <TableHead>Engine</TableHead>}
               {!isForcedChoice && <TableHead>Dimension</TableHead>}
@@ -103,9 +113,9 @@ export function QuestionManagementClient({ assessment, template }: QuestionManag
           </TableHeader>
           <TableBody>
             {sortedQuestions && sortedQuestions.length > 0 ? (
-              sortedQuestions.map((q) => (
+              sortedQuestions.map((q, index) => (
                 <TableRow key={q.id}>
-                  <TableCell className="font-medium">{q.order}</TableCell>
+                  <TableCell className="font-medium">{index + 1}</TableCell>
                   <TableCell>
                     {q.type === 'likert' ? q.text : (
                         <ul className="list-disc list-inside text-xs">

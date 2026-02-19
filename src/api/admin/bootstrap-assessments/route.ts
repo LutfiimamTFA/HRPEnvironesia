@@ -49,8 +49,7 @@ export async function POST(req: NextRequest) {
     const templateSnap = await templateRef.get();
     const defaultTemplateData = {
         name: "Environesia Dual Personality Template",
-        format: "likert" as const,
-        engine: "dual" as const,
+        engine: "dual",
         scale: { type: "likert", points: 7, leftLabel: "Setuju", rightLabel: "Tidak setuju", ui: "bubbles" },
         dimensions: {
             disc: [
@@ -78,7 +77,7 @@ export async function POST(req: NextRequest) {
         results.existing.template = false;
     } else {
         const existingData = templateSnap.data()!;
-        if (!existingData.scale || !existingData.dimensions || !existingData.scoring || !existingData.format) {
+        if (!existingData.scale || !existingData.dimensions || !existingData.scoring) {
             batch.set(templateRef, defaultTemplateData, { merge: true });
             results.updated.template = true;
         }
@@ -131,36 +130,37 @@ export async function POST(req: NextRequest) {
         // --- 3. Bootstrap Default Questions (only if assessment is new) ---
         const questions = [
             // Big Five - Openness
-            { type: 'likert', order: 1, engineKey: "bigfive", dimensionKey: "O", text: "Saya memiliki imajinasi yang kaya dan sering melamun.", reverse: false, weight: 1 },
-            { type: 'likert', order: 2, engineKey: "bigfive", dimensionKey: "O", text: "Saya lebih suka rutinitas yang terprediksi daripada perubahan yang mendadak.", reverse: true, weight: 1 },
+            { type: 'likert', engineKey: "bigfive", dimensionKey: "O", text: "Saya memiliki imajinasi yang kaya dan sering melamun.", reverse: false, weight: 1 },
+            { type: 'likert', engineKey: "bigfive", dimensionKey: "O", text: "Saya lebih suka rutinitas yang terprediksi daripada perubahan yang mendadak.", reverse: true, weight: 1 },
             // Big Five - Conscientiousness
-            { type: 'likert', order: 3, engineKey: "bigfive", dimensionKey: "C", text: "Saya selalu memastikan pekerjaan saya selesai dengan sempurna.", reverse: false, weight: 1 },
-            { type: 'likert', order: 4, engineKey: "bigfive", dimensionKey: "C", text: "Saya sering menunda-nunda pekerjaan penting.", reverse: true, weight: 1 },
+            { type: 'likert', engineKey: "bigfive", dimensionKey: "C", text: "Saya selalu memastikan pekerjaan saya selesai dengan sempurna.", reverse: false, weight: 1 },
+            { type: 'likert', engineKey: "bigfive", dimensionKey: "C", text: "Saya sering menunda-nunda pekerjaan penting.", reverse: true, weight: 1 },
             // Big Five - Extraversion
-            { type: 'likert', order: 5, engineKey: "bigfive", dimensionKey: "E", text: "Saya tidak suka menjadi pusat perhatian.", reverse: true, weight: 1 },
-            { type: 'likert', order: 6, engineKey: "bigfive", dimensionKey: "E", text: "Saya mudah bergaul dan memulai percakapan dengan orang baru.", reverse: false, weight: 1 },
+            { type: 'likert', engineKey: "bigfive", dimensionKey: "E", text: "Saya tidak suka menjadi pusat perhatian.", reverse: true, weight: 1 },
+            { type: 'likert', engineKey: "bigfive", dimensionKey: "E", text: "Saya mudah bergaul dan memulai percakapan dengan orang baru.", reverse: false, weight: 1 },
             // Big Five - Agreeableness
-            { type: 'likert', order: 7, engineKey: "bigfive", dimensionKey: "A", text: "Saya lebih mementingkan keharmonisan daripada menyampaikan pendapat yang bisa menimbulkan konflik.", reverse: false, weight: 1 },
-            { type: 'likert', order: 8, engineKey: "bigfive", dimensionKey: "A", text: "Saya tidak ragu mengkritik orang lain jika memang diperlukan.", reverse: true, weight: 1 },
+            { type: 'likert', engineKey: "bigfive", dimensionKey: "A", text: "Saya lebih mementingkan keharmonisan daripada menyampaikan pendapat yang bisa menimbulkan konflik.", reverse: false, weight: 1 },
+            { type: 'likert', engineKey: "bigfive", dimensionKey: "A", text: "Saya tidak ragu mengkritik orang lain jika memang diperlukan.", reverse: true, weight: 1 },
             // Big Five - Neuroticism
-            { type: 'likert', order: 9, engineKey: "bigfive", dimensionKey: "N", text: "Saya sering merasa cemas atau khawatir tentang masa depan.", reverse: false, weight: 1 },
-            { type: 'likert', order: 10, engineKey: "bigfive", dimensionKey: "N", text: "Saya merasa santai dan tenang dalam banyak situasi.", reverse: true, weight: 1 },
+            { type: 'likert', engineKey: "bigfive", dimensionKey: "N", text: "Saya sering merasa cemas atau khawatir tentang masa depan.", reverse: false, weight: 1 },
+            { type: 'likert', engineKey: "bigfive", dimensionKey: "N", text: "Saya merasa santai dan tenang dalam banyak situasi.", reverse: true, weight: 1 },
             
             // DISC - Dominance
-            { type: 'likert', order: 11, engineKey: "disc", dimensionKey: "D", text: "Saya suka mengambil kendali dalam sebuah proyek atau diskusi.", reverse: false, weight: 1 },
-            { type: 'likert', order: 12, engineKey: "disc", dimensionKey: "D", text: "Saya lebih memilih untuk mengikuti arahan daripada memimpin.", reverse: true, weight: 1 },
+            { type: 'likert', engineKey: "disc", dimensionKey: "D", text: "Saya suka mengambil kendali dalam sebuah proyek atau diskusi.", reverse: false, weight: 1 },
+            { type: 'likert', engineKey: "disc", dimensionKey: "D", text: "Saya lebih memilih untuk mengikuti arahan daripada memimpin.", reverse: true, weight: 1 },
             // DISC - Influence
-            { type: 'likert', order: 13, engineKey: "disc", dimensionKey: "I", text: "Saya antusias dan pandai memotivasi orang lain.", reverse: false, weight: 1 },
-            { type: 'likert', order: 14, engineKey: "disc", dimensionKey: "I", text: "Saya lebih suka bekerja sendiri daripada berkolaborasi secara intensif.", reverse: true, weight: 1 },
+            { type: 'likert', engineKey: "disc", dimensionKey: "I", text: "Saya antusias dan pandai memotivasi orang lain.", reverse: false, weight: 1 },
+            { type: 'likert', engineKey: "disc", dimensionKey: "I", text: "Saya lebih suka bekerja sendiri daripada berkolaborasi secara intensif.", reverse: true, weight: 1 },
             // DISC - Steadiness
-            { type: 'likert', order: 15, engineKey: "disc", dimensionKey: "S", text: "Saya adalah pendengar yang baik dan sabar.", reverse: false, weight: 1 },
-            { type: 'likert', order: 16, engineKey: "disc", dimensionKey: "S", text: "Saya menyukai lingkungan kerja yang dinamis dan selalu berubah.", reverse: true, weight: 1 },
+            { type: 'likert', engineKey: "disc", dimensionKey: "S", text: "Saya adalah pendengar yang baik dan sabar.", reverse: false, weight: 1 },
+            { type: 'likert', engineKey: "disc", dimensionKey: "S", text: "Saya menyukai lingkungan kerja yang dinamis dan selalu berubah.", reverse: true, weight: 1 },
             // DISC - Conscientiousness
-            { type: 'likert', order: 17, engineKey: "disc", dimensionKey: "C", text: "Saya selalu memeriksa kembali pekerjaan saya untuk memastikan tidak ada kesalahan.", reverse: false, weight: 1 },
-            { type: 'likert', order: 18, engineKey: "disc", dimensionKey: "C", text: "Saya lebih fokus pada gambaran besar daripada detail-detail kecil.", reverse: true, weight: 1 },
-             // Mixed
-            { type: 'likert', order: 19, engineKey: "bigfive", dimensionKey: "E", text: "Di sebuah pesta, saya cenderung berdiam diri di sudut.", reverse: true, weight: 1 },
-            { type: 'likert', order: 20, engineKey: "disc", dimensionKey: "D", text: "Saya tidak takut untuk menghadapi tantangan yang sulit.", reverse: false, weight: 1 },
+            { type: 'likert', engineKey: "disc", dimensionKey: "C", text: "Saya lebih fokus pada gambaran besar daripada detail-detail kecil.", reverse: true, weight: 1 },
+            
+            // New distinct questions
+            { type: 'likert', engineKey: "bigfive", dimensionKey: "C", text: "Saya membuat rencana yang jelas dan menepatinya.", reverse: false, weight: 1 },
+            { type: 'likert', engineKey: "bigfive", dimensionKey: "E", text: "Saya merasa lelah setelah bersosialisasi dalam waktu lama.", reverse: true, weight: 1 },
+            { type: 'likert', engineKey: "disc", dimensionKey: "D", text: "Saya langsung menyatakan apa yang saya inginkan dalam sebuah diskusi.", reverse: false, weight: 1 },
         ];
         
         for (const q of questions) {
