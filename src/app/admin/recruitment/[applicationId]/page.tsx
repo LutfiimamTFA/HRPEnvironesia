@@ -30,6 +30,17 @@ function ApplicationDetailSkeleton() {
   return <Skeleton className="h-[500px] w-full" />;
 }
 
+const statusDisplayLabels: Record<JobApplication['status'], string> = {
+    draft: 'Draf',
+    submitted: 'Lamaran Diterima',
+    psychotest: 'Tes Kepribadian',
+    verification: 'Verifikasi',
+    document_submission: 'Pengumpulan Dokumen',
+    interview: 'Wawancara',
+    hired: 'Diterima Kerja',
+    rejected: 'Ditolak',
+};
+
 function StatusManager({ application }: { application: JobApplication }) {
   const [selectedStatus, setSelectedStatus] = useState(application.status);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -63,12 +74,14 @@ function StatusManager({ application }: { application: JobApplication }) {
   return (
     <div className="flex items-center gap-2">
       <Select value={selectedStatus} onValueChange={(v) => setSelectedStatus(v as JobApplication['status'])}>
-        <SelectTrigger className="w-[180px]">
+        <SelectTrigger className="w-[220px]">
           <SelectValue placeholder="Update status" />
         </SelectTrigger>
         <SelectContent>
           {APPLICATION_STATUSES.map(status => (
-            <SelectItem key={status} value={status} className="capitalize">{status.replace('_', ' ')}</SelectItem>
+            <SelectItem key={status} value={status}>
+              {statusDisplayLabels[status] || status.replace('_', ' ')}
+            </SelectItem>
           ))}
         </SelectContent>
       </Select>
