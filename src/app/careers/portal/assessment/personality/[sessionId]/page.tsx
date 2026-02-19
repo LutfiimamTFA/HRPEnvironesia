@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
 import { collection, doc, query, where } from 'firebase/firestore';
-import type { AssessmentQuestion, AssessmentSession, AssessmentTemplate } from '@/lib/types';
+import type { Assessment, AssessmentQuestion, AssessmentSession, AssessmentTemplate } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -58,25 +58,43 @@ function TakeAssessmentPage() {
   const [answers, setAnswers] = useState<Record<string, number | { most: string, least: string }>>({});
   const [isFinishing, setIsFinishing] = useState(false);
   
-  // Fetch session
+  // 1. Fetch session
   const sessionRef = useMemoFirebase(() => doc(firestore, 'assessment_sessions', sessionId), [firestore, sessionId]);
   const { data: session, isLoading: sessionLoading } = useDoc<AssessmentSession>(sessionRef);
   
-  // Fetch assessment template
-  const templateRef = useMemoFirebase(() => {
+  // 2. Fetch the assessment document using the ID from the session
+  const assessmentRef = useMemoFirebase(() => {
     if (!session) return null;
-    return doc(collection(firestore, 'assessment_templates'), where('assessmentId', '==', session.assessmentId));
+    return doc(firestore, 'assessments', session.assessmentId);
   }, [firestore, session]);
+  const { data: assessment, isLoading: assessmentLoading } = useDoc<Assessment>(assessmentRef);
+
+  // 3. Fetch the template using the ID from the assessment
+  const templateRef = useMemoFirebase(() => {
+    if (!assessment) return null;
+    return doc(firestore, 'assessment_templates', assessment.templateId);
+  }, [firestore, assessment]);
   const { data: template, isLoading: templateLoading } = useDoc<AssessmentTemplate>(templateRef)
   
-  // Fetch questions once session is loaded
+  // 4. Fetch the specific questions selected for this session
   const questionsQuery = useMemoFirebase(() => {
     if (!session) return null;
-    return query(collection(firestore, 'assessment_questions'), where('assessmentId', '==', session.assessmentId));
+    const allIds = [
+      ...(session.selectedQuestionIds?.bigfive || []),
+      ...(session.selectedQuestionIds?.disc || [])
+    ];
+    if (allIds.length === 0) return null;
+    return query(collection(firestore, 'assessment_questions'), where('__name__', 'in', allIds));
   }, [firestore, session]);
   const { data: questions, isLoading: questionsLoading } = useCollection<AssessmentQuestion>(questionsQuery);
   
-  const sortedQuestions = useMemo(() => questions?.sort((a, b) => a.order - b.order) || [], [questions]);
+  // 5. Reconstruct the question order based on the session's ID list
+  const sortedQuestions = useMemo(() => {
+      if (!questions || !session?.selectedQuestionIds) return [];
+      const questionMap = new Map(questions.map(q => [q.id, q]));
+      const allIds = [...(session.selectedQuestionIds.bigfive || []), ...(session.selectedQuestionIds.disc || [])];
+      return allIds.map(id => questionMap.get(id)).filter((q): q is AssessmentQuestion => !!q);
+  }, [questions, session]);
 
   useEffect(() => {
     if (session) {
@@ -84,7 +102,7 @@ function TakeAssessmentPage() {
     }
   }, [session]);
   
-  const isLoading = authLoading || sessionLoading || templateLoading || (session && questionsLoading);
+  const isLoading = authLoading || sessionLoading || assessmentLoading || templateLoading || (session && questionsLoading);
 
   const handleAnswerChange = async (questionId: string, value: string) => {
     const numericValue = parseInt(value, 10);
