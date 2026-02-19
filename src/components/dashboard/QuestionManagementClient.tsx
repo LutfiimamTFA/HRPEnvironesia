@@ -134,9 +134,9 @@ export function QuestionManagementClient({ assessment, template }: QuestionManag
                 <TableRow key={q.id}>
                   <TableCell className="font-medium">{index + 1}</TableCell>
                   <TableCell>
-                    <div className="max-w-md break-words text-foreground">
+                    <div className="max-w-md break-words text-foreground whitespace-pre-wrap">
                       {q.type === 'likert' ? q.text : (
-                          <ul className="list-disc list-inside text-xs">
+                          <ul className="list-disc list-inside text-xs space-y-1">
                               {q.forcedChoices?.map((choice, i) => <li key={i}>{choice.text}</li>)}
                           </ul>
                       )}
