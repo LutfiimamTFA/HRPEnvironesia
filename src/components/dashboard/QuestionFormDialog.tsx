@@ -20,7 +20,6 @@ import { cn } from '@/lib/utils';
 
 const likertSchema = z.object({
   type: z.literal('likert'),
-  order: z.coerce.number().int().min(1, 'Order must be at least 1'),
   text: z.string().min(10, 'Question text is required.'),
   dimension: z.string({ required_error: 'Dimension is required.' }),
   weight: z.coerce.number().default(1),
@@ -29,7 +28,6 @@ const likertSchema = z.object({
 
 const forcedChoiceSchema = z.object({
   type: z.literal('forced-choice'),
-  order: z.coerce.number().int().min(1, 'Order must be at least 1'),
   forcedChoices: z.array(z.object({
     text: z.string().min(3, 'Statement is required.'),
     dimension: z.string({ required_error: 'Dimension must be selected.' })
@@ -59,7 +57,6 @@ export function QuestionFormDialog({ open, onOpenChange, question, assessment, t
     defaultValues: {
         type: template.format,
         ...(isForcedChoice ? {
-            order: 1,
             forcedChoices: [
                 { text: '', dimension: ''},
                 { text: '', dimension: ''},
@@ -67,7 +64,7 @@ export function QuestionFormDialog({ open, onOpenChange, question, assessment, t
                 { text: '', dimension: ''},
             ]
         } : {
-            order: 1, text: '', dimension: undefined, weight: 1, reverse: false
+            text: '', dimension: undefined, weight: 1, reverse: false
         })
     },
   });
@@ -83,13 +80,11 @@ export function QuestionFormDialog({ open, onOpenChange, question, assessment, t
         if (question.type === 'forced-choice') {
             form.reset({
                 type: 'forced-choice',
-                order: question.order,
                 forcedChoices: question.forcedChoices?.map(fc => ({ text: fc.text, dimension: `${fc.engineKey}|${fc.dimensionKey}` })) || [],
             });
         } else {
             form.reset({
                 type: 'likert',
-                order: question.order,
                 text: question.text || '',
                 dimension: `${question.engineKey}|${question.dimensionKey}`,
                 weight: question.weight || 1,
@@ -100,10 +95,9 @@ export function QuestionFormDialog({ open, onOpenChange, question, assessment, t
         form.reset({
           type: template.format,
           ...(isForcedChoice ? {
-              order: 1,
               forcedChoices: Array(4).fill({ text: '', dimension: ''}),
           } : {
-              order: 1, text: '', dimension: undefined, weight: 1, reverse: false,
+              text: '', dimension: undefined, weight: 1, reverse: false,
           })
         });
       }
@@ -118,7 +112,6 @@ export function QuestionFormDialog({ open, onOpenChange, question, assessment, t
         let questionData: Partial<AssessmentQuestion> = {
             assessmentId: assessment.id!,
             isActive: true,
-            order: values.order,
             type: values.type,
         };
 
@@ -165,7 +158,6 @@ export function QuestionFormDialog({ open, onOpenChange, question, assessment, t
             <form id="question-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4 pr-4">
                 {isForcedChoice ? (
                     <>
-                        <FormField control={form.control} name="order" render={({ field }) => (<FormItem><FormLabel>Order</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
                         <FormLabel>Statements</FormLabel>
                         <div className="space-y-4">
                         {fields.map((field, index) => (
@@ -215,10 +207,7 @@ export function QuestionFormDialog({ open, onOpenChange, question, assessment, t
                 ) : (
                     <>
                         <FormField control={form.control} name="text" render={({ field }) => (<FormItem><FormLabel>Question Text</FormLabel><FormControl><Textarea placeholder="e.g., Saya suka mencoba hal-hal baru..." {...field} /></FormControl><FormMessage /></FormItem>)} />
-                        <div className="grid grid-cols-2 gap-4">
-                            <FormField control={form.control} name="order" render={({ field }) => (<FormItem><FormLabel>Order</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                            <FormField control={form.control} name="weight" render={({ field }) => (<FormItem><FormLabel>Weight</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                        </div>
+                        <FormField control={form.control} name="weight" render={({ field }) => (<FormItem><FormLabel>Weight</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
                         <FormField control={form.control} name="dimension" render={({ field }) => (
                         <FormItem>
                             <FormLabel>Dimension</FormLabel>
