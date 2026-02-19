@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection } from 'firebase/firestore';
+import { useCollection, useFirestore, useMemoFirebase, useDoc } from '@/firebase';
+import { collection, doc } from 'firebase/firestore';
 import type { Assessment, AssessmentConfig } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -30,13 +30,12 @@ export function AssessmentManagementClient() {
   );
   const { data: assessments, isLoading, error, mutate } = useCollection<Assessment>(assessmentsQuery);
 
-  const configQuery = useMemoFirebase(
-    () => collection(firestore, 'assessment_config'),
+  const configDocRef = useMemoFirebase(
+    () => doc(firestore, 'assessment_config', 'main'),
     [firestore]
   );
-  const { data: configs, isLoading: isLoadingConfig, error: configError } = useCollection<AssessmentConfig>(configQuery);
-  const assessmentConfig = configs?.[0];
-
+  const { data: assessmentConfig, isLoading: isLoadingConfig, error: configError } = useDoc<AssessmentConfig>(configDocRef);
+  
   const isLoadingData = isLoading || isLoadingConfig;
   const dataError = error || configError;
   const personalityTest = assessments?.find(a => a.id === 'default');
@@ -84,7 +83,7 @@ export function AssessmentManagementClient() {
 
        <Separator />
        
-       <AssessmentSettingsClient config={assessmentConfig} />
+       <AssessmentSettingsClient config={assessmentConfig || undefined} />
     </div>
   );
 }
