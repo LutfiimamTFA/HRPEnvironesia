@@ -6,16 +6,18 @@ import type { Assessment, AssessmentTemplate, AssessmentQuestion, AssessmentSess
 // Helper function to get the max possible score for a dimension
 function getMaxScore(questions: AssessmentQuestion[], dimensionKey: string, engineKey: 'disc' | 'bigfive', scalePoints: number) {
     return questions
-        .filter(q => q.engineKey === engineKey && q.dimensionKey === dimensionKey)
+        .filter(q => q.engineKey === engineKey && q.dimensionKey === dimensionKey && q.id && session.selectedQuestionIds?.[engineKey]?.includes(q.id))
         .reduce((sum, q) => sum + (scalePoints * (q.weight || 1)), 0);
 }
 
 // Helper function to get the min possible score for a dimension
 function getMinScore(questions: AssessmentQuestion[], dimensionKey: string, engineKey: 'disc' | 'bigfive') {
     return questions
-        .filter(q => q.engineKey === engineKey && q.dimensionKey === dimensionKey)
+        .filter(q => q.engineKey === engineKey && q.dimensionKey === dimensionKey && q.id && session.selectedQuestionIds?.[engineKey]?.includes(q.id))
         .reduce((sum, q) => sum + (1 * (q.weight || 1)), 0);
 }
+
+let session: AssessmentSession;
 
 
 export async function POST(req: NextRequest) {
@@ -37,7 +39,7 @@ export async function POST(req: NextRequest) {
     if (!sessionDoc.exists) {
       return NextResponse.json({ error: 'Session not found.' }, { status: 404 });
     }
-    const session = { ...sessionDoc.data(), id: sessionDoc.id } as AssessmentSession;
+    session = { ...sessionDoc.data(), id: sessionDoc.id } as AssessmentSession;
 
     // Prevent re-submission
     if (session.status === 'submitted') {
@@ -74,7 +76,18 @@ export async function POST(req: NextRequest) {
         throw new Error(`Scoring for 'forced-choice' assessments is not yet implemented.`);
     }
 
-    const questionsQuery = db.collection('assessment_questions').where('assessmentId', '==', session.assessmentId).where('isActive', '==', true);
+    // Combine question IDs from both test parts
+    const allQuestionIds = [
+      ...(session.selectedQuestionIds?.bigfive || []),
+      ...(session.selectedQuestionIds?.disc || []),
+    ];
+
+    if (allQuestionIds.length === 0) {
+      throw new Error("No questions were selected for this assessment session.");
+    }
+    
+    // Fetch only the selected questions
+    const questionsQuery = db.collection('assessment_questions').where(admin.firestore.FieldPath.documentId(), 'in', allQuestionIds);
     const questionsSnap = await questionsQuery.get();
     const questions = questionsSnap.docs.map(doc => ({ ...doc.data(), id: doc.id } as AssessmentQuestion));
 
@@ -179,7 +192,7 @@ export async function POST(req: NextRequest) {
     if (session.applicationId) {
       const appRef = db.collection('applications').doc(session.applicationId);
       const appDoc = await appRef.get();
-      if (appDoc.exists && appDoc.data()?.status === 'psychotest') {
+      if (appDoc.exists && appDoc.data()?.status === 'tes_kepribadian') {
         await appRef.update({
           status: 'verification',
           updatedAt: Timestamp.now(),

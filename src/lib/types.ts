@@ -1,5 +1,4 @@
 
-
 import type { Timestamp } from 'firebase/firestore';
 
 export const ROLES = ['super-admin', 'hrd', 'manager', 'kandidat', 'karyawan'] as const;
@@ -64,7 +63,7 @@ export type JobApplication = {
   brandName: string;
   jobType: 'fulltime' | 'internship' | 'contract';
   location: string;
-  status: 'draft' | 'submitted' | 'psychotest' | 'verification' | 'document_submission' | 'interview' | 'rejected' | 'hired';
+  status: 'draft' | 'submitted' | 'tes_kepribadian' | 'verification' | 'document_submission' | 'interview' | 'rejected' | 'hired';
   jobApplyDeadline?: Timestamp | null;
   personalityTestAssignedAt?: Timestamp;
   createdAt: Timestamp;
@@ -210,6 +209,10 @@ export type Assessment = {
   publishStatus: 'draft' | 'published';
   createdAt: Timestamp;
   updatedAt: Timestamp;
+  questionConfig?: {
+    bigfiveCount?: number;
+    discCount?: number;
+  },
   resultTemplates: {
     disc: Record<string, Partial<ResultTemplate>>;
     bigfive: Record<string, { highText: string; midText: string; lowText: string }>;
@@ -269,6 +272,11 @@ export type AssessmentSession = {
   jobPosition?: string;
   brandName?: string;
   status: 'draft' | 'submitted';
+  currentTestPart: 'bigfive' | 'disc';
+  selectedQuestionIds?: {
+    bigfive: string[];
+    disc: string[];
+  };
   answers: { [questionId: string]: number | { most: string; least: string } };
   scores: {
     disc: Record<string, number>;

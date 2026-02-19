@@ -2,7 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { JobApplication } from "@/lib/types";
 
-export const APPLICATION_STATUSES: JobApplication['status'][] = ['submitted', 'psychotest', 'verification', 'document_submission', 'interview', 'hired', 'rejected'];
+export const APPLICATION_STATUSES: JobApplication['status'][] = ['submitted', 'tes_kepribadian', 'verification', 'document_submission', 'interview', 'hired', 'rejected'];
 
 interface ApplicationStatusBadgeProps {
   status: JobApplication['status'];
@@ -13,7 +13,7 @@ export function ApplicationStatusBadge({ status, className }: ApplicationStatusB
   const statusConfig = {
     draft: { label: 'Draf', variant: 'secondary' as const },
     submitted: { label: 'Terkirim', variant: 'default' as const },
-    psychotest: { label: 'Tes Kepribadian', variant: 'default' as const, className: 'bg-blue-600 hover:bg-blue-700' },
+    tes_kepribadian: { label: 'Tes Kepribadian', variant: 'default' as const, className: 'bg-blue-600 hover:bg-blue-700' },
     verification: { label: 'Verifikasi', variant: 'default' as const, className: 'bg-purple-600 hover:bg-purple-700' },
     document_submission: { label: 'Dokumen', variant: 'default' as const, className: 'bg-cyan-600 hover:bg-cyan-700' },
     interview: { label: 'Wawancara', variant: 'default' as const, className: 'bg-orange-500 hover:bg-orange-600' },

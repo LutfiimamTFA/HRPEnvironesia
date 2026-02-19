@@ -186,7 +186,7 @@ service cloud.firestore {
         }
         function isInternalStatusUpdate() {
             let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
-            let allowedKeys = ['status', 'updatedAt'];
+            let allowedKeys = ['status', 'updatedAt', 'personalityTestAssignedAt'];
             return isInternal() && changedKeys.hasOnly(allowedKeys);
         }
     }
@@ -215,7 +215,7 @@ service cloud.firestore {
     }
     
     match /assessment_questions/{questionId} {
-      allow list: if isSignedIn();
+      allow list: if isSignedIn(); // Must be relatively open for where-in queries. Client logic is the main guard.
       allow get: if isSignedIn();
       allow write: if isInternal() && getUserData().role in ['super_admin', 'hrd'];
     }

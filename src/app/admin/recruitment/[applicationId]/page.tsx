@@ -33,7 +33,7 @@ function ApplicationDetailSkeleton() {
 const statusDisplayLabels: Record<JobApplication['status'], string> = {
     draft: 'Draf',
     submitted: 'Lamaran Diterima',
-    psychotest: 'Tes Kepribadian',
+    tes_kepribadian: 'Tes Kepribadian',
     verification: 'Verifikasi',
     document_submission: 'Pengumpulan Dokumen',
     interview: 'Wawancara',
@@ -56,8 +56,8 @@ function StatusManager({ application }: { application: JobApplication }) {
         updatedAt: serverTimestamp(),
       };
 
-      // If moving to psychotest stage and it hasn't been assigned before
-      if (selectedStatus === 'psychotest' && !application.personalityTestAssignedAt) {
+      // If moving to personality test stage and it hasn't been assigned before
+      if (selectedStatus === 'tes_kepribadian' && !application.personalityTestAssignedAt) {
         updatePayload.personalityTestAssignedAt = serverTimestamp();
       }
 
