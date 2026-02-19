@@ -180,6 +180,7 @@ export type AssessmentConfig = {
     id?: string;
     bigfiveCount: number;
     discCount: number;
+    forcedChoiceCount?: number;
     updatedAt: Timestamp;
 }
 
@@ -257,7 +258,7 @@ export type AssessmentQuestion = {
   id?: string;
   assessmentId: string;
   type: 'likert' | 'forced-choice';
-  order: number;
+  order?: number;
   isActive: boolean;
   
   // Likert specific
@@ -281,10 +282,10 @@ export type AssessmentSession = {
   jobPosition?: string;
   brandName?: string;
   status: 'draft' | 'submitted';
-  currentTestPart?: 'bigfive' | 'disc';
+  currentTestPart?: 'likert' | 'forced-choice';
   selectedQuestionIds?: {
-    bigfive: string[];
-    disc: string[];
+    likert: string[];
+    forcedChoice: string[];
   };
   answers: { [questionId: string]: number | { most: string; least: string } };
   scores: {

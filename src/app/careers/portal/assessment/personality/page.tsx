@@ -73,36 +73,41 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
             // Fetch question banks
             const questionsCollection = collection(firestore, 'assessment_questions');
             
-            const bigfiveQuery = query(questionsCollection, 
+            const likertQuery = query(questionsCollection, 
                 where('assessmentId', '==', 'default'), 
                 where('isActive', '==', true), 
                 where('type', '==', 'likert'), 
-                where('engineKey', '==', 'bigfive')
             );
-            const discQuery = query(questionsCollection, 
+            const forcedChoiceQuery = query(questionsCollection, 
                 where('assessmentId', '==', 'default'),
                 where('isActive', '==', true),
-                where('type', '==', 'likert'),
-                where('engineKey', '==', 'disc')
+                where('type', '==', 'forced-choice')
             );
             
-            const [bigfiveQuestionsSnap, discQuestionsSnap] = await Promise.all([
-                getDocs(bigfiveQuery),
-                getDocs(discQuery)
+            const [likertQuestionsSnap, forcedChoiceQuestionsSnap] = await Promise.all([
+                getDocs(likertQuery),
+                getDocs(forcedChoiceQuery)
             ]);
 
-            const bigfiveIds = bigfiveQuestionsSnap.docs.map(doc => doc.id);
-            const discIds = discQuestionsSnap.docs.map(doc => doc.id);
+            const bigfiveIds = likertQuestionsSnap.docs.filter(d => d.data().engineKey === 'bigfive').map(d => d.id);
+            const discIds = likertQuestionsSnap.docs.filter(d => d.data().engineKey === 'disc').map(d => d.id);
+            const forcedChoiceIds = forcedChoiceQuestionsSnap.docs.map(doc => doc.id);
 
             const bigfiveCount = assessmentConfig?.bigfiveCount || 30;
             const discCount = assessmentConfig?.discCount || 20;
 
             // Validate question bank size
             if (bigfiveIds.length < bigfiveCount || discIds.length < discCount) {
-                toast({ variant: 'destructive', title: 'Bank Soal Tidak Cukup', description: 'Jumlah soal yang tersedia tidak mencukupi untuk memulai tes. Hubungi HRD.' });
+                toast({ variant: 'destructive', title: 'Bank Soal Tidak Cukup', description: `Soal Likert tidak mencukupi. Big Five: ${bigfiveIds.length}/${bigfiveCount}, DISC: ${discIds.length}/${discCount}. Hubungi HRD.` });
                 router.push('/careers/portal/applications');
                 return;
             }
+            if(forcedChoiceIds.length < (assessmentConfig?.forcedChoiceCount || 20)) {
+                toast({ variant: 'destructive', title: 'Bank Soal Tidak Cukup', description: `Soal Forced-Choice tidak mencukupi (${forcedChoiceIds.length}/${assessmentConfig?.forcedChoiceCount || 20}). Hubungi HRD.` });
+                router.push('/careers/portal/applications');
+                return;
+            }
+
 
             // Fisher-Yates shuffle
             const shuffle = (array: string[]) => {
@@ -122,10 +127,10 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
                 jobPosition: application.jobPosition,
                 brandName: application.brandName,
                 status: 'draft',
-                currentTestPart: 'bigfive',
+                currentTestPart: 'likert',
                 selectedQuestionIds: {
-                    bigfive: shuffle(bigfiveIds).slice(0, bigfiveCount),
-                    disc: shuffle(discIds).slice(0, discCount),
+                    likert: shuffle([...bigfiveIds.slice(0, bigfiveCount), ...discIds.slice(0, discCount)]),
+                    forcedChoice: shuffle(forcedChoiceIds).slice(0, assessmentConfig?.forcedChoiceCount || 20),
                 },
                 answers: {},
                 scores: { disc: {}, bigfive: {} },

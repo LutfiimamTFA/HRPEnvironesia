@@ -18,6 +18,7 @@ import { useToast } from '@/hooks/use-toast';
 const settingsSchema = z.object({
   bigfiveCount: z.number().int().min(10, 'Minimal 10 soal').max(100, 'Maksimal 100 soal'),
   discCount: z.number().int().min(10, 'Minimal 10 soal').max(100, 'Maksimal 100 soal'),
+  forcedChoiceCount: z.number().int().min(10, 'Minimal 10 soal').max(100, 'Maksimal 100 soal'),
 });
 
 type FormValues = z.infer<typeof settingsSchema>;
@@ -36,6 +37,7 @@ export function AssessmentSettingsClient({ config }: AssessmentSettingsClientPro
     defaultValues: {
       bigfiveCount: config?.bigfiveCount || 30,
       discCount: config?.discCount || 20,
+      forcedChoiceCount: config?.forcedChoiceCount || 20,
     },
   });
 
@@ -44,6 +46,7 @@ export function AssessmentSettingsClient({ config }: AssessmentSettingsClientPro
       form.reset({
         bigfiveCount: config.bigfiveCount || 30,
         discCount: config.discCount || 20,
+        forcedChoiceCount: config.forcedChoiceCount || 20,
       });
     }
   }, [config, form]);
@@ -80,7 +83,7 @@ export function AssessmentSettingsClient({ config }: AssessmentSettingsClientPro
               name="bigfiveCount"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Jumlah Soal Tes 1 (Big Five)</FormLabel>
+                  <FormLabel>Jumlah Soal Likert (Big Five)</FormLabel>
                   <FormControl>
                     <div className="flex items-center gap-4">
                       <Slider
@@ -111,7 +114,38 @@ export function AssessmentSettingsClient({ config }: AssessmentSettingsClientPro
               name="discCount"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Jumlah Soal Tes 2 (DISC)</FormLabel>
+                  <FormLabel>Jumlah Soal Likert (DISC)</FormLabel>
+                   <FormControl>
+                    <div className="flex items-center gap-4">
+                      <Slider
+                        min={10}
+                        max={100}
+                        step={5}
+                        value={[field.value]}
+                        onValueChange={(vals) => field.onChange(vals[0])}
+                        className="flex-1"
+                      />
+                      <Input
+                        type="number"
+                        min={10}
+                        max={100}
+                        value={field.value}
+                        onChange={(e) => field.onChange(parseInt(e.target.value, 10))}
+                        className="w-20"
+                      />
+                    </div>
+                  </FormControl>
+                  <FormDescription>Pilih antara 10 dan 100 soal.</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+             <FormField
+              control={form.control}
+              name="forcedChoiceCount"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Jumlah Soal Forced-Choice</FormLabel>
                    <FormControl>
                     <div className="flex items-center gap-4">
                       <Slider
