@@ -1,4 +1,3 @@
-
 import type { Timestamp } from 'firebase/firestore';
 
 export const ROLES = ['super-admin', 'hrd', 'manager', 'kandidat', 'karyawan'] as const;
@@ -51,6 +50,9 @@ export type Job = {
   updatedBy: string;
 };
 
+export const APPLICATION_STATUSES = ['submitted', 'tes_kepribadian', 'verification', 'document_submission', 'interview', 'hired', 'rejected'] as const;
+export type ApplicationStatus = (typeof APPLICATION_STATUSES)[number];
+
 export type JobApplication = {
   id?: string;
   candidateUid: string;
@@ -63,7 +65,7 @@ export type JobApplication = {
   brandName: string;
   jobType: 'fulltime' | 'internship' | 'contract';
   location: string;
-  status: 'draft' | 'submitted' | 'tes_kepribadian' | 'verification' | 'document_submission' | 'interview' | 'rejected' | 'hired';
+  status: ApplicationStatus;
   jobApplyDeadline?: Timestamp | null;
   personalityTestAssignedAt?: Timestamp;
   createdAt: Timestamp;
@@ -173,6 +175,13 @@ export type Profile = {
 };
 
 // --- ASSESSMENT TYPES ---
+
+export type AssessmentConfig = {
+    id?: string;
+    bigfiveCount: number;
+    discCount: number;
+    updatedAt: Timestamp;
+}
 
 export type AssessmentFormat = 'likert' | 'forced-choice';
 
