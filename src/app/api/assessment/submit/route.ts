@@ -1,20 +1,21 @@
+'use server';
 
 import { NextRequest, NextResponse } from 'next/server';
 import admin from '@/lib/firebase/admin';
 import { Timestamp } from 'firebase-admin/firestore';
 import type { Assessment, AssessmentTemplate, AssessmentQuestion, AssessmentSession } from '@/lib/types';
 
-// Helper function to get the max possible score for a dimension
+// Helper function to get the max possible score for a Likert dimension
 function getMaxScore(questions: AssessmentQuestion[], dimensionKey: string, engineKey: 'disc' | 'bigfive', scalePoints: number) {
     return questions
-        .filter(q => q.engineKey === engineKey && q.dimensionKey === dimensionKey)
+        .filter(q => q.type === 'likert' && q.engineKey === engineKey && q.dimensionKey === dimensionKey)
         .reduce((sum, q) => sum + (scalePoints * (q.weight || 1)), 0);
 }
 
-// Helper function to get the min possible score for a dimension
+// Helper function to get the min possible score for a Likert dimension
 function getMinScore(questions: AssessmentQuestion[], dimensionKey: string, engineKey: 'disc' | 'bigfive') {
     return questions
-        .filter(q => q.engineKey === engineKey && q.dimensionKey === dimensionKey)
+        .filter(q => q.type === 'likert' && q.engineKey === engineKey && q.dimensionKey === dimensionKey)
         .reduce((sum, q) => sum + (1 * (q.weight || 1)), 0);
 }
 
@@ -70,14 +71,10 @@ export async function POST(req: NextRequest) {
         throw new Error(`Assessment '${assessment.id}' is malformed or missing key properties like 'resultTemplates' or 'rules'.`);
     }
 
-    // --- GUARD FOR UNSUPPORTED FORMAT ---
-    if (template.format === 'forced-choice') {
-        throw new Error(`Scoring for 'forced-choice' assessments is not yet implemented.`);
-    }
-
+    // Combine question IDs from both test parts
     const allQuestionIds = [
-      ...(session.selectedQuestionIds?.bigfive || []),
-      ...(session.selectedQuestionIds?.disc || []),
+      ...(session.selectedQuestionIds?.likert || []),
+      ...(session.selectedQuestionIds?.forcedChoice || []),
     ];
 
     if (allQuestionIds.length === 0) {
@@ -97,20 +94,39 @@ export async function POST(req: NextRequest) {
     template.dimensions.bigfive.forEach(dim => scores.bigfive[dim.key] = 0);
 
     for (const question of questions) {
-        const answerValue = session.answers[question.id!];
-        if (answerValue === undefined) continue;
+        const answer = session.answers[question.id!];
+        if (answer === undefined) continue;
 
-        let finalValue = answerValue as number;
-        if (template.scoring.reverseEnabled && question.reverse) {
-            finalValue = (template.scale.points + 1) - finalValue;
-        }
-        
-        const scoreToAdd = finalValue * (question.weight || 1);
+        if (question.type === 'likert') {
+            let finalValue = answer as number;
+            if (template.scoring.reverseEnabled && question.reverse) {
+                finalValue = (template.scale.points + 1) - finalValue;
+            }
+            
+            const scoreToAdd = finalValue * (question.weight || 1);
 
-        if (question.engineKey === 'disc' && scores.disc[question.dimensionKey!] !== undefined) {
-            scores.disc[question.dimensionKey!] += scoreToAdd;
-        } else if (question.engineKey === 'bigfive' && scores.bigfive[question.dimensionKey!] !== undefined) {
-            scores.bigfive[question.dimensionKey!] += scoreToAdd;
+            if (question.engineKey === 'disc' && scores.disc[question.dimensionKey!] !== undefined) {
+                scores.disc[question.dimensionKey!] += scoreToAdd;
+            } else if (question.engineKey === 'bigfive' && scores.bigfive[question.dimensionKey!] !== undefined) {
+                scores.bigfive[question.dimensionKey!] += scoreToAdd;
+            }
+        } else if (question.type === 'forced-choice') {
+            const fcAnswer = answer as { most: string; least: string };
+            if (!fcAnswer.most || !fcAnswer.least) continue;
+
+            const mostStatement = question.forcedChoices?.find(c => c.text === fcAnswer.most);
+            const leastStatement = question.forcedChoices?.find(c => c.text === fcAnswer.least);
+
+            if (mostStatement) {
+                if (mostStatement.engineKey === 'disc' && scores.disc[mostStatement.dimensionKey] !== undefined) {
+                    scores.disc[mostStatement.dimensionKey]++;
+                }
+            }
+            if (leastStatement) {
+                 if (leastStatement.engineKey === 'disc' && scores.disc[leastStatement.dimensionKey] !== undefined) {
+                    scores.disc[leastStatement.dimensionKey]--;
+                }
+            }
         }
     }
     
@@ -123,11 +139,11 @@ export async function POST(req: NextRequest) {
     // --- 3. Normalization ---
     const normalized: AssessmentSession['normalized'] = { bigfive: {} };
     if (assessment.rules?.bigfiveNormalization === 'minmax') {
-        const bigfiveQuestions = questions.filter(q => q.engineKey === 'bigfive');
+        const likertQuestions = questions.filter(q => q.type === 'likert');
         for (const dim of template.dimensions.bigfive) {
             const rawScore = scores.bigfive[dim.key];
-            const minScore = getMinScore(bigfiveQuestions, dim.key, 'bigfive');
-            const maxScore = getMaxScore(bigfiveQuestions, dim.key, 'bigfive', template.scale.points);
+            const minScore = getMinScore(likertQuestions, dim.key, 'bigfive');
+            const maxScore = getMaxScore(likertQuestions, dim.key, 'bigfive', template.scale.points);
             if (maxScore - minScore === 0) {
                  normalized.bigfive[dim.key] = 50; // Avoid division by zero
             } else {
@@ -191,6 +207,7 @@ export async function POST(req: NextRequest) {
     if (session.applicationId) {
       const appRef = db.collection('applications').doc(session.applicationId);
       const appDoc = await appRef.get();
+      // Check if application is in the personality test stage
       if (appDoc.exists && appDoc.data()?.status === 'tes_kepribadian') {
         await appRef.update({
           status: 'verification',
