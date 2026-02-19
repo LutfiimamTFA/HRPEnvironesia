@@ -14,6 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import { QuestionFormDialog } from './QuestionFormDialog';
 import { DeleteConfirmationDialog } from './DeleteConfirmationDialog';
 import { Badge } from '../ui/badge';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 function TableSkeleton() {
   return (
@@ -38,6 +39,7 @@ export function QuestionManagementClient({ assessment, template }: QuestionManag
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [selectedQuestion, setSelectedQuestion] = useState<AssessmentQuestion | null>(null);
+  const [filter, setFilter] = useState('all'); // 'all', 'active', 'inactive'
 
   const questionsQuery = useMemoFirebase(
     () => query(collection(firestore, 'assessment_questions'), where('assessmentId', '==', assessment.id!)),
@@ -45,17 +47,24 @@ export function QuestionManagementClient({ assessment, template }: QuestionManag
   );
   const { data: questions, isLoading, error } = useCollection<AssessmentQuestion>(questionsQuery);
   
-  const sortedQuestions = useMemo(() => {
+  const filteredQuestions = useMemo(() => {
     if (!questions) return [];
-    // Sort by engine, then dimension, then by text to get a stable order
-    return [...questions].sort((a, b) => {
+    if (filter === 'all') {
+      return questions;
+    }
+    return questions.filter(q => filter === 'active' ? q.isActive : !q.isActive);
+  }, [questions, filter]);
+
+  const sortedQuestions = useMemo(() => {
+    if (!filteredQuestions) return [];
+    return [...filteredQuestions].sort((a, b) => {
         const engineCompare = (a.engineKey || '').localeCompare(b.engineKey || '');
         if (engineCompare !== 0) return engineCompare;
         const dimCompare = (a.dimensionKey || '').localeCompare(b.dimensionKey || '');
         if (dimCompare !== 0) return dimCompare;
         return (a.text || '').localeCompare(b.text || '');
     });
-  }, [questions]);
+  }, [filteredQuestions]);
 
   const handleCreate = () => {
     setSelectedQuestion(null);
@@ -94,7 +103,14 @@ export function QuestionManagementClient({ assessment, template }: QuestionManag
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-between">
+        <Tabs onValueChange={(value) => setFilter(value)} defaultValue="all">
+          <TabsList>
+            <TabsTrigger value="all">All ({questions?.length || 0})</TabsTrigger>
+            <TabsTrigger value="active">Active</TabsTrigger>
+            <TabsTrigger value="inactive">Inactive</TabsTrigger>
+          </TabsList>
+        </Tabs>
          <Button onClick={handleCreate}>
             <PlusCircle className="mr-2 h-4 w-4" />
             Add Question
@@ -147,7 +163,7 @@ export function QuestionManagementClient({ assessment, template }: QuestionManag
                 </TableRow>
               ))
             ) : (
-              <TableRow><TableCell colSpan={isForcedChoice ? 4 : 6} className="h-24 text-center">No questions found.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={isForcedChoice ? 4 : 6} className="h-24 text-center">No questions found for the selected filter.</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
@@ -171,3 +187,5 @@ export function QuestionManagementClient({ assessment, template }: QuestionManag
     </div>
   );
 }
+
+  
