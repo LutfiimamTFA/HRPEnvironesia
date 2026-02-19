@@ -1,4 +1,5 @@
 
+
 import type { Timestamp } from 'firebase/firestore';
 
 export const ROLES = ['super-admin', 'hrd', 'manager', 'kandidat', 'karyawan'] as const;
@@ -173,9 +174,12 @@ export type Profile = {
 
 // --- ASSESSMENT TYPES ---
 
+export type AssessmentFormat = 'likert' | 'forced-choice';
+
 export type AssessmentTemplate = {
   id?: string;
   name: string;
+  format: AssessmentFormat;
   engine: 'dual' | 'disc' | 'bigfive';
   scale: {
     type: 'likert';
@@ -230,16 +234,28 @@ export type ResultTemplate = {
     roleFit: string[];
 };
 
+export type ForcedChoice = {
+  text: string;
+  dimensionKey: string;
+  engineKey: 'disc' | 'bigfive';
+};
+
 export type AssessmentQuestion = {
   id?: string;
   assessmentId: string;
-  engineKey: 'disc' | 'bigfive';
-  dimensionKey: string;
-  text: string;
-  reverse: boolean;
-  weight: number;
+  type: 'likert' | 'forced-choice';
   order: number;
   isActive: boolean;
+  
+  // Likert specific
+  text?: string;
+  engineKey?: 'disc' | 'bigfive';
+  dimensionKey?: string;
+  reverse?: boolean;
+  weight?: number;
+
+  // Forced-choice specific
+  forcedChoices?: ForcedChoice[];
 };
 
 export type AssessmentSession = {
@@ -252,7 +268,7 @@ export type AssessmentSession = {
   jobPosition?: string;
   brandName?: string;
   status: 'draft' | 'submitted';
-  answers: { [questionId: string]: number };
+  answers: { [questionId: string]: number | { most: string; least: string } };
   scores: {
     disc: Record<string, number>;
     bigfive: Record<string, number>;

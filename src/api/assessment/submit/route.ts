@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import admin from '@/lib/firebase/admin';
 import { Timestamp } from 'firebase-admin/firestore';
-import type { Assessment, AssessmentTemplate, AssessmentQuestion, AssessmentSession, ResultTemplate } from '@/lib/types';
+import type { Assessment, AssessmentTemplate, AssessmentQuestion, AssessmentSession } from '@/lib/types';
 
 // Helper function to get the max possible score for a dimension
 function getMaxScore(questions: AssessmentQuestion[], dimensionKey: string, engineKey: 'disc' | 'bigfive', scalePoints: number) {
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     if (!sessionDoc.exists) {
       return NextResponse.json({ error: 'Session not found.' }, { status: 404 });
     }
-    const session = sessionDoc.data() as AssessmentSession;
+    const session = { ...sessionDoc.data(), id: sessionDoc.id } as AssessmentSession;
 
     // Prevent re-submission
     if (session.status === 'submitted') {
@@ -50,18 +50,28 @@ export async function POST(req: NextRequest) {
     if (!assessmentDoc.exists) {
         throw new Error(`Assessment configuration '${session.assessmentId}' not found.`);
     }
-    const assessment = assessmentDoc.data() as Assessment;
+    const assessment = { ...assessmentDoc.data(), id: assessmentDoc.id } as Assessment;
 
     const templateRef = db.collection('assessment_templates').doc(assessment.templateId);
     const templateDoc = await templateRef.get();
     if (!templateDoc.exists) {
         throw new Error(`Assessment template '${assessment.templateId}' not found.`);
     }
-    const template = templateDoc.data() as AssessmentTemplate;
+    const template = { ...templateDoc.data(), id: templateDoc.id } as AssessmentTemplate;
 
-    // Guard against malformed template
-    if (!template || !template.dimensions || !template.scale || !template.resultTemplates) {
-        throw new Error(`Assessment template '${assessment.templateId}' is malformed or missing key properties like 'dimensions', 'scale', or 'resultTemplates'.`);
+    // --- GUARD CLAUSES FOR SCHEMA VALIDATION ---
+    if (!template || !template.dimensions?.disc || !template.dimensions?.bigfive || !template.scale || !template.scoring) {
+        console.error("Template loaded:", template.id, template);
+        throw new Error(`Assessment template '${template.id}' is malformed or missing key properties like 'dimensions', 'scale', or 'scoring'.`);
+    }
+    if (!assessment || !assessment.resultTemplates?.disc || !assessment.resultTemplates?.bigfive || !assessment.rules) {
+        console.error("Assessment loaded:", assessment.id, assessment);
+        throw new Error(`Assessment '${assessment.id}' is malformed or missing key properties like 'resultTemplates' or 'rules'.`);
+    }
+
+    // --- GUARD FOR UNSUPPORTED FORMAT ---
+    if (template.format === 'forced-choice') {
+        throw new Error(`Scoring for 'forced-choice' assessments is not yet implemented.`);
     }
 
     const questionsQuery = db.collection('assessment_questions').where('assessmentId', '==', session.assessmentId).where('isActive', '==', true);
@@ -76,7 +86,7 @@ export async function POST(req: NextRequest) {
     template.dimensions.bigfive.forEach(dim => scores.bigfive[dim.key] = 0);
 
     for (const question of questions) {
-        const answerValue = session.answers[question.id!];
+        const answerValue = session.answers[question.id!] as number;
         if (answerValue === undefined) continue;
 
         let finalValue = answerValue;
@@ -86,10 +96,10 @@ export async function POST(req: NextRequest) {
         
         const scoreToAdd = finalValue * (question.weight || 1);
 
-        if (question.engineKey === 'disc' && scores.disc[question.dimensionKey] !== undefined) {
-            scores.disc[question.dimensionKey] += scoreToAdd;
-        } else if (question.engineKey === 'bigfive' && scores.bigfive[question.dimensionKey] !== undefined) {
-            scores.bigfive[question.dimensionKey] += scoreToAdd;
+        if (question.engineKey === 'disc' && scores.disc[question.dimensionKey!] !== undefined) {
+            scores.disc[question.dimensionKey!] += scoreToAdd;
+        } else if (question.engineKey === 'bigfive' && scores.bigfive[question.dimensionKey!] !== undefined) {
+            scores.bigfive[question.dimensionKey!] += scoreToAdd;
         }
     }
     
@@ -123,7 +133,7 @@ export async function POST(req: NextRequest) {
     const bigfiveSummary = template.dimensions.bigfive.map(dim => {
         const normalizedScore = normalized.bigfive[dim.key];
         const templates = assessment.resultTemplates.bigfive[dim.key];
-        let text = templates.midText; // Default to midText
+        let text = templates?.midText; // Default to midText
         if (templates) {
           if (normalizedScore >= 66) text = templates.highText;
           else if (normalizedScore < 34) text = templates.lowText;
@@ -146,8 +156,14 @@ export async function POST(req: NextRequest) {
         discType,
         report: finalReport
     };
+
+    // --- 5. Denormalize candidate info ---
+    const userDocRef = db.collection('users').doc(session.candidateUid);
+    const userDoc = await userDocRef.get();
+    const candidateName = userDoc.exists ? userDoc.data()?.fullName || null : null;
+    const candidateEmail = userDoc.exists ? userDoc.data()?.email || null : null;
     
-    // --- 5. Update Session Document ---
+    // --- 6. Update Session Document ---
     await sessionRef.update({
         status: 'submitted',
         scores,
@@ -155,7 +171,21 @@ export async function POST(req: NextRequest) {
         result: resultPayload,
         completedAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
+        candidateName,
+        candidateEmail,
     });
+
+    // --- 7. Update Application Status if linked ---
+    if (session.applicationId) {
+      const appRef = db.collection('applications').doc(session.applicationId);
+      const appDoc = await appRef.get();
+      if (appDoc.exists && appDoc.data()?.status === 'psychotest') {
+        await appRef.update({
+          status: 'verification',
+          updatedAt: Timestamp.now(),
+        });
+      }
+    }
 
     return NextResponse.json({ message: 'Assessment submitted successfully.', result: resultPayload });
 

@@ -5,15 +5,16 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
 import { collection, doc, query, where } from 'firebase/firestore';
-import type { AssessmentQuestion, AssessmentSession } from '@/lib/types';
+import type { AssessmentQuestion, AssessmentSession, AssessmentTemplate } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 function AssessmentSkeleton() {
   return (
@@ -54,12 +55,19 @@ function TakeAssessmentPage() {
   const sessionId = params.sessionId as string;
 
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, number>>({});
+  const [answers, setAnswers] = useState<Record<string, number | { most: string, least: string }>>({});
   const [isFinishing, setIsFinishing] = useState(false);
   
   // Fetch session
   const sessionRef = useMemoFirebase(() => doc(firestore, 'assessment_sessions', sessionId), [firestore, sessionId]);
   const { data: session, isLoading: sessionLoading } = useDoc<AssessmentSession>(sessionRef);
+  
+  // Fetch assessment template
+  const templateRef = useMemoFirebase(() => {
+    if (!session) return null;
+    return doc(collection(firestore, 'assessment_templates'), where('assessmentId', '==', session.assessmentId));
+  }, [firestore, session]);
+  const { data: template, isLoading: templateLoading } = useDoc<AssessmentTemplate>(templateRef)
   
   // Fetch questions once session is loaded
   const questionsQuery = useMemoFirebase(() => {
@@ -76,7 +84,7 @@ function TakeAssessmentPage() {
     }
   }, [session]);
   
-  const isLoading = authLoading || sessionLoading || (session && questionsLoading);
+  const isLoading = authLoading || sessionLoading || templateLoading || (session && questionsLoading);
 
   const handleAnswerChange = async (questionId: string, value: string) => {
     const numericValue = parseInt(value, 10);
@@ -128,6 +136,22 @@ function TakeAssessmentPage() {
   };
   
   if (isLoading || !sortedQuestions.length) return <AssessmentSkeleton />;
+
+  if (template?.format === 'forced-choice') {
+    return (
+      <Card className="max-w-2xl mx-auto">
+        <CardContent className="p-8 text-center">
+            <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Format Tes Tidak Didukung</AlertTitle>
+                <AlertDescription>
+                    Pengerjaan untuk format tes ini belum tersedia di portal kandidat.
+                </AlertDescription>
+            </Alert>
+        </CardContent>
+      </Card>
+    );
+  }
   
   const currentQuestion = sortedQuestions[currentQuestionIndex];
   const progress = ((currentQuestionIndex + 1) / sortedQuestions.length) * 100;

@@ -80,6 +80,8 @@ export function QuestionManagementClient({ assessment, template }: QuestionManag
   if (isLoading) return <TableSkeleton />;
   if (error) return <Alert variant="destructive"><AlertTitle>Error</AlertTitle><AlertDescription>{error.message}</AlertDescription></Alert>;
 
+  const isForcedChoice = template.format === 'forced-choice';
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-end">
@@ -93,9 +95,9 @@ export function QuestionManagementClient({ assessment, template }: QuestionManag
           <TableHeader>
             <TableRow>
               <TableHead className="w-16">Order</TableHead>
-              <TableHead>Question Text</TableHead>
-              <TableHead>Engine</TableHead>
-              <TableHead>Dimension</TableHead>
+              <TableHead>Content</TableHead>
+              {!isForcedChoice && <TableHead>Engine</TableHead>}
+              {!isForcedChoice && <TableHead>Dimension</TableHead>}
               <TableHead className="w-[100px] text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -104,9 +106,15 @@ export function QuestionManagementClient({ assessment, template }: QuestionManag
               sortedQuestions.map((q) => (
                 <TableRow key={q.id}>
                   <TableCell className="font-medium">{q.order}</TableCell>
-                  <TableCell>{q.text}</TableCell>
-                   <TableCell><Badge variant="secondary" className="capitalize">{q.engineKey}</Badge></TableCell>
-                   <TableCell><Badge variant="outline">{q.dimensionKey}</Badge></TableCell>
+                  <TableCell>
+                    {q.type === 'likert' ? q.text : (
+                        <ul className="list-disc list-inside text-xs">
+                            {q.forcedChoices?.map((choice, i) => <li key={i}>{choice.text}</li>)}
+                        </ul>
+                    )}
+                  </TableCell>
+                  {!isForcedChoice && <TableCell><Badge variant="secondary" className="capitalize">{q.engineKey}</Badge></TableCell>}
+                  {!isForcedChoice && <TableCell><Badge variant="outline">{q.dimensionKey}</Badge></TableCell>}
                   <TableCell className="text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -121,7 +129,7 @@ export function QuestionManagementClient({ assessment, template }: QuestionManag
                 </TableRow>
               ))
             ) : (
-              <TableRow><TableCell colSpan={5} className="h-24 text-center">No questions found.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={isForcedChoice ? 3 : 5} className="h-24 text-center">No questions found.</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
