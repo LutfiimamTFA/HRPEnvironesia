@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import type { AssessmentQuestion, AssessmentSession } from '@/lib/types';
@@ -39,7 +40,7 @@ function AnalysisItem({ question, answerValue }: AnalysisItemProps) {
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
+  useMemo(() => {
     async function getAnalysis() {
       setIsLoading(true);
       try {
@@ -106,44 +107,81 @@ interface AnswerAnalysisProps {
 }
 
 export function AnswerAnalysis({ session, questions }: AnswerAnalysisProps) {
-  const sortedQuestions = questions.sort((a, b) => (a.order || 0) - (b.order || 0));
+  const likertQuestions = useMemo(() => 
+    questions
+      .filter(q => q.type === 'likert')
+      .sort((a, b) => (a.order || 0) - (b.order || 0)), 
+    [questions]
+  );
+
+  const forcedChoiceQuestions = useMemo(() => 
+    questions
+      .filter(q => q.type === 'forced-choice')
+      .sort((a, b) => (a.order || 0) - (b.order || 0)),
+    [questions]
+  );
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Analisis Jawaban per Pertanyaan</CardTitle>
         <CardDescription>
-          Rincian setiap jawaban yang diberikan oleh kandidat. Analisis AI hanya tersedia untuk pertanyaan tipe skala (Likert).
+          Rincian setiap jawaban yang diberikan oleh kandidat, dipisahkan berdasarkan jenis tes.
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <Accordion type="single" collapsible className="w-full space-y-2">
-          {sortedQuestions.map((question, index) => {
-            const answerValue = session.answers[question.id!];
-            if (answerValue === undefined) return null;
+        <Tabs defaultValue="likert">
+          <TabsList>
+            <TabsTrigger value="likert">Analisis Tes Skala (Likert)</TabsTrigger>
+            <TabsTrigger value="forced-choice">Analisis Tes Forced-Choice</TabsTrigger>
+          </TabsList>
+          <TabsContent value="likert" className="pt-4">
+             <Accordion type="single" collapsible className="w-full space-y-2">
+              {likertQuestions.map((question, index) => {
+                const answerValue = session.answers[question.id!];
+                if (answerValue === undefined || typeof answerValue !== 'number') return null;
 
-            const isLikert = question.type === 'likert';
-            const title = isLikert ? question.text : 'Kelompok Pernyataan';
-            const order = question.order || index + 1;
+                const title = question.text || 'Pertanyaan tidak ditemukan';
+                const order = question.order || index + 1;
 
-            return (
-              <AccordionItem value={question.id!} key={question.id!} className="border rounded-md px-4">
-                <AccordionTrigger className="text-left hover:no-underline">
-                   <span className="font-medium">{order}. {title}</span>
-                </AccordionTrigger>
-                <AccordionContent>
-                  {isLikert && typeof answerValue === 'number' ? (
-                    <AnalysisItem question={question} answerValue={answerValue} />
-                  ) : !isLikert && typeof answerValue === 'object' && answerValue !== null && 'most' in answerValue ? (
-                    <ForcedChoiceAnswerView answerValue={answerValue as { most: string; least: string }} />
-                  ) : (
-                    <p className="text-sm text-muted-foreground">Tidak ada jawaban yang valid untuk pertanyaan ini.</p>
-                  )}
-                </AccordionContent>
-              </AccordionItem>
-            );
-          })}
-        </Accordion>
+                return (
+                  <AccordionItem value={question.id!} key={question.id!} className="border rounded-md px-4">
+                    <AccordionTrigger className="text-left hover:no-underline">
+                      <span className="font-medium">{order}. {title}</span>
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <AnalysisItem question={question} answerValue={answerValue} />
+                    </AccordionContent>
+                  </AccordionItem>
+                );
+              })}
+            </Accordion>
+            {likertQuestions.length === 0 && <p className="text-sm text-muted-foreground p-4">Tidak ada jawaban untuk jenis tes ini.</p>}
+          </TabsContent>
+          <TabsContent value="forced-choice" className="pt-4">
+            <Accordion type="single" collapsible className="w-full space-y-2">
+              {forcedChoiceQuestions.map((question, index) => {
+                const answerValue = session.answers[question.id!];
+                if (answerValue === undefined || typeof answerValue !== 'object' || !('most' in answerValue)) return null;
+
+                const title = `Kelompok Pernyataan ${index + 1}`;
+                const order = question.order || index + 1;
+
+                return (
+                  <AccordionItem value={question.id!} key={question.id!} className="border rounded-md px-4">
+                    <AccordionTrigger className="text-left hover:no-underline">
+                      <span className="font-medium">{order}. {title}</span>
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <ForcedChoiceAnswerView answerValue={answerValue as { most: string; least: string }} />
+                    </AccordionContent>
+                  </AccordionItem>
+                );
+              })}
+            </Accordion>
+            {forcedChoiceQuestions.length === 0 && <p className="text-sm text-muted-foreground p-4">Tidak ada jawaban untuk jenis tes ini.</p>}
+          </TabsContent>
+        </Tabs>
       </CardContent>
     </Card>
   );
