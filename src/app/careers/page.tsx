@@ -102,15 +102,15 @@ export default function CareersPage() {
     <div className="flex min-h-dvh flex-col bg-background font-body text-foreground">
       
       {/* Hero Section */}
-      <section id="hero" className="relative w-full overflow-hidden bg-[#003C43] text-primary-foreground">
-        <LeafBlob className="left-[-250px] top-[-150px] h-[544px] w-[578px] text-cyan-400/30" />
-        <LeafBlob className="right-[-350px] bottom-[-150px] h-[644px] w-[678px] text-cyan-400/30" />
+      <section id="hero" className="relative w-full overflow-hidden bg-gradient-to-br from-[hsl(var(--primary))] to-[hsl(var(--primary)/0.8)] text-primary-foreground">
+        <LeafBlob className="left-[-250px] top-[-150px] h-[544px] w-[578px] text-white/10" />
+        <LeafBlob className="right-[-350px] bottom-[-150px] h-[644px] w-[678px] text-white/10" />
         
         <header className="absolute top-0 z-50 w-full">
             <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
                 <div className="flex h-20 items-center justify-between">
                     <Link href="/careers" className="flex items-center gap-2">
-                        <Leaf className="h-7 w-7 text-primary" />
+                        <Leaf className="h-7 w-7 text-white" />
                         <span className="text-xl font-bold tracking-tight text-white">Environesia Karir</span>
                     </Link>
                     <nav className="hidden items-center gap-8 text-sm font-medium md:flex">
@@ -122,7 +122,7 @@ export default function CareersPage() {
                         <Button variant="outline" asChild className="border-primary-foreground/30 bg-transparent text-primary-foreground hover:bg-primary-foreground/10 hover:text-white">
                         <Link href="/careers/login">Masuk Kandidat</Link>
                         </Button>
-                        <Button asChild>
+                        <Button asChild className="bg-white/90 text-primary hover:bg-white">
                         <Link href="/careers/register">Daftar</Link>
                         </Button>
                     </div>
@@ -139,7 +139,7 @@ export default function CareersPage() {
                     Jadilah bagian dari tim inovatif yang berdedikasi untuk menciptakan solusi lingkungan berkelanjutan. Temukan peran Anda di Environesia.
                 </p>
                 <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
-                  <Button size="lg" className="h-12 px-8 text-base" asChild>
+                  <Button size="lg" className="h-12 px-8 text-base bg-white/90 text-primary hover:bg-white" asChild>
                     <Link href="#lowongan">
                       Lihat Lowongan <ChevronDown className="ml-2 h-5 w-5" />
                     </Link>
@@ -296,7 +296,7 @@ export default function CareersPage() {
                 </p>
                  <div>
                     <a href="https://environesia.co.id/" target="_blank" rel="noopener noreferrer" className="text-sm text-muted-foreground hover:text-primary">
-                        Website Perusahaan
+                        Company Profile
                     </a>
                 </div>
                 <p className="text-sm text-muted-foreground">
