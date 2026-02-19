@@ -155,7 +155,7 @@ service cloud.firestore {
                         isSubmittingDocuments() ||
                         isUpdatingSubmittedDocuments() ||
                         (isInternal() && isInternalStatusUpdate())
-                      ) && request.resource.data.candidateUid == resource.data.candidateUid;
+                      );
 
         // DELETE: Only internal users can delete applications.
         allow delete: if isInternal();
@@ -251,9 +251,6 @@ service cloud.firestore {
         
         return isInternal()
           && resource.data.status == 'submitted'
-          && request.resource.data.candidateUid == resource.data.candidateUid
-          && request.resource.data.assessmentId == resource.data.assessmentId
-          && request.resource.data.status == resource.data.status
           && changedKeys.hasOnly(allowedUpdateKeys)
           && request.resource.data.hrdDecisionBy == request.auth.uid
           && request.resource.data.hrdDecision in ['pending', 'approved', 'rejected'];
