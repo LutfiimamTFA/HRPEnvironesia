@@ -195,7 +195,6 @@ function StartGeneralTest() {
             const existingSessionQuery = query(
                 collection(firestore, 'assessment_sessions'),
                 where('candidateUid', '==', userProfile.uid),
-                orderBy('startedAt', 'desc'),
                 limit(1)
             );
             const existingSessionsSnap = await getDocs(existingSessionQuery);
