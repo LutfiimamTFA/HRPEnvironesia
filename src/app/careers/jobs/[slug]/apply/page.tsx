@@ -91,23 +91,11 @@ export default function JobApplyPage() {
             return;
         }
 
-        // 3. Check if candidate has already completed a psychotest
-        const psychotestQuery = query(
-            collection(firestore, 'assessment_sessions'),
-            where('candidateUid', '==', userProfile.uid),
-            where('status', '==', 'submitted'),
-            limit(1)
-        );
-        const psychotestSnap = await getDocs(psychotestQuery);
-        const hasCompletedTest = !psychotestSnap.empty;
+        // 3. Determine initial status
+        const initialStatus = 'submitted';
+        const toastMessage = `Lamaran Anda untuk posisi ${job.position} telah berhasil dikirim.`;
 
-        // 4. Determine initial status based on psychotest completion
-        const initialStatus = hasCompletedTest ? 'verification' : 'submitted';
-        const toastMessage = hasCompletedTest 
-            ? 'Lamaran Anda telah dikirim dan akan langsung diverifikasi oleh tim HRD karena Anda sudah pernah menyelesaikan psikotes.'
-            : `Lamaran Anda untuk posisi ${job.position} telah berhasil dikirim.`;
-
-        // 5. Construct application data
+        // 4. Construct application data
         const applicationData: Omit<JobApplication, 'id'> = {
             candidateUid: userProfile.uid,
             candidateName: userProfile.fullName,
@@ -126,7 +114,7 @@ export default function JobApplyPage() {
             submittedAt: serverTimestamp() as any,
         };
 
-        // 6. Submit application
+        // 5. Submit application
         await setDocumentNonBlocking(applicationRef, applicationData, { merge: false });
 
         toast({

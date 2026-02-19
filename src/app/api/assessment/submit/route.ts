@@ -170,6 +170,18 @@ export async function POST(req: NextRequest) {
         candidateEmail,
     });
 
+    // --- 7. Update Application Status if linked ---
+    if (session.applicationId) {
+      const appRef = db.collection('applications').doc(session.applicationId);
+      const appDoc = await appRef.get();
+      if (appDoc.exists && appDoc.data()?.status === 'psychotest') {
+        await appRef.update({
+          status: 'verification',
+          updatedAt: Timestamp.now(),
+        });
+      }
+    }
+
     return NextResponse.json({ message: 'Assessment submitted successfully.', result: resultPayload });
 
   } catch (error: any) {

@@ -249,6 +249,8 @@ export type AssessmentSession = {
   candidateName?: string;
   candidateEmail?: string;
   applicationId?: string;
+  jobPosition?: string;
+  brandName?: string;
   status: 'draft' | 'submitted';
   answers: { [questionId: string]: number };
   scores: {

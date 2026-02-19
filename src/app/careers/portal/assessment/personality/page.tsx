@@ -1,15 +1,15 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
-import { useCollection, useFirestore, useMemoFirebase, addDocumentNonBlocking } from '@/firebase';
-import { collection, query, where, limit, serverTimestamp, Timestamp, getDocs } from 'firebase/firestore';
+import { useCollection, useFirestore, useMemoFirebase, addDocumentNonBlocking, useDoc } from '@/firebase';
+import { collection, query, where, limit, serverTimestamp, Timestamp, getDocs, doc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
-import type { Assessment, AssessmentSession } from '@/lib/types';
+import type { Assessment, AssessmentSession, JobApplication } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { CheckCircle, Info } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -39,101 +39,117 @@ function CompletedTestView({ sessionId }: { sessionId: string }) {
     );
 }
 
-export default function AssessmentStartPage() {
+function StartTestForApplication({ applicationId }: { applicationId: string }) {
+    const { userProfile, loading: authLoading } = useAuth();
+    const firestore = useFirestore();
+    const router = useRouter();
+    const { toast } = useToast();
+
+    const appRef = useMemoFirebase(() => doc(firestore, 'applications', applicationId), [firestore, applicationId]);
+    const { data: application, isLoading: appLoading, error: appError } = useDoc<JobApplication>(appRef);
+
+    const assessmentQuery = useMemoFirebase(() => query(collection(firestore, 'assessments'), where('isActive', '==', true), limit(1)), [firestore]);
+    const { data: assessments, isLoading: assessmentLoading } = useCollection<Assessment>(assessmentQuery);
+    const activeAssessment = assessments?.[0];
+
+    useEffect(() => {
+        if (appLoading || assessmentLoading || authLoading) return;
+
+        if (!application || !userProfile || !activeAssessment) {
+            if (appError) {
+                toast({ variant: 'destructive', title: 'Error', description: `Gagal memuat detail lamaran: ${appError.message}` });
+            } else {
+                toast({ variant: 'destructive', title: 'Error', description: 'Gagal mempersiapkan tes. Lamaran atau tes tidak ditemukan.' });
+            }
+            router.push('/careers/portal/applications');
+            return;
+        }
+        
+        if (application.candidateUid !== userProfile.uid) {
+             toast({ variant: 'destructive', title: 'Akses Ditolak', description: 'Anda tidak diizinkan untuk memulai sesi tes ini.' });
+             router.push('/careers/portal/applications');
+             return;
+        }
+
+        const handleStart = async () => {
+            const sessionsQuery = query(
+                collection(firestore, 'assessment_sessions'),
+                where('applicationId', '==', applicationId),
+                limit(1)
+            );
+            const existingSessionsSnap = await getDocs(sessionsQuery);
+
+            if (!existingSessionsSnap.empty) {
+                const existingSession = existingSessionsSnap.docs[0];
+                toast({ title: 'Melanjutkan Sesi', description: 'Anda akan melanjutkan tes untuk lowongan ini.' });
+                router.push(`/careers/portal/assessment/personality/${existingSession.id}`);
+                return;
+            }
+
+            const sessionData: Omit<AssessmentSession, 'id' | 'scores' | 'answers'> = {
+                assessmentId: activeAssessment.id!,
+                candidateUid: userProfile.uid,
+                candidateName: userProfile.fullName,
+                candidateEmail: userProfile.email,
+                applicationId: applicationId,
+                jobPosition: application.jobPosition,
+                brandName: application.brandName,
+                status: 'draft',
+                startedAt: serverTimestamp() as Timestamp,
+                updatedAt: serverTimestamp() as Timestamp,
+            };
+
+            const docRef = await addDocumentNonBlocking(collection(firestore, 'assessment_sessions'), sessionData);
+            toast({ title: 'Tes Dimulai!', description: 'Selamat mengerjakan.' });
+            router.push(`/careers/portal/assessment/personality/${docRef.id}`);
+        };
+
+        handleStart().catch(e => {
+            toast({ variant: 'destructive', title: 'Gagal Memulai Tes', description: e.message });
+            router.push('/careers/portal/applications');
+        });
+
+    }, [appLoading, assessmentLoading, authLoading, application, userProfile, activeAssessment, applicationId, router, toast, firestore, appError]);
+
+    return (
+      <div className="flex h-64 flex-col items-center justify-center text-center">
+        <Loader2 className="h-8 w-8 animate-spin" />
+        <p className="mt-4 text-muted-foreground">Mempersiapkan sesi tes untuk<br/><span className="font-bold text-foreground">{application?.jobPosition || '...'}</span></p>
+      </div>
+    );
+}
+
+
+function AssessmentStartPageContent() {
   const { userProfile, loading: authLoading } = useAuth();
   const firestore = useFirestore();
-  const router = useRouter();
-  const { toast } = useToast();
-  const [isProcessing, setIsProcessing] = useState(false);
-
-  // 1. Find the active assessment
-  const assessmentQuery = useMemoFirebase(
-    () => query(collection(firestore, 'assessments'), where('isActive', '==', true), limit(1)),
-    [firestore]
-  );
-  const { data: assessments, isLoading: assessmentLoading } = useCollection<Assessment>(assessmentQuery);
-  const activeAssessment = assessments?.[0];
-
-  // 2. Find user's sessions for the active assessment
+  const searchParams = useSearchParams();
+  const applicationId = searchParams.get('applicationId');
+  
   const sessionsQuery = useMemoFirebase(() => {
-    if (!userProfile || !activeAssessment) return null;
+    if (!userProfile) return null;
     return query(
         collection(firestore, 'assessment_sessions'),
         where('candidateUid', '==', userProfile.uid),
-        where('assessmentId', '==', activeAssessment.id!)
+        where('status', '==', 'submitted'),
+        limit(1)
     );
-  }, [firestore, userProfile, activeAssessment]);
+  }, [firestore, userProfile]);
 
   const { data: sessions, isLoading: sessionsLoading } = useCollection<AssessmentSession>(sessionsQuery);
-  
   const submittedSession = useMemo(() => sessions?.find(s => s.status === 'submitted'), [sessions]);
 
-  const isLoading = authLoading || assessmentLoading || (activeAssessment && sessionsLoading);
+  const isLoading = authLoading || sessionsLoading;
 
-
-  const handleStart = async () => {
-    if (!userProfile || !activeAssessment) return;
-    setIsProcessing(true);
-
-    try {
-      // Check for existing "draft" session
-      const sessionsQuery = query(
-        collection(firestore, 'assessment_sessions'),
-        where('candidateUid', '==', userProfile.uid),
-        where('assessmentId', '==', activeAssessment.id!),
-        where('status', '==', 'draft'),
-        limit(1)
-      );
-      const existingSessionsSnap = await getDocs(sessionsQuery);
-
-      if (!existingSessionsSnap.empty) {
-        // A draft session exists, resume it
-        const existingSession = existingSessionsSnap.docs[0];
-        toast({ title: 'Melanjutkan Sesi', description: 'Anda akan melanjutkan tes yang belum selesai.' });
-        router.push(`/careers/portal/assessment/personality/${existingSession.id}`);
-        return;
-      }
-      
-      // Create a new session
-      const sessionData: Omit<AssessmentSession, 'id'> = {
-        assessmentId: activeAssessment.id!,
-        candidateUid: userProfile.uid,
-        candidateName: userProfile.fullName,
-        status: 'draft',
-        answers: {},
-        scores: { disc: {}, bigfive: {} },
-        startedAt: serverTimestamp() as Timestamp,
-        updatedAt: serverTimestamp() as Timestamp,
-      };
-
-      const docRef = await addDocumentNonBlocking(collection(firestore, 'assessment_sessions'), sessionData);
-      toast({ title: 'Tes Dimulai!', description: 'Selamat mengerjakan.' });
-      router.push(`/careers/portal/assessment/personality/${docRef.id}`);
-
-    } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Gagal Memulai Tes', description: error.message });
-      setIsProcessing(false);
-    }
-  };
+  if (applicationId) {
+      return <StartTestForApplication applicationId={applicationId} />;
+  }
 
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin" />
       </div>
-    );
-  }
-
-  if (!activeAssessment) {
-    return (
-        <Card>
-            <CardHeader>
-                <CardTitle>Tes Tidak Tersedia</CardTitle>
-            </CardHeader>
-            <CardContent>
-                <p>Saat ini tidak ada tes kepribadian yang aktif. Silakan kembali lagi nanti.</p>
-            </CardContent>
-        </Card>
     );
   }
   
@@ -144,7 +160,7 @@ export default function AssessmentStartPage() {
   return (
     <Card className="max-w-3xl mx-auto">
       <CardHeader>
-        <CardTitle className="text-2xl">Tes Kepribadian: {activeAssessment.name}</CardTitle>
+        <CardTitle className="text-2xl">Tes Kepribadian</CardTitle>
         <CardDescription>
           Tes ini dirancang untuk membantu kami memahami preferensi dan gaya kerja Anda.
         </CardDescription>
@@ -152,34 +168,20 @@ export default function AssessmentStartPage() {
       <CardContent className="space-y-6">
         <Alert>
             <Info className="h-4 w-4" />
-            <AlertTitle>Petunjuk Pengerjaan</AlertTitle>
+            <AlertTitle>Petunjuk Memulai Tes</AlertTitle>
             <AlertDescription>
-                <ul className="list-disc pl-5 space-y-1 mt-2">
-                    <li>Tidak ada jawaban benar atau salah. Jawablah sesuai dengan diri Anda.</li>
-                    <li>Tes ini tidak memiliki batasan waktu, namun usahakan untuk menyelesaikannya dalam satu sesi.</li>
-                    <li>Jawaban Anda akan disimpan secara otomatis saat Anda melanjutkan ke pertanyaan berikutnya.</li>
-                    <li>Jika Anda keluar di tengah jalan, Anda dapat melanjutkannya nanti.</li>
-                </ul>
+              Untuk mengerjakan tes, silakan akses melalui tombol "Kerjakan Tes" pada lamaran Anda yang berstatus "Tahap Psikotes" di halaman <Link href="/careers/portal/applications" className="font-bold underline">Lamaran Saya</Link>.
             </AlertDescription>
         </Alert>
-
-        <div className="p-4 border rounded-lg flex items-start space-x-3 bg-muted/50">
-          <CheckCircle className="h-5 w-5 text-primary mt-1 flex-shrink-0" />
-          <div>
-            <h4 className="font-semibold">Persetujuan</h4>
-            <p className="text-sm text-muted-foreground">
-              Dengan mengklik tombol "Mulai Tes", saya menyatakan bahwa saya akan mengerjakan tes ini dengan jujur dan data yang saya berikan dapat digunakan untuk proses rekrutmen di Environesia.
-            </p>
-          </div>
-        </div>
-        
-        <div className="text-center pt-4">
-          <Button size="lg" onClick={handleStart} disabled={isProcessing}>
-            {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Mulai Tes
-          </Button>
-        </div>
       </CardContent>
     </Card>
   );
+}
+
+export default function AssessmentPage() {
+    return (
+        <Suspense fallback={<div className="flex h-64 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
+            <AssessmentStartPageContent />
+        </Suspense>
+    )
 }

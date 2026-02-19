@@ -26,13 +26,13 @@ function SubmissionsTableSkeleton() {
         <Table>
           <TableHeader>
             <TableRow>
-              {[...Array(5)].map((_, i) => <TableHead key={i}><Skeleton className="h-5 w-full" /></TableHead>)}
+              {[...Array(6)].map((_, i) => <TableHead key={i}><Skeleton className="h-5 w-full" /></TableHead>)}
             </TableRow>
           </TableHeader>
           <TableBody>
             {[...Array(3)].map((_, i) => (
               <TableRow key={i}>
-                {[...Array(5)].map((_, j) => <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>)}
+                {[...Array(6)].map((_, j) => <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>)}
               </TableRow>
             ))}
           </TableBody>
@@ -119,6 +119,7 @@ export default function AssessmentSubmissionsPage() {
                 <TableHeader>
                     <TableRow>
                         <TableHead>Candidate</TableHead>
+                        <TableHead>Job Position</TableHead>
                         <TableHead>Result Type</TableHead>
                         <TableHead>Completed On</TableHead>
                         <TableHead>Status</TableHead>
@@ -131,6 +132,10 @@ export default function AssessmentSubmissionsPage() {
                     <TableRow key={session.id}>
                         <TableCell className="font-medium">
                           {session.candidateName ?? session.candidateEmail ?? session.candidateUid}
+                        </TableCell>
+                        <TableCell>
+                          {session.jobPosition || '-'}
+                          {session.brandName && <span className="text-xs text-muted-foreground block">{session.brandName}</span>}
                         </TableCell>
                         <TableCell>
                           {session.result?.discType ? <AssessmentStatusBadge status="result" label={session.result.discType} /> : '-'}
@@ -150,7 +155,7 @@ export default function AssessmentSubmissionsPage() {
                     ))
                 ) : (
                     <TableRow>
-                    <TableCell colSpan={5} className="h-24 text-center">
+                    <TableCell colSpan={6} className="h-24 text-center">
                         No submissions for this assessment yet.
                     </TableCell>
                     </TableRow>

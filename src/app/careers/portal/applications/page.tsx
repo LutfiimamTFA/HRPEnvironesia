@@ -45,6 +45,7 @@ function ApplicationCard({ application }: { application: JobApplication }) {
   const isHired = application.status === 'hired';
 
   const canContinue = application.status === 'draft';
+  const canTakeTest = application.status === 'psychotest';
   const jobIsExpired = application.jobApplyDeadline && application.jobApplyDeadline.toDate() < new Date();
   
   const timelineSteps = useMemo(() => {
@@ -145,6 +146,14 @@ function ApplicationCard({ application }: { application: JobApplication }) {
                 <Link href={`/careers/jobs/${application.jobSlug}/apply`}>
                     Lanjutkan Draf
                     <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+            </Button>
+        )}
+        {canTakeTest && (
+             <Button asChild size="sm">
+                <Link href={`/careers/portal/assessment/personality?applicationId=${application.id}`}>
+                    Kerjakan Tes
+                    <BrainCircuit className="ml-2 h-4 w-4" />
                 </Link>
             </Button>
         )}
