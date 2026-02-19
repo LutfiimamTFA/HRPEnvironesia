@@ -203,6 +203,11 @@ service cloud.firestore {
     
     // --- Assessment Rules ---
 
+    match /assessment_config/{configId} {
+        allow read: if isSignedIn();
+        allow write: if isInternal() && getUserData().role in ['super_admin', 'hrd'];
+    }
+
     match /assessment_templates/{templateId} {
       allow read: if isSignedIn();
       allow write: if isInternal() && getUserData().role in ['super_admin', 'hrd'];
@@ -215,7 +220,7 @@ service cloud.firestore {
     }
     
     match /assessment_questions/{questionId} {
-      allow list: if isSignedIn();
+      allow list: if isSignedIn(); // Must be relatively open for where-in queries. Client logic is the main guard.
       allow get: if isSignedIn();
       allow write: if isInternal() && getUserData().role in ['super_admin', 'hrd'];
     }
