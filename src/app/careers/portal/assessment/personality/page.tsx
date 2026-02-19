@@ -9,7 +9,7 @@ import { collection, query, where, limit, serverTimestamp, Timestamp, getDocs, d
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
-import type { Assessment, AssessmentSession, JobApplication } from '@/lib/types';
+import type { Assessment, AssessmentSession, JobApplication, AssessmentConfig } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { CheckCircle, Info } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -52,14 +52,18 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
     const { data: assessments, isLoading: assessmentLoading } = useCollection<Assessment>(assessmentQuery);
     const activeAssessment = assessments?.[0];
 
-    useEffect(() => {
-        if (appLoading || assessmentLoading || authLoading) return;
+    const configDocRef = useMemoFirebase(() => doc(firestore, 'assessment_config', 'main'), [firestore]);
+    const { data: assessmentConfig, isLoading: configLoading } = useDoc<AssessmentConfig>(configDocRef);
 
-        if (!application || !userProfile || !activeAssessment) {
+
+    useEffect(() => {
+        if (appLoading || assessmentLoading || authLoading || configLoading) return;
+
+        if (!application || !userProfile || !activeAssessment || !assessmentConfig) {
             if (appError) {
                 toast({ variant: 'destructive', title: 'Error', description: `Gagal memuat detail lamaran: ${appError.message}` });
             } else {
-                toast({ variant: 'destructive', title: 'Error', description: 'Gagal mempersiapkan tes. Lamaran atau tes tidak ditemukan.' });
+                toast({ variant: 'destructive', title: 'Error', description: 'Gagal mempersiapkan tes. Lamaran, tes, atau konfigurasi tidak ditemukan.' });
             }
             router.push('/careers/portal/applications');
             return;
@@ -81,12 +85,34 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
 
             if (!existingSessionsSnap.empty) {
                 const existingSession = existingSessionsSnap.docs[0];
-                toast({ title: 'Melanjutkan Sesi', description: 'Anda akan melanjutkan tes untuk lowongan ini.' });
-                router.push(`/careers/portal/assessment/personality/${existingSession.id}`);
+                // Check if the session is complete
+                if (existingSession.data().status === 'submitted') {
+                    toast({ title: 'Sesi Selesai', description: 'Anda sudah menyelesaikan tes untuk lowongan ini.' });
+                    router.push(`/careers/portal/assessment/personality/result/${existingSession.id}`);
+                } else {
+                    toast({ title: 'Melanjutkan Sesi', description: 'Anda akan melanjutkan tes untuk lowongan ini.' });
+                    router.push(`/careers/portal/assessment/personality/${existingSession.id}`);
+                }
                 return;
             }
 
-            const sessionData: Omit<AssessmentSession, 'id' | 'scores' | 'answers'> = {
+            // Fetch question banks
+            const bigfiveQuestionsSnap = await getDocs(query(collection(firestore, 'assessment_questions'), where('assessmentId', '==', 'default'), where('engineKey', '==', 'bigfive')));
+            const discQuestionsSnap = await getDocs(query(collection(firestore, 'assessment_questions'), where('assessmentId', '==', 'default'), where('engineKey', '==', 'disc')));
+
+            const bigfiveIds = bigfiveQuestionsSnap.docs.map(doc => doc.id);
+            const discIds = discQuestionsSnap.docs.map(doc => doc.id);
+
+            // Fisher-Yates shuffle
+            const shuffle = (array: string[]) => {
+              for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+              }
+              return array;
+            };
+
+            const sessionData: Omit<AssessmentSession, 'id'> = {
                 assessmentId: activeAssessment.id!,
                 candidateUid: userProfile.uid,
                 candidateName: userProfile.fullName,
@@ -95,6 +121,13 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
                 jobPosition: application.jobPosition,
                 brandName: application.brandName,
                 status: 'draft',
+                currentTestPart: 'bigfive',
+                selectedQuestionIds: {
+                    bigfive: shuffle(bigfiveIds).slice(0, assessmentConfig.bigfiveCount),
+                    disc: shuffle(discIds).slice(0, assessmentConfig.discCount),
+                },
+                answers: {},
+                scores: { disc: {}, bigfive: {} },
                 startedAt: serverTimestamp() as Timestamp,
                 updatedAt: serverTimestamp() as Timestamp,
             };
@@ -105,11 +138,12 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
         };
 
         handleStart().catch(e => {
+            console.error("Failed to start assessment:", e);
             toast({ variant: 'destructive', title: 'Gagal Memulai Tes', description: e.message });
             router.push('/careers/portal/applications');
         });
 
-    }, [appLoading, assessmentLoading, authLoading, application, userProfile, activeAssessment, applicationId, router, toast, firestore, appError]);
+    }, [appLoading, assessmentLoading, authLoading, configLoading, application, userProfile, activeAssessment, assessmentConfig, applicationId, router, toast, firestore, appError]);
 
     return (
       <div className="flex h-64 flex-col items-center justify-center text-center">
@@ -137,7 +171,7 @@ function AssessmentStartPageContent() {
   }, [firestore, userProfile]);
 
   const { data: sessions, isLoading: sessionsLoading } = useCollection<AssessmentSession>(sessionsQuery);
-  const submittedSession = useMemo(() => sessions?.find(s => s.status === 'submitted'), [sessions]);
+  const submittedSession = useMemo(() => sessions?.find(s => s.status === 'submitted' && !s.applicationId), [sessions]);
 
   const isLoading = authLoading || sessionsLoading;
 
@@ -170,7 +204,7 @@ function AssessmentStartPageContent() {
             <Info className="h-4 w-4" />
             <AlertTitle>Petunjuk Memulai Tes</AlertTitle>
             <AlertDescription>
-              Untuk mengerjakan tes, silakan akses melalui tombol "Kerjakan Tes" pada lamaran Anda yang berstatus "Tahap Psikotes" di halaman <Link href="/careers/portal/applications" className="font-bold underline">Lamaran Saya</Link>.
+              Untuk mengerjakan tes, silakan akses melalui tombol "Kerjakan Tes" pada lamaran Anda yang berstatus "Tahap Tes Kepribadian" di halaman <Link href="/careers/portal/applications" className="font-bold underline">Lamaran Saya</Link>.
             </AlertDescription>
         </Alert>
       </CardContent>
