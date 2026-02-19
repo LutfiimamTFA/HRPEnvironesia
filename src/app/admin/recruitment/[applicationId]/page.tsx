@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useMemo, useState } from 'react';
@@ -16,7 +17,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ALL_MENU_ITEMS, ALL_UNIQUE_MENU_ITEMS } from '@/lib/menu-config';
 import { ProfileView } from '@/components/recruitment/ProfileView';
-import { ApplicationStatusBadge, APPLICATION_STATUSES } from '@/components/recruitment/ApplicationStatusBadge';
+import { ApplicationStatusBadge, APPLICATION_STATUSES, statusDisplayLabels } from '@/components/recruitment/ApplicationStatusBadge';
 import { useToast } from '@/hooks/use-toast';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { getInitials } from '@/lib/utils';
@@ -29,17 +30,6 @@ import { CandidateFitAnalysis } from '@/components/recruitment/CandidateFitAnaly
 function ApplicationDetailSkeleton() {
   return <Skeleton className="h-[500px] w-full" />;
 }
-
-const statusDisplayLabels: Record<JobApplication['status'], string> = {
-    draft: 'Draf',
-    submitted: 'Lamaran Diterima',
-    tes_kepribadian: 'Tes Kepribadian',
-    verification: 'Verifikasi',
-    document_submission: 'Pengumpulan Dokumen',
-    interview: 'Wawancara',
-    hired: 'Diterima Kerja',
-    rejected: 'Ditolak',
-};
 
 function StatusManager({ application }: { application: JobApplication }) {
   const [selectedStatus, setSelectedStatus] = useState(application.status);
@@ -80,7 +70,7 @@ function StatusManager({ application }: { application: JobApplication }) {
         <SelectContent>
           {APPLICATION_STATUSES.map(status => (
             <SelectItem key={status} value={status}>
-              {statusDisplayLabels[status] || status.replace('_', ' ')}
+              {statusDisplayLabels[status]}
             </SelectItem>
           ))}
         </SelectContent>

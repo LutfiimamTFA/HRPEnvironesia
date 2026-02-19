@@ -1,3 +1,4 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import admin from '@/lib/firebase/admin';
 import { Timestamp } from 'firebase-admin/firestore';
@@ -69,7 +70,22 @@ export async function POST(req: NextRequest) {
         throw new Error(`Assessment '${assessment.id}' is malformed or missing key properties like 'resultTemplates' or 'rules'.`);
     }
 
-    const questionsQuery = db.collection('assessment_questions').where('assessmentId', '==', session.assessmentId).where('isActive', '==', true);
+    // --- GUARD FOR UNSUPPORTED FORMAT ---
+    if (template.format === 'forced-choice') {
+        throw new Error(`Scoring for 'forced-choice' assessments is not yet implemented.`);
+    }
+
+    const allQuestionIds = [
+      ...(session.selectedQuestionIds?.bigfive || []),
+      ...(session.selectedQuestionIds?.disc || []),
+    ];
+
+    if (allQuestionIds.length === 0) {
+      throw new Error("No questions were selected for this assessment session.");
+    }
+    
+    // Fetch only the selected questions
+    const questionsQuery = db.collection('assessment_questions').where(admin.firestore.FieldPath.documentId(), 'in', allQuestionIds);
     const questionsSnap = await questionsQuery.get();
     const questions = questionsSnap.docs.map(doc => ({ ...doc.data(), id: doc.id } as AssessmentQuestion));
 
@@ -84,17 +100,17 @@ export async function POST(req: NextRequest) {
         const answerValue = session.answers[question.id!];
         if (answerValue === undefined) continue;
 
-        let finalValue = answerValue;
+        let finalValue = answerValue as number;
         if (template.scoring.reverseEnabled && question.reverse) {
-            finalValue = (template.scale.points + 1) - answerValue;
+            finalValue = (template.scale.points + 1) - finalValue;
         }
         
         const scoreToAdd = finalValue * (question.weight || 1);
 
-        if (question.engineKey === 'disc' && scores.disc[question.dimensionKey] !== undefined) {
-            scores.disc[question.dimensionKey] += scoreToAdd;
-        } else if (question.engineKey === 'bigfive' && scores.bigfive[question.dimensionKey] !== undefined) {
-            scores.bigfive[question.dimensionKey] += scoreToAdd;
+        if (question.engineKey === 'disc' && scores.disc[question.dimensionKey!] !== undefined) {
+            scores.disc[question.dimensionKey!] += scoreToAdd;
+        } else if (question.engineKey === 'bigfive' && scores.bigfive[question.dimensionKey!] !== undefined) {
+            scores.bigfive[question.dimensionKey!] += scoreToAdd;
         }
     }
     
@@ -107,10 +123,11 @@ export async function POST(req: NextRequest) {
     // --- 3. Normalization ---
     const normalized: AssessmentSession['normalized'] = { bigfive: {} };
     if (assessment.rules?.bigfiveNormalization === 'minmax') {
+        const bigfiveQuestions = questions.filter(q => q.engineKey === 'bigfive');
         for (const dim of template.dimensions.bigfive) {
             const rawScore = scores.bigfive[dim.key];
-            const minScore = getMinScore(questions, dim.key, 'bigfive');
-            const maxScore = getMaxScore(questions, dim.key, 'bigfive', template.scale.points);
+            const minScore = getMinScore(bigfiveQuestions, dim.key, 'bigfive');
+            const maxScore = getMaxScore(bigfiveQuestions, dim.key, 'bigfive', template.scale.points);
             if (maxScore - minScore === 0) {
                  normalized.bigfive[dim.key] = 50; // Avoid division by zero
             } else {
@@ -174,7 +191,7 @@ export async function POST(req: NextRequest) {
     if (session.applicationId) {
       const appRef = db.collection('applications').doc(session.applicationId);
       const appDoc = await appRef.get();
-      if (appDoc.exists && appDoc.data()?.status === 'psychotest') {
+      if (appDoc.exists && appDoc.data()?.status === 'tes_kepribadian') {
         await appRef.update({
           status: 'verification',
           updatedAt: Timestamp.now(),

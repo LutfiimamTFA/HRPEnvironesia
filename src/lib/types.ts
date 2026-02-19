@@ -212,15 +212,15 @@ export type Assessment = {
   questionConfig?: {
     bigfiveCount?: number;
     discCount?: number;
-  },
+  };
   resultTemplates: {
     disc: Record<string, Partial<ResultTemplate>>;
     bigfive: Record<string, { highText: string; midText: string; lowText: string }>;
     overall: {
-      summaryBlocks: string[];
+      summaryBlocks?: string[];
       interviewQuestions: string[];
-      redFlags: string[];
-      developmentTips: string[];
+      redFlags?: string[];
+      developmentTips?: string[];
     };
   };
   rules?: {
@@ -272,7 +272,7 @@ export type AssessmentSession = {
   jobPosition?: string;
   brandName?: string;
   status: 'draft' | 'submitted';
-  currentTestPart: 'bigfive' | 'disc';
+  currentTestPart?: 'bigfive' | 'disc';
   selectedQuestionIds?: {
     bigfive: string[];
     disc: string[];
