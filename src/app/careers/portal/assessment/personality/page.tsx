@@ -160,6 +160,19 @@ function AssessmentStartPageContent() {
   const searchParams = useSearchParams();
   const applicationId = searchParams.get('applicationId');
   
+  // New: Query for active applications that need a test.
+  const activeTestApplicationQuery = useMemoFirebase(() => {
+    if (!userProfile) return null;
+    return query(
+      collection(firestore, 'applications'),
+      where('candidateUid', '==', userProfile.uid),
+      where('status', '==', 'tes_kepribadian'),
+      limit(1)
+    );
+  }, [firestore, userProfile]);
+  const { data: activeTestApplications, isLoading: activeTestAppsLoading } = useCollection<JobApplication>(activeTestApplicationQuery);
+  const activeTestApplication = activeTestApplications?.[0];
+
   const sessionsQuery = useMemoFirebase(() => {
     if (!userProfile) return null;
     return query(
@@ -173,10 +186,16 @@ function AssessmentStartPageContent() {
   const { data: sessions, isLoading: sessionsLoading } = useCollection<AssessmentSession>(sessionsQuery);
   const submittedSession = useMemo(() => sessions?.find(s => s.status === 'submitted' && !s.applicationId), [sessions]);
 
-  const isLoading = authLoading || sessionsLoading;
+  const isLoading = authLoading || sessionsLoading || activeTestAppsLoading;
 
+  // If an applicationId is in the URL, that takes top priority.
   if (applicationId) {
       return <StartTestForApplication applicationId={applicationId} />;
+  }
+
+  // If not, but we found an active application that needs a test, start that one.
+  if (!isLoading && activeTestApplication) {
+      return <StartTestForApplication applicationId={activeTestApplication.id!} />;
   }
 
   if (isLoading) {
