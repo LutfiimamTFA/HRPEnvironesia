@@ -2,7 +2,8 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useParams, useRouter } from '@/navigation';
+import { useRouter } from '@/navigation';
+import { useParams } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase, setDocumentNonBlocking } from '@/firebase';
 import { collection, query, where, limit, doc, getDoc, getDocs, serverTimestamp } from 'firebase/firestore';

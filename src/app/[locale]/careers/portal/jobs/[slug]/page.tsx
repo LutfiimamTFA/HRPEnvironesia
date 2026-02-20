@@ -1,7 +1,8 @@
 
 'use client';
 
-import { useParams, useRouter, Link } from '@/navigation';
+import { useRouter, Link } from '@/navigation';
+import { useParams } from 'next/navigation';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, query, where, limit } from 'firebase/firestore';
 import type { Job } from '@/lib/types';

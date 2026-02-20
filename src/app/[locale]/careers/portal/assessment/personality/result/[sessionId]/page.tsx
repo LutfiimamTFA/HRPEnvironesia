@@ -1,7 +1,8 @@
 
 'use client';
 
-import { useParams, Link } from '@/navigation';
+import { useParams } from 'next/navigation';
+import { Link } from '@/navigation';
 import { useDoc, useFirestore, useMemoFirebase } from '@/firebase';
 import { doc } from 'firebase/firestore';
 import type { AssessmentSession } from '@/lib/types';
