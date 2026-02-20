@@ -20,12 +20,11 @@ export type MenuGroup = {
 
 const RECRUITMENT_MENU: MenuGroup[] = [
     {
-        title: "Recruitment",
         items: [
-            { href: '/admin/recruitment', label: 'Overview', icon: createElement(LayoutDashboard) },
-            { href: '/admin/jobs', label: 'Job Postings', icon: createElement(Briefcase) },
-            { href: '/admin/recruitment/pipeline', label: 'Candidates', icon: createElement(Users) },
             { href: '/admin/hrd/assessments', label: 'Assessments', icon: createElement(ClipboardCheck) },
+            { href: '/admin/recruitment', label: 'Dashboard', icon: createElement(LayoutDashboard) },
+            { href: '/admin/jobs', label: 'Job Postings', icon: createElement(Briefcase) },
+            { href: '/admin/recruitment/pipeline', label: 'Recruitment', icon: createElement(Users) },
         ]
     }
 ];
