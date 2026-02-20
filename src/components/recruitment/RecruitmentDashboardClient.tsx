@@ -1,22 +1,23 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { PlusCircle, Upload } from 'lucide-react';
+import { PlusCircle, Upload, LayoutGrid, List } from 'lucide-react';
 import { GlobalFilterBar } from './GlobalFilterBar';
 import { calculateKpis } from '@/lib/recruitment/metrics';
 import { KpiCard } from './KpiCard';
 import { CommandCenter } from './CommandCenter';
 import { AnalyticsCharts } from './AnalyticsCharts';
 import { CandidatesTable } from './CandidatesTable';
+import { CandidatesKanban } from './CandidatesKanban';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
 import type { JobApplication, Job, UserProfile, Brand } from '@/lib/types';
 import { Skeleton } from '../ui/skeleton';
 
 export type FilterState = {
-  dateRange: { from?: Date; to?: Date };
+  dateRange: { from?: Date | null; to?: Date | null };
   jobIds: string[];
   recruiterIds: string[];
   stages: string[];
@@ -39,6 +40,7 @@ function DashboardSkeleton() {
 export function RecruitmentDashboardClient() {
     const firestore = useFirestore();
     const [view, setView] = useState('overview');
+    const [candidateViewMode, setCandidateViewMode] = useState<'table' | 'kanban'>('table');
     
     // Data Fetching
     const { data: applications, isLoading: isLoadingApps } = useCollection<JobApplication>(
@@ -55,7 +57,7 @@ export function RecruitmentDashboardClient() {
     );
 
     const [filters, setFilters] = useState<FilterState>({
-        dateRange: {},
+        dateRange: { from: null, to: null },
         jobIds: [],
         recruiterIds: [],
         stages: [],
@@ -63,6 +65,15 @@ export function RecruitmentDashboardClient() {
     });
 
     const isLoading = isLoadingApps || isLoadingJobs || isLoadingRecruiters || isLoadingBrands;
+    const isKanbanDisabled = filters.jobIds.length !== 1;
+
+    useEffect(() => {
+        // If filters change and Kanban is no longer valid, switch back to table view
+        if (isKanbanDisabled && candidateViewMode === 'kanban') {
+            setCandidateViewMode('table');
+        }
+    }, [isKanbanDisabled, candidateViewMode]);
+
 
     const filteredApplications = useMemo(() => {
         if (!applications) return [];
@@ -134,7 +145,31 @@ export function RecruitmentDashboardClient() {
                 </TabsContent>
 
                  <TabsContent value="candidates" className="mt-0">
-                    <CandidatesTable applications={filteredApplications} />
+                    <div className="flex justify-end items-center mb-4 gap-2">
+                        <Button
+                            variant={candidateViewMode === 'table' ? 'secondary' : 'ghost'}
+                            size="sm"
+                            onClick={() => setCandidateViewMode('table')}
+                        >
+                            <List className="mr-2 h-4 w-4" />
+                            Table
+                        </Button>
+                        <Button
+                            variant={candidateViewMode === 'kanban' ? 'secondary' : 'ghost'}
+                            size="sm"
+                            onClick={() => setCandidateViewMode('kanban')}
+                            disabled={isKanbanDisabled}
+                            title={isKanbanDisabled ? "Select a single job to enable Kanban view" : "Switch to Kanban view"}
+                        >
+                            <LayoutGrid className="mr-2 h-4 w-4" />
+                            Kanban
+                        </Button>
+                    </div>
+                    {candidateViewMode === 'table' ? (
+                        <CandidatesTable applications={filteredApplications} />
+                    ) : (
+                        <CandidatesKanban applications={filteredApplications} />
+                    )}
                 </TabsContent>
 
                 <TabsContent value="analytics" className="mt-0">
