@@ -1,0 +1,23 @@
+{
+  "careers_hero": {
+    "src": "https://picsum.photos/seed/hero-bg/2560/1440",
+    "width": 2560,
+    "height": 1440,
+    "alt": "Photorealistic cinematic hero background of an Indonesian landscape at sunrise",
+    "ai_hint": "cinematic landscape sunrise"
+  },
+  "careers_office_spotlight": {
+    "src": "https://picsum.photos/seed/basecamp-office/2000/1250",
+    "width": 2000,
+    "height": 1250,
+    "alt": "Photorealistic modern minimalist office exterior in Indonesia",
+    "ai_hint": "modern office exterior"
+  },
+  "careers_empty_jobs": {
+    "src": "https://picsum.photos/seed/empty-jobs-illustration/1200/900",
+    "width": 1200,
+    "height": 900,
+    "alt": "Minimalist illustration for empty job listings",
+    "ai_hint": "minimalist illustration seedling"
+  }
+}

@@ -1,0 +1,141 @@
+{
+  "CareersLanding": {
+    "Header": {
+      "jobs": "Vacancies",
+      "process": "Process",
+      "faq": "FAQ",
+      "companyProfile": "Company Profile",
+      "signIn": "Candidate Login",
+      "signUp": "Register"
+    },
+    "Hero": {
+      "title": "Let's Make a Change Together",
+      "subtitle": "Be part of an innovative team dedicated to creating sustainable environmental solutions. Find your impactful career at Environesia.",
+      "ctaPrimary": "View Vacancies",
+      "ctaSecondary": "Quick Apply",
+      "badgeProjects": "560+ Projects",
+      "badgeProvinces": "38 Provinces",
+      "badgeServices": "Lab & Consulting"
+    },
+    "JobExplorer": {
+      "title": "Find Your Opportunity",
+      "subtitle": "We are looking for talented individuals to join our various teams. Explore positions that match your skills.",
+      "searchPlaceholder": "Search for a position or division...",
+      "filters": {
+        "fulltime": "Full-time",
+        "internship": "Internship",
+        "contract": "Contract"
+      },
+      "emptyState": {
+        "title": "No Matching Vacancies Found",
+        "subtitle": "Try adjusting your keywords or filters, or join our talent pool to get notified about new vacancies.",
+        "cta": "Join Talent Pool"
+      }
+    },
+    "ValueProps": {
+      "title": "Why Environesia?",
+      "subtitle": "We are more than just a workplace. We are a community committed to the future of our planet.",
+      "values": [
+        {
+          "title": "Impactful Career",
+          "description": "Work on real environmental projects across Indonesia."
+        },
+        {
+          "title": "Professional Growth",
+          "description": "We invest in your personal development through training and certification."
+        },
+        {
+          "title": "Innovative Collaboration",
+          "description": "Join a solid and supportive team of experts."
+        },
+        {
+          "title": "Work-Life Balance",
+          "description": "We value your personal time to create a healthy work environment."
+        }
+      ]
+    },
+    "RecruitmentProcess": {
+      "title": "Our Recruitment Process",
+      "subtitle": "We designed a fair and transparent process to find the best talent.",
+      "steps": [
+        {
+          "title": "Apply Online",
+          "description": "Complete your profile and submit your application through our career portal."
+        },
+        {
+          "title": "Psychological Test",
+          "description": "Take a psychological test to measure your potential and suitability."
+        },
+        {
+          "title": "Administrative Selection",
+          "description": "Our recruitment team will review your profile completeness and test results."
+        },
+        {
+          "title": "Interview",
+          "description": "Meet with HR and potential users for a more in-depth discussion."
+        },
+        {
+          "title": "Job Offer",
+          "description": "Selected candidates will receive an official job offer from us."
+        }
+      ]
+    },
+    "OfficeSpotlight": {
+      "title": "Environesia Basecamp",
+      "subtitle": "Where great ideas are born. Our headquarters in Yogyakarta is a center for collaboration, innovation, and real action for the environment."
+    },
+    "HowToApply": {
+      "title": "Easy Way to Apply",
+      "subtitle": "Follow these simple steps to start your career journey at Environesia.",
+      "cta": "Register an Account Now",
+      "steps": [
+        {
+          "title": "Create Account",
+          "description": "Register yourself with an email and create a password."
+        },
+        {
+          "title": "Find a Vacancy",
+          "description": "Explore various available positions and find one that fits you."
+        },
+        {
+          "title": "Submit Application",
+          "description": "Upload your latest CV and submit your application with ease."
+        },
+        {
+          "title": "Track the Process",
+          "description": "Track the status of your application directly from the candidate dashboard."
+        }
+      ]
+    },
+    "FAQ": {
+      "title": "Frequently Asked Questions (FAQ)",
+      "subtitle": "Answers to common questions about the job application process at Environesia.",
+      "contactCta": "Contact HR",
+      "questions": [
+        {
+          "q": "What should I prepare before applying?",
+          "a": "Make sure you have your latest CV (Curriculum Vitae) in PDF format, a cover letter (optional), and a portfolio if the position requires it."
+        },
+        {
+          "q": "How long does the recruitment process usually take?",
+          "a": "Our recruitment process usually takes 2-4 weeks from the closing date of the vacancy, but this can vary. We will provide the latest information via email."
+        },
+        {
+          "q": "Can I apply for more than one position?",
+          "a": "Yes, you can apply for up to 3 different positions at the same time. However, we recommend focusing on the position that best suits your qualifications."
+        },
+        {
+          "q": "Who can I contact if I have questions?",
+          "a": "If you have any questions, feel free to contact our recruitment team via email at careers@environesia.co.id."
+        }
+      ]
+    },
+    "Footer": {
+      "tagline": "Building careers, protecting the earth.",
+      "navigation": "Navigation",
+      "company": "Company",
+      "internalAccess": "Internal Access",
+      "copyright": "© {year} Environesia. All Rights Reserved."
+    }
+  }
+}
