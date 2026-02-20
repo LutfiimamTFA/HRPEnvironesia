@@ -51,6 +51,14 @@ function CandidateLoginContent() {
               Daftar di sini
             </Link>
           </p>
+          <p className="mt-4">
+            <Link
+              href="/careers"
+              className="text-sm text-muted-foreground underline-offset-4 hover:text-primary"
+            >
+              &larr; Kembali ke Halaman Karir
+            </Link>
+          </p>
         </div>
       </div>
     </div>
