@@ -349,7 +349,7 @@ const Footer = () => {
                         <h4 className="font-semibold">{t('company')}</h4>
                         <ul className="mt-4 space-y-2 text-sm">
                              <li><a href="https://environesia.co.id/" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary">{useTranslations('CareersLanding.Header')('companyProfile')}</a></li>
-                             <li><Link href="/admin/login" className="text-muted-foreground hover:text-primary">{t('internalAccess')}</Link></li>
+                             <li><a href="/admin/login" className="text-muted-foreground hover:text-primary">{t('internalAccess')}</a></li>
                         </ul>
                     </div>
                 </div>
