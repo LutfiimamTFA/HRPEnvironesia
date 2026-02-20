@@ -129,6 +129,11 @@ export function GoogleDatePicker({
     <>
       {renderHeader()}
       <div className="grid grid-cols-7">
+        {['M', 'S', 'S', 'R', 'K', 'J', 'S'].map((day, i) => (
+            <div key={i} className="text-center text-xs font-medium text-muted-foreground p-2">{day}</div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7">
         {days.map(day => (
           <div key={day.toISOString()} className="p-0.5">
             <Button

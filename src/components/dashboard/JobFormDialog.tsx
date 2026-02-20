@@ -361,5 +361,3 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
     </Dialog>
   );
 }
-
-    

@@ -3,17 +3,13 @@
 import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Calendar as CalendarIcon, RotateCcw } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { format } from "date-fns";
-import { DateRange } from "react-day-picker";
+import { RotateCcw } from "lucide-react";
 import type { Job, UserProfile, Brand } from "@/lib/types";
 import type { FilterState } from "./RecruitmentDashboardClient";
 import { APPLICATION_STATUSES, statusDisplayLabels } from './ApplicationStatusBadge';
-import { Calendar } from "@/components/ui/calendar";
+import { GoogleDatePicker } from "../ui/google-date-picker";
 
 interface GlobalFilterBarProps {
     jobs: Job[];
@@ -25,8 +21,14 @@ interface GlobalFilterBarProps {
 
 export function GlobalFilterBar({ jobs, recruiters, brands, filters, setFilters }: GlobalFilterBarProps) {
   
-  const handleDateChange = (dateRange: DateRange | undefined) => {
-    setFilters(prev => ({ ...prev, dateRange: { from: dateRange?.from, to: dateRange?.to } }));
+  const handleDateChange = (field: 'from' | 'to', date: Date | null) => {
+    setFilters(prev => ({ 
+        ...prev, 
+        dateRange: { 
+            ...prev.dateRange,
+            [field]: date 
+        } 
+    }));
   };
 
   const handleJobChange = (jobId: string) => {
@@ -47,45 +49,27 @@ export function GlobalFilterBar({ jobs, recruiters, brands, filters, setFilters 
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-2">
-       <Popover>
-        <PopoverTrigger asChild>
-          <Button
-            id="date"
-            variant={"outline"}
-            className={cn(
-              "w-[240px] justify-start text-left font-normal",
-              !filters.dateRange.from && "text-muted-foreground"
-            )}
-          >
-            <CalendarIcon className="mr-2 h-4 w-4" />
-            {filters.dateRange.from ? (
-              filters.dateRange.to ? (
-                <>
-                  {format(filters.dateRange.from, "LLL dd, y")} -{" "}
-                  {format(filters.dateRange.to, "LLL dd, y")}
-                </>
-              ) : (
-                format(filters.dateRange.from, "LLL dd, y")
-              )
-            ) : (
-              <span>Pick a date range</span>
-            )}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="start">
-          <Calendar
-            initialFocus
-            mode="range"
-            defaultMonth={filters.dateRange?.from}
-            selected={filters.dateRange}
-            onSelect={handleDateChange}
-            numberOfMonths={2}
+      <div className="w-full sm:w-auto flex-grow sm:flex-grow-0">
+          <GoogleDatePicker
+            value={filters.dateRange.from}
+            onChange={(date) => handleDateChange('from', date)}
+            placeholder="Start date"
+            className="w-full"
+            portalled={false}
           />
-        </PopoverContent>
-      </Popover>
+      </div>
+      <div className="w-full sm:w-auto flex-grow sm:flex-grow-0">
+          <GoogleDatePicker
+            value={filters.dateRange.to}
+            onChange={(date) => handleDateChange('to', date)}
+            placeholder="End date"
+            className="w-full"
+            portalled={false}
+          />
+      </div>
       
       <Select value={filters.jobIds.length === 1 ? filters.jobIds[0] : 'all'} onValueChange={handleJobChange}>
-        <SelectTrigger className="w-[180px]">
+        <SelectTrigger className="w-full sm:w-[180px]">
             <SelectValue placeholder="All Jobs" />
         </SelectTrigger>
         <SelectContent>
@@ -97,7 +81,7 @@ export function GlobalFilterBar({ jobs, recruiters, brands, filters, setFilters 
       </Select>
       
        <Select value={filters.brandId || 'all'} onValueChange={handleBrandChange}>
-        <SelectTrigger className="w-[180px]">
+        <SelectTrigger className="w-full sm:w-[180px]">
             <SelectValue placeholder="All Brands" />
         </SelectTrigger>
         <SelectContent>
@@ -109,7 +93,7 @@ export function GlobalFilterBar({ jobs, recruiters, brands, filters, setFilters 
       </Select>
 
       <Select value={filters.stages.length === 1 ? filters.stages[0] : 'all'} onValueChange={handleStageChange}>
-        <SelectTrigger className="w-[180px]">
+        <SelectTrigger className="w-full sm:w-[180px]">
             <SelectValue placeholder="All Stages" />
         </SelectTrigger>
         <SelectContent>
@@ -121,7 +105,7 @@ export function GlobalFilterBar({ jobs, recruiters, brands, filters, setFilters 
       </Select>
 
        <Select value={filters.recruiterIds.length === 1 ? filters.recruiterIds[0] : 'all'} disabled>
-        <SelectTrigger className="w-[180px]">
+        <SelectTrigger className="w-full sm:w-[180px]">
             <SelectValue placeholder="All Recruiters" />
         </SelectTrigger>
         <SelectContent>
