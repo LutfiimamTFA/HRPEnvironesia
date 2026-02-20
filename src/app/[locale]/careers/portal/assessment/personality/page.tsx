@@ -1,8 +1,8 @@
-
 'use client';
 
 import { useState, useEffect, useMemo, Suspense } from 'react';
-import { Link, useRouter, useSearchParams } from '@/navigation';
+import { Link, useRouter } from '@/navigation';
+import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase, addDocumentNonBlocking, useDoc, setDocumentNonBlocking } from '@/firebase';
 import { collection, query, where, limit, serverTimestamp, Timestamp, getDocs, doc, orderBy } from 'firebase/firestore';
@@ -346,3 +346,5 @@ export default function AssessmentPage() {
         </Suspense>
     )
 }
+
+    

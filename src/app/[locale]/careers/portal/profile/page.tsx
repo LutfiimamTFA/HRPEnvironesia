@@ -1,4 +1,3 @@
-
 'use client';
 
 import { Suspense, useEffect, useState } from 'react';
@@ -12,7 +11,8 @@ import { EducationForm } from '@/components/profile/EducationForm';
 import { WorkExperienceForm } from '@/components/profile/WorkExperienceForm';
 import { SkillsForm } from '@/components/profile/SkillsForm';
 import { SelfDescriptionForm } from '@/components/profile/SelfDescriptionForm';
-import { useRouter, useSearchParams } from '@/navigation';
+import { useRouter } from '@/navigation';
+import { useSearchParams } from 'next/navigation';
 import { ProfileStepper } from '@/components/profile/ProfileStepper';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -227,3 +227,5 @@ export default function ProfilePage() {
         </Suspense>
     )
 }
+
+    
