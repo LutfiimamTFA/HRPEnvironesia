@@ -85,8 +85,9 @@ service cloud.firestore {
      * - Only a super_admin can list all users or create/delete them.
      */
     match /users/{userId} {
-      allow get, update: if isOwner(userId) || isSuperAdmin();
-      allow list: if isSuperAdmin();
+      allow get: if isOwner(userId) || isInternal();
+      allow update: if isOwner(userId) || isSuperAdmin();
+      allow list: if getUserData().role == 'super-admin' || getUserData().role == 'hrd';
       allow create: if isSuperAdmin() && hasValidCreateData(userId);
       allow delete: if isSuperAdmin();
 
@@ -262,5 +263,3 @@ service cloud.firestore {
     }
   }
 }
-
-    
