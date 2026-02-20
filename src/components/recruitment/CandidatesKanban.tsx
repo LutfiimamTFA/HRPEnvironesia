@@ -11,7 +11,7 @@ import { getInitials, cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, closestCenter, type DragStartEvent, type DragEndEvent } from '@dnd-kit/core';
-import { SortableContext, useSortable, arrayMove } from '@dnd-kit/sortable';
+import { SortableContext, useSortable, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { doc, serverTimestamp } from 'firebase/firestore';
 import { useFirestore, updateDocumentNonBlocking } from '@/firebase';
@@ -68,8 +68,10 @@ const SortableCandidateCard = ({ application }: { application: JobApplication })
 };
 
 const KanbanColumn = ({ stage, applications }: { stage: JobApplication['status']; applications: JobApplication[] }) => {
+    const { setNodeRef } = useSortable({ id: stage });
+
     return (
-        <div className="w-72 flex-shrink-0">
+         <div ref={setNodeRef} className="w-72 flex-shrink-0">
             <Card className="bg-muted/50 h-full">
                 <CardHeader className="p-3">
                     <CardTitle className="text-base font-medium flex items-center justify-between">
@@ -79,7 +81,7 @@ const KanbanColumn = ({ stage, applications }: { stage: JobApplication['status']
                 </CardHeader>
                 <CardContent className="p-3">
                     <ScrollArea className="h-[60vh]">
-                        <SortableContext items={applications.map(app => app.id!)}>
+                        <SortableContext items={applications.map(app => app.id!)} strategy={verticalListSortingStrategy}>
                            <div className="min-h-[1px]">
                                 {applications.map(app => (
                                     <SortableCandidateCard key={app.id} application={app} />
@@ -146,8 +148,11 @@ export function CandidatesKanban({ applications: initialApplications }: { applic
     
     const handleDragEnd = async (event: DragEndEvent) => {
         const { active, over } = event;
-        setActiveApplication(null); // Reset overlay immediately
-        if (!over) return;
+        
+        if (!over) {
+            setActiveApplication(null);
+            return;
+        }
 
         const activeId = active.id as string;
         const overId = over.id as string;
@@ -155,12 +160,10 @@ export function CandidatesKanban({ applications: initialApplications }: { applic
         const activeContainer = findContainer(activeId);
         const overContainer = findContainer(overId);
 
-        if (!activeContainer || !overContainer) return;
-        
-        if (activeContainer === overContainer) {
-             // Reordering within the same column
-            if (activeId !== overId) {
-                setApplications(prev => {
+        if (!activeContainer || !overContainer || activeContainer === overContainer) {
+            // Logic for reordering within the same column if needed
+            if (activeContainer && activeContainer === overContainer && activeId !== overId) {
+                 setApplications(prev => {
                     const items = prev[activeContainer as JobApplication['status']];
                     const oldIndex = items.findIndex(item => item.id === activeId);
                     const newIndex = items.findIndex(item => item.id === overId);
@@ -171,46 +174,62 @@ export function CandidatesKanban({ applications: initialApplications }: { applic
                     };
                 });
             }
-        } else {
-            // Moving to a different column
-            const activeItems = applications[activeContainer as JobApplication['status']];
-            const overItems = applications[overContainer as JobApplication['status']];
+            setActiveApplication(null);
+            return;
+        }
+
+        // Logic for moving to a different column
+        setApplications(prev => {
+            const activeItems = prev[activeContainer as JobApplication['status']];
+            const overItems = prev[overContainer as JobApplication['status']];
             const activeIndex = activeItems.findIndex(app => app.id === activeId);
             const overIndex = overItems.findIndex(app => app.id === overId);
-            
-            // Perform state update
-            let newApplicationsState = {...applications};
-            const [movedItem] = newApplicationsState[activeContainer as JobApplication['status']].splice(activeIndex, 1);
-            
-            if (overIndex >= 0) {
-                newApplicationsState[overContainer as JobApplication['status']].splice(overIndex, 0, movedItem);
-            } else {
-                 newApplicationsState[overContainer as JobApplication['status']].push(movedItem);
-            }
-            setApplications(newApplicationsState);
 
-            // Update Firestore
-            const newStage = overContainer as JobApplication['status'];
-            try {
-                const appRef = doc(firestore, 'applications', activeId);
-                await updateDocumentNonBlocking(appRef, {
-                    status: newStage,
-                    updatedAt: serverTimestamp()
-                });
-                toast({
-                    title: 'Status Diperbarui',
-                    description: `${movedItem.candidateName} dipindahkan ke tahap "${statusDisplayLabels[newStage]}".`
-                });
-            } catch (error: any) {
-                 toast({
-                    variant: 'destructive',
-                    title: 'Gagal Memperbarui',
-                    description: `Tidak dapat memindahkan kandidat: ${error.message}`
-                });
-                // Revert UI change
-                setApplications(applications);
+            let newIndex;
+            if (overId in prev) {
+                newIndex = overItems.length + 1;
+            } else {
+                const isBelowOverItem = over && active.rect.current.translated && active.rect.current.translated.top > over.rect.top + over.rect.height;
+                const modifier = isBelowOverItem ? 1 : 0;
+                newIndex = overIndex >= 0 ? overIndex + modifier : overItems.length + 1;
             }
+
+            const [movedItem] = activeItems.splice(activeIndex, 1);
+            overItems.splice(newIndex, 0, movedItem);
+
+            return { ...prev };
+        });
+
+        // Update Firestore
+        const newStage = overContainer as JobApplication['status'];
+        try {
+            const appRef = doc(firestore, 'applications', activeId);
+            await updateDocumentNonBlocking(appRef, {
+                status: newStage,
+                updatedAt: serverTimestamp()
+            });
+            toast({
+                title: 'Status Diperbarui',
+                description: `${activeApplication?.candidateName} dipindahkan ke tahap "${statusDisplayLabels[newStage]}".`
+            });
+        } catch (error: any) {
+             toast({
+                variant: 'destructive',
+                title: 'Gagal Memperbarui',
+                description: `Tidak dapat memindahkan kandidat: ${error.message}`
+            });
+            // Revert UI change by re-fetching from prop
+             const grouped: ApplicationGroup = {} as ApplicationGroup;
+             KANBAN_STAGES.forEach(stage => { grouped[stage] = [] });
+             initialApplications.forEach(app => {
+                 if (grouped[app.status]) {
+                     grouped[app.status].push(app);
+                 }
+             });
+             setApplications(grouped);
         }
+
+        setActiveApplication(null);
     };
 
     const containerIds = useMemo(() => Object.keys(applications), [applications]);
@@ -219,6 +238,7 @@ export function CandidatesKanban({ applications: initialApplications }: { applic
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
             <ScrollArea className="w-full whitespace-nowrap">
                 <div className="flex gap-4 pb-4">
+                    <SortableContext items={containerIds}>
                      {KANBAN_STAGES.map(stage => (
                          <KanbanColumn
                             key={stage}
@@ -226,6 +246,7 @@ export function CandidatesKanban({ applications: initialApplications }: { applic
                             applications={applications[stage] || []}
                         />
                      ))}
+                     </SortableContext>
                 </div>
                 <ScrollBar orientation="horizontal" />
             </ScrollArea>
