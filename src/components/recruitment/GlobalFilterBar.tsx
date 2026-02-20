@@ -10,18 +10,20 @@ import { Calendar as CalendarIcon, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { DateRange } from "react-day-picker";
-import { GoogleDatePicker } from "../ui/google-date-picker";
-import type { Job, UserProfile } from "@/lib/types";
+import type { Job, UserProfile, Brand } from "@/lib/types";
 import type { FilterState } from "./RecruitmentDashboardClient";
+import { APPLICATION_STATUSES, statusDisplayLabels } from './ApplicationStatusBadge';
+import { Calendar } from "@/components/ui/calendar";
 
 interface GlobalFilterBarProps {
     jobs: Job[];
     recruiters: UserProfile[];
+    brands: Brand[];
     filters: FilterState;
     setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
 }
 
-export function GlobalFilterBar({ jobs, recruiters, filters, setFilters }: GlobalFilterBarProps) {
+export function GlobalFilterBar({ jobs, recruiters, brands, filters, setFilters }: GlobalFilterBarProps) {
   
   const handleDateChange = (dateRange: DateRange | undefined) => {
     setFilters(prev => ({ ...prev, dateRange: { from: dateRange?.from, to: dateRange?.to } }));
@@ -31,8 +33,16 @@ export function GlobalFilterBar({ jobs, recruiters, filters, setFilters }: Globa
     setFilters(prev => ({ ...prev, jobIds: jobId === 'all' ? [] : [jobId] }));
   };
 
+  const handleBrandChange = (brandId: string) => {
+    setFilters(prev => ({ ...prev, brandId: brandId === 'all' ? undefined : brandId }));
+  };
+  
+  const handleStageChange = (stage: string) => {
+    setFilters(prev => ({ ...prev, stages: stage === 'all' ? [] : [stage] }));
+  };
+
   const handleReset = () => {
-    setFilters({ dateRange: {}, jobIds: [], recruiterIds: [], stages: [] });
+    setFilters({ dateRange: {}, jobIds: [], recruiterIds: [], stages: [], brandId: undefined });
   }
 
   return (
@@ -40,6 +50,7 @@ export function GlobalFilterBar({ jobs, recruiters, filters, setFilters }: Globa
        <Popover>
         <PopoverTrigger asChild>
           <Button
+            id="date"
             variant={"outline"}
             className={cn(
               "w-[240px] justify-start text-left font-normal",
@@ -62,12 +73,14 @@ export function GlobalFilterBar({ jobs, recruiters, filters, setFilters }: Globa
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="start">
-            {/* The shadcn calendar is bugged in this context, replacing with google one */}
-             <GoogleDatePicker
-                mode="general"
-                value={filters.dateRange.from || null}
-                onChange={(date) => handleDateChange({ from: date || undefined, to: filters.dateRange.to })}
-            />
+          <Calendar
+            initialFocus
+            mode="range"
+            defaultMonth={filters.dateRange?.from}
+            selected={filters.dateRange}
+            onSelect={handleDateChange}
+            numberOfMonths={2}
+          />
         </PopoverContent>
       </Popover>
       
@@ -82,12 +95,31 @@ export function GlobalFilterBar({ jobs, recruiters, filters, setFilters }: Globa
             ))}
         </SelectContent>
       </Select>
-      <Select disabled>
+      
+       <Select value={filters.brandId || 'all'} onValueChange={handleBrandChange}>
+        <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="All Brands" />
+        </SelectTrigger>
+        <SelectContent>
+            <SelectItem value="all">All Brands</SelectItem>
+            {brands.map(brand => (
+                <SelectItem key={brand.id} value={brand.id!}>{brand.name}</SelectItem>
+            ))}
+        </SelectContent>
+      </Select>
+
+      <Select value={filters.stages.length === 1 ? filters.stages[0] : 'all'} onValueChange={handleStageChange}>
         <SelectTrigger className="w-[180px]">
             <SelectValue placeholder="All Stages" />
         </SelectTrigger>
-        <SelectContent><SelectItem value="all">All Stages</SelectItem></SelectContent>
+        <SelectContent>
+            <SelectItem value="all">All Stages</SelectItem>
+            {APPLICATION_STATUSES.map(stage => (
+                <SelectItem key={stage} value={stage}>{statusDisplayLabels[stage]}</SelectItem>
+            ))}
+        </SelectContent>
       </Select>
+
        <Select value={filters.recruiterIds.length === 1 ? filters.recruiterIds[0] : 'all'} disabled>
         <SelectTrigger className="w-[180px]">
             <SelectValue placeholder="All Recruiters" />

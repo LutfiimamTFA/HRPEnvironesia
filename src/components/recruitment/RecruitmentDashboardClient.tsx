@@ -59,6 +59,7 @@ export function RecruitmentDashboardClient() {
         jobIds: [],
         recruiterIds: [],
         stages: [],
+        brandId: undefined,
     });
 
     const isLoading = isLoadingApps || isLoadingJobs || isLoadingRecruiters || isLoadingBrands;
@@ -71,6 +72,7 @@ export function RecruitmentDashboardClient() {
             if (filters.dateRange.to && appliedDate && appliedDate > filters.dateRange.to) return false;
             if (filters.jobIds.length > 0 && !filters.jobIds.includes(app.jobId)) return false;
             if (filters.stages.length > 0 && !filters.stages.includes(app.status)) return false;
+            if (filters.brandId && app.brandId !== filters.brandId) return false;
             // TODO: Implement recruiter filter once assignedRecruiterId is consistently populated
             return true;
         });
@@ -90,7 +92,7 @@ export function RecruitmentDashboardClient() {
         <Tabs value={view} onValueChange={setView} className="w-full">
             <div className="sticky top-16 z-20 bg-background/95 backdrop-blur-sm -mx-6 px-6 -mt-6 py-4 border-b">
                  <div className="flex items-center justify-between mb-4">
-                    <h1 className="text-2xl font-bold tracking-tight">Recruitment Overview</h1>
+                    <h1 className="text-2xl font-bold tracking-tight">Recruitment Dashboard</h1>
                     <div className="flex items-center gap-2">
                         <Button variant="outline"><Upload className="mr-2 h-4 w-4" /> Export</Button>
                         {/* The Create Job button is more suited for the Job Postings page */}
@@ -107,6 +109,7 @@ export function RecruitmentDashboardClient() {
                 <GlobalFilterBar
                     jobs={jobs || []}
                     recruiters={recruiters || []}
+                    brands={brands || []}
                     filters={filters}
                     setFilters={setFilters}
                 />
