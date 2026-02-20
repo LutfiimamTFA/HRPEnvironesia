@@ -10,20 +10,29 @@ import { Button } from '@/components/ui/button';
 import { PlusCircle, Users, Briefcase, UserCheck } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/providers/auth-provider';
+import { useHrdMode } from '@/hooks/useHrdMode';
 
 export default function RecruitmentOverviewPage() {
   const { userProfile } = useAuth();
   const hasAccess = useRoleGuard(['hrd', 'super-admin']);
+  const { mode, setMode } = useHrdMode();
 
   const menuConfig = useMemo(() => {
     if (userProfile?.role === 'super-admin') return MENU_CONFIG['super-admin'];
-    if (userProfile?.role === 'hrd') return MENU_CONFIG['hrd-recruitment'];
+    if (userProfile?.role === 'hrd') {
+      return mode === 'recruitment' ? MENU_CONFIG['hrd-recruitment'] : MENU_CONFIG['hrd-employees'];
+    }
     return [];
-  }, [userProfile]);
+  }, [userProfile, mode]);
 
   if (!hasAccess) {
     return (
-      <DashboardLayout pageTitle="Recruitment Overview" menuConfig={menuConfig}>
+      <DashboardLayout 
+        pageTitle="Recruitment Overview" 
+        menuConfig={menuConfig}
+        hrdMode={userProfile?.role === 'hrd' ? mode : undefined}
+        onHrdModeChange={userProfile?.role === 'hrd' ? setMode : undefined}
+      >
         <div className="space-y-4">
           <Skeleton className="h-24 w-full" />
           <Skeleton className="h-48 w-full" />
@@ -33,7 +42,12 @@ export default function RecruitmentOverviewPage() {
   }
 
   return (
-    <DashboardLayout pageTitle="Recruitment Overview" menuConfig={menuConfig}>
+    <DashboardLayout 
+        pageTitle="Recruitment Overview" 
+        menuConfig={menuConfig}
+        hrdMode={userProfile?.role === 'hrd' ? mode : undefined}
+        onHrdModeChange={userProfile?.role === 'hrd' ? setMode : undefined}
+    >
         <div className="space-y-6">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                 <Card>

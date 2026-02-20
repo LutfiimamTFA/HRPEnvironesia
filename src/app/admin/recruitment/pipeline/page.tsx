@@ -16,6 +16,7 @@ import { Users } from 'lucide-react';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useHrdMode } from '@/hooks/useHrdMode';
 
 function PipelineTableSkeleton() {
   return (
@@ -46,12 +47,15 @@ export default function CandidatePipelinePage() {
   const { userProfile } = useAuth();
   const firestore = useFirestore();
   const [brandFilter, setBrandFilter] = useState<string>('all');
+  const { mode, setMode } = useHrdMode();
 
   const menuConfig = useMemo(() => {
     if (userProfile?.role === 'super-admin') return MENU_CONFIG['super-admin'];
-    if (userProfile?.role === 'hrd') return MENU_CONFIG['hrd-recruitment'];
+    if (userProfile?.role === 'hrd') {
+      return mode === 'recruitment' ? MENU_CONFIG['hrd-recruitment'] : MENU_CONFIG['hrd-employees'];
+    }
     return [];
-  }, [userProfile]);
+  }, [userProfile, mode]);
 
   const jobsQuery = useMemoFirebase(() => query(collection(firestore, 'jobs')), [firestore]);
   const { data: jobs, isLoading: isLoadingJobs, error: jobsError } = useCollection<Job>(jobsQuery);
@@ -107,7 +111,12 @@ export default function CandidatePipelinePage() {
 
   if (!hasAccess || isLoading) {
     return (
-      <DashboardLayout pageTitle="Candidate Pipeline" menuConfig={menuConfig}>
+      <DashboardLayout 
+        pageTitle="Candidate Pipeline" 
+        menuConfig={menuConfig}
+        hrdMode={userProfile?.role === 'hrd' ? mode : undefined}
+        onHrdModeChange={userProfile?.role === 'hrd' ? setMode : undefined}
+      >
         <PipelineTableSkeleton />
       </DashboardLayout>
     );
@@ -115,7 +124,12 @@ export default function CandidatePipelinePage() {
   
   if (error) {
     return (
-      <DashboardLayout pageTitle="Candidate Pipeline" menuConfig={menuConfig}>
+      <DashboardLayout 
+        pageTitle="Candidate Pipeline" 
+        menuConfig={menuConfig}
+        hrdMode={userProfile?.role === 'hrd' ? mode : undefined}
+        onHrdModeChange={userProfile?.role === 'hrd' ? setMode : undefined}
+      >
         <Alert variant="destructive">
           <AlertTitle>Error Loading Data</AlertTitle>
           <AlertDescription>{error.message}</AlertDescription>
@@ -125,7 +139,12 @@ export default function CandidatePipelinePage() {
   }
 
   return (
-    <DashboardLayout pageTitle="Candidate Pipeline: Select Job" menuConfig={menuConfig}>
+    <DashboardLayout 
+        pageTitle="Candidate Pipeline: Select Job" 
+        menuConfig={menuConfig}
+        hrdMode={userProfile?.role === 'hrd' ? mode : undefined}
+        onHrdModeChange={userProfile?.role === 'hrd' ? setMode : undefined}
+    >
       <div className="space-y-4">
         <div className="flex justify-start">
             <Select value={brandFilter} onValueChange={setBrandFilter} disabled={brandsForFilter.length === 0}>

@@ -17,6 +17,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Eye, ArrowLeft } from 'lucide-react';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { ApplicationStatusBadge } from '@/components/recruitment/ApplicationStatusBadge';
+import { useHrdMode } from '@/hooks/useHrdMode';
 
 function ApplicantsTableSkeleton() {
   return (
@@ -49,6 +50,7 @@ export default function RecruitmentApplicantsPage() {
   const params = useParams();
   const router = useRouter();
   const jobId = params.jobId as string;
+  const { mode, setMode } = useHrdMode();
   
   const jobRef = useMemoFirebase(() => (jobId ? doc(firestore, 'jobs', jobId) : null), [firestore, jobId]);
   const { data: job, isLoading: isLoadingJob } = useDoc<Job>(jobRef);
@@ -61,9 +63,11 @@ export default function RecruitmentApplicantsPage() {
 
   const menuConfig = useMemo(() => {
     if (userProfile?.role === 'super-admin') return MENU_CONFIG['super-admin'];
-    if (userProfile?.role === 'hrd') return MENU_CONFIG['hrd-recruitment'];
+    if (userProfile?.role === 'hrd') {
+      return mode === 'recruitment' ? MENU_CONFIG['hrd-recruitment'] : MENU_CONFIG['hrd-employees'];
+    }
     return [];
-  }, [userProfile]);
+  }, [userProfile, mode]);
 
   const sortedApplications = useMemo(() => {
     if (!applications) return [];
@@ -78,7 +82,12 @@ export default function RecruitmentApplicantsPage() {
 
   if (!hasAccess || isLoading) {
     return (
-      <DashboardLayout pageTitle="Loading Applicants..." menuConfig={menuConfig}>
+      <DashboardLayout 
+        pageTitle="Loading Applicants..." 
+        menuConfig={menuConfig}
+        hrdMode={userProfile?.role === 'hrd' ? mode : undefined}
+        onHrdModeChange={userProfile?.role === 'hrd' ? setMode : undefined}
+      >
         <ApplicantsTableSkeleton />
       </DashboardLayout>
     );
@@ -86,7 +95,12 @@ export default function RecruitmentApplicantsPage() {
 
   if (error) {
     return (
-      <DashboardLayout pageTitle="Error" menuConfig={menuConfig}>
+      <DashboardLayout 
+        pageTitle="Error" 
+        menuConfig={menuConfig}
+        hrdMode={userProfile?.role === 'hrd' ? mode : undefined}
+        onHrdModeChange={userProfile?.role === 'hrd' ? setMode : undefined}
+      >
         <Alert variant="destructive">
           <AlertTitle>Error Loading Applications</AlertTitle>
           <AlertDescription>{error.message}</AlertDescription>
@@ -96,12 +110,17 @@ export default function RecruitmentApplicantsPage() {
   }
 
   return (
-    <DashboardLayout pageTitle={`Applicants for: ${job?.position || '...'}`} menuConfig={menuConfig}>
+    <DashboardLayout 
+        pageTitle={`Applicants for: ${job?.position || '...'}`} 
+        menuConfig={menuConfig}
+        hrdMode={userProfile?.role === 'hrd' ? mode : undefined}
+        onHrdModeChange={userProfile?.role === 'hrd' ? setMode : undefined}
+    >
       <div className="space-y-4">
         <div className="flex items-start justify-between">
-            <Button variant="outline" size="sm" onClick={() => router.push('/admin/recruitment')}>
+            <Button variant="outline" size="sm" onClick={() => router.push('/admin/recruitment/pipeline')}>
               <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to All Jobs
+              Back to Pipeline
             </Button>
         </div>
         

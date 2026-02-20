@@ -24,6 +24,7 @@ import { ApplicationProgressStepper } from '@/components/recruitment/Application
 import { Separator } from '@/components/ui/separator';
 import { CandidateDocumentsCard } from '@/components/recruitment/CandidateDocumentsCard';
 import { CandidateFitAnalysis } from '@/components/recruitment/CandidateFitAnalysis';
+import { useHrdMode } from '@/hooks/useHrdMode';
 
 function ApplicationDetailSkeleton() {
   return <Skeleton className="h-[500px] w-full" />;
@@ -86,6 +87,7 @@ export default function ApplicationDetailPage() {
   const params = useParams();
   const router = useRouter();
   const applicationId = params.applicationId as string;
+  const { mode, setMode } = useHrdMode();
 
   const applicationRef = useMemoFirebase(
     () => (applicationId ? doc(firestore, 'applications', applicationId) : null),
@@ -107,9 +109,11 @@ export default function ApplicationDetailPage() {
 
   const menuConfig = useMemo(() => {
     if (userProfile?.role === 'super-admin') return MENU_CONFIG['super-admin'];
-    if (userProfile?.role === 'hrd') return MENU_CONFIG['hrd-recruitment'];
+    if (userProfile?.role === 'hrd') {
+      return mode === 'recruitment' ? MENU_CONFIG['hrd-recruitment'] : MENU_CONFIG['hrd-employees'];
+    }
     return [];
-  }, [userProfile]);
+  }, [userProfile, mode]);
 
   const isLoading = isLoadingApp || isLoadingProfile || isLoadingJob;
 
@@ -118,7 +122,12 @@ export default function ApplicationDetailPage() {
   }
 
   return (
-    <DashboardLayout pageTitle="Application Detail" menuConfig={menuConfig}>
+    <DashboardLayout 
+        pageTitle="Application Detail" 
+        menuConfig={menuConfig}
+        hrdMode={userProfile?.role === 'hrd' ? mode : undefined}
+        onHrdModeChange={userProfile?.role === 'hrd' ? setMode : undefined}
+    >
       {isLoading ? (
         <ApplicationDetailSkeleton />
       ) : !application || !profile || !job ? (

@@ -17,6 +17,7 @@ import { ArrowLeft } from 'lucide-react';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { format } from 'date-fns';
 import { AssessmentStatusBadge } from '@/components/dashboard/AssessmentStatusBadge';
+import { useHrdMode } from '@/hooks/useHrdMode';
 
 function SubmissionsTableSkeleton() {
   return (
@@ -49,12 +50,15 @@ export default function AssessmentSubmissionsPage() {
   const params = useParams();
   const router = useRouter();
   const assessmentId = params.assessmentId as string;
+  const { mode, setMode } = useHrdMode();
 
   const menuConfig = useMemo(() => {
     if (userProfile?.role === 'super-admin') return MENU_CONFIG['super-admin'];
-    if (userProfile?.role === 'hrd') return MENU_CONFIG['hrd-recruitment'];
+    if (userProfile?.role === 'hrd') {
+        return mode === 'recruitment' ? MENU_CONFIG['hrd-recruitment'] : MENU_CONFIG['hrd-employees'];
+    }
     return [];
-  }, [userProfile]);
+  }, [userProfile, mode]);
   
   const assessmentRef = useMemoFirebase(() => (assessmentId ? doc(firestore, 'assessments', assessmentId) : null), [firestore, assessmentId]);
   const { data: assessment, isLoading: isLoadingAssessment } = useDoc<Assessment>(assessmentRef);
@@ -78,7 +82,12 @@ export default function AssessmentSubmissionsPage() {
 
   if (!hasAccess || isLoading) {
     return (
-      <DashboardLayout pageTitle="Loading Submissions..." menuConfig={menuConfig}>
+      <DashboardLayout 
+        pageTitle="Loading Submissions..." 
+        menuConfig={menuConfig}
+        hrdMode={userProfile?.role === 'hrd' ? mode : undefined}
+        onHrdModeChange={userProfile?.role === 'hrd' ? setMode : undefined}
+      >
         <SubmissionsTableSkeleton />
       </DashboardLayout>
     );
@@ -86,7 +95,12 @@ export default function AssessmentSubmissionsPage() {
 
   if (error) {
     return (
-      <DashboardLayout pageTitle="Error" menuConfig={menuConfig}>
+      <DashboardLayout 
+        pageTitle="Error" 
+        menuConfig={menuConfig}
+        hrdMode={userProfile?.role === 'hrd' ? mode : undefined}
+        onHrdModeChange={userProfile?.role === 'hrd' ? setMode : undefined}
+      >
         <Alert variant="destructive">
           <AlertTitle>Error Loading Submissions</AlertTitle>
           <AlertDescription>{error.message}</AlertDescription>
@@ -96,7 +110,12 @@ export default function AssessmentSubmissionsPage() {
   }
 
   return (
-    <DashboardLayout pageTitle={`Submissions for: ${assessment?.name || '...'}`} menuConfig={menuConfig}>
+    <DashboardLayout 
+        pageTitle={`Submissions for: ${assessment?.name || '...'}`} 
+        menuConfig={menuConfig}
+        hrdMode={userProfile?.role === 'hrd' ? mode : undefined}
+        onHrdModeChange={userProfile?.role === 'hrd' ? setMode : undefined}
+    >
       <div className="space-y-4">
         <div className="flex items-start justify-between">
             <Button variant="outline" size="sm" onClick={() => router.push('/admin/hrd/assessments')}>

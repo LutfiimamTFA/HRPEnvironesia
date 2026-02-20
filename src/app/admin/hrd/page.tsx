@@ -1,19 +1,18 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { PlusCircle } from 'lucide-react';
 import { JobManagementClient } from '@/components/dashboard/JobManagementClient';
+import { useHrdMode } from '@/hooks/useHrdMode';
 
 
 export default function HrdDashboard() {
   const hasAccess = useRoleGuard('hrd');
-  const [mode, setMode] = useState<'recruitment' | 'employees'>('recruitment');
+  const { mode, setMode } = useHrdMode();
 
   const menuConfig = useMemo(() => {
     return mode === 'recruitment' ? MENU_CONFIG['hrd-recruitment'] : MENU_CONFIG['hrd-employees'];
