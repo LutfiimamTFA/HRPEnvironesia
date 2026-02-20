@@ -102,15 +102,15 @@ const Header = () => {
 
 // --- Hero Section ---
 const HeroSection = () => (
-    <section id="hero" className="relative w-full overflow-hidden">
+    <section id="hero" className="relative w-full overflow-hidden bg-background">
         <div className="absolute inset-0">
             <Image
-                src="https://images.unsplash.com/photo-1532302486494-030999a8138d?q=80&w=2940&auto=format&fit=crop"
-                alt="AI generated environmental background"
+                src="https://storage.googleapis.com/stedi-dev-public-model-outputs/82635955-3212-4d23-9c8a-b9c51a70513d.png"
+                alt="Environesia Office Building"
                 fill
                 className="object-cover"
                 priority
-                data-ai-hint="nature abstract"
+                data-ai-hint="office building"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-transparent" />
             <div className="absolute inset-0 bg-background/60" />
@@ -345,19 +345,19 @@ const RecruitmentProcessSection = () => {
 
 // --- Office Spotlight Section ---
 const OfficeSpotlightSection = () => (
-    <section className="py-16 lg:py-24">
+    <section className="w-full py-16 lg:py-24 bg-card">
         <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
-            <Card className="overflow-hidden relative flex items-end min-h-[500px] rounded-2xl">
+            <Card className="overflow-hidden relative flex items-end min-h-[500px] rounded-2xl shadow-lg">
                  <Image
-                    src="https://images.unsplash.com/photo-1568992687947-868a62a9f521?q=80&w=2832&auto=format&fit=crop"
+                    src="https://storage.googleapis.com/stedi-dev-public-model-outputs/82635955-3212-4d23-9c8a-b9c51a70513d.png"
                     alt="Environesia Office Building"
                     fill
                     className="object-cover"
                     data-ai-hint="office building"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
-                <div className="relative z-10 p-8 text-white">
-                    <h2 className="text-3xl font-bold">Basecamp Environesia</h2>
+                <div className="relative z-10 p-8 md:p-12 text-white">
+                    <h2 className="text-3xl md:text-4xl font-bold">Basecamp Environesia</h2>
                     <p className="mt-2 max-w-lg text-white/80">Tempat ide-ide hebat lahir. Kantor pusat kami di Yogyakarta adalah pusat kolaborasi, inovasi, dan aksi nyata untuk lingkungan.</p>
                 </div>
             </Card>
@@ -375,7 +375,7 @@ const HowToApplySection = () => {
         { icon: UserCheck, title: "Pantau Proses", description: "Lacak status lamaran Anda langsung dari dasbor kandidat." },
     ];
     return (
-        <section className="w-full py-16 lg:py-24 bg-card">
+        <section className="w-full py-16 lg:py-24">
             <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
                 <div className="mx-auto max-w-xl text-center">
                     <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Cara Mudah Melamar</h2>
@@ -404,26 +404,26 @@ const HowToApplySection = () => {
 
 // --- FAQ Section ---
 const FaqSection = () => (
-    <section id="faq" className="w-full scroll-mt-14 py-16 lg:py-24">
+    <section id="faq" className="w-full scroll-mt-14 py-16 lg:py-24 bg-card">
         <div className="mx-auto w-full max-w-4xl px-4 sm:px-6 lg:px-8">
             <div className="mx-auto max-w-xl text-center">
                 <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Pertanyaan Umum (FAQ)</h2>
                 <p className="mt-4 text-lg text-muted-foreground">Jawaban atas pertanyaan umum seputar proses lamaran kerja di Environesia.</p>
             </div>
             <Accordion type="single" collapsible className="mt-12 w-full space-y-4">
-              <AccordionItem value="item-1" className="rounded-xl border bg-card px-6 shadow-sm">
+              <AccordionItem value="item-1" className="rounded-xl border bg-background px-6 shadow-sm">
                 <AccordionTrigger className="py-5 text-lg">Apa saja yang harus saya siapkan sebelum melamar?</AccordionTrigger>
                 <AccordionContent className="pt-2 text-base text-muted-foreground">Pastikan Anda telah menyiapkan CV (Curriculum Vitae) terbaru dalam format PDF, surat lamaran (opsional), dan portofolio jika posisi yang dilamar memerlukannya.</AccordionContent>
               </AccordionItem>
-              <AccordionItem value="item-2" className="rounded-xl border bg-card px-6 shadow-sm">
+              <AccordionItem value="item-2" className="rounded-xl border bg-background px-6 shadow-sm">
                 <AccordionTrigger className="py-5 text-lg">Berapa lama proses rekrutmen biasanya berlangsung?</AccordionTrigger>
                 <AccordionContent className="pt-2 text-base text-muted-foreground">Proses rekrutmen kami biasanya memakan waktu 2-4 minggu dari penutupan lowongan, namun bisa bervariasi. Kami akan memberikan informasi terbaru melalui email.</AccordionContent>
               </AccordionItem>
-              <AccordionItem value="item-3" className="rounded-xl border bg-card px-6 shadow-sm">
+              <AccordionItem value="item-3" className="rounded-xl border bg-background px-6 shadow-sm">
                 <AccordionTrigger className="py-5 text-lg">Apakah saya bisa melamar lebih dari satu posisi?</AccordionTrigger>
                 <AccordionContent className="pt-2 text-base text-muted-foreground">Ya, Anda dapat melamar hingga 3 posisi yang berbeda secara bersamaan. Namun, kami sarankan fokus pada posisi yang paling sesuai kualifikasi Anda.</AccordionContent>
               </AccordionItem>
-              <AccordionItem value="item-4" className="rounded-xl border bg-card px-6 shadow-sm">
+              <AccordionItem value="item-4" className="rounded-xl border bg-background px-6 shadow-sm">
                 <AccordionTrigger className="py-5 text-lg">Siapa yang bisa saya hubungi jika ada pertanyaan?</AccordionTrigger>
                 <AccordionContent className="pt-2 text-base text-muted-foreground">Jika Anda memiliki pertanyaan, jangan ragu untuk menghubungi tim rekrutmen kami melalui email di <a href="mailto:careers@environesia.co.id" className="text-primary hover:underline">careers@environesia.co.id</a>.</AccordionContent>
               </AccordionItem>
@@ -435,7 +435,7 @@ const FaqSection = () => (
 
 // --- Footer Component ---
 const Footer = () => (
-    <footer className="border-t bg-card">
+    <footer className="border-t">
         <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="py-8 grid grid-cols-1 md:grid-cols-3 gap-8">
                 <div>
