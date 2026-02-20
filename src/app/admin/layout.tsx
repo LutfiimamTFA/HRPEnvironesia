@@ -1,57 +1,21 @@
-'use client';
+import type { ReactNode } from 'react';
+import { AdminProviders } from './providers';
+import { AdminGuard } from './AdminGuard';
+import '../globals.css';
 
-import { useAuth } from '@/providers/auth-provider';
-import { useRouter, usePathname } from 'next/navigation';
-import { useEffect } from 'react';
-import { Loader2 } from 'lucide-react';
-import { ROLES_INTERNAL } from '@/lib/types';
-
-export default function AdminLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const { userProfile, loading } = useAuth();
-  const router = useRouter();
-  const pathname = usePathname();
-
-  useEffect(() => {
-    // Only run redirection logic if we are NOT on the login page.
-    if (pathname === '/admin/login') {
-      return;
-    }
-
-    if (loading) {
-      return; // Wait until loading is complete
-    }
-
-    if (!userProfile) {
-      // Not logged in, redirect to the internal login page
-      router.replace('/admin/login');
-      return;
-    }
-
-    if (!ROLES_INTERNAL.includes(userProfile.role)) {
-      // Logged in, but is a candidate. Redirect to candidate portal.
-      router.replace('/careers/login');
-    }
-  }, [userProfile, loading, router, pathname]);
-
-  // If we are on the login page, render it directly.
-  // It has its own logic for redirecting already-logged-in users.
-  if (pathname === '/admin/login') {
-    return <>{children}</>;
-  }
-
-  // For all other /admin/* routes, show a loader while we verify the user's role.
-  if (loading || !userProfile || !ROLES_INTERNAL.includes(userProfile.role)) {
-    return (
-      <div className="flex h-screen w-full items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
-    );
-  }
-
-  // If all checks pass, render the protected page.
-  return <>{children}</>;
+export default function AdminRootLayout({ children }: { children: ReactNode }) {
+  return (
+    <html lang="id" suppressHydrationWarning>
+       <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+      </head>
+      <body>
+        <AdminProviders>
+          <AdminGuard>{children}</AdminGuard>
+        </AdminProviders>
+      </body>
+    </html>
+  );
 }
