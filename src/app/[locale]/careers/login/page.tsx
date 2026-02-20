@@ -3,26 +3,29 @@
 import { CandidateLoginForm } from '@/components/auth/CandidateLoginForm';
 import { useAuth } from '@/providers/auth-provider';
 import { Loader2 } from 'lucide-react';
-import { useRouter } from '@/navigation';
+import { useRouter as useIntlRouter, Link } from '@/navigation';
+import { useRouter } from 'next/navigation';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, Suspense } from 'react';
-import { Link } from '@/navigation';
 
 function CandidateLoginContent() {
   const { userProfile, loading } = useAuth();
-  const router = useRouter();
+  const router = useRouter(); // Standard router for non-locale paths
+  const intlRouter = useIntlRouter(); // Intl router for locale-aware paths
   const searchParams = useSearchParams();
   const redirect = searchParams.get('redirect');
 
   useEffect(() => {
     if (!loading && userProfile && userProfile.role === 'kandidat') {
       if (redirect) {
-        router.replace(redirect as any);
+        // Redirect param might be a locale-aware path, so use intlRouter
+        intlRouter.replace(redirect as any);
       } else {
+        // The portal is not under [locale], so use the standard router
         router.replace('/careers/portal');
       }
     }
-  }, [userProfile, loading, router, redirect]);
+  }, [userProfile, loading, router, intlRouter, redirect]);
 
   if (loading || (userProfile && userProfile.role === 'kandidat')) {
     return (

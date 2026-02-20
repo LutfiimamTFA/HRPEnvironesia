@@ -3,7 +3,7 @@
 import { CandidateRegisterForm } from '@/components/auth/CandidateRegisterForm';
 import { useAuth } from '@/providers/auth-provider';
 import { Loader2 } from 'lucide-react';
-import { useRouter } from '@/navigation';
+import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { Link } from '@/navigation';
 
