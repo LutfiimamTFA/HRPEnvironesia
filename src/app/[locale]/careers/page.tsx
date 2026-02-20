@@ -14,7 +14,7 @@ import { LanguageSwitcher } from '@/components/i18n/LanguageSwitcher';
 import imagePlaceholders from '@/lib/placeholder-images.json';
 import { JobExplorerSkeleton } from '@/components/careers/JobExplorer';
 import dynamic from 'next/dynamic';
-import { ThemeToggle } from '../ui/ThemeToggle';
+import { ThemeToggle } from '@/components/ui/ThemeToggle';
 
 const DynamicJobExplorerClient = dynamic(
   () => import('@/components/careers/JobExplorer').then((mod) => mod.JobExplorerClient),
@@ -128,7 +128,7 @@ const HeroSection = () => {
                     priority
                     className="object-cover"
                 />
-                <div className="absolute inset-0 bg-black/60 bg-gradient-to-t from-black/80 via-transparent" />
+                <div className="absolute inset-0 bg-black/60" />
             </div>
             <div className="relative z-10 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
                 <div className="flex min-h-[70vh] flex-col items-center justify-center pb-20 pt-32 text-center lg:min-h-dvh">
@@ -364,7 +364,7 @@ const Footer = () => {
 )};
 
 // --- Main Page Component ---
-export function CareersPageClient() {
+export default function CareersPage() {
   return (
     <div className="flex min-h-dvh flex-col bg-background font-body text-foreground">
       <Header />
