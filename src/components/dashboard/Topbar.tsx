@@ -11,7 +11,6 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { getInitials } from '@/lib/utils';
 import { ThemeToggle } from '../ui/ThemeToggle';
 import { Input } from '../ui/input';
-import { HRDModeSwitch } from './HRDModeSwitch';
 import { SidebarTrigger } from '../ui/sidebar';
 
 function UserNav() {
@@ -63,24 +62,16 @@ function UserNav() {
 
 interface TopbarProps {
     pageTitle: string;
-    hrdMode?: 'recruitment' | 'employees';
-    onHrdModeChange?: (mode: 'recruitment' | 'employees') => void;
     actionArea?: React.ReactNode;
 }
 
-export function Topbar({ pageTitle, hrdMode, onHrdModeChange, actionArea }: TopbarProps) {
-    const { userProfile } = useAuth();
+export function Topbar({ pageTitle, actionArea }: TopbarProps) {
     return (
         <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background px-4 sm:px-6">
             <SidebarTrigger />
             
             <div className="flex items-center gap-4">
                 <h1 className="font-semibold text-lg hidden sm:block">{pageTitle}</h1>
-                {userProfile?.role === 'hrd' && hrdMode && onHrdModeChange && (
-                    <div className="hidden sm:block">
-                        <HRDModeSwitch mode={hrdMode} onModeChange={onHrdModeChange} />
-                    </div>
-                )}
             </div>
 
             <div className="flex-1" />

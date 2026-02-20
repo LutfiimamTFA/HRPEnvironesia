@@ -11,8 +11,6 @@ type DashboardLayoutProps = {
   children: React.ReactNode;
   pageTitle: string;
   menuConfig: MenuGroup[];
-  hrdMode?: 'recruitment' | 'employees';
-  onHrdModeChange?: (mode: 'recruitment' | 'employees') => void;
   actionArea?: ReactNode;
 };
 
@@ -20,8 +18,6 @@ export function DashboardLayout({
   children, 
   pageTitle, 
   menuConfig, 
-  hrdMode, 
-  onHrdModeChange,
   actionArea
 }: DashboardLayoutProps) {
 
@@ -31,8 +27,6 @@ export function DashboardLayout({
         <SidebarInset>
           <Topbar 
             pageTitle={pageTitle} 
-            hrdMode={hrdMode} 
-            onHrdModeChange={onHrdModeChange}
             actionArea={actionArea}
           />
           <main className="flex-1 items-start gap-4 p-4 sm:px-6 sm:py-6 md:gap-8">

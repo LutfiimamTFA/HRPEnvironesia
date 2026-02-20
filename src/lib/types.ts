@@ -1,4 +1,3 @@
-
 import type { Timestamp } from 'firebase/firestore';
 
 export const ROLES = ['super-admin', 'hrd', 'manager', 'kandidat', 'karyawan'] as const;
@@ -7,6 +6,7 @@ export const ROLES_INTERNAL = ['super-admin', 'hrd', 'manager', 'karyawan'] as c
 export type UserRole = (typeof ROLES)[number];
 
 export type UserProfile = {
+  id?: string; // Same as uid
   uid: string;
   email: string;
   fullName: string;
@@ -15,6 +15,7 @@ export type UserProfile = {
   createdAt: Timestamp | { seconds: number; nanoseconds: number };
   brandId?: string | string[];
   isProfileComplete?: boolean;
+  photoUrl?: string;
 };
 
 export type Brand = {
@@ -51,23 +52,80 @@ export type Job = {
   updatedBy: string;
 };
 
-export const APPLICATION_STATUSES = ['draft', 'submitted', 'tes_kepribadian', 'verification', 'document_submission', 'interview', 'hired', 'rejected'] as const;
-export type ApplicationStatus = (typeof APPLICATION_STATUSES)[number];
+export const APPLICATION_STAGES = ['applied', 'screening', 'assessment', 'interview', 'offer', 'hired', 'rejected'] as const;
+export type ApplicationStage = (typeof APPLICATION_STAGES)[number];
+
+export const APPLICATION_SOURCES = ['website', 'linkedin', 'jobstreet', 'referral', 'instagram', 'other'] as const;
+export type ApplicationSource = (typeof APPLICATION_SOURCES)[number];
+
+export type ApplicationTimelineEvent = {
+    type: 'stage_changed' | 'note_added' | 'interview_scheduled' | 'offer_sent' | 'assessment_graded' | 'status_changed';
+    at: Timestamp;
+    by: string; // Recruiter UID
+    meta: {
+        from?: string;
+        to?: string;
+        note?: string;
+        [key: string]: any;
+    };
+};
+
+export type ApplicationInterview = {
+    type: 'hr' | 'user' | 'final';
+    dateTime: Timestamp;
+    interviewerIds: string[];
+    interviewerNames?: string[]; // Denormalized
+    status: 'scheduled' | 'completed' | 'canceled' | 'rescheduled';
+    meetingLink?: string;
+    notes?: string;
+};
+
+export type ApplicationOffer = {
+    status: 'draft' | 'sent' | 'negotiation' | 'accepted' | 'rejected' | 'expired';
+    sentAt?: Timestamp;
+    responseDueAt?: Timestamp;
+    acceptedAt?: Timestamp;
+    rejectedAt?: Timestamp;
+    offeredSalary?: number;
+    notes?: string;
+};
 
 export type JobApplication = {
   id?: string;
-  candidateUid: string;
+  candidateId: string;
+  jobId: string;
+  
+  // Denormalized data for quick access
   candidateName: string;
   candidateEmail: string;
-  jobId: string;
-  jobSlug: string;
+  candidatePhotoUrl?: string;
   jobPosition: string;
+  jobLocation: string;
+
+  // Core application data
+  stage: ApplicationStage;
+  stageEnteredAt: Timestamp;
+  appliedAt: Timestamp;
+  lastActivityAt: Timestamp;
+  source: ApplicationSource;
+  assignedRecruiterId: string;
+  scoreManual?: number; // 0-5
+  scoreAssessment?: number; // 0-100
+  status: 'active' | 'rejected' | 'hired' | 'withdrawn';
+  tags?: string[];
+
+  // Linked objects
+  interviews?: ApplicationInterview[];
+  offer?: ApplicationOffer;
+  timeline?: ApplicationTimelineEvent[];
+
+  // Legacy fields to be harmonized
+  candidateUid: string;
+  jobSlug: string;
   brandId: string;
   brandName: string;
   jobType: 'fulltime' | 'internship' | 'contract';
   location: string;
-  status: ApplicationStatus;
-  jobApplyDeadline?: Timestamp | null;
   personalityTestAssignedAt?: Timestamp;
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -77,6 +135,23 @@ export type JobApplication = {
   cvFileName?: string;
   ijazahFileName?: string;
 };
+
+export type Candidate = {
+    id?: string;
+    fullName: string;
+    email: string;
+    phone: string;
+    city: string;
+    photoUrl?: string;
+    resumeUrl?: string;
+    createdAt: Timestamp;
+    tags?: string[];
+    currentPosition?: string;
+    currentCompany?: string;
+};
+
+
+// The rest of the types... (SavedJob, Education, etc.)
 
 export type SavedJob = {
   id?: string;
@@ -381,5 +456,3 @@ export type CandidateFitAnalysisOutput = {
   quickTestRecommendation: string[];
   missingInformation: string[];
 };
-
-    

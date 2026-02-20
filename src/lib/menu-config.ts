@@ -4,7 +4,6 @@ import {
     LayoutDashboard, Users, Briefcase, User, Calendar, DollarSign, Settings, ShieldCheck, Database, History, 
     Contact, UserPlus, FolderKanban, CalendarOff, UserMinus, KanbanSquare, CheckSquare, BarChart, ClipboardCheck, Award, Search, FileText 
 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import type { UserRole } from '@/lib/types';
 
 export type MenuItem = {
@@ -26,10 +25,7 @@ const RECRUITMENT_MENU: MenuGroup[] = [
             { href: '/admin/recruitment', label: 'Overview', icon: createElement(LayoutDashboard) },
             { href: '/admin/jobs', label: 'Job Postings', icon: createElement(Briefcase) },
             { href: '/admin/recruitment/pipeline', label: 'Candidates', icon: createElement(Users) },
-            { href: '/admin/recruitment/interviews', label: 'Interviews', icon: createElement(Calendar) },
             { href: '/admin/hrd/assessments', label: 'Assessments', icon: createElement(ClipboardCheck) },
-            { href: '/admin/recruitment/offers', label: 'Offers', icon: createElement(Award) },
-            { href: '/admin/recruitment/talent-pool', label: 'Talent Pool', icon: createElement(Search) },
         ]
     }
 ];
@@ -40,9 +36,6 @@ const EMPLOYEES_MENU: MenuGroup[] = [
         items: [
             { href: '/admin/employees', label: 'Directory', icon: createElement(Contact) },
             { href: '/admin/employees/onboarding', label: 'Onboarding', icon: createElement(UserPlus) },
-            { href: '/admin/employees/documents', label: 'Documents', icon: createElement(FolderKanban) },
-            { href: '/admin/employees/leave', label: 'Leave & Attendance', icon: createElement(CalendarOff) },
-            { href: '/admin/employees/offboarding', label: 'Offboarding', icon: createElement(UserMinus) },
         ]
     }
 ];
@@ -68,8 +61,9 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
         ]
     }
   ],
-  'hrd-recruitment': RECRUITMENT_MENU,
-  'hrd-employees': EMPLOYEES_MENU,
+  'hrd': [
+      ...RECRUITMENT_MENU
+  ],
   'manager': [
     {
         items: [
