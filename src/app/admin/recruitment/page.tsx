@@ -1,11 +1,11 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection } from 'firebase/firestore';
-import type { Job, JobApplication } from '@/lib/types';
+import type { Job, JobApplication, Brand } from '@/lib/types';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -15,6 +15,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Eye } from 'lucide-react';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 function JobListSkeleton() {
   return (
@@ -43,12 +44,16 @@ export default function RecruitmentJobSelectionPage() {
   const hasAccess = useRoleGuard(['hrd', 'super-admin']);
   const { userProfile } = useAuth();
   const firestore = useFirestore();
+  const [brandFilter, setBrandFilter] = useState('all');
 
   const jobsQuery = useMemoFirebase(() => collection(firestore, 'jobs'), [firestore]);
   const { data: jobs, isLoading: isLoadingJobs, error: jobsError } = useCollection<Job>(jobsQuery);
 
   const appsQuery = useMemoFirebase(() => collection(firestore, 'applications'), [firestore]);
   const { data: applications, isLoading: isLoadingApps, error: appsError } = useCollection<JobApplication>(appsQuery);
+
+  const brandsQuery = useMemoFirebase(() => collection(firestore, 'brands'), [firestore]);
+  const { data: brands, isLoading: isLoadingBrands, error: brandsError } = useCollection<Brand>(brandsQuery);
 
   const menuConfig = useMemo(() => {
     if (!userProfile) return [];
@@ -67,14 +72,20 @@ export default function RecruitmentJobSelectionPage() {
 
   const jobsWithCounts = useMemo(() => {
     if (!jobs) return [];
-    return jobs.map(job => ({
+    
+    let filteredJobs = jobs;
+    if (brandFilter !== 'all') {
+      filteredJobs = jobs.filter(job => job.brandId === brandFilter);
+    }
+
+    return filteredJobs.map(job => ({
       ...job,
       applicantCount: applicantCounts.get(job.id!) || 0,
     })).sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
-  }, [jobs, applicantCounts]);
+  }, [jobs, applicantCounts, brandFilter]);
 
-  const isLoading = isLoadingJobs || isLoadingApps;
-  const error = jobsError || appsError;
+  const isLoading = isLoadingJobs || isLoadingApps || isLoadingBrands;
+  const error = jobsError || appsError || brandsError;
 
   if (!hasAccess || isLoading) {
     return (
@@ -97,6 +108,19 @@ export default function RecruitmentJobSelectionPage() {
 
   return (
     <DashboardLayout pageTitle="Recruitment: Select Job Posting" menuConfig={menuConfig}>
+        <div className="flex justify-end mb-4">
+            <Select value={brandFilter} onValueChange={setBrandFilter} disabled={isLoadingBrands}>
+                <SelectTrigger className="w-[240px]">
+                    <SelectValue placeholder="Filter by brand..." />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Brands</SelectItem>
+                    {brands?.map(brand => (
+                        <SelectItem key={brand.id} value={brand.id!}>{brand.name}</SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
+        </div>
         <div className="rounded-lg border">
             <Table>
                 <TableHeader>
@@ -128,7 +152,9 @@ export default function RecruitmentJobSelectionPage() {
                         ))
                     ) : (
                         <TableRow>
-                            <TableCell colSpan={5} className="h-24 text-center">No jobs found. Create one in "Job Postings".</TableCell>
+                            <TableCell colSpan={5} className="h-24 text-center">
+                                {brandFilter !== 'all' ? 'No jobs found for the selected brand.' : 'No jobs found. Create one in "Job Postings".'}
+                            </TableCell>
                         </TableRow>
                     )}
                 </TableBody>
