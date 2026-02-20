@@ -133,10 +133,10 @@ const HeroSection = () => {
             </div>
             <div className="relative z-10 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
                 <div className="flex min-h-[70vh] flex-col items-center justify-center pb-20 pt-32 text-center lg:min-h-dvh">
-                    <h1 className="text-4xl font-extrabold tracking-tight text-white md:text-6xl lg:text-7xl">
+                    <h1 className="text-4xl font-extrabold tracking-tight text-foreground md:text-6xl lg:text-7xl">
                         {t('title')}
                     </h1>
-                    <p className="mt-6 max-w-2xl text-lg text-slate-300">
+                    <p className="mt-6 max-w-2xl text-lg text-muted-foreground">
                         {t('subtitle')}
                     </p>
                     <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4 w-full max-w-xs sm:max-w-none">
@@ -147,7 +147,7 @@ const HeroSection = () => {
                         <Link href="/careers/login">{t('ctaSecondary')}</Link>
                       </Button>
                     </div>
-                     <div className="mt-16 flex flex-wrap items-center justify-center gap-x-8 gap-y-4 text-sm text-slate-400">
+                     <div className="mt-16 flex flex-wrap items-center justify-center gap-x-8 gap-y-4 text-sm text-muted-foreground">
                         <span className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-primary"/> {t('badgeProjects')}</span>
                         <span className="flex items-center gap-2"><Globe className="h-4 w-4 text-primary"/> {t('badgeProvinces')}</span>
                         <span className="flex items-center gap-2"><BarChart className="h-4 w-4 text-primary"/> {t('badgeServices')}</span>
