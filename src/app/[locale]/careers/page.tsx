@@ -135,8 +135,8 @@ const HeroSection = () => {
                       <Button size="lg" className="h-12 px-8 text-base w-full sm:w-auto" asChild>
                         <a href="#lowongan">{t('ctaPrimary')}</a>
                       </Button>
-                      <Button size="lg" variant="secondary" className="h-12 px-8 text-base w-full sm:w-auto">
-                        {t('ctaSecondary')}
+                      <Button size="lg" variant="secondary" className="h-12 px-8 text-base w-full sm:w-auto" asChild>
+                        <Link href="/careers/login">{t('ctaSecondary')}</Link>
                       </Button>
                     </div>
                      <div className="mt-16 flex flex-wrap items-center justify-center gap-x-8 gap-y-4 text-sm text-slate-400">
