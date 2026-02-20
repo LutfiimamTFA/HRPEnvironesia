@@ -5,6 +5,7 @@ import {
     Contact, UserPlus, FolderKanban, CalendarOff, UserMinus, KanbanSquare, CheckSquare, BarChart, ClipboardCheck, Award, Search, FileText 
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import type { UserRole } from '@/lib/types';
 
 export type MenuItem = {
   href: string;
@@ -99,3 +100,23 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
     }
   ]
 };
+
+const allMenuItemsByRole: Partial<Record<UserRole, MenuItem[]>> = {};
+for (const role in MENU_CONFIG) {
+    if (Object.prototype.hasOwnProperty.call(MENU_CONFIG, role)) {
+        const menuGroups = MENU_CONFIG[role as keyof typeof MENU_CONFIG];
+        if (menuGroups) {
+            allMenuItemsByRole[role as UserRole] = menuGroups.flatMap(group => group.items);
+        }
+    }
+}
+export const ALL_MENU_ITEMS = allMenuItemsByRole as Record<UserRole, MenuItem[]>;
+
+const uniqueItems = new Map<string, MenuItem>();
+Object.values(allMenuItemsByRole).flat().forEach(item => {
+    if (item && item.label && !uniqueItems.has(item.label)) {
+        uniqueItems.set(item.label, item);
+    }
+});
+
+export const ALL_UNIQUE_MENU_ITEMS: MenuItem[] = Array.from(uniqueItems.values());
