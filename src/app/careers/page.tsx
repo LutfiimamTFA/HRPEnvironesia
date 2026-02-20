@@ -13,6 +13,7 @@ import { collection, query, where } from 'firebase/firestore';
 import type { Job } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import Image from 'next/image';
 
 
 const LeafBlob = ({className}: {className?: string}) => (
@@ -102,7 +103,17 @@ export default function CareersPage() {
     <div className="flex min-h-dvh flex-col bg-background font-body text-foreground">
       
       {/* Hero Section */}
-      <section id="hero" className="relative w-full overflow-hidden bg-gradient-to-br from-[hsl(var(--primary))] to-[hsl(var(--primary)/0.8)] text-primary-foreground">
+      <section id="hero" className="relative w-full overflow-hidden text-primary-foreground">
+        <Image
+            src="https://picsum.photos/seed/environesia-hq/1600/900"
+            alt="Environesia Office Building"
+            fill
+            className="object-cover"
+            priority
+            data-ai-hint="office building"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/40 to-transparent" />
+        
         <LeafBlob className="left-[-250px] top-[-150px] h-[544px] w-[578px] text-white/10" />
         <LeafBlob className="right-[-350px] bottom-[-150px] h-[644px] w-[678px] text-white/10" />
         
@@ -114,12 +125,12 @@ export default function CareersPage() {
                         <span className="text-xl font-bold tracking-tight text-white">Environesia Karir</span>
                     </Link>
                     <nav className="hidden items-center gap-8 text-sm font-medium md:flex">
-                        <Link href="#lowongan" className="text-primary-foreground/80 transition-colors hover:text-white">Lowongan</Link>
-                        <Link href="#tahapan-rekrutmen" className="text-primary-foreground/80 transition-colors hover:text-white">Proses</Link>
-                        <Link href="#faq" className="text-primary-foreground/80 transition-colors hover:text-white">FAQ</Link>
+                        <Link href="#lowongan" className="text-white/80 transition-colors hover:text-white">Lowongan</Link>
+                        <Link href="#tahapan-rekrutmen" className="text-white/80 transition-colors hover:text-white">Proses</Link>
+                        <Link href="#faq" className="text-white/80 transition-colors hover:text-white">FAQ</Link>
                     </nav>
                     <div className="hidden items-center gap-2 md:flex">
-                        <Button variant="outline" asChild className="border-primary-foreground/30 bg-transparent text-primary-foreground hover:bg-primary-foreground/10 hover:text-white">
+                        <Button variant="outline" asChild className="border-white/30 bg-white/10 text-white hover:bg-white/20">
                         <Link href="/careers/login">Masuk Kandidat</Link>
                         </Button>
                         <Button asChild className="bg-white/90 text-primary hover:bg-white">
@@ -132,10 +143,10 @@ export default function CareersPage() {
 
         <div className="relative z-10 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="flex min-h-[70vh] flex-col items-center justify-center pb-20 pt-32 text-center lg:min-h-[80vh]">
-                <h1 className="text-4xl font-semibold tracking-tight md:text-6xl lg:text-7xl">
+                <h1 className="text-4xl font-semibold tracking-tight text-white md:text-6xl lg:text-7xl">
                     Mari Buat Perubahan Bersama Kami
                 </h1>
-                <p className="mt-6 max-w-2xl text-lg text-primary-foreground/80">
+                <p className="mt-6 max-w-2xl text-lg text-white/80">
                     Jadilah bagian dari tim inovatif yang berdedikasi untuk menciptakan solusi lingkungan berkelanjutan. Temukan peran Anda di Environesia.
                 </p>
                 <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
@@ -145,7 +156,7 @@ export default function CareersPage() {
                     </Link>
                   </Button>
                 </div>
-                 <div className="mt-12 flex flex-wrap items-center justify-center gap-x-8 gap-y-4 text-sm text-primary-foreground/60">
+                 <div className="mt-12 flex flex-wrap items-center justify-center gap-x-8 gap-y-4 text-sm text-white/60">
                     <span className="flex items-center gap-2"><ShieldCheck className="h-4 w-4"/> 560+ Proyek Terselesaikan</span>
                     <span className="flex items-center gap-2"><Globe className="h-4 w-4"/> 38 Provinsi di Indonesia</span>
                     <span className="flex items-center gap-2"><BarChart className="h-4 w-4"/> Lab & Konsultansi</span>
