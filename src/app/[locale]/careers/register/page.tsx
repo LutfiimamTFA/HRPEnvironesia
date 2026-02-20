@@ -3,9 +3,8 @@
 import { CandidateRegisterForm } from '@/components/auth/CandidateRegisterForm';
 import { useAuth } from '@/providers/auth-provider';
 import { Loader2 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, Link } from '@/navigation';
 import { useEffect } from 'react';
-import { Link } from '@/navigation';
 
 export default function CandidateRegisterPage() {
   const { userProfile, loading } = useAuth();
