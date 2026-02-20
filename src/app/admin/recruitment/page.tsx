@@ -1,51 +1,19 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
+import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
+import { useRoleGuard } from '@/hooks/useRoleGuard';
+import { Skeleton } from '@/components/ui/skeleton';
+import { MENU_CONFIG } from '@/lib/menu-config';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { PlusCircle, Users, Briefcase, UserCheck } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/providers/auth-provider';
-import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, query } from 'firebase/firestore';
-import type { Job, JobApplication, Brand } from '@/lib/types';
-import { useRoleGuard } from '@/hooks/useRoleGuard';
-import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Users } from 'lucide-react';
-import { MENU_CONFIG } from '@/lib/menu-config';
-import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-function RecruitmentTableSkeleton() {
-  return (
-    <div className="space-y-4">
-      <Skeleton className="h-10 w-[240px]" />
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              {[...Array(5)].map((_, i) => <TableHead key={i}><Skeleton className="h-5 w-full" /></TableHead>)}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {[...Array(5)].map((_, i) => (
-              <TableRow key={i}>
-                {[...Array(5)].map((_, j) => <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>)}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-    </div>
-  );
-}
-
-export default function RecruitmentJobsPage() {
-  const hasAccess = useRoleGuard(['hrd', 'super-admin']);
+export default function RecruitmentOverviewPage() {
   const { userProfile } = useAuth();
-  const firestore = useFirestore();
-  const [brandFilter, setBrandFilter] = useState<string>('all');
+  const hasAccess = useRoleGuard(['hrd', 'super-admin']);
 
   const menuConfig = useMemo(() => {
     if (userProfile?.role === 'super-admin') return MENU_CONFIG['super-admin'];
@@ -53,145 +21,66 @@ export default function RecruitmentJobsPage() {
     return [];
   }, [userProfile]);
 
-  const jobsQuery = useMemoFirebase(() => query(collection(firestore, 'jobs')), [firestore]);
-  const { data: jobs, isLoading: isLoadingJobs, error: jobsError } = useCollection<Job>(jobsQuery);
-
-  const applicationsQuery = useMemoFirebase(() => query(collection(firestore, 'applications')), [firestore]);
-  const { data: applications, isLoading: isLoadingApps, error: appsError } = useCollection<JobApplication>(applicationsQuery);
-
-  const brandsQuery = useMemoFirebase(() => (firestore ? collection(firestore, 'brands') : null), [firestore]);
-  const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(brandsQuery);
-  
-  const applicantCounts = useMemo(() => {
-    if (!applications) return new Map<string, number>();
-    return applications.reduce((acc, app) => {
-      acc.set(app.jobId, (acc.get(app.jobId) || 0) + 1);
-      return acc;
-    }, new Map<string, number>());
-  }, [applications]);
-  
-  const brandsForFilter = useMemo(() => {
-    if (!brands || !userProfile) return [];
-    if (userProfile.role === 'super-admin' || !userProfile.brandId || (Array.isArray(userProfile.brandId) && userProfile.brandId.length === 0)) {
-      return brands; // Super-admin and global HRD see all brands
-    }
-    const hrdBrands = Array.isArray(userProfile.brandId) ? userProfile.brandId : [userProfile.brandId];
-    return brands.filter(brand => hrdBrands.includes(brand.id!));
-  }, [brands, userProfile]);
-
-  const jobsWithCounts = useMemo(() => {
-    if (!jobs) return [];
-
-    let permissionFilteredJobs;
-    if (userProfile?.role === 'super-admin' || !userProfile?.brandId || (Array.isArray(userProfile.brandId) && userProfile.brandId.length === 0)) {
-      permissionFilteredJobs = jobs;
-    } else if (userProfile?.role === 'hrd') {
-      const hrdBrands = Array.isArray(userProfile.brandId) ? userProfile.brandId : [userProfile.brandId];
-      permissionFilteredJobs = jobs.filter(job => hrdBrands.includes(job.brandId));
-    } else {
-        permissionFilteredJobs = [];
-    }
-
-    const brandFilteredJobs = brandFilter && brandFilter !== 'all'
-      ? permissionFilteredJobs.filter(job => job.brandId === brandFilter)
-      : permissionFilteredJobs;
-
-    return brandFilteredJobs.map(job => ({
-      ...job,
-      applicantCount: applicantCounts.get(job.id!) || 0
-    })).sort((a, b) => b.applicantCount - a.applicantCount);
-  }, [jobs, applicantCounts, userProfile, brandFilter]);
-  
-  const isLoading = isLoadingJobs || isLoadingApps || isLoadingBrands;
-  const error = jobsError || appsError;
-
-  if (!hasAccess || isLoading) {
+  if (!hasAccess) {
     return (
-      <DashboardLayout pageTitle="Recruitment" menuConfig={menuConfig}>
-        <RecruitmentTableSkeleton />
-      </DashboardLayout>
-    );
-  }
-  
-  if (error) {
-    return (
-      <DashboardLayout pageTitle="Recruitment" menuConfig={menuConfig}>
-        <Alert variant="destructive">
-          <AlertTitle>Error Loading Data</AlertTitle>
-          <AlertDescription>{error.message}</AlertDescription>
-        </Alert>
+      <DashboardLayout pageTitle="Recruitment Overview" menuConfig={menuConfig}>
+        <div className="space-y-4">
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-48 w-full" />
+        </div>
       </DashboardLayout>
     );
   }
 
   return (
-    <DashboardLayout pageTitle="Recruitment: Select Job Posting" menuConfig={menuConfig}>
-      <div className="space-y-4">
-        <div className="flex justify-start">
-            <Select value={brandFilter} onValueChange={setBrandFilter} disabled={brandsForFilter.length === 0}>
-                <SelectTrigger className="w-full max-w-xs">
-                    <SelectValue placeholder="Filter by brand..." />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="all">All Brands</SelectItem>
-                    {brandsForFilter.map(brand => (
-                        <SelectItem key={brand.id} value={brand.id!}>{brand.name}</SelectItem>
-                    ))}
-                </SelectContent>
-            </Select>
+    <DashboardLayout pageTitle="Recruitment Overview" menuConfig={menuConfig}>
+        <div className="space-y-6">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Open Positions</CardTitle>
+                        <Briefcase className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">12</div>
+                        <p className="text-xs text-muted-foreground">+2 from last month</p>
+                    </CardContent>
+                </Card>
+                 <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">New Applicants</CardTitle>
+                        <Users className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">+23</div>
+                         <p className="text-xs text-muted-foreground">in the last 7 days</p>
+                    </CardContent>
+                </Card>
+                 <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Interviews Scheduled</CardTitle>
+                         <UserCheck className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">8</div>
+                        <p className="text-xs text-muted-foreground">for this week</p>
+                    </CardContent>
+                </Card>
+            </div>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Quick Actions</CardTitle>
+                </CardHeader>
+                <CardContent className="flex gap-4">
+                    <Button asChild>
+                        <Link href="/admin/jobs"><PlusCircle className="mr-2 h-4 w-4"/> Create New Job</Link>
+                    </Button>
+                    <Button asChild variant="outline">
+                         <Link href="/admin/recruitment/pipeline"><Users className="mr-2 h-4 w-4"/> View Candidate Pipeline</Link>
+                    </Button>
+                </CardContent>
+            </Card>
         </div>
-        <div className="rounded-lg border">
-            <Table>
-            <TableHeader>
-                <TableRow>
-                <TableHead>Position</TableHead>
-                <TableHead>Company</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Total Applicants</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-            </TableHeader>
-            <TableBody>
-                {jobsWithCounts.length > 0 ? (
-                jobsWithCounts.map(job => (
-                    <TableRow key={job.id}>
-                    <TableCell className="font-medium">{job.position}</TableCell>
-                    <TableCell>{job.brandName}</TableCell>
-                    <TableCell>
-                      <Badge variant={
-                        job.publishStatus === 'published' ? 'default' 
-                        : job.publishStatus === 'closed' ? 'destructive' 
-                        : 'secondary'
-                      } className="capitalize">
-                        {job.publishStatus}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Users className="h-4 w-4 text-muted-foreground" /> 
-                        {job.applicantCount}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                        <Button asChild variant="outline" size="sm">
-                          <Link href={`/admin/recruitment/jobs/${job.id}`}>
-                            View Applicants
-                          </Link>
-                        </Button>
-                    </TableCell>
-                    </TableRow>
-                ))
-                ) : (
-                <TableRow>
-                    <TableCell colSpan={5} className="h-24 text-center">
-                    No job postings found for the selected filter.
-                    </TableCell>
-                </TableRow>
-                )}
-            </TableBody>
-            </Table>
-        </div>
-      </div>
     </DashboardLayout>
   );
 }
