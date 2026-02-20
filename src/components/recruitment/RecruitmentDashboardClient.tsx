@@ -15,6 +15,7 @@ import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
 import type { JobApplication, Job, UserProfile, Brand } from '@/lib/types';
 import { Skeleton } from '../ui/skeleton';
+import { useToast } from '@/hooks/use-toast';
 
 export type FilterState = {
   dateRange: { from?: Date | null; to?: Date | null };
@@ -39,6 +40,7 @@ function DashboardSkeleton() {
 
 export function RecruitmentDashboardClient() {
     const firestore = useFirestore();
+    const { toast } = useToast();
     const [view, setView] = useState('overview');
     const [candidateViewMode, setCandidateViewMode] = useState<'table' | 'kanban'>('table');
     
@@ -157,8 +159,16 @@ export function RecruitmentDashboardClient() {
                         <Button
                             variant={candidateViewMode === 'kanban' ? 'secondary' : 'ghost'}
                             size="sm"
-                            onClick={() => setCandidateViewMode('kanban')}
-                            disabled={isKanbanDisabled}
+                            onClick={() => {
+                                if (isKanbanDisabled) {
+                                    toast({
+                                        title: 'Pilih Satu Lowongan',
+                                        description: 'Tampilan Kanban hanya dapat digunakan jika Anda memfilter satu lowongan pekerjaan saja.',
+                                    });
+                                } else {
+                                    setCandidateViewMode('kanban');
+                                }
+                            }}
                             title={isKanbanDisabled ? "Select a single job to enable Kanban view" : "Switch to Kanban view"}
                         >
                             <LayoutGrid className="mr-2 h-4 w-4" />
