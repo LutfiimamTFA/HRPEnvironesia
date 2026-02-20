@@ -14,6 +14,7 @@ import { LanguageSwitcher } from '@/components/i18n/LanguageSwitcher';
 import imagePlaceholders from '@/lib/placeholder-images.json';
 import { JobExplorerSkeleton } from '@/components/careers/JobExplorer';
 import dynamic from 'next/dynamic';
+import { ThemeToggle } from '../ui/ThemeToggle';
 
 const DynamicJobExplorerClient = dynamic(
   () => import('@/components/careers/JobExplorer').then((mod) => mod.JobExplorerClient),
@@ -61,6 +62,7 @@ const Header = () => {
                         ))}
                     </nav>
                     <div className="hidden items-center gap-2 md:flex">
+                        <ThemeToggle />
                         <LanguageSwitcher />
                         <Button variant="secondary" asChild>
                             <Link href="/careers/login">{t('signIn')}</Link>
@@ -69,7 +71,9 @@ const Header = () => {
                             <Link href="/careers/register">{t('signUp')}</Link>
                         </Button>
                     </div>
-                    <div className="md:hidden">
+                    <div className="flex items-center gap-2 md:hidden">
+                        <ThemeToggle />
+                        <LanguageSwitcher />
                         <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
                             <SheetTrigger asChild>
                                 <Button variant="ghost" size="icon">
@@ -92,7 +96,6 @@ const Header = () => {
                                         ))}
                                     </nav>
                                     <div className="mt-auto p-4 space-y-2 border-t">
-                                        <LanguageSwitcher />
                                         <Button variant="secondary" asChild className="w-full">
                                             <Link href="/careers/login">{t('signIn')}</Link>
                                         </Button>
@@ -158,6 +161,10 @@ const HeroSection = () => {
 // --- Job Explorer Section ---
 const JobExplorerSection = () => {
     const t = useTranslations('CareersLanding.JobExplorer');
+    const [isClient, setIsClient] = useState(false);
+    useEffect(() => {
+        setIsClient(true);
+    }, []);
     
     return (
         <section id="lowongan" className="w-full scroll-mt-20 py-16 lg:py-24">
@@ -166,7 +173,7 @@ const JobExplorerSection = () => {
                     <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{t('title')}</h2>
                     <p className="mt-4 text-lg text-muted-foreground">{t('subtitle')}</p>
                 </div>
-                <DynamicJobExplorerClient />
+                {isClient ? <DynamicJobExplorerClient /> : <JobExplorerSkeleton />}
             </div>
         </section>
     );
