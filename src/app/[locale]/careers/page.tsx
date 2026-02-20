@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
-import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,15 +12,7 @@ import { useTranslations } from 'next-intl';
 import { Link, useRouter } from '@/navigation';
 import { LanguageSwitcher } from '@/components/i18n/LanguageSwitcher';
 import imagePlaceholders from '@/lib/placeholder-images.json';
-import { JobExplorerSkeleton } from '@/components/careers/JobExplorer';
-
-const JobExplorerClient = dynamic(() => 
-  import('@/components/careers/JobExplorer').then((mod) => mod.JobExplorerClient), 
-  {
-    ssr: false,
-    loading: () => <JobExplorerSkeleton />,
-  }
-);
+import { JobExplorerClient, JobExplorerSkeleton } from '@/components/careers/JobExplorer';
 
 
 // --- Header Component ---
@@ -158,6 +149,11 @@ const HeroSection = () => {
 // --- Job Explorer Section ---
 const JobExplorerSection = () => {
     const t = useTranslations('CareersLanding.JobExplorer');
+    const [isClient, setIsClient] = useState(false);
+
+    useEffect(() => {
+        setIsClient(true);
+    }, []);
     
     return (
         <section id="lowongan" className="w-full scroll-mt-20 py-16 lg:py-24">
@@ -166,7 +162,7 @@ const JobExplorerSection = () => {
                     <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{t('title')}</h2>
                     <p className="mt-4 text-lg text-muted-foreground">{t('subtitle')}</p>
                 </div>
-                <JobExplorerClient />
+                {isClient ? <JobExplorerClient /> : <JobExplorerSkeleton />}
             </div>
         </section>
     );
