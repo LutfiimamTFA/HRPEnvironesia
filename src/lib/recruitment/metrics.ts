@@ -1,4 +1,5 @@
-import { subDays, differenceInDays, startOfDay } from 'date-fns';
+
+import { subDays, differenceInDays, startOfDay, format } from 'date-fns';
 import type { JobApplication } from '@/lib/types';
 import { statusDisplayLabels } from '@/components/recruitment/ApplicationStatusBadge';
 
@@ -106,7 +107,7 @@ export const getApplicantsTrend = (applications: JobApplication[], filters: Filt
         return appliedDate && appliedDate >= rangeStart && appliedDate <= rangeEnd;
     });
 
-    const trendData = countBy(appsInDateRange, app => formatDate(startOfDay(app.submittedAt!.toDate()), 'yyyy-MM-dd'));
+    const trendData = countBy(appsInDateRange, app => format(startOfDay(app.submittedAt!.toDate()), 'yyyy-MM-dd'));
 
     const result = Object.entries(trendData).map(([date, applicants]) => ({
         date,
