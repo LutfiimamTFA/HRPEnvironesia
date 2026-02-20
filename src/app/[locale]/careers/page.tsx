@@ -197,8 +197,29 @@ const JobCardSkeleton = () => (
     </Card>
 );
 
-// --- Job Explorer Section ---
-const JobExplorerSection = () => {
+// --- Job Explorer Components ---
+
+const JobExplorerSkeleton = () => {
+    return (
+        <div className="mt-12">
+             <div className="max-w-3xl mx-auto">
+                <Skeleton className="h-12 w-full rounded-full mb-4" />
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                    <Skeleton className="h-9 w-24 rounded-full" />
+                    <Skeleton className="h-9 w-24 rounded-full" />
+                    <Skeleton className="h-9 w-24 rounded-full" />
+                </div>
+            </div>
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mt-12">
+                <JobCardSkeleton />
+                <JobCardSkeleton />
+                <JobCardSkeleton />
+            </div>
+        </div>
+    )
+}
+
+const JobExplorerClient = () => {
     const t = useTranslations('CareersLanding.JobExplorer');
     const firestore = useFirestore();
     const [searchTerm, setSearchTerm] = useState('');
@@ -225,6 +246,69 @@ const JobExplorerSection = () => {
     }
 
     const filterChips = ['fulltime', 'internship', 'contract'];
+    
+    return (
+        <>
+            <div className="mt-12 max-w-3xl mx-auto">
+                <div className="relative mb-4">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                    <Input 
+                        placeholder={t('searchPlaceholder')}
+                        className="h-12 pl-12 text-base rounded-full"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                    {filterChips.map(filter => (
+                        <Button 
+                            key={filter} 
+                            variant={activeFilters.includes(filter) ? 'default' : 'outline'}
+                            onClick={() => toggleFilter(filter)}
+                            className="capitalize rounded-full"
+                        >
+                            {t(`filters.${filter}` as any)}
+                        </Button>
+                    ))}
+                </div>
+            </div>
+
+            <div className="mt-12">
+                {isLoading ? (
+                    <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                        <JobCardSkeleton /><JobCardSkeleton /><JobCardSkeleton />
+                    </div>
+                ) : filteredJobs.length > 0 ? (
+                    <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                       {filteredJobs.map(job => <JobCard key={job.id} job={job} />)}
+                    </div>
+                ) : (
+                    <div className="text-center text-muted-foreground mt-12 rounded-lg border-2 border-dashed p-12 max-w-2xl mx-auto flex flex-col items-center">
+                         <Image 
+                            src={imagePlaceholders.careers_empty_jobs.src}
+                            alt={imagePlaceholders.careers_empty_jobs.alt}
+                            width={150}
+                            height={150}
+                            data-ai-hint={imagePlaceholders.careers_empty_jobs.ai_hint}
+                            className="mb-6 opacity-70"
+                         />
+                        <h3 className="text-xl font-semibold text-foreground">{t('emptyState.title')}</h3>
+                        <p className="mt-2 mb-6">{t('emptyState.subtitle')}</p>
+                        <Button>{t('emptyState.cta')}</Button>
+                    </div>
+                )}
+            </div>
+        </>
+    )
+}
+
+const JobExplorerSection = () => {
+    const t = useTranslations('CareersLanding.JobExplorer');
+    const [isClient, setIsClient] = useState(false);
+    
+    useEffect(() => {
+        setIsClient(true)
+    }, []);
 
     return (
         <section id="lowongan" className="w-full scroll-mt-20 py-16 lg:py-24">
@@ -233,56 +317,7 @@ const JobExplorerSection = () => {
                     <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{t('title')}</h2>
                     <p className="mt-4 text-lg text-muted-foreground">{t('subtitle')}</p>
                 </div>
-
-                <div className="mt-12 max-w-3xl mx-auto">
-                    <div className="relative mb-4">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                        <Input 
-                            placeholder={t('searchPlaceholder')}
-                            className="h-12 pl-12 text-base rounded-full"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
-                    </div>
-                    <div className="flex flex-wrap items-center justify-center gap-2">
-                        {filterChips.map(filter => (
-                            <Button 
-                                key={filter} 
-                                variant={activeFilters.includes(filter) ? 'default' : 'outline'}
-                                onClick={() => toggleFilter(filter)}
-                                className="capitalize rounded-full"
-                            >
-                                {t(`filters.${filter}` as any)}
-                            </Button>
-                        ))}
-                    </div>
-                </div>
-
-                <div className="mt-12">
-                    {isLoading ? (
-                        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                            <JobCardSkeleton /><JobCardSkeleton /><JobCardSkeleton />
-                        </div>
-                    ) : filteredJobs.length > 0 ? (
-                        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                           {filteredJobs.map(job => <JobCard key={job.id} job={job} />)}
-                        </div>
-                    ) : (
-                        <div className="text-center text-muted-foreground mt-12 rounded-lg border-2 border-dashed p-12 max-w-2xl mx-auto flex flex-col items-center">
-                             <Image 
-                                src={imagePlaceholders.careers_empty_jobs.src}
-                                alt={imagePlaceholders.careers_empty_jobs.alt}
-                                width={150}
-                                height={150}
-                                data-ai-hint={imagePlaceholders.careers_empty_jobs.ai_hint}
-                                className="mb-6 opacity-70"
-                             />
-                            <h3 className="text-xl font-semibold text-foreground">{t('emptyState.title')}</h3>
-                            <p className="mt-2 mb-6">{t('emptyState.subtitle')}</p>
-                            <Button>{t('emptyState.cta')}</Button>
-                        </div>
-                    )}
-                </div>
+                {isClient ? <JobExplorerClient /> : <JobExplorerSkeleton />}
             </div>
         </section>
     );
