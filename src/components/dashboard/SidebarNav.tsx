@@ -1,4 +1,5 @@
 'use client';
+import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
@@ -44,6 +45,7 @@ export function SidebarNav({ menuConfig }: SidebarNavProps) {
                     </TooltipTrigger>
                     <TooltipContent side="right">{item.label}</TooltipContent>
                     </Tooltip>
+                </TooltipProvider>
                 ))}
             </div>
             {groupIndex < menuConfig.length - 1 && <Separator className="my-4" />}
