@@ -301,6 +301,39 @@
         "updatedAt"
       ]
     },
+    "SavedJob": {
+      "title": "Saved Job",
+      "type": "object",
+      "description": "Represents a job posting saved by a candidate.",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "The UID of the user who saved the job."
+        },
+        "jobId": {
+          "type": "string",
+          "description": "The ID of the saved job."
+        },
+        "jobPosition": {
+          "type": "string",
+          "description": "Denormalized position from the Job."
+        },
+        "jobSlug": {
+          "type": "string",
+          "description": "Denormalized slug from the Job."
+        },
+        "brandName": {
+          "type": "string",
+          "description": "Denormalized brand name from the Job."
+        },
+        "savedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the job was saved."
+        }
+      },
+      "required": ["userId", "jobId", "savedAt"]
+    },
     "Address": {
         "title": "Address",
         "type": "object",
@@ -607,6 +640,26 @@
             {
               "name": "userId",
               "description": "The Firebase Auth UID of the user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/saved_jobs/{jobId}",
+        "definition": {
+          "entityName": "SavedJob",
+          "schema": {
+            "$ref": "#/backend/entities/SavedJob"
+          },
+          "description": "Stores jobs saved by a candidate. Path-based ownership.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The Firebase Auth UID of the user."
+            },
+            {
+              "name": "jobId",
+              "description": "The ID of the saved job posting."
             }
           ]
         }

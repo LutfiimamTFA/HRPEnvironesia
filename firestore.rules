@@ -89,6 +89,10 @@ service cloud.firestore {
       allow list: if isSuperAdmin();
       allow create: if isSuperAdmin() && hasValidCreateData(userId);
       allow delete: if isSuperAdmin();
+
+      match /saved_jobs/{jobId} {
+        allow read, write, delete: if isOwner(userId);
+      }
     }
 
     /**
@@ -258,3 +262,5 @@ service cloud.firestore {
     }
   }
 }
+
+    

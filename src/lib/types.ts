@@ -78,6 +78,16 @@ export type JobApplication = {
   ijazahFileName?: string;
 };
 
+export type SavedJob = {
+  id?: string;
+  userId: string;
+  jobId: string;
+  jobPosition: string;
+  jobSlug: string;
+  brandName: string;
+  savedAt: Timestamp;
+};
+
 export type Education = {
     id: string;
     institution: string;
