@@ -56,7 +56,7 @@ const Header = () => {
                             <Link href="/careers/login">Masuk Kandidat</Link>
                         </Button>
                         <Button asChild>
-                            <Link href="/careers/register">Daftar Sekarang</Link>
+                            <Link href="/careers/register">Daftar</Link>
                         </Button>
                     </div>
                     <div className="md:hidden">
@@ -86,7 +86,7 @@ const Header = () => {
                                             <Link href="/careers/login">Masuk Kandidat</Link>
                                         </Button>
                                         <Button asChild className="w-full">
-                                            <Link href="/careers/register">Daftar Sekarang</Link>
+                                            <Link href="/careers/register">Daftar</Link>
                                         </Button>
                                     </div>
                                 </div>
@@ -105,22 +105,22 @@ const HeroSection = () => (
     <section id="hero" className="relative w-full overflow-hidden bg-background">
         <div className="absolute inset-0">
             <Image
-                src="https://storage.googleapis.com/stedi-dev-public-model-outputs/82635955-3212-4d23-9c8a-b9c51a70513d.png"
-                alt="Environesia Office Building"
+                src="https://picsum.photos/seed/hero-env/2560/1440"
+                alt="AI generated image of a misty Indonesian landscape with subtle clean-tech elements"
                 fill
-                className="object-cover"
                 priority
-                data-ai-hint="office building"
+                className="object-cover"
+                data-ai-hint="misty landscape"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-transparent" />
-            <div className="absolute inset-0 bg-background/60" />
+            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
+            <div className="absolute inset-0 bg-background/50" />
         </div>
         <div className="relative z-10 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="flex min-h-[70vh] flex-col items-center justify-center pb-20 pt-32 text-center lg:min-h-dvh">
-                <h1 className="text-4xl font-extrabold tracking-tight md:text-6xl lg:text-7xl">
+                <h1 className="text-4xl font-extrabold tracking-tight text-white md:text-6xl lg:text-7xl">
                     Mari Buat Perubahan Bersama Kami
                 </h1>
-                <p className="mt-6 max-w-2xl text-lg text-muted-foreground">
+                <p className="mt-6 max-w-2xl text-lg text-slate-300">
                     Jadilah bagian dari tim inovatif yang berdedikasi untuk menciptakan solusi lingkungan berkelanjutan. Temukan karier berdampak Anda di Environesia.
                 </p>
                 <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4 w-full max-w-xs sm:max-w-none">
@@ -133,7 +133,7 @@ const HeroSection = () => (
                     Kirim Lamaran Cepat
                   </Button>
                 </div>
-                 <div className="mt-16 flex flex-wrap items-center justify-center gap-x-8 gap-y-4 text-sm text-muted-foreground">
+                 <div className="mt-16 flex flex-wrap items-center justify-center gap-x-8 gap-y-4 text-sm text-slate-400">
                     <span className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-primary"/> 560+ Proyek</span>
                     <span className="flex items-center gap-2"><Globe className="h-4 w-4 text-primary"/> 38 Provinsi</span>
                     <span className="flex items-center gap-2"><BarChart className="h-4 w-4 text-primary"/> Lab & Konsultan</span>
@@ -262,8 +262,15 @@ const JobExplorerSection = () => {
                         </div>
                     ) : (
                         <div className="text-center text-muted-foreground mt-12 rounded-lg border-2 border-dashed p-12 max-w-2xl mx-auto flex flex-col items-center">
-                            <Search className="h-12 w-12 text-muted-foreground/50 mb-4" />
-                            <h3 className="text-xl font-semibold text-foreground">Tidak Ada Lowongan Sesuai Filter</h3>
+                             <Image 
+                                src="https://picsum.photos/seed/empty-jobs/400/300" 
+                                alt="Ilustrasi lowongan kosong"
+                                width={150}
+                                height={150}
+                                className="mb-6 opacity-70"
+                                data-ai-hint="sprout notification"
+                             />
+                            <h3 className="text-xl font-semibold text-foreground">Belum Ada Lowongan yang Sesuai</h3>
                             <p className="mt-2 mb-6">Coba sesuaikan kata kunci atau filter Anda, atau bergabunglah dengan talent pool kami untuk mendapatkan pemberitahuan lowongan baru.</p>
                             <Button>Join Talent Pool</Button>
                         </div>
@@ -329,7 +336,7 @@ const RecruitmentProcessSection = () => {
                                <div className="z-10 flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-primary font-bold text-primary-foreground shadow-lg md:absolute md:left-1/2 md:-translate-x-1/2">
                                     {index + 1}
                                 </div>
-                                <div className={cn("flex-1 md:w-1/2", index % 2 === 0 ? "md:pl-[calc(50%+2.5rem)]" : "md:text-right md:pr-[calc(50%+2.5rem)] md:self-end")}>
+                                <div className={cn("flex-1", index % 2 === 0 ? "md:pl-[calc(50%+2.5rem)]" : "md:text-right md:pr-[calc(50%+2.5rem)]")}>
                                      <h3 className="text-xl font-semibold">{step.title}</h3>
                                      <p className="mt-1 text-muted-foreground">{step.description}</p>
                                 </div>
@@ -349,11 +356,11 @@ const OfficeSpotlightSection = () => (
         <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
             <Card className="overflow-hidden relative flex items-end min-h-[500px] rounded-2xl shadow-lg">
                  <Image
-                    src="https://storage.googleapis.com/stedi-dev-public-model-outputs/82635955-3212-4d23-9c8a-b9c51a70513d.png"
-                    alt="Environesia Office Building"
+                    src="https://picsum.photos/seed/basecamp-env/2000/1200"
+                    alt="AI generated image of a modern office building exterior with teal accents"
                     fill
                     className="object-cover"
-                    data-ai-hint="office building"
+                    data-ai-hint="modern building"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
                 <div className="relative z-10 p-8 md:p-12 text-white">
