@@ -1,50 +1,101 @@
 'use client';
 import { createElement, type ReactNode } from 'react';
-import { Briefcase, FileText, Users, ClipboardList, CheckSquare, User, Search, Calendar, DollarSign, LayoutDashboard, Settings, List, FileUp, ClipboardCheck } from 'lucide-react';
+import { 
+    LayoutDashboard, Users, Briefcase, User, Calendar, DollarSign, Settings, ShieldCheck, Database, History, 
+    Contact, UserPlus, FolderKanban, CalendarOff, UserMinus, KanbanSquare, CheckSquare, BarChart, ClipboardCheck, Award, Search, FileText 
+} from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 
 export type MenuItem = {
   href: string;
   label: string;
   icon: ReactNode;
+  badge?: ReactNode | number;
 };
 
-export const SUPER_ADMIN_MENU_ITEMS: MenuItem[] = [
-    { href: '/admin/super-admin', label: 'Overview', icon: createElement(LayoutDashboard, { className: "h-4 w-4" }) },
-    { href: '/admin/super-admin/user-management', label: 'User Management', icon: createElement(Users, { className: "h-4 w-4" }) },
-    { href: '/admin/jobs', label: 'Job Postings', icon: createElement(Briefcase, { className: "h-4 w-4" }) },
-    { href: '/admin/super-admin/departments-brands', label: 'Brands', icon: createElement(Briefcase, { className: "h-4 w-4" }) },
-    { href: '/admin/super-admin/menu-settings', label: 'Menu Settings', icon: createElement(List, { className: "h-4 w-4" }) },
-    { href: '#', label: 'System Settings', icon: createElement(Settings, { className: "h-4 w-4" }) },
+export type MenuGroup = {
+    title?: string;
+    items: MenuItem[];
+}
+
+const RECRUITMENT_MENU: MenuGroup[] = [
+    {
+        title: "Recruitment",
+        items: [
+            { href: '/admin/recruitment', label: 'Overview', icon: createElement(LayoutDashboard) },
+            { href: '/admin/jobs', label: 'Job Postings', icon: createElement(Briefcase) },
+            { href: '/admin/recruitment/pipeline', label: 'Candidates', icon: createElement(Users) },
+            { href: '/admin/recruitment/interviews', label: 'Interviews', icon: createElement(Calendar) },
+            { href: '/admin/hrd/assessments', label: 'Assessments', icon: createElement(ClipboardCheck) },
+            { href: '/admin/recruitment/offers', label: 'Offers', icon: createElement(Award) },
+            { href: '/admin/recruitment/talent-pool', label: 'Talent Pool', icon: createElement(Search) },
+        ]
+    }
 ];
 
-export const ALL_MENU_ITEMS: Record<string, MenuItem[]> = {
-  'super-admin': SUPER_ADMIN_MENU_ITEMS,
-  hrd: [
-    { href: '/admin/hrd', label: 'Dashboard', icon: createElement(LayoutDashboard, { className: "h-4 w-4" }) },
-    { href: '/admin/jobs', label: 'Job Postings', icon: createElement(Briefcase, { className: "h-4 w-4" }) },
-    { href: '/admin/recruitment', label: 'Recruitment', icon: createElement(Users, { className: "h-4 w-4" }) },
-    { href: '/admin/hrd/assessments', label: 'Assessments', icon: createElement(ClipboardCheck, { className: "h-4 w-4" }) },
-  ],
-  manager: [
-    { href: '#', label: 'My Team', icon: createElement(Users, { className: "h-4 w-4" }) },
-    { href: '#', label: 'Open Requisitions', icon: createElement(ClipboardList, { className: "h-4 w-4" }) },
-    { href: '#', label: 'Approvals', icon: createElement(CheckSquare, { className: "h-4 w-4" }) },
-  ],
-  kandidat: [
-    { href: '/careers/portal', label: 'Dashboard', icon: createElement(LayoutDashboard, { className: "h-4 w-4" }) },
-    { href: '/careers/portal/jobs', label: 'Daftar Lowongan', icon: createElement(Briefcase, { className: "h-4 w-4" }) },
-    { href: '/careers/portal/applications', label: 'Lamaran Saya', icon: createElement(FileText, { className: "h-4 w-4" }) },
-    { href: '/careers/portal/assessment/personality', label: 'Tes Kepribadian', icon: createElement(ClipboardCheck, { className: "h-4 w-4" }) },
-    { href: '/careers/portal/documents', label: 'Dokumen', icon: createElement(FileUp, { className: "h-4 w-4" }) },
-    { href: '/careers/portal/profile', label: 'Profil Saya', icon: createElement(User, { className: "h-4 w-4" }) },
-  ],
-  karyawan: [
-    { href: '#', label: 'My Information', icon: createElement(User, { className: "h-4 w-4" }) },
-    { href: '#', label: 'Leave Request', icon: createElement(Calendar, { className: "h-4 w-4" }) },
-    { href: '#', label: 'Payslips', icon: createElement(DollarSign, { className: "h-4 w-4" }) },
-  ],
-};
+const EMPLOYEES_MENU: MenuGroup[] = [
+    {
+        title: "People Operations",
+        items: [
+            { href: '/admin/employees', label: 'Directory', icon: createElement(Contact) },
+            { href: '/admin/employees/onboarding', label: 'Onboarding', icon: createElement(UserPlus) },
+            { href: '/admin/employees/documents', label: 'Documents', icon: createElement(FolderKanban) },
+            { href: '/admin/employees/leave', label: 'Leave & Attendance', icon: createElement(CalendarOff) },
+            { href: '/admin/employees/offboarding', label: 'Offboarding', icon: createElement(UserMinus) },
+        ]
+    }
+];
 
-const allMenusForUniqueness = Object.values(ALL_MENU_ITEMS).flat();
-export const ALL_UNIQUE_MENU_ITEMS = Array.from(new Map(allMenusForUniqueness.map(item => [item.label, item])).values())
-  .sort((a, b) => a.label.localeCompare(b.label));
+export const MENU_CONFIG: Record<string, MenuGroup[]> = {
+  'super-admin': [
+    {
+        title: "Main",
+        items: [
+            { href: '/admin/super-admin', label: 'Overview', icon: createElement(LayoutDashboard) },
+        ]
+    },
+    ...RECRUITMENT_MENU,
+    ...EMPLOYEES_MENU,
+    {
+        title: "Administration",
+        items: [
+            { href: '/admin/super-admin/user-management', label: 'User Management', icon: createElement(Users) },
+            { href: '/admin/super-admin/departments-brands', label: 'Master Data', icon: createElement(Database) },
+            { href: '/admin/super-admin/menu-settings', label: 'Access & Roles', icon: createElement(ShieldCheck) },
+            { href: '/admin/super-admin/settings', label: 'System Settings', icon: createElement(Settings) },
+            { href: '/admin/super-admin/audit-log', label: 'Audit Log', icon: createElement(History) },
+        ]
+    }
+  ],
+  'hrd-recruitment': RECRUITMENT_MENU,
+  'hrd-employees': EMPLOYEES_MENU,
+  'manager': [
+    {
+        items: [
+            { href: '/admin/manager', label: 'My Team', icon: createElement(Users) },
+            { href: '/admin/manager/reports', label: 'Reports', icon: createElement(BarChart) },
+            { href: '/admin/manager/approvals', label: 'Approvals', icon: createElement(CheckSquare), badge: 3 },
+        ]
+    }
+  ],
+  'karyawan': [
+    {
+        items: [
+            { href: '/admin/karyawan', label: 'My Profile', icon: createElement(User) },
+            { href: '/admin/karyawan/documents', label: 'My Documents', icon: createElement(FileText) },
+            { href: '/admin/karyawan/leave', label: 'My Leave', icon: createElement(Calendar) },
+            { href: '/admin/karyawan/payslips', label: 'My Payslips', icon: createElement(DollarSign) },
+        ]
+    }
+  ],
+  'kandidat': [
+    {
+        items: [
+            { href: '/careers/portal', label: 'Dashboard', icon: createElement(LayoutDashboard) },
+            { href: '/careers/portal/jobs', label: 'Daftar Lowongan', icon: createElement(Briefcase) },
+            { href: '/careers/portal/applications', label: 'Lamaran Saya', icon: createElement(FileText) },
+            { href: '/careers/portal/profile', label: 'Profil Saya', icon: createElement(User) },
+        ]
+    }
+  ]
+};

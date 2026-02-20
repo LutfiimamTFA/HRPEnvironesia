@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useMemo, useState } from 'react';
@@ -6,10 +5,10 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useDoc, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, doc, query, where, serverTimestamp, getDocs, writeBatch } from 'firebase/firestore';
-import type { AssessmentSession, NavigationSetting, Profile, AssessmentQuestion } from '@/lib/types';
+import type { AssessmentSession, Profile, AssessmentQuestion } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
-import { ALL_MENU_ITEMS, ALL_UNIQUE_MENU_ITEMS } from '@/lib/menu-config';
+import { MENU_CONFIG } from '@/lib/menu-config';
 import { Loader2, ArrowLeft, Check, X } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -49,51 +48,31 @@ function HrdDecisionManager({ session }: { session: AssessmentSession }) {
     try {
       const batch = writeBatch(firestore);
 
-      // 1. Queue the session update
       batch.update(sessionRef, sessionUpdateData);
 
-      // 2. Find and queue the application updates
-      const newAppStatus = decision === 'approved' ? 'document_submission' : 'rejected';
+      if (session.applicationId) {
+        const appRef = doc(firestore, 'applications', session.applicationId);
+        const newAppStatus = decision === 'approved' ? 'document_submission' : 'rejected';
+        batch.update(appRef, { status: newAppStatus, updatedAt: serverTimestamp() });
+      }
       
-      const appsQuery = query(
-        collection(firestore, 'applications'),
-        where('candidateUid', '==', session.candidateUid),
-        where('status', '==', 'submitted')
-      );
-      
-      const appsSnapshot = await getDocs(appsQuery);
-      
-      let updatedAppsCount = 0;
-      appsSnapshot.forEach(appDoc => {
-        batch.update(appDoc.ref, {
-            status: newAppStatus,
-            updatedAt: serverTimestamp()
-        });
-        updatedAppsCount++;
-      });
-      
-      // 3. Commit the batch
       await batch.commit();
 
-      // Success
       let successMessage = `Assessment marked as ${decision}.`;
-      if (updatedAppsCount > 0) {
-        successMessage += ` And ${updatedAppsCount} application(s) moved to '${newAppStatus}'.`;
+      if (session.applicationId) {
+        successMessage += ` Application status updated.`;
       }
       toast({ title: 'Success', description: successMessage });
 
     } catch (serverError: any) {
-        // Failure: Create and emit a rich, contextual error
         const permissionError = new FirestorePermissionError({
             path: sessionRef.path, 
             operation: 'update',
             requestResourceData: sessionUpdateData,
         });
 
-        // Emit the rich error for the dev overlay
         errorEmitter.emit('permission-error', permissionError);
 
-        // Show a generic toast to the user
         toast({
           variant: 'destructive',
           title: 'Error Updating Status',
@@ -166,47 +145,35 @@ export default function HrdAssessmentResultPage() {
     const sessionId = params.sessionId as string;
     const firestore = useFirestore();
     
-    // Get menu
-    const settingsDocRef = useMemoFirebase(
-      () => (userProfile ? doc(firestore, 'navigation_settings', userProfile.role) : null),
-      [userProfile, firestore]
-    );
-    const { data: navSettings, isLoading: isLoadingSettings } = useDoc<NavigationSetting>(settingsDocRef);
-    const menuItems = useMemo(() => {
-        const defaultItems = ALL_MENU_ITEMS[userProfile?.role as keyof typeof ALL_MENU_ITEMS] || [];
-        if (isLoadingSettings) return defaultItems;
-        if (navSettings) {
-        return ALL_UNIQUE_MENU_ITEMS.filter(item => navSettings.visibleMenuItems.includes(item.label));
-        }
-        return defaultItems;
-    }, [navSettings, isLoadingSettings, userProfile]);
+    const menuConfig = useMemo(() => {
+      if (userProfile?.role === 'super-admin') return MENU_CONFIG['super-admin'];
+      if (userProfile?.role === 'hrd') return MENU_CONFIG['hrd-recruitment'];
+      return [];
+    }, [userProfile]);
 
-    // Get session
     const sessionRef = useMemoFirebase(
         () => (sessionId ? doc(firestore, 'assessment_sessions', sessionId) : null),
         [firestore, sessionId]
     );
     const { data: session, isLoading: isLoadingSession, error } = useDoc<AssessmentSession>(sessionRef);
     
-    // Get candidate profile
     const profileRef = useMemoFirebase(
       () => (session ? doc(firestore, 'profiles', session.candidateUid) : null),
       [firestore, session]
     );
     const { data: profile } = useDoc<Profile>(profileRef);
 
-    // Get assessment questions
     const questionsQuery = useMemoFirebase(() => {
         if (!session) return null;
         return query(collection(firestore, 'assessment_questions'), where('assessmentId', '==', session.assessmentId));
     }, [firestore, session]);
     const { data: questions, isLoading: isLoadingQuestions } = useCollection<AssessmentQuestion>(questionsQuery);
 
-    const isLoading = isLoadingSettings || isLoadingSession || isLoadingQuestions;
+    const isLoading = isLoadingSession || isLoadingQuestions;
 
     if (!hasAccess || isLoading) {
         return (
-             <DashboardLayout pageTitle="Assessment Result" menuItems={menuItems}>
+             <DashboardLayout pageTitle="Assessment Result" menuConfig={menuConfig}>
                 <ResultSkeleton />
             </DashboardLayout>
         )
@@ -214,7 +181,7 @@ export default function HrdAssessmentResultPage() {
 
     if (error || !session || !session.result?.report) {
         return (
-             <DashboardLayout pageTitle="Error" menuItems={menuItems}>
+             <DashboardLayout pageTitle="Error" menuConfig={menuConfig}>
                 <p>Could not load assessment results. The session may be invalid or not yet completed.</p>
              </DashboardLayout>
         );
@@ -223,7 +190,7 @@ export default function HrdAssessmentResultPage() {
     const { report, mbtiArchetype } = session.result;
 
     return (
-        <DashboardLayout pageTitle="Assessment Result" menuItems={menuItems}>
+        <DashboardLayout pageTitle="Assessment Result" menuConfig={menuConfig}>
             <div className="space-y-6">
                 <Button variant="outline" size="sm" onClick={() => router.back()}>
                     <ArrowLeft className="mr-2 h-4 w-4" />
@@ -307,5 +274,3 @@ export default function HrdAssessmentResultPage() {
         </DashboardLayout>
     )
 }
-
-    

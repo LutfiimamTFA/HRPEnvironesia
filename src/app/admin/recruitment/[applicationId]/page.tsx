@@ -1,13 +1,11 @@
-
-
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
 import { doc, serverTimestamp } from 'firebase/firestore';
-import type { JobApplication, Profile, NavigationSetting, Job } from '@/lib/types';
+import type { JobApplication, Profile, Job } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -15,7 +13,7 @@ import { ArrowLeft, Briefcase, Calendar, Mail, Phone, XCircle } from 'lucide-rea
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ALL_MENU_ITEMS, ALL_UNIQUE_MENU_ITEMS } from '@/lib/menu-config';
+import { MENU_CONFIG } from '@/lib/menu-config';
 import { ProfileView } from '@/components/recruitment/ProfileView';
 import { ApplicationStatusBadge, APPLICATION_STATUSES, statusDisplayLabels } from '@/components/recruitment/ApplicationStatusBadge';
 import { useToast } from '@/hooks/use-toast';
@@ -46,7 +44,6 @@ function StatusManager({ application }: { application: JobApplication }) {
         updatedAt: serverTimestamp(),
       };
 
-      // If moving to personality test stage and it hasn't been assigned before
       if (selectedStatus === 'tes_kepribadian' && !application.personalityTestAssignedAt) {
         updatePayload.personalityTestAssignedAt = serverTimestamp();
       }
@@ -90,12 +87,6 @@ export default function ApplicationDetailPage() {
   const router = useRouter();
   const applicationId = params.applicationId as string;
 
-  const settingsDocRef = useMemoFirebase(
-    () => (userProfile ? doc(firestore, 'navigation_settings', userProfile.role) : null),
-    [userProfile, firestore]
-  );
-  const { data: navSettings, isLoading: isLoadingSettings } = useDoc<NavigationSetting>(settingsDocRef);
-
   const applicationRef = useMemoFirebase(
     () => (applicationId ? doc(firestore, 'applications', applicationId) : null),
     [firestore, applicationId]
@@ -114,23 +105,20 @@ export default function ApplicationDetailPage() {
   );
   const { data: job, isLoading: isLoadingJob } = useDoc<Job>(jobRef);
 
-  const menuItems = useMemo(() => {
-    const defaultItems = ALL_MENU_ITEMS[userProfile?.role as keyof typeof ALL_MENU_ITEMS] || [];
-    if (isLoadingSettings) return defaultItems;
-    if (navSettings) {
-      return ALL_UNIQUE_MENU_ITEMS.filter(item => navSettings.visibleMenuItems.includes(item.label));
-    }
-    return defaultItems;
-  }, [navSettings, isLoadingSettings, userProfile]);
+  const menuConfig = useMemo(() => {
+    if (userProfile?.role === 'super-admin') return MENU_CONFIG['super-admin'];
+    if (userProfile?.role === 'hrd') return MENU_CONFIG['hrd-recruitment'];
+    return [];
+  }, [userProfile]);
 
-  const isLoading = isLoadingApp || isLoadingProfile || isLoadingSettings || isLoadingJob;
+  const isLoading = isLoadingApp || isLoadingProfile || isLoadingJob;
 
   if (!hasAccess) {
-    return <DashboardLayout pageTitle="Loading..." menuItems={[]}><ApplicationDetailSkeleton /></DashboardLayout>;
+    return <DashboardLayout pageTitle="Loading..." menuConfig={[]}><ApplicationDetailSkeleton /></DashboardLayout>;
   }
 
   return (
-    <DashboardLayout pageTitle="Application Detail" menuItems={menuItems}>
+    <DashboardLayout pageTitle="Application Detail" menuConfig={menuConfig}>
       {isLoading ? (
         <ApplicationDetailSkeleton />
       ) : !application || !profile || !job ? (

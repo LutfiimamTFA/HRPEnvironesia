@@ -4,41 +4,14 @@ import { useMemo } from 'react';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useAuth } from '@/providers/auth-provider';
-import { useDoc, useFirestore, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
-import { ALL_MENU_ITEMS, ALL_UNIQUE_MENU_ITEMS } from '@/lib/menu-config';
-import type { NavigationSetting } from '@/lib/types';
+import { MENU_CONFIG } from '@/lib/menu-config';
 
 
 export default function KaryawanDashboard() {
   const hasAccess = useRoleGuard('karyawan');
-  const { userProfile } = useAuth();
-  const firestore = useFirestore();
+  const menuConfig = useMemo(() => MENU_CONFIG['karyawan'] || [], []);
 
-  const settingsDocRef = useMemoFirebase(
-    () => (userProfile ? doc(firestore, 'navigation_settings', userProfile.role) : null),
-    [userProfile, firestore]
-  );
-
-  const { data: navSettings, isLoading: isLoadingSettings } = useDoc<NavigationSetting>(settingsDocRef);
-
-  const menuItems = useMemo(() => {
-    const defaultItems = ALL_MENU_ITEMS.karyawan || [];
-
-    if (isLoadingSettings) {
-      return defaultItems;
-    }
-
-    if (navSettings) {
-      return ALL_UNIQUE_MENU_ITEMS.filter(item => navSettings.visibleMenuItems.includes(item.label));
-    }
-
-    return defaultItems;
-  }, [navSettings, isLoadingSettings]);
-
-
-  if (!hasAccess || (userProfile && isLoadingSettings)) {
+  if (!hasAccess) {
     return (
       <div className="flex h-screen w-full items-center justify-center p-4">
         <Skeleton className="h-[400px] w-full max-w-6xl" />
@@ -47,7 +20,7 @@ export default function KaryawanDashboard() {
   }
 
   return (
-    <DashboardLayout pageTitle="Dashboard Karyawan" menuItems={menuItems}>
+    <DashboardLayout pageTitle="Employee Dashboard" menuConfig={menuConfig}>
       <p>This is the main content area for the Employee dashboard. Access your personal information and company resources.</p>
     </DashboardLayout>
   );

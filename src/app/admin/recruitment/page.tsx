@@ -4,8 +4,8 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, query, doc } from 'firebase/firestore';
-import type { Job, JobApplication, NavigationSetting, Brand } from '@/lib/types';
+import { collection, query } from 'firebase/firestore';
+import type { Job, JobApplication, Brand } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -13,8 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Users } from 'lucide-react';
-import { ALL_MENU_ITEMS, ALL_UNIQUE_MENU_ITEMS } from '@/lib/menu-config';
-import { useDoc } from '@/firebase/firestore/use-doc';
+import { MENU_CONFIG } from '@/lib/menu-config';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
@@ -48,11 +47,11 @@ export default function RecruitmentJobsPage() {
   const firestore = useFirestore();
   const [brandFilter, setBrandFilter] = useState<string>('all');
 
-  const settingsDocRef = useMemoFirebase(
-    () => (userProfile ? doc(firestore, 'navigation_settings', userProfile.role) : null),
-    [userProfile, firestore]
-  );
-  const { data: navSettings, isLoading: isLoadingSettings } = useDoc<NavigationSetting>(settingsDocRef);
+  const menuConfig = useMemo(() => {
+    if (userProfile?.role === 'super-admin') return MENU_CONFIG['super-admin'];
+    if (userProfile?.role === 'hrd') return MENU_CONFIG['hrd-recruitment'];
+    return [];
+  }, [userProfile]);
 
   const jobsQuery = useMemoFirebase(() => query(collection(firestore, 'jobs')), [firestore]);
   const { data: jobs, isLoading: isLoadingJobs, error: jobsError } = useCollection<Job>(jobsQuery);
@@ -63,15 +62,6 @@ export default function RecruitmentJobsPage() {
   const brandsQuery = useMemoFirebase(() => (firestore ? collection(firestore, 'brands') : null), [firestore]);
   const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(brandsQuery);
   
-  const menuItems = useMemo(() => {
-    const defaultItems = ALL_MENU_ITEMS[userProfile?.role as keyof typeof ALL_MENU_ITEMS] || [];
-    if (isLoadingSettings) return defaultItems;
-    if (navSettings) {
-      return ALL_UNIQUE_MENU_ITEMS.filter(item => navSettings.visibleMenuItems.includes(item.label));
-    }
-    return defaultItems;
-  }, [navSettings, isLoadingSettings, userProfile]);
-
   const applicantCounts = useMemo(() => {
     if (!applications) return new Map<string, number>();
     return applications.reduce((acc, app) => {
@@ -112,20 +102,20 @@ export default function RecruitmentJobsPage() {
     })).sort((a, b) => b.applicantCount - a.applicantCount);
   }, [jobs, applicantCounts, userProfile, brandFilter]);
   
-  const isLoading = isLoadingSettings || isLoadingJobs || isLoadingApps || isLoadingBrands;
+  const isLoading = isLoadingJobs || isLoadingApps || isLoadingBrands;
+  const error = jobsError || appsError;
 
   if (!hasAccess || isLoading) {
     return (
-      <DashboardLayout pageTitle="Recruitment" menuItems={menuItems}>
+      <DashboardLayout pageTitle="Recruitment" menuConfig={menuConfig}>
         <RecruitmentTableSkeleton />
       </DashboardLayout>
     );
   }
-
-  const error = jobsError || appsError;
+  
   if (error) {
     return (
-      <DashboardLayout pageTitle="Recruitment" menuItems={menuItems}>
+      <DashboardLayout pageTitle="Recruitment" menuConfig={menuConfig}>
         <Alert variant="destructive">
           <AlertTitle>Error Loading Data</AlertTitle>
           <AlertDescription>{error.message}</AlertDescription>
@@ -135,7 +125,7 @@ export default function RecruitmentJobsPage() {
   }
 
   return (
-    <DashboardLayout pageTitle="Recruitment: Select Job Posting" menuItems={menuItems}>
+    <DashboardLayout pageTitle="Recruitment: Select Job Posting" menuConfig={menuConfig}>
       <div className="space-y-4">
         <div className="flex justify-start">
             <Select value={brandFilter} onValueChange={setBrandFilter} disabled={brandsForFilter.length === 0}>

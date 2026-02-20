@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase, useDoc } from '@/firebase';
 import { collection, query, where, doc } from 'firebase/firestore';
-import type { Assessment, AssessmentSession, NavigationSetting } from '@/lib/types';
+import type { Assessment, AssessmentSession } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -14,7 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ArrowLeft } from 'lucide-react';
-import { ALL_MENU_ITEMS, ALL_UNIQUE_MENU_ITEMS } from '@/lib/menu-config';
+import { MENU_CONFIG } from '@/lib/menu-config';
 import { format } from 'date-fns';
 import { AssessmentStatusBadge } from '@/components/dashboard/AssessmentStatusBadge';
 
@@ -50,11 +50,11 @@ export default function AssessmentSubmissionsPage() {
   const router = useRouter();
   const assessmentId = params.assessmentId as string;
 
-  const settingsDocRef = useMemoFirebase(
-    () => (userProfile ? doc(firestore, 'navigation_settings', userProfile.role) : null),
-    [userProfile, firestore]
-  );
-  const { data: navSettings, isLoading: isLoadingSettings } = useDoc<NavigationSetting>(settingsDocRef);
+  const menuConfig = useMemo(() => {
+    if (userProfile?.role === 'super-admin') return MENU_CONFIG['super-admin'];
+    if (userProfile?.role === 'hrd') return MENU_CONFIG['hrd-recruitment'];
+    return [];
+  }, [userProfile]);
   
   const assessmentRef = useMemoFirebase(() => (assessmentId ? doc(firestore, 'assessments', assessmentId) : null), [firestore, assessmentId]);
   const { data: assessment, isLoading: isLoadingAssessment } = useDoc<Assessment>(assessmentRef);
@@ -65,15 +65,6 @@ export default function AssessmentSubmissionsPage() {
   );
   const { data: sessions, isLoading: isLoadingSessions, error } = useCollection<AssessmentSession>(sessionsQuery);
 
-  const menuItems = useMemo(() => {
-    const defaultItems = ALL_MENU_ITEMS[userProfile?.role as keyof typeof ALL_MENU_ITEMS] || [];
-    if (isLoadingSettings) return defaultItems;
-    if (navSettings) {
-      return ALL_UNIQUE_MENU_ITEMS.filter(item => navSettings.visibleMenuItems.includes(item.label));
-    }
-    return defaultItems;
-  }, [navSettings, isLoadingSettings, userProfile]);
-
   const sortedSessions = useMemo(() => {
     if (!sessions) return [];
     return [...sessions].sort((a, b) => {
@@ -83,11 +74,11 @@ export default function AssessmentSubmissionsPage() {
     });
   }, [sessions]);
   
-  const isLoading = isLoadingSessions || isLoadingSettings || isLoadingAssessment;
+  const isLoading = isLoadingSessions || isLoadingAssessment;
 
   if (!hasAccess || isLoading) {
     return (
-      <DashboardLayout pageTitle="Loading Submissions..." menuItems={menuItems}>
+      <DashboardLayout pageTitle="Loading Submissions..." menuConfig={menuConfig}>
         <SubmissionsTableSkeleton />
       </DashboardLayout>
     );
@@ -95,7 +86,7 @@ export default function AssessmentSubmissionsPage() {
 
   if (error) {
     return (
-      <DashboardLayout pageTitle="Error" menuItems={menuItems}>
+      <DashboardLayout pageTitle="Error" menuConfig={menuConfig}>
         <Alert variant="destructive">
           <AlertTitle>Error Loading Submissions</AlertTitle>
           <AlertDescription>{error.message}</AlertDescription>
@@ -105,7 +96,7 @@ export default function AssessmentSubmissionsPage() {
   }
 
   return (
-    <DashboardLayout pageTitle={`Submissions for: ${assessment?.name || '...'}`} menuItems={menuItems}>
+    <DashboardLayout pageTitle={`Submissions for: ${assessment?.name || '...'}`} menuConfig={menuConfig}>
       <div className="space-y-4">
         <div className="flex items-start justify-between">
             <Button variant="outline" size="sm" onClick={() => router.push('/admin/hrd/assessments')}>

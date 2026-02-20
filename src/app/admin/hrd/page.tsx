@@ -1,44 +1,27 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useAuth } from '@/providers/auth-provider';
-import { useDoc, useFirestore, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
-import { ALL_MENU_ITEMS, ALL_UNIQUE_MENU_ITEMS } from '@/lib/menu-config';
-import type { NavigationSetting } from '@/lib/types';
+import { MENU_CONFIG } from '@/lib/menu-config';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { PlusCircle } from 'lucide-react';
+import { JobManagementClient } from '@/components/dashboard/JobManagementClient';
 
 
 export default function HrdDashboard() {
   const hasAccess = useRoleGuard('hrd');
-  const { userProfile } = useAuth();
-  const firestore = useFirestore();
+  const [mode, setMode] = useState<'recruitment' | 'employees'>('recruitment');
 
-  const settingsDocRef = useMemoFirebase(
-    () => (userProfile ? doc(firestore, 'navigation_settings', userProfile.role) : null),
-    [userProfile, firestore]
-  );
+  const menuConfig = useMemo(() => {
+    return mode === 'recruitment' ? MENU_CONFIG['hrd-recruitment'] : MENU_CONFIG['hrd-employees'];
+  }, [mode]);
 
-  const { data: navSettings, isLoading: isLoadingSettings } = useDoc<NavigationSetting>(settingsDocRef);
+  const pageTitle = mode === 'recruitment' ? 'Recruitment Dashboard' : 'Employee Dashboard';
 
-  const menuItems = useMemo(() => {
-    const defaultItems = ALL_MENU_ITEMS.hrd || [];
-
-    if (isLoadingSettings) {
-      return defaultItems;
-    }
-    
-    if (navSettings) {
-      return ALL_UNIQUE_MENU_ITEMS.filter(item => navSettings.visibleMenuItems.includes(item.label));
-    }
-    
-    return defaultItems;
-  }, [navSettings, isLoadingSettings]);
-
-
-  if (!hasAccess || (userProfile && isLoadingSettings)) {
+  if (!hasAccess) {
     return (
       <div className="flex h-screen w-full items-center justify-center p-4">
         <Skeleton className="h-[400px] w-full max-w-6xl" />
@@ -47,8 +30,50 @@ export default function HrdDashboard() {
   }
 
   return (
-    <DashboardLayout pageTitle="Dashboard HRD" menuItems={menuItems}>
-      <p>This is the main content area for the HRD dashboard. Manage recruitment and applications from here.</p>
+    <DashboardLayout 
+      pageTitle={pageTitle} 
+      menuConfig={menuConfig}
+      hrdMode={mode}
+      onHrdModeChange={setMode}
+    >
+      {mode === 'recruitment' ? (
+        <div className="space-y-6">
+            <h2 className="text-2xl font-semibold">Recruitment Overview</h2>
+            {/* Placeholder for Recruitment content */}
+             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Open Positions</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">12</div>
+                    </CardContent>
+                </Card>
+                 <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">New Applicants</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">+23</div>
+                    </CardContent>
+                </Card>
+            </div>
+            <JobManagementClient />
+        </div>
+      ) : (
+         <div className="space-y-6">
+            <h2 className="text-2xl font-semibold">Employee Overview</h2>
+            {/* Placeholder for Employee content */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>Employee Directory</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <p>Employee directory table goes here.</p>
+                </CardContent>
+            </Card>
+        </div>
+      )}
     </DashboardLayout>
   );
 }

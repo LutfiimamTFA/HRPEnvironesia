@@ -2,16 +2,13 @@
 
 import { useMemo } from 'react';
 import { useAuth } from '@/providers/auth-provider';
-import { useDoc, useFirestore, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
-import type { NavigationSetting } from '@/lib/types';
-import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ALL_MENU_ITEMS, ALL_UNIQUE_MENU_ITEMS } from '@/lib/menu-config';
+import { MENU_CONFIG } from '@/lib/menu-config';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AssessmentSubmissionsClient } from '@/components/dashboard/AssessmentSubmissionsClient';
 import { AssessmentManagementClient } from '@/components/dashboard/AssessmentManagementClient';
+import { useRoleGuard } from '@/hooks/useRoleGuard';
 
 function AssessmentsSkeleton() {
   return (
@@ -25,32 +22,23 @@ function AssessmentsSkeleton() {
 export default function AssessmentsPage() {
   const hasAccess = useRoleGuard(['super-admin', 'hrd']);
   const { userProfile } = useAuth();
-  const firestore = useFirestore();
+  
+  const menuConfig = useMemo(() => {
+    if (userProfile?.role === 'super-admin') return MENU_CONFIG['super-admin'];
+    if (userProfile?.role === 'hrd') return MENU_CONFIG['hrd-recruitment']; // Assessments are part of recruitment
+    return [];
+  }, [userProfile]);
 
-  const settingsDocRef = useMemoFirebase(
-    () => (userProfile ? doc(firestore, 'navigation_settings', userProfile.role) : null),
-    [userProfile, firestore]
-  );
-  const { data: navSettings, isLoading: isLoadingSettings } = useDoc<NavigationSetting>(settingsDocRef);
-  const menuItems = useMemo(() => {
-    const defaultItems = ALL_MENU_ITEMS[userProfile?.role as keyof typeof ALL_MENU_ITEMS] || [];
-    if (isLoadingSettings) return defaultItems;
-    if (navSettings) {
-      return ALL_UNIQUE_MENU_ITEMS.filter(item => navSettings.visibleMenuItems.includes(item.label));
-    }
-    return defaultItems;
-  }, [navSettings, isLoadingSettings, userProfile]);
-
-  if (!hasAccess || isLoadingSettings) {
+  if (!hasAccess) {
     return (
-      <DashboardLayout pageTitle="Assessments" menuItems={menuItems}>
+      <DashboardLayout pageTitle="Assessments" menuConfig={menuConfig}>
         <AssessmentsSkeleton />
       </DashboardLayout>
     );
   }
 
   return (
-    <DashboardLayout pageTitle="Assessment Tools" menuItems={menuItems}>
+    <DashboardLayout pageTitle="Assessment Tools" menuConfig={menuConfig}>
       <Tabs defaultValue="submissions">
         <TabsList className="grid w-full grid-cols-2 max-w-lg">
           <TabsTrigger value="submissions">Candidate Submissions</TabsTrigger>

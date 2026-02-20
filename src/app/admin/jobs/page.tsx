@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useMemo } from 'react';
@@ -7,40 +6,21 @@ import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { Skeleton } from '@/components/ui/skeleton';
 import { JobManagementClient } from '@/components/dashboard/JobManagementClient';
 import { useAuth } from '@/providers/auth-provider';
-import { useDoc, useFirestore, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
-import { ALL_MENU_ITEMS, ALL_UNIQUE_MENU_ITEMS } from '@/lib/menu-config';
-import type { NavigationSetting } from '@/lib/types';
+import { MENU_CONFIG } from '@/lib/menu-config';
 
 export default function JobsPage() {
-  const hasAccess = useRoleGuard(['super-admin', 'hrd']);
   const { userProfile } = useAuth();
-  const firestore = useFirestore();
+  const hasAccess = useRoleGuard(['super-admin', 'hrd']);
 
-  const settingsDocRef = useMemoFirebase(
-    () => (userProfile ? doc(firestore, 'navigation_settings', userProfile.role) : null),
-    [userProfile, firestore]
-  );
+  const menuConfig = useMemo(() => {
+    if (userProfile?.role === 'super-admin') return MENU_CONFIG['super-admin'];
+    if (userProfile?.role === 'hrd') return MENU_CONFIG['hrd-recruitment'];
+    return [];
+  }, [userProfile]);
 
-  const { data: navSettings, isLoading: isLoadingSettings } = useDoc<NavigationSetting>(settingsDocRef);
-
-  const menuItems = useMemo(() => {
-    const defaultItems = ALL_MENU_ITEMS[userProfile?.role as keyof typeof ALL_MENU_ITEMS] || [];
-
-    if (isLoadingSettings) {
-      return defaultItems;
-    }
-
-    if (navSettings) {
-      return ALL_UNIQUE_MENU_ITEMS.filter(item => navSettings.visibleMenuItems.includes(item.label));
-    }
-    
-    return defaultItems;
-  }, [navSettings, isLoadingSettings, userProfile]);
-
-  if (!hasAccess || (userProfile && isLoadingSettings)) {
+  if (!hasAccess) {
     return (
-      <DashboardLayout pageTitle="Job Postings" menuItems={menuItems}>
+      <DashboardLayout pageTitle="Job Postings" menuConfig={menuConfig}>
         <div className="space-y-4">
           <Skeleton className="h-10 w-1/4 self-end" />
           <Skeleton className="h-48 w-full" />
@@ -50,7 +30,7 @@ export default function JobsPage() {
   }
 
   return (
-    <DashboardLayout pageTitle="Job Postings" menuItems={menuItems}>
+    <DashboardLayout pageTitle="Job Postings" menuConfig={menuConfig}>
       <JobManagementClient />
     </DashboardLayout>
   );

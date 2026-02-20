@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Eye, ArrowLeft } from 'lucide-react';
-import { ALL_MENU_ITEMS, ALL_UNIQUE_MENU_ITEMS } from '@/lib/menu-config';
+import { MENU_CONFIG } from '@/lib/menu-config';
 import { ApplicationStatusBadge } from '@/components/recruitment/ApplicationStatusBadge';
 
 function ApplicantsTableSkeleton() {
@@ -49,12 +49,6 @@ export default function RecruitmentApplicantsPage() {
   const params = useParams();
   const router = useRouter();
   const jobId = params.jobId as string;
-
-  const settingsDocRef = useMemoFirebase(
-    () => (userProfile ? doc(firestore, 'navigation_settings', userProfile.role) : null),
-    [userProfile, firestore]
-  );
-  const { data: navSettings, isLoading: isLoadingSettings } = useDoc<NavigationSetting>(settingsDocRef);
   
   const jobRef = useMemoFirebase(() => (jobId ? doc(firestore, 'jobs', jobId) : null), [firestore, jobId]);
   const { data: job, isLoading: isLoadingJob } = useDoc<Job>(jobRef);
@@ -65,14 +59,11 @@ export default function RecruitmentApplicantsPage() {
   );
   const { data: applications, isLoading: isLoadingApps, error } = useCollection<JobApplication>(applicationsQuery);
 
-  const menuItems = useMemo(() => {
-    const defaultItems = ALL_MENU_ITEMS[userProfile?.role as keyof typeof ALL_MENU_ITEMS] || [];
-    if (isLoadingSettings) return defaultItems;
-    if (navSettings) {
-      return ALL_UNIQUE_MENU_ITEMS.filter(item => navSettings.visibleMenuItems.includes(item.label));
-    }
-    return defaultItems;
-  }, [navSettings, isLoadingSettings, userProfile]);
+  const menuConfig = useMemo(() => {
+    if (userProfile?.role === 'super-admin') return MENU_CONFIG['super-admin'];
+    if (userProfile?.role === 'hrd') return MENU_CONFIG['hrd-recruitment'];
+    return [];
+  }, [userProfile]);
 
   const sortedApplications = useMemo(() => {
     if (!applications) return [];
@@ -83,11 +74,11 @@ export default function RecruitmentApplicantsPage() {
     });
   }, [applications]);
   
-  const isLoading = isLoadingApps || isLoadingSettings || isLoadingJob;
+  const isLoading = isLoadingApps || isLoadingJob;
 
   if (!hasAccess || isLoading) {
     return (
-      <DashboardLayout pageTitle="Loading Applicants..." menuItems={menuItems}>
+      <DashboardLayout pageTitle="Loading Applicants..." menuConfig={menuConfig}>
         <ApplicantsTableSkeleton />
       </DashboardLayout>
     );
@@ -95,7 +86,7 @@ export default function RecruitmentApplicantsPage() {
 
   if (error) {
     return (
-      <DashboardLayout pageTitle="Error" menuItems={menuItems}>
+      <DashboardLayout pageTitle="Error" menuConfig={menuConfig}>
         <Alert variant="destructive">
           <AlertTitle>Error Loading Applications</AlertTitle>
           <AlertDescription>{error.message}</AlertDescription>
@@ -105,7 +96,7 @@ export default function RecruitmentApplicantsPage() {
   }
 
   return (
-    <DashboardLayout pageTitle={`Applicants for: ${job?.position || '...'}`} menuItems={menuItems}>
+    <DashboardLayout pageTitle={`Applicants for: ${job?.position || '...'}`} menuConfig={menuConfig}>
       <div className="space-y-4">
         <div className="flex items-start justify-between">
             <Button variant="outline" size="sm" onClick={() => router.push('/admin/recruitment')}>
