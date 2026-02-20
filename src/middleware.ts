@@ -7,6 +7,7 @@ export default createMiddleware({
 });
  
 export const config = {
-  // Skip all paths that should not be internationalized, including /admin
-  matcher: ['/((?!api|admin|_next/static|_next/image|favicon.ico|images).*)']
+  // Skip all paths that should not be internationalized.
+  // This is the key change to fix the 404 on /admin routes.
+  matcher: ['/((?!api|_next/static|_next/image|favicon.ico|admin).*)']
 };
