@@ -4,7 +4,7 @@
 import { useMemo, useState } from 'react';
 import { collection, doc, serverTimestamp } from 'firebase/firestore';
 import { useCollection, useFirestore, useMemoFirebase, updateDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase';
-import type { Job, Brand } from '@/lib/types';
+import type { Job, Brand, UserProfile } from '@/lib/types';
 import { format } from 'date-fns';
 import {
   Table,
@@ -85,28 +85,39 @@ export function JobManagementClient() {
 
 
   const jobsRef = useMemoFirebase(() => collection(firestore, 'jobs'), [firestore]);
-  const { data: jobs, isLoading, error } = useCollection<Job>(jobsRef);
+  const { data: jobs, isLoading: isLoadingJobs, error: jobsError } = useCollection<Job>(jobsRef);
   
   const brandsRef = useMemoFirebase(() => collection(firestore, 'brands'), [firestore]);
-  const { data: brands } = useCollection<Brand>(brandsRef);
+  const { data: brands, isLoading: isLoadingBrands, error: brandsError } = useCollection<Brand>(brandsRef);
+
+  const usersRef = useMemoFirebase(() => collection(firestore, 'users'), [firestore]);
+  const { data: users, isLoading: isLoadingUsers, error: usersError } = useCollection<UserProfile>(usersRef);
+
+  const isLoading = isLoadingJobs || isLoadingBrands || isLoadingUsers;
+  const error = jobsError || brandsError || usersError;
 
   const brandMap = useMemo(() => {
     if (!brands) return new Map<string, string>();
     return new Map(brands.map(brand => [brand.id!, brand.name]));
   }, [brands]);
+  
+  const userMap = useMemo(() => {
+    if (!users) return new Map<string, string>();
+    return new Map(users.map(user => [user.uid, user.fullName]));
+  }, [users]);
 
-  const jobsWithBrandNames = useMemo(() => {
+  const jobsWithDetails = useMemo(() => {
     if (!jobs) return [];
     return jobs.map(job => ({
       ...job,
-      brandName: brandMap.get(job.brandId) || 'N/A'
+      brandName: brandMap.get(job.brandId) || 'N/A',
+      updatedByName: userMap.get(job.updatedBy) || 'Unknown',
     })).sort((a, b) => {
-      // Handle cases where timestamp is pending from server
       const timeA = a.updatedAt?.toMillis ? a.updatedAt.toMillis() : Date.now();
       const timeB = b.updatedAt?.toMillis ? b.updatedAt.toMillis() : Date.now();
       return timeB - timeA;
     });
-  }, [jobs, brandMap]);
+  }, [jobs, brandMap, userMap]);
 
 
   const handleCreate = () => {
@@ -162,6 +173,9 @@ export function JobManagementClient() {
             title: "Error updating status",
             description: error.message,
         });
+    } finally {
+        setIsDeleteConfirmOpen(false);
+        setSelectedJob(null);
     }
   };
 
@@ -198,13 +212,13 @@ export function JobManagementClient() {
               <TableHead>Status</TableHead>
               <TableHead>Location</TableHead>
               <TableHead>Deadline</TableHead>
-              <TableHead>Last Updated</TableHead>
+              <TableHead>Last Update</TableHead>
               <TableHead className="w-[100px] text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {jobsWithBrandNames && jobsWithBrandNames.length > 0 ? (
-              jobsWithBrandNames.map((job) => (
+            {jobsWithDetails && jobsWithDetails.length > 0 ? (
+              jobsWithDetails.map((job) => (
                 <TableRow key={job.id}>
                   <TableCell className="font-medium">{job.position}</TableCell>
                   <TableCell>{job.brandName}</TableCell>
@@ -224,7 +238,10 @@ export function JobManagementClient() {
                     {job.applyDeadline?.toDate ? format(job.applyDeadline.toDate(), 'dd MMM yyyy') : '-'}
                   </TableCell>
                   <TableCell>
-                    {job.updatedAt?.toDate ? format(job.updatedAt.toDate(), 'dd MMM yyyy') : 'Just now'}
+                     <div className="font-medium">{job.updatedByName}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {job.updatedAt?.toDate ? format(job.updatedAt.toDate(), 'dd MMM yyyy') : 'Just now'}
+                      </div>
                   </TableCell>
                   <TableCell className="text-right">
                      <DropdownMenu open={openMenuId === job.id} onOpenChange={(isOpen) => setOpenMenuId(isOpen ? job.id : null)}>
@@ -299,3 +316,5 @@ export function JobManagementClient() {
     </div>
   );
 }
+
+    
