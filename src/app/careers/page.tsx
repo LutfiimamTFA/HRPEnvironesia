@@ -1,3 +1,4 @@
+
 'use client';
 
 import Link from 'next/link';
@@ -105,12 +106,12 @@ export default function CareersPage() {
       {/* Hero Section */}
       <section id="hero" className="relative w-full overflow-hidden text-primary-foreground">
         <Image
-            src="https://picsum.photos/seed/environesia-hq/1600/900"
+            src="https://picsum.photos/seed/environesia-building-3/1600/900"
             alt="Environesia Office Building"
             fill
             className="object-cover"
             priority
-            data-ai-hint="office building"
+            data-ai-hint="Environesia office"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/40 to-transparent" />
         
