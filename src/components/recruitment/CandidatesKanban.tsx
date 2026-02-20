@@ -101,7 +101,7 @@ export function CandidatesKanban({ applications: initialApplications }: { applic
         const grouped: ApplicationGroup = {} as ApplicationGroup;
         KANBAN_STAGES.forEach(stage => { grouped[stage] = [] });
         initialApplications.forEach(app => {
-            if (grouped[app.status]) {
+            if (grouped[app.status] && KANBAN_STAGES.includes(app.status)) {
                 grouped[app.status].push(app);
             }
         });
@@ -112,7 +112,7 @@ export function CandidatesKanban({ applications: initialApplications }: { applic
         const grouped: ApplicationGroup = {} as ApplicationGroup;
         KANBAN_STAGES.forEach(stage => { grouped[stage] = [] });
         initialApplications.forEach(app => {
-            if (grouped[app.status]) {
+            if (grouped[app.status] && KANBAN_STAGES.includes(app.status)) {
                 grouped[app.status].push(app);
             }
         });
@@ -131,16 +131,19 @@ export function CandidatesKanban({ applications: initialApplications }: { applic
         })
     );
     
-    const findContainer = (id: string) => {
+    const findContainer = (id: string, currentApplications: ApplicationGroup): JobApplication['status'] | undefined => {
         if (KANBAN_STAGES.includes(id as any)) {
-            return id;
+            return id as JobApplication['status'];
         }
-        return Object.keys(applications).find((key) => applications[key as JobApplication['status']].some(app => app.id === id));
+        const stage = Object.keys(currentApplications).find(key =>
+            currentApplications[key as JobApplication['status']].some(app => app && app.id === id)
+        );
+        return stage as JobApplication['status'] | undefined;
     };
 
     const handleDragStart = (event: DragStartEvent) => {
         const { active } = event;
-        const container = findContainer(active.id as string);
+        const container = findContainer(active.id as string, applications);
         if (container) {
             setActiveApplication(applications[container as JobApplication['status']].find(app => app.id === active.id) || null);
         }
@@ -149,90 +152,89 @@ export function CandidatesKanban({ applications: initialApplications }: { applic
     const handleDragEnd = async (event: DragEndEvent) => {
         const { active, over } = event;
         
-        if (!over) {
-            setActiveApplication(null);
-            return;
-        }
+        setActiveApplication(null);
 
+        if (!over) return;
+        
         const activeId = active.id as string;
         const overId = over.id as string;
-        
-        const activeContainer = findContainer(activeId);
-        const overContainer = findContainer(overId);
 
-        if (!activeContainer || !overContainer || activeContainer === overContainer) {
-            // Logic for reordering within the same column if needed
-            if (activeContainer && activeContainer === overContainer && activeId !== overId) {
-                 setApplications(prev => {
-                    const items = prev[activeContainer as JobApplication['status']];
-                    const oldIndex = items.findIndex(item => item.id === activeId);
-                    const newIndex = items.findIndex(item => item.id === overId);
-                    
-                    return {
-                        ...prev,
-                        [activeContainer]: arrayMove(items, oldIndex, newIndex)
-                    };
-                });
-            }
-            setActiveApplication(null);
-            return;
-        }
+        const oldStage = findContainer(activeId, applications);
+        const newStage = findContainer(overId, applications);
 
-        // Logic for moving to a different column
+        if (!oldStage || !newStage) return;
+
+        // Perform UI update optimistically
         setApplications(prev => {
-            const activeItems = prev[activeContainer as JobApplication['status']];
-            const overItems = prev[overContainer as JobApplication['status']];
-            const activeIndex = activeItems.findIndex(app => app.id === activeId);
-            const overIndex = overItems.findIndex(app => app.id === overId);
-
-            let newIndex;
-            if (overId in prev) {
-                newIndex = overItems.length + 1;
+            const oldItems = prev[oldStage];
+            
+            if (oldStage === newStage) {
+                // Reorder within the same column
+                const oldIndex = oldItems.findIndex(item => item.id === activeId);
+                const newIndex = oldItems.findIndex(item => item.id === overId);
+                if (oldIndex !== -1 && newIndex !== -1) {
+                    return { ...prev, [oldStage]: arrayMove(oldItems, oldIndex, newIndex) };
+                }
             } else {
-                const isBelowOverItem = over && active.rect.current.translated && active.rect.current.translated.top > over.rect.top + over.rect.height;
-                const modifier = isBelowOverItem ? 1 : 0;
-                newIndex = overIndex >= 0 ? overIndex + modifier : overItems.length + 1;
+                // Move to a different column
+                const newItemsForOldStage = oldItems.filter(item => item.id !== activeId);
+                const itemToMove = oldItems.find(item => item.id === activeId);
+
+                if (!itemToMove) return prev;
+
+                const newItemsForNewStage = [...prev[newStage]];
+                const overIndex = newItemsForNewStage.findIndex(item => item.id === overId);
+                
+                if (overIndex !== -1) {
+                    const isBelow = over.rect.top + over.rect.height / 2 > (active.rect.current.translated?.top ?? 0) + (active.rect.current.translated?.height ?? 0) / 2;
+                    newItemsForNewStage.splice(overIndex + (isBelow ? 1 : 0), 0, itemToMove);
+                } else {
+                    newItemsForNewStage.push(itemToMove);
+                }
+
+                return {
+                    ...prev,
+                    [oldStage]: newItemsForOldStage,
+                    [newStage]: newItemsForNewStage,
+                };
             }
-
-            const [movedItem] = activeItems.splice(activeIndex, 1);
-            overItems.splice(newIndex, 0, movedItem);
-
-            return { ...prev };
+            return prev;
         });
 
-        // Update Firestore
-        const newStage = overContainer as JobApplication['status'];
-        try {
-            const appRef = doc(firestore, 'applications', activeId);
-            await updateDocumentNonBlocking(appRef, {
-                status: newStage,
-                updatedAt: serverTimestamp()
-            });
-            toast({
-                title: 'Status Diperbarui',
-                description: `${activeApplication?.candidateName} dipindahkan ke tahap "${statusDisplayLabels[newStage]}".`
-            });
-        } catch (error: any) {
-             toast({
-                variant: 'destructive',
-                title: 'Gagal Memperbarui',
-                description: `Tidak dapat memindahkan kandidat: ${error.message}`
-            });
-            // Revert UI change by re-fetching from prop
-             const grouped: ApplicationGroup = {} as ApplicationGroup;
-             KANBAN_STAGES.forEach(stage => { grouped[stage] = [] });
-             initialApplications.forEach(app => {
-                 if (grouped[app.status]) {
-                     grouped[app.status].push(app);
-                 }
-             });
-             setApplications(grouped);
+        // Update Firestore if stage changed
+        if (oldStage !== newStage) {
+             try {
+                const appRef = doc(firestore, 'applications', activeId);
+                await updateDocumentNonBlocking(appRef, {
+                    status: newStage,
+                    updatedAt: serverTimestamp()
+                });
+                toast({
+                    title: 'Status Diperbarui',
+                    description: `Kandidat dipindahkan ke tahap "${statusDisplayLabels[newStage]}".`
+                });
+            } catch (error: any) {
+                 toast({
+                    variant: 'destructive',
+                    title: 'Gagal Memperbarui',
+                    description: `Tidak dapat memindahkan kandidat: ${error.message}`
+                });
+                // Revert UI change
+                setApplications(() => {
+                    const grouped: ApplicationGroup = {} as ApplicationGroup;
+                    KANBAN_STAGES.forEach(stage => { grouped[stage] = [] });
+                    initialApplications.forEach(app => {
+                        if (grouped[app.status] && KANBAN_STAGES.includes(app.status)) {
+                            grouped[app.status].push(app);
+                        }
+                    });
+                    return grouped;
+                });
+            }
         }
-
-        setActiveApplication(null);
     };
 
-    const containerIds = useMemo(() => Object.keys(applications), [applications]);
+    const containerIds = useMemo(() => KANBAN_STAGES, []);
 
     return (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
@@ -256,4 +258,6 @@ export function CandidatesKanban({ applications: initialApplications }: { applic
         </DndContext>
     );
 }
+    
+
     
