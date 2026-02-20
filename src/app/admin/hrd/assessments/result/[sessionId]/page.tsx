@@ -21,7 +21,6 @@ import { Separator } from '@/components/ui/separator';
 import { AssessmentStatusBadge } from '@/components/dashboard/AssessmentStatusBadge';
 import { FirestorePermissionError, errorEmitter } from '@/firebase';
 import { Badge } from '@/components/ui/badge';
-import { useHrdMode } from '@/hooks/useHrdMode';
 
 
 function HrdDecisionManager({ session }: { session: AssessmentSession }) {
@@ -145,15 +144,14 @@ export default function HrdAssessmentResultPage() {
     const router = useRouter();
     const sessionId = params.sessionId as string;
     const firestore = useFirestore();
-    const { mode, setMode } = useHrdMode();
     
     const menuConfig = useMemo(() => {
       if (userProfile?.role === 'super-admin') return MENU_CONFIG['super-admin'];
       if (userProfile?.role === 'hrd') {
-          return mode === 'recruitment' ? MENU_CONFIG['hrd-recruitment'] : MENU_CONFIG['hrd-employees'];
+          return MENU_CONFIG['hrd'];
       }
       return [];
-    }, [userProfile, mode]);
+    }, [userProfile]);
 
     const sessionRef = useMemoFirebase(
         () => (sessionId ? doc(firestore, 'assessment_sessions', sessionId) : null),
@@ -180,8 +178,6 @@ export default function HrdAssessmentResultPage() {
              <DashboardLayout 
                 pageTitle="Assessment Result" 
                 menuConfig={menuConfig}
-                hrdMode={userProfile?.role === 'hrd' ? mode : undefined}
-                onHrdModeChange={userProfile?.role === 'hrd' ? setMode : undefined}
             >
                 <ResultSkeleton />
             </DashboardLayout>
@@ -193,8 +189,6 @@ export default function HrdAssessmentResultPage() {
              <DashboardLayout 
                 pageTitle="Error" 
                 menuConfig={menuConfig}
-                hrdMode={userProfile?.role === 'hrd' ? mode : undefined}
-                onHrdModeChange={userProfile?.role === 'hrd' ? setMode : undefined}
             >
                 <p>Could not load assessment results. The session may be invalid or not yet completed.</p>
              </DashboardLayout>
@@ -207,8 +201,6 @@ export default function HrdAssessmentResultPage() {
         <DashboardLayout 
             pageTitle="Assessment Result" 
             menuConfig={menuConfig}
-            hrdMode={userProfile?.role === 'hrd' ? mode : undefined}
-            onHrdModeChange={userProfile?.role === 'hrd' ? setMode : undefined}
         >
             <div className="space-y-6">
                 <Button variant="outline" size="sm" onClick={() => router.back()}>
