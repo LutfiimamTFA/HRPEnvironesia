@@ -13,7 +13,6 @@ import { QuestionManagementClient } from '@/components/dashboard/QuestionManagem
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useHrdMode } from '@/hooks/useHrdMode';
 
 function PageSkeleton() {
   return <Skeleton className="h-96 w-full" />;
@@ -26,15 +25,14 @@ export default function ManageAssessmentPage() {
   const params = useParams();
   const router = useRouter();
   const assessmentId = params.assessmentId as string;
-  const { mode, setMode } = useHrdMode();
 
   const menuConfig = useMemo(() => {
     if (userProfile?.role === 'super-admin') return MENU_CONFIG['super-admin'];
     if (userProfile?.role === 'hrd') {
-        return mode === 'recruitment' ? MENU_CONFIG['hrd-recruitment'] : MENU_CONFIG['hrd-employees'];
+        return MENU_CONFIG['hrd'];
     }
     return [];
-  }, [userProfile, mode]);
+  }, [userProfile]);
   
   const assessmentRef = useMemoFirebase(
     () => (assessmentId ? doc(firestore, 'assessments', assessmentId) : null),
@@ -55,8 +53,6 @@ export default function ManageAssessmentPage() {
       <DashboardLayout 
         pageTitle="Manage Assessment" 
         menuConfig={menuConfig}
-        hrdMode={userProfile?.role === 'hrd' ? mode : undefined}
-        onHrdModeChange={userProfile?.role === 'hrd' ? setMode : undefined}
       >
         <PageSkeleton />
       </DashboardLayout>
@@ -68,8 +64,6 @@ export default function ManageAssessmentPage() {
          <DashboardLayout 
             pageTitle="Error" 
             menuConfig={menuConfig}
-            hrdMode={userProfile?.role === 'hrd' ? mode : undefined}
-            onHrdModeChange={userProfile?.role === 'hrd' ? setMode : undefined}
         >
             <p>Assessment or its template not found.</p>
          </DashboardLayout>
@@ -80,8 +74,6 @@ export default function ManageAssessmentPage() {
     <DashboardLayout 
         pageTitle={`Builder: ${assessment.name}`} 
         menuConfig={menuConfig}
-        hrdMode={userProfile?.role === 'hrd' ? mode : undefined}
-        onHrdModeChange={userProfile?.role === 'hrd' ? setMode : undefined}
     >
         <div className="space-y-4">
              <Button variant="outline" size="sm" onClick={() => router.back()}>

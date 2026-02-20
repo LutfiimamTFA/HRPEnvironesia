@@ -30,16 +30,6 @@ const RECRUITMENT_MENU: MenuGroup[] = [
     }
 ];
 
-const EMPLOYEES_MENU: MenuGroup[] = [
-    {
-        title: "People Operations",
-        items: [
-            { href: '/admin/employees', label: 'Directory', icon: createElement(Contact) },
-            { href: '/admin/employees/onboarding', label: 'Onboarding', icon: createElement(UserPlus) },
-        ]
-    }
-];
-
 export const MENU_CONFIG: Record<string, MenuGroup[]> = {
   'super-admin': [
     {
@@ -49,7 +39,6 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
         ]
     },
     ...RECRUITMENT_MENU,
-    ...EMPLOYEES_MENU,
     {
         title: "Administration",
         items: [
@@ -61,9 +50,7 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
         ]
     }
   ],
-  'hrd': [
-      ...RECRUITMENT_MENU
-  ],
+  'hrd': RECRUITMENT_MENU,
   'manager': [
     {
         items: [

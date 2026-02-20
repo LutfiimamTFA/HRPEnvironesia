@@ -17,7 +17,6 @@ import { ArrowLeft } from 'lucide-react';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { format } from 'date-fns';
 import { AssessmentStatusBadge } from '@/components/dashboard/AssessmentStatusBadge';
-import { useHrdMode } from '@/hooks/useHrdMode';
 
 function SubmissionsTableSkeleton() {
   return (
@@ -50,15 +49,14 @@ export default function AssessmentSubmissionsPage() {
   const params = useParams();
   const router = useRouter();
   const assessmentId = params.assessmentId as string;
-  const { mode, setMode } = useHrdMode();
 
   const menuConfig = useMemo(() => {
     if (userProfile?.role === 'super-admin') return MENU_CONFIG['super-admin'];
     if (userProfile?.role === 'hrd') {
-        return mode === 'recruitment' ? MENU_CONFIG['hrd-recruitment'] : MENU_CONFIG['hrd-employees'];
+        return MENU_CONFIG['hrd'];
     }
     return [];
-  }, [userProfile, mode]);
+  }, [userProfile]);
   
   const assessmentRef = useMemoFirebase(() => (assessmentId ? doc(firestore, 'assessments', assessmentId) : null), [firestore, assessmentId]);
   const { data: assessment, isLoading: isLoadingAssessment } = useDoc<Assessment>(assessmentRef);
@@ -85,8 +83,6 @@ export default function AssessmentSubmissionsPage() {
       <DashboardLayout 
         pageTitle="Loading Submissions..." 
         menuConfig={menuConfig}
-        hrdMode={userProfile?.role === 'hrd' ? mode : undefined}
-        onHrdModeChange={userProfile?.role === 'hrd' ? setMode : undefined}
       >
         <SubmissionsTableSkeleton />
       </DashboardLayout>
@@ -98,8 +94,6 @@ export default function AssessmentSubmissionsPage() {
       <DashboardLayout 
         pageTitle="Error" 
         menuConfig={menuConfig}
-        hrdMode={userProfile?.role === 'hrd' ? mode : undefined}
-        onHrdModeChange={userProfile?.role === 'hrd' ? setMode : undefined}
       >
         <Alert variant="destructive">
           <AlertTitle>Error Loading Submissions</AlertTitle>
@@ -113,8 +107,6 @@ export default function AssessmentSubmissionsPage() {
     <DashboardLayout 
         pageTitle={`Submissions for: ${assessment?.name || '...'}`} 
         menuConfig={menuConfig}
-        hrdMode={userProfile?.role === 'hrd' ? mode : undefined}
-        onHrdModeChange={userProfile?.role === 'hrd' ? setMode : undefined}
     >
       <div className="space-y-4">
         <div className="flex items-start justify-between">

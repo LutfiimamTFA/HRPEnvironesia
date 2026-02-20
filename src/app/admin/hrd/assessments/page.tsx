@@ -9,7 +9,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AssessmentSubmissionsClient } from '@/components/dashboard/AssessmentSubmissionsClient';
 import { AssessmentManagementClient } from '@/components/dashboard/AssessmentManagementClient';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
-import { useHrdMode } from '@/hooks/useHrdMode';
 
 function AssessmentsSkeleton() {
   return (
@@ -23,23 +22,20 @@ function AssessmentsSkeleton() {
 export default function AssessmentsPage() {
   const hasAccess = useRoleGuard(['super-admin', 'hrd']);
   const { userProfile } = useAuth();
-  const { mode, setMode } = useHrdMode();
   
   const menuConfig = useMemo(() => {
     if (userProfile?.role === 'super-admin') return MENU_CONFIG['super-admin'];
     if (userProfile?.role === 'hrd') {
-        return mode === 'recruitment' ? MENU_CONFIG['hrd-recruitment'] : MENU_CONFIG['hrd-employees'];
+        return MENU_CONFIG['hrd'];
     }
     return [];
-  }, [userProfile, mode]);
+  }, [userProfile]);
 
   if (!hasAccess) {
     return (
       <DashboardLayout 
         pageTitle="Assessments" 
         menuConfig={menuConfig}
-        hrdMode={userProfile?.role === 'hrd' ? mode : undefined}
-        onHrdModeChange={userProfile?.role === 'hrd' ? setMode : undefined}
       >
         <AssessmentsSkeleton />
       </DashboardLayout>
@@ -50,8 +46,6 @@ export default function AssessmentsPage() {
     <DashboardLayout 
         pageTitle="Assessment Tools" 
         menuConfig={menuConfig}
-        hrdMode={userProfile?.role === 'hrd' ? mode : undefined}
-        onHrdModeChange={userProfile?.role === 'hrd' ? setMode : undefined}
     >
       <Tabs defaultValue="submissions">
         <TabsList className="grid w-full grid-cols-2 max-w-lg">
