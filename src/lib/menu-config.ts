@@ -18,13 +18,13 @@ export type MenuGroup = {
     items: MenuItem[];
 }
 
-const RECRUITMENT_MENU: MenuGroup[] = [
+const HRD_MENU_ITEMS: MenuGroup[] = [
     {
         items: [
-            { href: '/admin/hrd/assessments', label: 'Assessments', icon: createElement(ClipboardCheck) },
-            { href: '/admin/recruitment', label: 'Dashboard', icon: createElement(LayoutDashboard) },
+            { href: '/admin/hrd', label: 'Dashboard', icon: createElement(LayoutDashboard) },
             { href: '/admin/jobs', label: 'Job Postings', icon: createElement(Briefcase) },
-            { href: '/admin/recruitment/pipeline', label: 'Recruitment', icon: createElement(Users) },
+            { href: '/admin/recruitment', label: 'Recruitment', icon: createElement(Users) },
+            { href: '/admin/hrd/assessments', label: 'Assessments', icon: createElement(ClipboardCheck) },
         ]
     }
 ];
@@ -35,21 +35,19 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
         title: "Main",
         items: [
             { href: '/admin/super-admin', label: 'Overview', icon: createElement(LayoutDashboard) },
+            ...HRD_MENU_ITEMS[0].items
         ]
     },
-    ...RECRUITMENT_MENU,
     {
         title: "Administration",
         items: [
             { href: '/admin/super-admin/user-management', label: 'User Management', icon: createElement(Users) },
             { href: '/admin/super-admin/departments-brands', label: 'Master Data', icon: createElement(Database) },
             { href: '/admin/super-admin/menu-settings', label: 'Access & Roles', icon: createElement(ShieldCheck) },
-            { href: '/admin/super-admin/settings', label: 'System Settings', icon: createElement(Settings) },
-            { href: '/admin/super-admin/audit-log', label: 'Audit Log', icon: createElement(History) },
         ]
     }
   ],
-  'hrd': RECRUITMENT_MENU,
+  'hrd': HRD_MENU_ITEMS,
   'manager': [
     {
         items: [

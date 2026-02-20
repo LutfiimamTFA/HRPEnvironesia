@@ -110,9 +110,9 @@ export default function RecruitmentApplicantsPage() {
     >
       <div className="space-y-4">
         <div className="flex items-start justify-between">
-            <Button variant="outline" size="sm" onClick={() => router.push('/admin/recruitment/pipeline')}>
+            <Button variant="outline" size="sm" onClick={() => router.push('/admin/recruitment')}>
               <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Pipeline
+              Back to Job List
             </Button>
         </div>
         
@@ -137,7 +137,7 @@ export default function RecruitmentApplicantsPage() {
                     <TableCell><ApplicationStatusBadge status={app.status} /></TableCell>
                     <TableCell className="text-right">
                         <Button asChild variant="ghost" size="icon">
-                        <Link href={`/admin/recruitment/${app.id}`}>
+                        <Link href={`/admin/recruitment/applications/${app.id}`}>
                             <Eye className="h-4 w-4" />
                             <span className="sr-only">View Application</span>
                         </Link>

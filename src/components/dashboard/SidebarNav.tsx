@@ -40,7 +40,7 @@ export function SidebarNav({ menuConfig }: SidebarNavProps) {
                         <SidebarMenu>
                              {group.title && <h2 className="px-2 py-1 text-xs font-semibold text-muted-foreground tracking-wider group-data-[state=collapsed]:hidden">{group.title}</h2>}
                             {group.items.map(item => {
-                                const isActive = pathname === item.href;
+                                const isActive = pathname.startsWith(item.href);
                                 return (
                                     <SidebarMenuItem key={item.label}>
                                         <SidebarMenuButton
