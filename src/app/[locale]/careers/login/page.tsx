@@ -3,7 +3,8 @@
 import { CandidateLoginForm } from '@/components/auth/CandidateLoginForm';
 import { useAuth } from '@/providers/auth-provider';
 import { Loader2 } from 'lucide-react';
-import { useRouter, useSearchParams } from '@/navigation';
+import { useRouter } from '@/navigation';
+import { useSearchParams } from 'next/navigation';
 import { useEffect, Suspense } from 'react';
 import { Link } from '@/navigation';
 
