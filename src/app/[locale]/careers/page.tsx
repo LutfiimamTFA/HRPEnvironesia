@@ -115,8 +115,6 @@ const HeroSection = () => {
                 <Image
                     src={imagePlaceholders.careers_hero.src}
                     alt={imagePlaceholders.careers_hero.alt}
-                    width={imagePlaceholders.careers_hero.width}
-                    height={imagePlaceholders.careers_hero.height}
                     data-ai-hint={imagePlaceholders.careers_hero.ai_hint}
                     fill
                     priority
@@ -362,8 +360,6 @@ const OfficeSpotlightSection = () => {
                  <Image
                     src={imagePlaceholders.careers_office_spotlight.src}
                     alt={imagePlaceholders.careers_office_spotlight.alt}
-                    width={imagePlaceholders.careers_office_spotlight.width}
-                    height={imagePlaceholders.careers_office_spotlight.height}
                     data-ai-hint={imagePlaceholders.careers_office_spotlight.ai_hint}
                     fill
                     className="object-cover"
