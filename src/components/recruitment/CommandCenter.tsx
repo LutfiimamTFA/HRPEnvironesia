@@ -9,26 +9,26 @@ import type { JobApplication } from '@/lib/types';
 import { getInitials } from '@/lib/utils';
 import { differenceInDays, format } from 'date-fns';
 import { cn } from '@/lib/utils';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Info } from 'lucide-react';
+import Link from 'next/link';
 
 export function CommandCenter({ applications }: { applications: JobApplication[] }) {
     const now = new Date();
 
     const needsActionApps = applications.filter(app => {
-        const daysInStage = differenceInDays(now, app.stageEnteredAt.toDate());
-        return app.status === 'active' && (
-            app.stage === 'applied' ||
-            (app.stage === 'screening' && daysInStage > 3) ||
-            app.stage === 'assessment' ||
-            app.stage === 'offer'
-        );
+        if (app.status === 'submitted' || app.status === 'verification') {
+            const daysInStage = app.updatedAt ? differenceInDays(now, app.updatedAt.toDate()) : 0;
+            // Highlight if submitted more than 2 days ago or in verification for more than 5
+            return (app.status === 'submitted' && daysInStage > 2) || (app.status === 'verification' && daysInStage > 5);
+        }
+        return false;
     }).slice(0, 5);
+    
+    // Placeholder as interview data is not in the model
+    const upcomingInterviews: any[] = []; 
+    // Placeholder as offer data is not in the model
+    const offersPending = applications.filter(app => app.status === 'interview').slice(0,3);
 
-    const upcomingInterviews = applications
-        .flatMap(app => (app.interviews || []).map(interview => ({ ...interview, candidateName: app.candidateName, jobPosition: app.jobPosition })))
-        .filter(interview => interview.status === 'scheduled' && interview.dateTime.toDate() > now)
-        .sort((a,b) => a.dateTime.toMillis() - b.dateTime.toMillis())
-        .slice(0, 5);
 
     return (
         <div className="grid gap-6 lg:grid-cols-3">
@@ -44,14 +44,14 @@ export function CommandCenter({ applications }: { applications: JobApplication[]
                                 <TableHead>Candidate</TableHead>
                                 <TableHead>Job</TableHead>
                                 <TableHead>Stage</TableHead>
-                                <TableHead>Days in Stage</TableHead>
+                                <TableHead>Days Waiting</TableHead>
                                 <TableHead className="text-right">Next Action</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {needsActionApps.map(app => {
-                                const daysInStage = differenceInDays(now, app.stageEnteredAt.toDate());
-                                const isOverdue = (app.stage === 'screening' && daysInStage > 3);
+                            {needsActionApps.length > 0 ? needsActionApps.map(app => {
+                                const daysWaiting = app.updatedAt ? differenceInDays(now, app.updatedAt.toDate()) : 0;
+                                const isOverdue = daysWaiting > 3;
                                 return (
                                 <TableRow key={app.id}>
                                     <TableCell>
@@ -60,20 +60,30 @@ export function CommandCenter({ applications }: { applications: JobApplication[]
                                                 <AvatarImage src={app.candidatePhotoUrl} />
                                                 <AvatarFallback>{getInitials(app.candidateName)}</AvatarFallback>
                                             </Avatar>
-                                            <span className="font-medium">{app.candidateName}</span>
+                                            <span className="font-medium text-sm">{app.candidateName}</span>
                                         </div>
                                     </TableCell>
                                     <TableCell className="text-xs text-muted-foreground">{app.jobPosition}</TableCell>
-                                    <TableCell><Badge variant="secondary" className="capitalize">{app.stage}</Badge></TableCell>
+                                    <TableCell><Badge variant="secondary" className="capitalize">{app.status}</Badge></TableCell>
                                     <TableCell>
-                                        <span className={cn(isOverdue && "text-destructive font-bold")}>{daysInStage} days</span>
+                                        <span className={cn(isOverdue && "text-destructive font-bold")}>{daysWaiting} days</span>
                                     </TableCell>
                                     <TableCell className="text-right">
-                                        <Button size="sm">Review <ArrowRight className="ml-1" /></Button>
+                                        <Button asChild size="sm">
+                                            <Link href={`/admin/recruitment/applications/${app.id}`}>
+                                                Review <ArrowRight className="ml-1 h-4 w-4" />
+                                            </Link>
+                                        </Button>
                                     </TableCell>
                                 </TableRow>
                                 )
-                            })}
+                            }) : (
+                                <TableRow>
+                                    <TableCell colSpan={5} className="text-center h-24">
+                                        No candidates currently need immediate action.
+                                    </TableCell>
+                                </TableRow>
+                            )}
                         </TableBody>
                     </Table>
                 </CardContent>
@@ -85,13 +95,10 @@ export function CommandCenter({ applications }: { applications: JobApplication[]
                         <CardTitle>Upcoming Interviews</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                        {upcomingInterviews.map((interview, i) => (
-                            <div key={i}>
-                                <p className="font-semibold text-sm">{interview.candidateName} - <span className="text-muted-foreground">{interview.jobPosition}</span></p>
-                                <p className="text-xs text-muted-foreground">{format(interview.dateTime.toDate(), 'eee, dd MMM, HH:mm')}</p>
-                            </div>
-                        ))}
-                         {upcomingInterviews.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No upcoming interviews.</p>}
+                         <div className="text-center py-4 text-sm text-muted-foreground flex flex-col items-center gap-2">
+                            <Info className="h-5 w-5" />
+                            <p>Data wawancara belum tersedia di model data aplikasi.</p>
+                        </div>
                     </CardContent>
                 </Card>
                 <Card>
@@ -99,10 +106,10 @@ export function CommandCenter({ applications }: { applications: JobApplication[]
                         <CardTitle>Offers Tracker</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2">
-                        {/* Placeholder */}
-                        <div className="flex justify-between text-sm"><span className="text-muted-foreground">Pending Response</span><span className="font-bold">3</span></div>
-                        <div className="flex justify-between text-sm"><span className="text-muted-foreground">Accepted</span><span className="font-bold">8</span></div>
-                        <div className="flex justify-between text-sm"><span className="text-muted-foreground">Rejected</span><span className="font-bold">2</span></div>
+                        <div className="text-center py-4 text-sm text-muted-foreground flex flex-col items-center gap-2">
+                            <Info className="h-5 w-5" />
+                            <p>Data penawaran belum tersedia di model data aplikasi.</p>
+                        </div>
                     </CardContent>
                 </Card>
             </div>
