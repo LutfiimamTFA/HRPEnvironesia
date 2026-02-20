@@ -72,7 +72,7 @@ export function Topbar({ pageTitle, hrdMode, onHrdModeChange, actionArea }: Topb
     const { userProfile } = useAuth();
     return (
         <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background px-4 sm:px-6">
-            <SidebarTrigger className="sm:hidden" />
+            <SidebarTrigger />
             
             <div className="flex items-center gap-4">
                 <h1 className="font-semibold text-lg hidden sm:block">{pageTitle}</h1>
