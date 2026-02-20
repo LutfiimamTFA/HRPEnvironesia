@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { ArrowRight, Briefcase, ChevronDown, FileText, Leaf, MapPin, Search, User, UserCheck, ShieldCheck, BarChart, Globe, Menu, X, Building, Users } from 'lucide-react';
+import { ArrowRight, Briefcase, ChevronRight, FileText, Leaf, MapPin, Search, User, UserCheck, ShieldCheck, BarChart, Globe, Menu, X, Building, Users, Clock } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
@@ -37,7 +37,7 @@ const Header = () => {
     ];
 
     return (
-        <header className={cn("sticky top-0 z-50 w-full transition-all duration-300", scrolled ? "bg-background/80 backdrop-blur-lg border-b border-border" : "bg-transparent")}>
+        <header className={cn("sticky top-0 z-50 w-full transition-all duration-300", scrolled ? "bg-background/80 backdrop-blur-lg border-b" : "bg-transparent")}>
             <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
                 <div className="flex h-20 items-center justify-between">
                     <Link href="/careers" className="flex items-center gap-2">
@@ -66,7 +66,7 @@ const Header = () => {
                                     <Menu />
                                 </Button>
                             </SheetTrigger>
-                            <SheetContent side="left">
+                            <SheetContent side="left" className="w-[80vw] p-0">
                                 <div className="flex flex-col h-full">
                                     <div className="p-4 border-b">
                                         <Link href="/careers" className="flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
@@ -105,7 +105,7 @@ const HeroSection = () => (
     <section id="hero" className="relative w-full overflow-hidden">
         <div className="absolute inset-0">
             <Image
-                src="https://picsum.photos/seed/ai-nature-bg/1800/1200"
+                src="https://images.unsplash.com/photo-1532302486494-030999a8138d?q=80&w=2940&auto=format&fit=crop"
                 alt="AI generated environmental background"
                 fill
                 className="object-cover"
@@ -116,7 +116,7 @@ const HeroSection = () => (
             <div className="absolute inset-0 bg-background/60" />
         </div>
         <div className="relative z-10 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div className="flex min-h-[80vh] flex-col items-center justify-center pb-20 pt-32 text-center lg:min-h-dvh">
+            <div className="flex min-h-[70vh] flex-col items-center justify-center pb-20 pt-32 text-center lg:min-h-dvh">
                 <h1 className="text-4xl font-extrabold tracking-tight md:text-6xl lg:text-7xl">
                     Mari Buat Perubahan Bersama Kami
                 </h1>
@@ -150,7 +150,7 @@ const JobCard = ({ job }: { job: Job }) => (
       <CardHeader>
         <div className="flex justify-between items-start">
             <Badge variant="secondary" className="font-medium">{job.brandName || 'Environesia'}</Badge>
-            <span className="text-xs text-muted-foreground capitalize">{job.statusJob}</span>
+            <span className="text-xs text-muted-foreground capitalize flex items-center gap-1"><Clock className="h-3 w-3" />{job.statusJob}</span>
         </div>
         <CardTitle className="pt-2 text-xl">{job.position}</CardTitle>
       </CardHeader>
@@ -232,7 +232,7 @@ const JobExplorerSection = () => {
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                         <Input 
                             placeholder="Cari posisi atau divisi..." 
-                            className="h-12 pl-12 text-base"
+                            className="h-12 pl-12 text-base rounded-full"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
@@ -283,7 +283,7 @@ const ValuePropsSection = () => {
         { title: "Keseimbangan Hidup", description: "Kami menghargai waktu pribadi Anda untuk menciptakan lingkungan kerja yang sehat.", icon: ShieldCheck }
     ];
     return (
-        <section className="w-full py-16 lg:py-24 bg-secondary/30">
+        <section className="w-full py-16 lg:py-24 bg-card">
             <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
                 <div className="mx-auto max-w-2xl text-center">
                     <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Mengapa Environesia?</h2>
@@ -291,17 +291,13 @@ const ValuePropsSection = () => {
                 </div>
                 <div className="mt-16 grid gap-8 md:grid-cols-2 lg:grid-cols-4">
                     {values.map(v => (
-                        <Card key={v.title} className="text-center bg-card/80 backdrop-blur-sm">
-                            <CardHeader>
-                                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary">
-                                    <v.icon className="h-8 w-8" />
-                                </div>
-                                <CardTitle className="pt-4">{v.title}</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <p className="text-sm text-muted-foreground">{v.description}</p>
-                            </CardContent>
-                        </Card>
+                        <div key={v.title} className="text-center">
+                            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary mb-4">
+                                <v.icon className="h-8 w-8" />
+                            </div>
+                            <h3 className="font-semibold text-lg">{v.title}</h3>
+                            <p className="text-sm text-muted-foreground mt-1">{v.description}</p>
+                        </div>
                     ))}
                 </div>
             </div>
@@ -326,14 +322,14 @@ const RecruitmentProcessSection = () => {
                     <p className="mt-4 text-lg text-muted-foreground">Kami merancang proses yang adil dan transparan untuk menemukan talenta terbaik.</p>
                 </div>
                 <div className="relative mt-16 max-w-2xl mx-auto">
-                    <div className="absolute left-6 top-0 h-full w-0.5 bg-border md:left-1/2 md:-translate-x-1/2" />
+                    <div className="absolute left-6 top-0 h-full w-0.5 bg-border/40 md:left-1/2 md:-translate-x-1/2" />
                     <div className="space-y-12">
                         {steps.map((step, index) => (
                             <div key={index} className="relative flex items-start gap-6 md:gap-8">
                                <div className="z-10 flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-primary font-bold text-primary-foreground shadow-lg md:absolute md:left-1/2 md:-translate-x-1/2">
                                     {index + 1}
                                 </div>
-                                <div className={cn("w-full md:w-1/2", index % 2 === 0 ? "md:pl-[calc(50%+2.5rem)]" : "md:text-right md:pr-[calc(50%+2.5rem)] md:self-end")}>
+                                <div className={cn("flex-1 md:w-1/2", index % 2 === 0 ? "md:pl-[calc(50%+2.5rem)]" : "md:text-right md:pr-[calc(50%+2.5rem)] md:self-end")}>
                                      <h3 className="text-xl font-semibold">{step.title}</h3>
                                      <p className="mt-1 text-muted-foreground">{step.description}</p>
                                 </div>
@@ -353,11 +349,11 @@ const OfficeSpotlightSection = () => (
         <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
             <Card className="overflow-hidden relative flex items-end min-h-[500px] rounded-2xl">
                  <Image
-                    src="https://picsum.photos/seed/environesia-building-3/1600/900"
+                    src="https://images.unsplash.com/photo-1568992687947-868a62a9f521?q=80&w=2832&auto=format&fit=crop"
                     alt="Environesia Office Building"
                     fill
                     className="object-cover"
-                    data-ai-hint="Environesia office"
+                    data-ai-hint="office building"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
                 <div className="relative z-10 p-8 text-white">
@@ -379,7 +375,7 @@ const HowToApplySection = () => {
         { icon: UserCheck, title: "Pantau Proses", description: "Lacak status lamaran Anda langsung dari dasbor kandidat." },
     ];
     return (
-        <section className="w-full py-16 lg:py-24 bg-secondary/30">
+        <section className="w-full py-16 lg:py-24 bg-card">
             <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
                 <div className="mx-auto max-w-xl text-center">
                     <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Cara Mudah Melamar</h2>
@@ -388,13 +384,18 @@ const HowToApplySection = () => {
                 <div className="mt-16 grid gap-8 md:grid-cols-2 lg:grid-cols-4">
                     {steps.map(step => (
                         <div key={step.title} className="text-center">
-                            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-card shadow-md border">
+                            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-background shadow-md border">
                                 <step.icon className="h-8 w-8 text-primary" />
                             </div>
                             <h3 className="mb-2 text-lg font-semibold">{step.title}</h3>
                             <p className="text-sm text-muted-foreground">{step.description}</p>
                         </div>
                     ))}
+                </div>
+                 <div className="mt-16 text-center">
+                    <Button size="lg" asChild>
+                        <Link href="/careers/register">Daftar Akun Sekarang <ArrowRight className="ml-2 h-4 w-4" /></Link>
+                    </Button>
                 </div>
             </div>
         </section>
@@ -434,7 +435,7 @@ const FaqSection = () => (
 
 // --- Footer Component ---
 const Footer = () => (
-    <footer className="border-t">
+    <footer className="border-t bg-card">
         <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="py-8 grid grid-cols-1 md:grid-cols-3 gap-8">
                 <div>
