@@ -14,11 +14,12 @@ import type { JobApplication, ApplicationInterview, RescheduleRequest } from '@/
 import { useAuth } from '@/providers/auth-provider';
 import { useFirestore, updateDocumentNonBlocking } from '@/firebase';
 import { doc, Timestamp } from 'firebase/firestore';
-import { GoogleDatePicker } from '../ui/google-date-picker';
 import { add, differenceInMinutes } from 'date-fns';
+import { Input } from '../ui/input';
+import { format } from 'date-fns';
 
 const proposedSlotSchema = z.object({
-    startAt: z.date({ required_error: 'Tanggal dan waktu harus diisi.' }),
+    startAt: z.coerce.date({ required_error: 'Tanggal dan waktu harus diisi.' }),
 });
 
 const formSchema = z.object({
@@ -159,7 +160,11 @@ export function RescheduleRequestDialog({ open, onOpenChange, application, inter
                                 render={({ field }) => (
                                     <FormItem className="flex-grow">
                                         <FormControl>
-                                            <GoogleDatePicker mode="general" value={field.value} onChange={field.onChange} />
+                                            <Input
+                                                type="datetime-local"
+                                                value={field.value ? format(field.value, "yyyy-MM-dd'T'HH:mm") : ''}
+                                                onChange={e => field.onChange(e.target.value ? new Date(e.target.value) : null)}
+                                            />
                                         </FormControl>
                                         <FormMessage />
                                     </FormItem>

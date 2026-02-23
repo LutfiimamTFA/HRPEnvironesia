@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useMemo, useState, useEffect } from 'react';
@@ -6,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
 import { doc, serverTimestamp, updateDoc, Timestamp } from 'firebase/firestore';
-import type { JobApplication, Profile, Job, ApplicationTimelineEvent, ApplicationInterview } from '@/lib/types';
+import type { JobApplication, Profile, Job, ApplicationTimelineEvent, ApplicationInterview, RescheduleRequest } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -29,6 +28,7 @@ import { ScheduleInterviewDialog } from '@/components/recruitment/ScheduleInterv
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { id as idLocale } from 'date-fns/locale';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 function ApplicationDetailSkeleton() {
   return <Skeleton className="h-[500px] w-full" />;
@@ -36,6 +36,7 @@ function ApplicationDetailSkeleton() {
 
 function InterviewManagement({ application, onUpdate }: { application: JobApplication; onUpdate: () => void; }) {
   const [isScheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [interviewToReschedule, setInterviewToReschedule] = useState<ApplicationInterview | null>(null);
   const { userProfile } = useAuth();
   const firestore = useFirestore();
@@ -52,25 +53,35 @@ function InterviewManagement({ application, onUpdate }: { application: JobApplic
     const newInterviews = [...(application.interviews || [])];
     const newTimeline = [...(application.timeline || [])];
     
-    // If rescheduling, mark the old one as canceled
-    if (interviewToReschedule) {
-      const index = newInterviews.findIndex(iv => iv.startAt === interviewToReschedule.startAt);
+    if (interviewToReschedule && interviewToReschedule.rescheduleRequest) {
+      const index = newInterviews.findIndex(iv => iv.interviewId === interviewToReschedule.interviewId);
       if (index !== -1) {
-        newInterviews[index] = { ...newInterviews[index], status: 'canceled' };
+        newInterviews[index] = { 
+            ...newInterviews[index],
+            status: 'canceled',
+            rescheduleRequest: {
+                ...newInterviews[index].rescheduleRequest!,
+                status: 'countered',
+                decidedAt: Timestamp.now(),
+                decidedByUid: userProfile.uid,
+                hrResponseNote: 'HR has proposed a new time.'
+            }
+        };
       }
       newTimeline.push({
         type: 'status_changed',
         at: Timestamp.now(),
         by: userProfile.uid,
-        meta: { note: 'Wawancara dijadwalkan ulang oleh HRD.' },
+        meta: { note: 'Wawancara dijadwalkan ulang dengan waktu baru oleh HRD.' },
       });
     }
 
     const newInterview: ApplicationInterview = {
+      interviewId: crypto.randomUUID(),
       startAt: Timestamp.fromDate(data.dateTime),
       endAt: Timestamp.fromDate(new Date(data.dateTime.getTime() + (data.duration || 30) * 60000)),
-      interviewerIds: [],
-      interviewerNames: data.interviewerNames.split(',').map(s => s.trim()),
+      interviewerIds: data.interviewerIds,
+      interviewerNames: data.interviewerNames,
       status: 'scheduled',
       meetingLink: data.meetingLink,
       notes: data.notes,
@@ -95,12 +106,66 @@ function InterviewManagement({ application, onUpdate }: { application: JobApplic
     }
   };
 
-  const handleDenyReschedule = async (interviewToDeny: ApplicationInterview) => {
-    if (!application) return;
-    
+   const handleApproveReschedule = async (interviewToApprove: ApplicationInterview, approvedSlot: { startAt: Timestamp; endAt: Timestamp }) => {
+    if (!application || !userProfile) return;
+    setIsSubmitting(true);
+
     const newInterviews = (application.interviews || []).map(iv => {
-        if (iv.startAt === interviewToDeny.startAt) {
-            return { ...iv, status: 'scheduled' as const, rescheduleReason: '' };
+        if (iv.interviewId === interviewToApprove.interviewId) {
+            return {
+                ...iv,
+                startAt: approvedSlot.startAt,
+                endAt: approvedSlot.endAt,
+                status: 'scheduled' as const,
+                rescheduleRequest: {
+                    ...iv.rescheduleRequest!,
+                    status: 'approved' as const,
+                    decidedAt: Timestamp.now(),
+                    decidedByUid: userProfile.uid,
+                }
+            };
+        }
+        return iv;
+    });
+
+    const timelineEvent: ApplicationTimelineEvent = {
+        type: 'status_changed',
+        at: Timestamp.now(),
+        by: userProfile.uid,
+        meta: { note: 'Jadwal ulang wawancara disetujui oleh HRD.' },
+    };
+
+    try {
+        await updateDoc(doc(firestore, 'applications', application.id!), {
+            interviews: newInterviews,
+            timeline: [...(application.timeline || []), timelineEvent]
+        });
+        onUpdate();
+        toast({ title: 'Jadwal Ulang Disetujui' });
+    } catch (error: any) {
+        toast({ variant: 'destructive', title: 'Gagal Menyetujui', description: error.message });
+    } finally {
+        setIsSubmitting(false);
+    }
+  };
+
+
+  const handleDenyReschedule = async (interviewToDeny: ApplicationInterview) => {
+    if (!application || !userProfile) return;
+    setIsSubmitting(true);
+    const newInterviews = (application.interviews || []).map(iv => {
+        if (iv.interviewId === interviewToDeny.interviewId) {
+            return {
+                ...iv,
+                status: 'scheduled' as const,
+                rescheduleRequest: {
+                    ...iv.rescheduleRequest!,
+                    status: 'denied' as const,
+                    decidedAt: Timestamp.now(),
+                    decidedByUid: userProfile.uid,
+                    hrResponseNote: "Jadwal yang diusulkan tidak tersedia. Mohon ikuti jadwal semula.",
+                }
+            };
         }
         return iv;
     });
@@ -111,6 +176,8 @@ function InterviewManagement({ application, onUpdate }: { application: JobApplic
         toast({ title: 'Permintaan Ditolak', description: 'Status wawancara dikembalikan ke "Terjadwal".' });
     } catch (error: any) {
         toast({ variant: 'destructive', title: 'Gagal Menolak', description: error.message });
+    } finally {
+        setIsSubmitting(false);
     }
   };
   
@@ -127,12 +194,12 @@ function InterviewManagement({ application, onUpdate }: { application: JobApplic
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {!application.interviews || application.interviews.length === 0 ? (
+        {!application.interviews || application.interviews.filter(iv => iv.status !== 'canceled').length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-4">Belum ada wawancara yang dijadwalkan.</p>
         ) : (
             <div className="space-y-4">
-                {application.interviews.map((iv, index) => (
-                    <div key={index} className="p-4 border rounded-lg space-y-3">
+                {application.interviews.filter(iv => iv.status !== 'canceled').map((iv, index) => (
+                    <div key={iv.interviewId || index} className="p-4 border rounded-lg space-y-3">
                         <div className="flex justify-between items-start">
                             <div>
                                 <p className="font-semibold">{format(iv.startAt.toDate(), 'eeee, dd MMM yyyy, HH:mm', { locale: idLocale })}</p>
@@ -140,14 +207,29 @@ function InterviewManagement({ application, onUpdate }: { application: JobApplic
                             </div>
                             <Badge variant={iv.status === 'scheduled' ? 'default' : 'secondary'} className="capitalize">{iv.status.replace('_', ' ')}</Badge>
                         </div>
-                        {iv.status === 'reschedule_requested' && iv.rescheduleReason && (
+                        {iv.status === 'reschedule_requested' && iv.rescheduleRequest && (
                              <Alert variant="destructive">
                                 <AlertTriangle className="h-4 w-4" />
                                 <AlertTitle>Permintaan Jadwal Ulang</AlertTitle>
-                                <AlertDescription className="italic">"{iv.rescheduleReason}"</AlertDescription>
-                                <div className="flex gap-2 mt-3">
-                                    <Button size="sm" onClick={() => handleOpenScheduleDialog(iv)}>Jadwalkan Ulang</Button>
-                                    <Button size="sm" variant="ghost" onClick={() => handleDenyReschedule(iv)}>Tolak Permintaan</Button>
+                                <AlertDescription asChild>
+                                    <div className="space-y-3">
+                                        <p className="italic">Alasan: "{iv.rescheduleRequest.reason}"</p>
+                                        <div className="space-y-2">
+                                            <p className="font-semibold text-foreground">Usulan Waktu Kandidat:</p>
+                                            <ul className="space-y-2">
+                                                {iv.rescheduleRequest.proposedSlots.map((slot, slotIndex) => (
+                                                    <li key={slotIndex} className="flex items-center justify-between text-sm p-2 bg-background/50 rounded-md">
+                                                        <span>{format(slot.startAt.toDate(), 'eeee, dd MMM yyyy - HH:mm', { locale: idLocale })}</span>
+                                                        <Button size="xs" onClick={() => handleApproveReschedule(iv, slot)} disabled={isSubmitting}>Setujui</Button>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </AlertDescription>
+                                <div className="flex gap-2 mt-4 pt-4 border-t">
+                                    <Button size="sm" onClick={() => handleOpenScheduleDialog(iv)} disabled={isSubmitting}>Buat Jadwal Baru (Counter)</Button>
+                                    <Button size="sm" variant="ghost" onClick={() => handleDenyReschedule(iv)} disabled={isSubmitting}>Tolak Permintaan</Button>
                                 </div>
                             </Alert>
                         )}
@@ -160,6 +242,7 @@ function InterviewManagement({ application, onUpdate }: { application: JobApplic
         open={isScheduleDialogOpen}
         onOpenChange={setScheduleDialogOpen}
         onConfirm={handleConfirmSchedule}
+        interviewers={[]}
       />
     </Card>
   );
@@ -224,7 +307,7 @@ export default function ApplicationDetailPage() {
         ]
     };
     
-    if (newStage === 'personality_test' && !application.personalityTestAssignedAt) {
+    if (newStage === 'tes_kepribadian' && !application.personalityTestAssignedAt) {
       updatePayload.personalityTestAssignedAt = serverTimestamp();
     }
 
