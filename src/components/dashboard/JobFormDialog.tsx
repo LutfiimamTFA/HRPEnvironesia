@@ -187,17 +187,17 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-screen h-screen max-w-none top-0 left-0 translate-x-0 translate-y-0 rounded-none flex flex-col">
-        <DialogHeader>
+      <DialogContent className="w-screen h-screen max-w-none top-0 left-0 translate-x-0 translate-y-0 rounded-none flex flex-col p-0">
+        <DialogHeader className="p-6 pb-0">
           <DialogTitle>{mode} Job Posting</DialogTitle>
           <DialogDescription>
             Fill in the job details below. Click save when you're done.
           </DialogDescription>
         </DialogHeader>
-        <div className="flex-grow overflow-y-auto pr-2 -mr-6 pl-1">
+        <div className="flex-grow overflow-y-auto px-6">
           <Form {...form}>
-            <form id="job-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 py-4 pr-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <form id="job-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField control={form.control} name="position" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Position</FormLabel>
@@ -348,7 +348,7 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
             </form>
           </Form>
         </div>
-        <DialogFooter className="flex-shrink-0 pt-4 border-t">
+        <DialogFooter className="flex-shrink-0 p-6 pt-4 border-t">
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button type="submit" form="job-form" disabled={loading}>
             {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
