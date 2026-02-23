@@ -146,9 +146,17 @@ export function CandidateFitAnalysis({ profile, job, application }: CandidateFit
             </div>
         )}
         {isLoading && (
-            <div className="text-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-                <p className="mt-2 text-muted-foreground">AI sedang menganalisis profil...</p>
+            <div className="space-y-4 rounded-lg border border-dashed p-8 text-center">
+              <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
+              <div className="mx-auto max-w-md">
+                <p className="font-semibold">AI sedang menganalisis CV kandidat...</p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Proses ini biasanya membutuhkan waktu <strong>15-30 detik</strong>.
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Akurasi analisis sangat bergantung pada kualitas CV (hasil pindaian/gambar mungkin kurang akurat).
+                </p>
+              </div>
             </div>
         )}
         {error && (
@@ -204,7 +212,11 @@ export function CandidateFitAnalysis({ profile, job, application }: CandidateFit
                                         cursor={{ fill: 'hsl(var(--muted))' }}
                                         content={<ChartTooltipContent hideLabel />}
                                     />
-                                    <Bar dataKey="score" fill="var(--color-score)" radius={4} background={{ fill: 'hsl(var(--secondary))', radius: 4 }} />
+                                    <Bar dataKey="score" fill="hsl(var(--primary))" radius={4} background={{ fill: 'hsl(var(--secondary))', radius: 4 }}>
+                                        {chartData.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill="hsl(var(--primary))" />
+                                        ))}
+                                    </Bar>
                                 </BarChart>
                             </ChartContainer>
                          </CardContent>
