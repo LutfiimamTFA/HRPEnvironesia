@@ -23,7 +23,7 @@ import { Loader2, UploadCloud } from 'lucide-react';
 import type { Job, Brand } from '@/lib/types';
 import { RichTextEditor } from '../ui/RichTextEditor';
 import Image from 'next/image';
-import { GoogleDatePicker } from '../ui/google-date-picker';
+import { DatePicker } from '../ui/date-picker';
 
 const slugify = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
@@ -188,7 +188,7 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[95vh] flex flex-col">
+      <DialogContent className="sm:max-w-6xl h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>{mode} Job Posting</DialogTitle>
           <DialogDescription>
@@ -267,8 +267,7 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
                     <FormItem className="flex flex-col pt-2">
                       <FormLabel>Application Deadline</FormLabel>
                       <FormControl>
-                        <GoogleDatePicker
-                          mode="general"
+                        <DatePicker
                           value={field.value}
                           onChange={field.onChange}
                           portalled={false}
