@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuGroup } from '@/components/ui/dropdown-menu';
 import { Check, MoreVertical, Loader2, ThumbsDown } from 'lucide-react';
 import type { JobApplication } from '@/lib/types';
-import { APPLICATION_STATUSES, statusDisplayLabels } from './ApplicationStatusBadge';
+import { ORDERED_RECRUITMENT_STAGES, statusDisplayLabels } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { StageChangeDialog } from './StageChangeDialog';
 import { ScheduleInterviewDialog, type ScheduleInterviewData } from './ScheduleInterviewDialog';
@@ -16,30 +16,18 @@ interface ApplicationActionBarProps {
   onScheduleInterview: (data: ScheduleInterviewData) => Promise<boolean>;
 }
 
-// Ordered list of stages for logical progression
-const orderedStages: JobApplication['status'][] = [
-    'submitted', 
-    'screening', 
-    'tes_kepribadian', 
-    'document_submission', 
-    'verification', 
-    'interview', 
-    'hired', 
-];
-
 const getStageActions = (currentStatus: JobApplication['status']) => {
-    const currentIndex = orderedStages.indexOf(currentStatus);
+    const currentIndex = ORDERED_RECRUITMENT_STAGES.indexOf(currentStatus);
     
-    // Final states have no further actions
     if (currentStatus === 'hired' || currentStatus === 'rejected' || currentIndex === -1) {
         return { primaryAction: null, otherActions: [] };
     }
 
-    const nextLogicalStage = orderedStages[currentIndex + 1];
+    const nextLogicalStage = ORDERED_RECRUITMENT_STAGES[currentIndex + 1];
 
     const primaryAction: JobApplication['status'] | null = nextLogicalStage;
 
-    const otherActions: JobApplication['status'][] = orderedStages
+    const otherActions: JobApplication['status'][] = ORDERED_RECRUITMENT_STAGES
         .filter(stage => stage !== currentStatus && stage !== nextLogicalStage);
         
     return { primaryAction, otherActions };
