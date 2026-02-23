@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
@@ -80,10 +79,30 @@ export function ApplicantsPageClient({ applications }: { applications: JobApplic
   
   const getNextScheduledInterview = (app: JobApplication) => {
     if (!app.interviews || app.interviews.length === 0) return null;
-    const upcoming = app.interviews
-      .filter(i => i.status === 'scheduled' && i.startAt.toDate() >= new Date())
+    
+    const now = new Date().getTime();
+    
+    const scheduledInterviews = app.interviews.filter(i => i.status === 'scheduled');
+    
+    if (scheduledInterviews.length === 0) return null;
+
+    const upcoming = scheduledInterviews
+      .filter(i => i.startAt.toMillis() >= now)
       .sort((a, b) => a.startAt.toMillis() - b.startAt.toMillis());
-    return upcoming[0];
+
+    if (upcoming.length > 0) {
+      return upcoming[0]; // The soonest upcoming interview
+    }
+
+    const past = scheduledInterviews
+      .filter(i => i.startAt.toMillis() < now)
+      .sort((a, b) => b.startAt.toMillis() - a.startAt.toMillis());
+      
+    if (past.length > 0) {
+        return past[0]; // The most recent past interview
+    }
+
+    return null;
   };
 
   return (
