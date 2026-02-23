@@ -232,7 +232,7 @@ function InterviewManagement({ application, onUpdate }: { application: JobApplic
                              <Alert variant="destructive">
                                 <AlertTriangle className="h-4 w-4" />
                                 <AlertTitle>Permintaan Jadwal Ulang</AlertTitle>
-                                <AlertDescription asChild>
+                                <AlertDescription>
                                     <div className="space-y-3">
                                         <p className="italic">Alasan: "{iv.rescheduleRequest.reason}"</p>
                                         <div className="space-y-2">
