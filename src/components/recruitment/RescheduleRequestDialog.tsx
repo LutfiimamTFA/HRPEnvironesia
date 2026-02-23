@@ -64,78 +64,84 @@ export function RescheduleRequestDialog({ open, onOpenChange, application, inter
 
     setIsSaving(true);
     try {
-      const appRef = doc(firestore, 'applications', application.id!);
-      const currentInterviews = application.interviews ? [...application.interviews] : [];
+        const appRef = doc(firestore, 'applications', application.id!);
+        const currentInterviews = application.interviews ? [...application.interviews] : [];
       
-      const rescheduleRequestData: RescheduleRequest = {
-          requestedAt: Timestamp.now(),
-          requestedByUid: firebaseUser.uid,
-          reason: values.reason,
-          proposedSlots: values.proposedSlots.map(slot => ({
-              startAt: Timestamp.fromDate(slot.startAt),
-              endAt: Timestamp.fromDate(add(slot.startAt, { minutes: originalDuration }))
-          })),
-          status: 'pending'
-      };
-
-      if (currentInterviews[interviewIndex]) {
-        const oldInterviewData = currentInterviews[interviewIndex];
-        
-        // **FIX:** Explicitly rebuild the object to avoid any `undefined` values.
-        const newInterviewData: ApplicationInterview = {
-            interviewId: oldInterviewData.interviewId,
-            startAt: oldInterviewData.startAt,
-            endAt: oldInterviewData.endAt,
-            meetingLink: oldInterviewData.meetingLink ?? '', // Fallback
-            interviewerIds: oldInterviewData.interviewerIds ?? [], // Fallback
-            interviewerNames: oldInterviewData.interviewerNames ?? [], // Fallback
-            status: 'reschedule_requested',
-            rescheduleRequest: rescheduleRequestData,
+        const rescheduleRequestData: RescheduleRequest = {
+            requestedAt: Timestamp.now(),
+            requestedByUid: firebaseUser.uid,
+            reason: values.reason,
+            proposedSlots: values.proposedSlots.map(slot => ({
+                startAt: Timestamp.fromDate(slot.startAt),
+                endAt: Timestamp.fromDate(add(slot.startAt, { minutes: originalDuration }))
+            })),
+            status: 'pending'
         };
 
-        // Conditionally add optional fields ONLY if they exist to prevent undefined.
-        if (oldInterviewData.notes) {
-          newInterviewData.notes = oldInterviewData.notes;
+        if (currentInterviews[interviewIndex]) {
+            const oldInterviewData = currentInterviews[interviewIndex];
+            
+            // Robust Fix: Explicitly rebuild the object to avoid any `undefined` values.
+            const newInterviewData: ApplicationInterview = {
+                interviewId: oldInterviewData.interviewId || `legacy-${Date.now()}`,
+                startAt: oldInterviewData.startAt,
+                endAt: oldInterviewData.endAt,
+                meetingLink: oldInterviewData.meetingLink ?? '',
+                interviewerIds: oldInterviewData.interviewerIds ?? [],
+                interviewerNames: oldInterviewData.interviewerNames ?? [],
+                status: 'reschedule_requested',
+                rescheduleRequest: rescheduleRequestData,
+            };
+    
+            // Conditionally add optional fields ONLY if they exist to prevent undefined.
+            if (oldInterviewData.notes) {
+                newInterviewData.notes = oldInterviewData.notes;
+            }
+            if (oldInterviewData.leadInterviewerId) {
+                newInterviewData.leadInterviewerId = oldInterviewData.leadInterviewerId;
+            }
+             if (oldInterviewData.rescheduleReason) { // handle legacy field
+                newInterviewData.rescheduleReason = oldInterviewData.rescheduleReason;
+            }
+
+            currentInterviews[interviewIndex] = newInterviewData;
+            
+            await updateDocumentNonBlocking(appRef, { 
+                interviews: currentInterviews,
+                timeline: [
+                    ...(application.timeline || []),
+                    {
+                        type: 'status_changed',
+                        at: Timestamp.now(),
+                        by: firebaseUser.uid,
+                        meta: {
+                            note: `Candidate requested reschedule for interview ${newInterviewData.interviewId}`,
+                            interviewId: newInterviewData.interviewId,
+                        },
+                    },
+                ],
+            });
+        } else {
+             throw new Error("Interview to update was not found in the application's data.");
         }
-        if (oldInterviewData.leadInterviewerId) {
-          newInterviewData.leadInterviewerId = oldInterviewData.leadInterviewerId;
-        }
 
-        currentInterviews[interviewIndex] = newInterviewData;
-      }
 
-      await updateDocumentNonBlocking(appRef, { 
-          interviews: currentInterviews,
-          timeline: [
-              ...(application.timeline || []),
-              {
-                  type: 'status_changed',
-                  at: Timestamp.now(),
-                  by: firebaseUser.uid,
-                  meta: {
-                      note: `Candidate requested reschedule for interview ${originalInterview.interviewId}`,
-                      interviewId: originalInterview.interviewId,
-                  },
-              },
-          ],
-      });
-
-      toast({
-        title: 'Permintaan Terkirim',
-        description: 'Tim HRD telah menerima permintaan jadwal ulang Anda.',
-      });
-      onSuccess();
-      onOpenChange(false);
-      form.reset();
+        toast({
+            title: 'Permintaan Terkirim',
+            description: 'Tim HRD telah menerima permintaan jadwal ulang Anda.',
+        });
+        onSuccess();
+        onOpenChange(false);
+        form.reset();
     } catch (error: any) {
-      console.error("Error during reschedule request:", error);
-      toast({
-        variant: 'destructive',
-        title: 'Gagal Mengirim Permintaan',
-        description: error.message || 'Terjadi kesalahan tidak dikenal.',
-      });
+        console.error("Error during reschedule request:", error);
+        toast({
+            variant: 'destructive',
+            title: 'Gagal Mengirim Permintaan',
+            description: error.message || 'Terjadi kesalahan tidak dikenal.',
+        });
     } finally {
-      setIsSaving(false);
+        setIsSaving(false);
     }
   };
   
