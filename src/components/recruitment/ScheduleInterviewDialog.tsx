@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -11,9 +11,11 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { GoogleDatePicker } from '@/components/ui/google-date-picker';
 import { Loader2 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 
 const scheduleSchema = z.object({
   dateTime: z.date({ required_error: 'Tanggal dan waktu harus diisi.' }),
+  duration: z.coerce.number().int().min(5, 'Durasi minimal 5 menit.').default(30),
   meetingLink: z.string().url({ message: "URL meeting tidak valid." }),
   interviewerNames: z.string().min(1, "Nama pewawancara harus diisi."),
   notes: z.string().optional(),
@@ -25,14 +27,26 @@ interface ScheduleInterviewDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: (data: ScheduleInterviewData) => Promise<boolean>;
+  initialData?: Partial<ScheduleInterviewData>;
 }
 
-export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm }: ScheduleInterviewDialogProps) {
+export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initialData }: ScheduleInterviewDialogProps) {
   const [isSaving, setIsSaving] = useState(false);
   const form = useForm<ScheduleInterviewData>({
     resolver: zodResolver(scheduleSchema),
-    defaultValues: { dateTime: undefined, meetingLink: '', interviewerNames: '', notes: '' },
   });
+
+  useEffect(() => {
+    if (open) {
+      form.reset({
+        dateTime: initialData?.dateTime,
+        duration: initialData?.duration || 30,
+        meetingLink: initialData?.meetingLink || '',
+        interviewerNames: initialData?.interviewerNames || '',
+        notes: initialData?.notes || '',
+      });
+    }
+  }, [open, initialData, form]);
 
   const handleSubmit = async (values: ScheduleInterviewData) => {
     setIsSaving(true);
@@ -40,7 +54,6 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm }: Sched
     setIsSaving(false);
     if (success) {
       onOpenChange(false);
-      form.reset();
     }
   };
   
@@ -48,7 +61,7 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm }: Sched
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Jadwalkan Wawancara</DialogTitle>
+          <DialogTitle>{initialData ? 'Edit Wawancara' : 'Jadwalkan Wawancara'}</DialogTitle>
           <DialogDescription>
             Masukkan detail untuk jadwal wawancara kandidat.
           </DialogDescription>
@@ -62,12 +75,17 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm }: Sched
                 <FormItem className="flex flex-col">
                   <FormLabel>Tanggal & Waktu</FormLabel>
                   <FormControl>
-                    <GoogleDatePicker mode="general" value={field.value} onChange={field.onChange} />
+                    <Input
+                        type="datetime-local"
+                        value={field.value ? new Date(field.value.getTime() - (field.value.getTimezoneOffset() * 60000)).toISOString().slice(0, 16) : ''}
+                        onChange={e => field.onChange(e.target.value ? new Date(e.target.value) : null)}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
+             <FormField control={form.control} name="duration" render={({ field }) => (<FormItem><FormLabel>Durasi (menit)</FormLabel><Select onValueChange={(v) => field.onChange(parseInt(v))} value={String(field.value)}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent><SelectItem value="15">15</SelectItem><SelectItem value="30">30</SelectItem><SelectItem value="45">45</SelectItem><SelectItem value="60">60</SelectItem><SelectItem value="90">90</SelectItem></SelectContent></Select><FormMessage /></FormItem>)} />
             <FormField
               control={form.control}
               name="meetingLink"
@@ -107,7 +125,7 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm }: Sched
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Batal</Button>
           <Button type="submit" form="schedule-interview-form" disabled={isSaving}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Jadwalkan & Pindahkan
+            Simpan Jadwal
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -9,7 +9,7 @@ import type { JobApplication, Profile, Job, ApplicationTimelineEvent, Applicatio
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Mail, Phone, XCircle, Calendar, Users, RefreshCw, X, MessageSquare, AlertTriangle } from 'lucide-react';
+import { Mail, Phone, XCircle, Calendar, Users, RefreshCw, X, MessageSquare, AlertTriangle, Edit } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { ProfileView } from '@/components/recruitment/ProfileView';
@@ -17,7 +17,7 @@ import { ApplicationStatusBadge, statusDisplayLabels } from '@/components/recrui
 import { useToast } from '@/hooks/use-toast';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { getInitials } from '@/lib/utils';
-import { format } from 'date-fns';
+import { format, differenceInMinutes, add } from 'date-fns';
 import { ApplicationProgressStepper } from '@/components/recruitment/ApplicationProgressStepper';
 import { CandidateDocumentsCard } from '@/components/recruitment/CandidateDocumentsCard';
 import { CandidateFitAnalysis } from '@/components/recruitment/CandidateFitAnalysis';
@@ -37,72 +37,88 @@ function ApplicationDetailSkeleton() {
 function InterviewManagement({ application, onUpdate }: { application: JobApplication; onUpdate: () => void; }) {
   const [isScheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [interviewToReschedule, setInterviewToReschedule] = useState<ApplicationInterview | null>(null);
+  const [activeInterview, setActiveInterview] = useState<ApplicationInterview | null>(null);
   const { userProfile } = useAuth();
   const firestore = useFirestore();
   const { toast } = useToast();
 
   const handleOpenScheduleDialog = (interview: ApplicationInterview | null = null) => {
-    setInterviewToReschedule(interview);
+    setActiveInterview(interview);
     setScheduleDialogOpen(true);
   };
 
   const handleConfirmSchedule = async (data: ScheduleInterviewData) => {
     if (!application || !userProfile) return false;
 
+    setIsSubmitting(true);
+
     const newInterviews = [...(application.interviews || [])];
     const newTimeline = [...(application.timeline || [])];
     
-    if (interviewToReschedule && interviewToReschedule.rescheduleRequest) {
-      const index = newInterviews.findIndex(iv => iv.interviewId === interviewToReschedule.interviewId);
-      if (index !== -1) {
-        newInterviews[index] = { 
-            ...newInterviews[index],
-            status: 'canceled',
-            rescheduleRequest: {
-                ...newInterviews[index].rescheduleRequest!,
-                status: 'countered',
-                decidedAt: Timestamp.now(),
-                decidedByUid: userProfile.uid,
-                hrResponseNote: 'HR has proposed a new time.'
-            }
-        };
-      }
-      newTimeline.push({
-        type: 'status_changed',
-        at: Timestamp.now(),
-        by: userProfile.uid,
-        meta: { note: 'Wawancara dijadwalkan ulang dengan waktu baru oleh HRD.' },
-      });
-    }
-
-    const newInterview: ApplicationInterview = {
-      interviewId: crypto.randomUUID(),
-      startAt: Timestamp.fromDate(data.dateTime),
-      endAt: Timestamp.fromDate(new Date(data.dateTime.getTime() + (data.duration || 30) * 60000)),
-      interviewerIds: data.interviewerIds,
-      interviewerNames: data.interviewerNames,
-      status: 'scheduled',
-      meetingLink: data.meetingLink,
-      notes: data.notes,
-    };
-    newInterviews.push(newInterview);
-    
-    newTimeline.push({
-        type: 'interview_scheduled',
-        at: Timestamp.now(),
-        by: userProfile.uid,
-        meta: { interviewDate: Timestamp.fromDate(data.dateTime) }
-    });
-
     try {
-      await updateDoc(doc(firestore, 'applications', application.id!), { interviews: newInterviews, timeline: newTimeline });
-      onUpdate();
-      toast({ title: 'Wawancara Dijadwalkan' });
-      return true;
+        if (activeInterview && !activeInterview.rescheduleRequest) { // Pure Edit
+            const index = newInterviews.findIndex(iv => iv.interviewId === activeInterview.interviewId);
+            if (index !== -1) {
+                newInterviews[index] = {
+                    ...newInterviews[index],
+                    startAt: Timestamp.fromDate(data.dateTime),
+                    endAt: Timestamp.fromDate(add(data.dateTime, { minutes: data.duration })),
+                    interviewerNames: data.interviewerNames.split(',').map(s => s.trim()),
+                    meetingLink: data.meetingLink,
+                    notes: data.notes,
+                };
+                newTimeline.push({
+                    type: 'status_changed',
+                    at: Timestamp.now(),
+                    by: userProfile.uid,
+                    meta: { note: `Jadwal wawancara diperbarui oleh HRD.` },
+                });
+                await updateDoc(doc(firestore, 'applications', application.id!), { interviews: newInterviews, timeline: newTimeline });
+                toast({ title: 'Wawancara Diperbarui' });
+            } else {
+                 throw new Error("Wawancara yang akan diedit tidak ditemukan.");
+            }
+        } else { // Create or Counter-proposal
+            if (activeInterview && activeInterview.rescheduleRequest) { // Counter-proposal
+                const index = newInterviews.findIndex(iv => iv.interviewId === activeInterview.interviewId);
+                if (index !== -1) {
+                    newInterviews[index].status = 'canceled';
+                    newInterviews[index].rescheduleRequest!.status = 'countered';
+                    newInterviews[index].rescheduleRequest!.decidedAt = Timestamp.now();
+                    newInterviews[index].rescheduleRequest!.decidedByUid = userProfile.uid;
+                    newInterviews[index].rescheduleRequest!.hrResponseNote = 'HRD telah mengusulkan jadwal baru.';
+                }
+            }
+
+            const newInterview: ApplicationInterview = {
+                interviewId: crypto.randomUUID(),
+                startAt: Timestamp.fromDate(data.dateTime),
+                endAt: Timestamp.fromDate(add(data.dateTime, { minutes: data.duration })),
+                interviewerIds: [], // TODO: Link to user IDs from a multi-select component
+                interviewerNames: data.interviewerNames.split(',').map(s => s.trim()),
+                status: 'scheduled',
+                meetingLink: data.meetingLink,
+                notes: data.notes,
+            };
+            newInterviews.push(newInterview);
+            
+            newTimeline.push({
+                type: 'interview_scheduled',
+                at: Timestamp.now(),
+                by: userProfile.uid,
+                meta: { interviewDate: Timestamp.fromDate(data.dateTime) }
+            });
+            await updateDoc(doc(firestore, 'applications', application.id!), { interviews: newInterviews, timeline: newTimeline });
+            toast({ title: activeInterview ? 'Jadwal Baru Diajukan' : 'Wawancara Dijadwalkan' });
+        }
+        
+        onUpdate();
+        return true;
     } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Gagal Menjadwalkan', description: error.message });
-      return false;
+        toast({ variant: 'destructive', title: 'Gagal Menyimpan', description: error.message });
+        return false;
+    } finally {
+        setIsSubmitting(false);
     }
   };
 
@@ -205,7 +221,12 @@ function InterviewManagement({ application, onUpdate }: { application: JobApplic
                                 <p className="font-semibold">{format(iv.startAt.toDate(), 'eeee, dd MMM yyyy, HH:mm', { locale: idLocale })}</p>
                                 <p className="text-sm text-muted-foreground">Pewawancara: {iv.interviewerNames.join(', ')}</p>
                             </div>
-                            <Badge variant={iv.status === 'scheduled' ? 'default' : 'secondary'} className="capitalize">{iv.status.replace('_', ' ')}</Badge>
+                            <div className="flex items-center gap-2">
+                                <Button variant="ghost" size="sm" onClick={() => handleOpenScheduleDialog(iv)}>
+                                    <Edit className="h-4 w-4 mr-2" /> Edit
+                                </Button>
+                                <Badge variant={iv.status === 'scheduled' ? 'default' : 'secondary'} className="capitalize">{iv.status.replace('_', ' ')}</Badge>
+                            </div>
                         </div>
                         {iv.status === 'reschedule_requested' && iv.rescheduleRequest && (
                              <Alert variant="destructive">
@@ -242,7 +263,13 @@ function InterviewManagement({ application, onUpdate }: { application: JobApplic
         open={isScheduleDialogOpen}
         onOpenChange={setScheduleDialogOpen}
         onConfirm={handleConfirmSchedule}
-        interviewers={[]}
+        initialData={activeInterview ? {
+            dateTime: activeInterview.startAt.toDate(),
+            duration: differenceInMinutes(activeInterview.endAt.toDate(), activeInterview.startAt.toDate()),
+            meetingLink: activeInterview.meetingLink,
+            interviewerNames: activeInterview.interviewerNames.join(', '),
+            notes: activeInterview.notes,
+        } : undefined}
       />
     </Card>
   );
