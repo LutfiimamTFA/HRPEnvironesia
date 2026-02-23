@@ -42,7 +42,7 @@ function StatusManager({ application }: { application: JobApplication }) {
     },
     {
       label: 'Proses Seleksi',
-      statuses: ['tes_kepribadian', 'document_submission', 'verification', 'interview']
+      statuses: ['screening', 'tes_kepribadian', 'document_submission', 'verification', 'interview']
     },
     {
       label: 'Keputusan Akhir',
@@ -82,7 +82,7 @@ function StatusManager({ application }: { application: JobApplication }) {
         <SelectContent>
           {statusGroups.map(group => (
             <SelectGroup key={group.label}>
-                <SelectLabel>{group.label}</SelectLabel>
+                <SelectLabel className="px-2 py-1.5 text-xs font-semibold uppercase text-muted-foreground">{group.label}</SelectLabel>
                 {group.statuses.map(status => (
                     <SelectItem key={status} value={status}>
                         {statusDisplayLabels[status as JobApplication['status']]}
