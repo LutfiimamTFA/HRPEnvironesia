@@ -9,12 +9,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { GoogleDatePicker } from '@/components/ui/google-date-picker';
 import { Loader2 } from 'lucide-react';
 
 const scheduleSchema = z.object({
-  type: z.enum(['hr', 'user', 'final'], { required_error: 'Tipe wawancara harus dipilih.' }),
   dateTime: z.date({ required_error: 'Tanggal dan waktu harus diisi.' }),
   meetingLink: z.string().url({ message: "URL meeting tidak valid." }),
   interviewerNames: z.string().min(1, "Nama pewawancara harus diisi."),
@@ -26,21 +24,24 @@ export type ScheduleInterviewData = z.infer<typeof scheduleSchema>;
 interface ScheduleInterviewDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onConfirm: (data: ScheduleInterviewData) => Promise<void>;
+  onConfirm: (data: ScheduleInterviewData) => Promise<boolean>;
 }
 
 export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm }: ScheduleInterviewDialogProps) {
   const [isSaving, setIsSaving] = useState(false);
   const form = useForm<ScheduleInterviewData>({
     resolver: zodResolver(scheduleSchema),
-    defaultValues: { type: 'hr', dateTime: undefined, meetingLink: '', interviewerNames: '', notes: '' },
+    defaultValues: { dateTime: undefined, meetingLink: '', interviewerNames: '', notes: '' },
   });
 
   const handleSubmit = async (values: ScheduleInterviewData) => {
     setIsSaving(true);
-    await onConfirm(values);
+    const success = await onConfirm(values);
     setIsSaving(false);
-    onOpenChange(false);
+    if (success) {
+      onOpenChange(false);
+      form.reset();
+    }
   };
   
   return (
@@ -54,24 +55,6 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm }: Sched
         </DialogHeader>
         <Form {...form}>
           <form id="schedule-interview-form" onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="type"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Tipe Wawancara</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl><SelectTrigger><SelectValue placeholder="Pilih tipe" /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      <SelectItem value="hr">Wawancara HR</SelectItem>
-                      <SelectItem value="user">Wawancara User</SelectItem>
-                      <SelectItem value="final">Wawancara Final</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
             <FormField
               control={form.control}
               name="dateTime"

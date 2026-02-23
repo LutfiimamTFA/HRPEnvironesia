@@ -71,7 +71,6 @@ export type ApplicationTimelineEvent = {
 };
 
 export type ApplicationInterview = {
-    type: 'hr' | 'user' | 'final';
     dateTime: Timestamp;
     interviewerIds: string[];
     interviewerNames?: string[]; // Denormalized
@@ -248,6 +247,7 @@ export type Profile = {
     willingToWfo: boolean;
     linkedinUrl?: string;
     websiteUrl?: string;
+    photoUrl?: string;
     education: Education[];
     workExperience?: WorkExperience[];
     organizationalExperience?: OrganizationalExperience[];

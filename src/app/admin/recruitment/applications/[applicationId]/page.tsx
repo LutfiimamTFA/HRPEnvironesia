@@ -114,14 +114,12 @@ export default function ApplicationDetailPage() {
         from: application.status,
         to: 'interview',
         note: data.notes,
-        interviewType: data.type,
         interviewDate: Timestamp.fromDate(data.dateTime),
         meetingLink: data.meetingLink,
       },
     };
 
     const newInterview: ApplicationInterview = {
-      type: data.type,
       dateTime: Timestamp.fromDate(data.dateTime),
       interviewerIds: [], // placeholder for future functionality
       interviewerNames: data.interviewerNames.split(',').map(s => s.trim()),
