@@ -54,7 +54,6 @@ function MultiSelect({
           role="combobox"
           aria-expanded={open}
           className={cn("w-full justify-between h-auto min-h-10", className)}
-          onClick={() => setOpen(!open)}
         >
           <div className="flex gap-1 flex-wrap">
             {selected.length > 0 ? (
@@ -95,7 +94,6 @@ function MultiSelect({
                     } else {
                       onChange([...selected, option]);
                     }
-                    setOpen(true);
                   }}
                 >
                   <Check
