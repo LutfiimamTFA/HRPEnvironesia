@@ -187,7 +187,7 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-6xl h-[90vh] flex flex-col">
+      <DialogContent className="w-screen h-screen max-w-none top-0 left-0 translate-x-0 translate-y-0 rounded-none flex flex-col">
         <DialogHeader>
           <DialogTitle>{mode} Job Posting</DialogTitle>
           <DialogDescription>
