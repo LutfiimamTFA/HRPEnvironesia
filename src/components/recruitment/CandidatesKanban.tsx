@@ -20,11 +20,11 @@ import { useToast } from '@/hooks/use-toast';
 // Define the order of columns in the Kanban board
 const KANBAN_STAGES: JobApplication['status'][] = [
     'submitted',
+    'screening',
     'tes_kepribadian',
     'document_submission',
     'verification',
     'interview',
-    'hired',
 ];
 
 type ApplicationGroup = Record<JobApplication['status'], JobApplication[]>;
@@ -34,7 +34,7 @@ const CandidateCard = ({ application, isDragging }: { application: JobApplicatio
         <CardContent className="p-3">
             <div className="flex items-start gap-3">
                 <Avatar className="h-9 w-9">
-                    <AvatarImage src={`https://i.pravatar.cc/150?u=${application.candidateUid}`} />
+                    <AvatarImage src={application.candidatePhotoUrl ?? `https://i.pravatar.cc/150?u=${application.candidateUid}`} />
                     <AvatarFallback>{getInitials(application.candidateName)}</AvatarFallback>
                 </Avatar>
                 <div className="flex-grow">
@@ -160,7 +160,12 @@ export function CandidatesKanban({ applications: initialApplications }: { applic
         const overId = over.id as string;
 
         const oldStage = findContainer(activeId, applications);
-        const newStage = findContainer(overId, applications);
+        let newStage = findContainer(overId, applications);
+        
+        if (overId === 'kanban-board-end-zone') {
+            newStage = 'hired'; // Example, could be a specific dropzone
+        }
+
 
         if (!oldStage || !newStage) return;
 
