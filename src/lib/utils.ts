@@ -24,7 +24,6 @@ export interface ScheduleConfig {
     slotDuration: number;
     buffer: number;
     workdayEndTime: string; // "HH:mm"
-    continueToNextDay: boolean;
 }
 
 export interface GeneratedSlot {
@@ -34,7 +33,7 @@ export interface GeneratedSlot {
 }
 
 export function generateTimeSlots(candidates: JobApplication[], config: ScheduleConfig): GeneratedSlot[] {
-    const { startDate, startTime, slotDuration, buffer, workdayEndTime, continueToNextDay } = config;
+    const { startDate, startTime, slotDuration, buffer, workdayEndTime } = config;
 
     let currentDay = new Date(startDate);
     const [startHour, startMinute] = startTime.split(':').map(Number);
@@ -51,15 +50,10 @@ export function generateTimeSlots(candidates: JobApplication[], config: Schedule
         
         // Check if the slot exceeds the workday end time
         if (slotEndTime.getHours() > endHour || (slotEndTime.getHours() === endHour && slotEndTime.getMinutes() > endMinute)) {
-            if (continueToNextDay) {
-                // Move to the next day and reset the time
-                currentDay = addDays(currentDay, 1);
-                currentDay.setHours(startHour, startMinute, 0, 0);
-                currentTime = new Date(currentDay);
-            } else {
-                // Stop scheduling if we can't continue to the next day
-                break;
-            }
+            // Move to the next day and reset the time
+            currentDay = addDays(currentDay, 1);
+            currentDay.setHours(startHour, startMinute, 0, 0);
+            currentTime = new Date(currentDay);
         }
         
         slots.push({

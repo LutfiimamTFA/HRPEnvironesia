@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
@@ -171,8 +172,8 @@ export function ApplicantsPageClient({ applications }: { applications: JobApplic
             isOpen={isWizardOpen}
             onOpenChange={setIsWizardOpen}
             candidates={selectedApplications}
-            onSuccess={() => setSelection({ mode: 'none', selectedIds: new Set() })}
             recruiter={userProfile}
+            onSuccess={() => setSelection({ mode: 'none', selectedIds: new Set() })}
         />
       )}
     </div>

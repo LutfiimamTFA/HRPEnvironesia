@@ -71,25 +71,12 @@ export type ApplicationTimelineEvent = {
 };
 
 export type ApplicationInterview = {
-    id: string;
-    type: string; // e.g., 'HRD Screening', 'User Interview'
-    platform: 'zoom' | 'google_meet' | 'onsite';
-    meetingLink?: string;
     startAt: Timestamp;
     endAt: Timestamp;
-    timezone: string;
-    interviewerId: string;
-    createdAt: Timestamp;
+    meetingLink: string;
+    interviewerIds: string[];
+    interviewerNames: string[];
     status: 'scheduled' | 'completed' | 'canceled';
-};
-
-export type ApplicationOffer = {
-    status: 'draft' | 'sent' | 'negotiation' | 'accepted' | 'rejected' | 'expired';
-    sentAt?: Timestamp;
-    responseDueAt?: Timestamp;
-    acceptedAt?: Timestamp;
-    rejectedAt?: Timestamp;
-    offeredSalary?: number;
     notes?: string;
 };
 
@@ -97,18 +84,16 @@ export type JobApplication = {
   id?: string;
   // This is a mix of new and old fields. They need to be harmonized.
   // New ATS fields:
-  candidateId: string;
-  stage: ApplicationStage;
-  stageEnteredAt: Timestamp;
-  appliedAt: Timestamp;
-  lastActivityAt: Timestamp;
-  source: ApplicationSource;
-  assignedRecruiterId: string;
+  stage?: ApplicationStage;
+  stageEnteredAt?: Timestamp;
+  appliedAt?: Timestamp;
+  lastActivityAt?: Timestamp;
+  source?: ApplicationSource;
+  assignedRecruiterId?: string;
   scoreManual?: number; // 0-5
   scoreAssessment?: number; // 0-100
   tags?: string[];
   interviews?: ApplicationInterview[];
-  offer?: ApplicationOffer;
   timeline?: ApplicationTimelineEvent[];
   cvVerified?: boolean;
   ijazahVerified?: boolean;
@@ -118,7 +103,7 @@ export type JobApplication = {
   candidateEmail: string;
   candidatePhotoUrl?: string;
   jobPosition: string;
-  jobLocation: string;
+  jobLocation?: string;
 
   // Legacy fields for compatibility
   candidateUid: string;
@@ -137,6 +122,7 @@ export type JobApplication = {
   ijazahUrl?: string;
   cvFileName?: string;
   ijazahFileName?: string;
+  jobApplyDeadline?: Timestamp;
 
   // CV text extraction cache
   cvText?: string;
