@@ -8,11 +8,11 @@ export const statusDisplayLabels: Record<JobApplicationStatus, string> = {
     submitted: 'Lamaran Diterima',
     screening: 'Screening',
     tes_kepribadian: 'Tes Kepribadian',
-    document_submission: 'Pengumpulan Dokumen',
-    verification: 'Verifikasi Dokumen',
+    document_submission: 'Dokumen',
     interview: 'Wawancara',
     hired: 'Diterima Kerja',
     rejected: 'Ditolak',
+    verification: "Verifikasi Dokumen", // Fallback, should not be used
 };
 
 interface ApplicationStatusBadgeProps {

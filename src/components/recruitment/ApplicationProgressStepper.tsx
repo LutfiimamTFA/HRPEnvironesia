@@ -1,17 +1,17 @@
+
 'use client';
 
 import React from 'react';
 import { cn } from '@/lib/utils';
 import type { JobApplicationStatus } from '@/lib/types';
-import { Check, BrainCircuit, ClipboardCheck, Users, Award, FileUp, FileText, Search } from 'lucide-react';
+import { Check, BrainCircuit, Users, Award, FileUp, FileText, Search } from 'lucide-react';
 import { ORDERED_RECRUITMENT_STAGES } from '@/lib/types';
 
 const applicationSteps = [
   { status: 'submitted', label: 'Terkirim', icon: FileUp },
   { status: 'screening', label: 'Screening', icon: Search },
-  { status: 'tes_kepribadian', label: 'Tes Kepribadian', icon: BrainCircuit },
+  { status: 'tes_kepribadian', label: 'Tes', icon: BrainCircuit },
   { status: 'document_submission', label: 'Dokumen', icon: FileText },
-  { status: 'verification', label: 'Verifikasi', icon: ClipboardCheck },
   { status: 'interview', label: 'Wawancara', icon: Users },
   { status: 'hired', label: 'Diterima', icon: Award },
 ];
@@ -30,24 +30,16 @@ export function ApplicationProgressStepper({ currentStatus }: ApplicationProgres
 
   return (
     <div className="w-full overflow-x-auto pb-4">
-      <div className="flex items-center min-w-[800px]">
+      <div className="flex items-center min-w-[700px]">
         {applicationSteps.map((step, index) => {
-          // Find the index of the visual step in the canonical list
           const canonicalIndex = ORDERED_RECRUITMENT_STAGES.indexOf(step.status as JobApplicationStatus);
           
           const isActive = canonicalIndex === currentStepIndex;
           const isCompleted = !isRejected && currentStepIndex > canonicalIndex;
           
-          const StepContainer = 'div';
-          const containerProps = {
-            className: cn(
-              "flex flex-col items-center text-center w-24 flex-shrink-0 z-10 rounded-md p-1",
-            ),
-          };
-
           return (
             <React.Fragment key={step.status}>
-              <StepContainer {...containerProps}>
+              <div className="flex flex-col items-center text-center w-24 flex-shrink-0 z-10 rounded-md p-1">
                 <div
                   className={cn(
                     'h-10 w-10 rounded-full flex items-center justify-center border-2 transition-all duration-300',
@@ -66,7 +58,7 @@ export function ApplicationProgressStepper({ currentStatus }: ApplicationProgres
                 )}>
                   {step.label}
                 </p>
-              </StepContainer>
+              </div>
 
               {index < applicationSteps.length - 1 && (
                 <div className={cn(

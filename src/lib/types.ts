@@ -1,3 +1,4 @@
+
 import type { Timestamp } from 'firebase/firestore';
 
 export const ROLES = ['super-admin', 'hrd', 'manager', 'kandidat', 'karyawan'] as const;
@@ -52,7 +53,7 @@ export type Job = {
   updatedBy: string;
 };
 
-export const ORDERED_RECRUITMENT_STAGES = ['submitted', 'screening', 'tes_kepribadian', 'document_submission', 'verification', 'interview', 'hired', 'rejected'] as const;
+export const ORDERED_RECRUITMENT_STAGES = ['submitted', 'screening', 'tes_kepribadian', 'document_submission', 'interview', 'hired', 'rejected'] as const;
 export type JobApplicationStatus = (typeof ORDERED_RECRUITMENT_STAGES)[number];
 
 
@@ -206,8 +207,8 @@ export type Certification = {
     id: string;
     name: string;
     organization: string;
-    issueDate: string; // Storing as YYYY-MM string
-    expirationDate?: string; // Storing as YYYY-MM string
+    issueDate: string; // Storing as YYYY-MM
+    expirationDate?: string; // Storing as YYYY-MM
 }
 
 export type Address = {

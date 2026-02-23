@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
@@ -15,30 +16,17 @@ import { Link } from "@/navigation";
 import { ArrowRight, Check, Briefcase, Building, FileSignature, FileUp, ClipboardCheck, Users, Award, XCircle, BrainCircuit, FileText, Search } from "lucide-react";
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
-import { ORDERED_RECRUITMENT_STAGES } from '@/lib/types';
+import { ORDERED_RECRUITMENT_STAGES, statusDisplayLabels } from '@/lib/types';
 
 const visibleSteps = [
   { status: 'submitted', label: 'Terkirim', icon: FileUp },
   { status: 'screening', label: 'Screening', icon: Search },
   { status: 'tes_kepribadian', label: 'Tes', icon: BrainCircuit },
   { status: 'document_submission', label: 'Dokumen', icon: FileText },
-  { status: 'verification', label: 'Verifikasi', icon: ClipboardCheck },
   { status: 'interview', label: 'Wawancara', icon: Users },
   { status: 'hired', label: 'Diterima', icon: Award },
 ];
 
-
-const statusLabels: Record<JobApplicationStatus, string> = {
-  draft: 'Draf',
-  submitted: 'Lamaran Terkirim',
-  screening: 'Screening oleh HRD',
-  tes_kepribadian: 'Tahap Tes Kepribadian',
-  document_submission: 'Pengumpulan Dokumen',
-  verification: 'Dokumen Ditinjau',
-  interview: 'Tahap Wawancara',
-  rejected: 'Tidak Lolos',
-  hired: 'Diterima Kerja',
-};
 
 function ApplicationCard({ application }: { application: JobApplication }) {
   const [now, setNow] = useState(new Date());
@@ -59,6 +47,7 @@ function ApplicationCard({ application }: { application: JobApplication }) {
   
   const canContinue = application.status === 'draft';
   const canTakeTest = application.status === 'tes_kepribadian' && !isTestExpired;
+  const canSubmitDocuments = application.status === 'document_submission';
   
   const timelineSteps = useMemo(() => {
     if (isRejected) {
@@ -80,7 +69,7 @@ function ApplicationCard({ application }: { application: JobApplication }) {
                 </CardDescription>
             </div>
              <Badge variant={isRejected ? 'destructive' : isHired ? 'default' : 'secondary'} className={cn("w-fit", isHired && "bg-emerald-600 hover:bg-emerald-600")}>
-                {statusLabels[application.status]}
+                {statusDisplayLabels[application.status]}
             </Badge>
         </div>
       </CardHeader>
@@ -121,6 +110,7 @@ function ApplicationCard({ application }: { application: JobApplication }) {
                     )}>
                       {step.label}
                     </p>
+                     {isCompleted && <p className="text-xs text-green-600 font-semibold mt-0.5">Lolos</p>}
                   </div>
 
                   {step.status !== 'hired' && step.status !== 'rejected' && (
@@ -177,6 +167,13 @@ function ApplicationCard({ application }: { application: JobApplication }) {
             <Button asChild size="sm">
               <Link href={`/careers/portal/assessment/personality?applicationId=${application.id}`}>
                 Kerjakan Tes <BrainCircuit className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+          )}
+           {canSubmitDocuments && (
+            <Button asChild size="sm">
+              <Link href={`/careers/portal/documents`}>
+                Unggah Dokumen <FileText className="ml-2 h-4 w-4" />
               </Link>
             </Button>
           )}
