@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Query,
   onSnapshot,
@@ -8,6 +8,7 @@ import {
   FirestoreError,
   QuerySnapshot,
   CollectionReference,
+  getDocs,
 } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
@@ -23,6 +24,7 @@ export interface UseCollectionResult<T> {
   data: WithId<T>[] | null; // Document data with ID, or null.
   isLoading: boolean;       // True if loading.
   error: FirestoreError | Error | null; // Error object, or null.
+  mutate: () => void;
 }
 
 /* Internal implementation of Query:
@@ -60,6 +62,24 @@ export function useCollection<T = any>(
   const [data, setData] = useState<StateDataType>(null);
   const [isLoading, setIsLoading] = useState<boolean>(!!memoizedTargetRefOrQuery);
   const [error, setError] = useState<FirestoreError | Error | null>(null);
+
+  const fetchData = useCallback(async () => {
+    if (!memoizedTargetRefOrQuery) return;
+    setIsLoading(true);
+    try {
+      const querySnapshot = await getDocs(memoizedTargetRefOrQuery);
+      const results: ResultItemType[] = [];
+      for (const doc of querySnapshot.docs) {
+        results.push({ ...(doc.data() as T), id: doc.id });
+      }
+      setData(results);
+      setError(null);
+    } catch (e: any) {
+      setError(e);
+    } finally {
+        setIsLoading(false);
+    }
+  }, [memoizedTargetRefOrQuery]);
 
   useEffect(() => {
     if (!memoizedTargetRefOrQuery) {
@@ -116,5 +136,5 @@ export function useCollection<T = any>(
   if(memoizedTargetRefOrQuery && !memoizedTargetRefOrQuery.__memo) {
     throw new Error(memoizedTargetRefOrQuery + ' was not properly memoized using useMemoFirebase');
   }
-  return { data, isLoading, error };
+  return { data, isLoading, error, mutate: fetchData };
 }
