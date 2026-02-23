@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowLeft, Briefcase, Calendar, Mail, Phone, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from '@/components/ui/select';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { ProfileView } from '@/components/recruitment/ProfileView';
 import { ApplicationStatusBadge, APPLICATION_STATUSES, statusDisplayLabels } from '@/components/recruitment/ApplicationStatusBadge';
@@ -34,6 +34,21 @@ function StatusManager({ application }: { application: JobApplication }) {
   const [isUpdating, setIsUpdating] = useState(false);
   const firestore = useFirestore();
   const { toast } = useToast();
+
+  const statusGroups = [
+    {
+      label: 'Aplikasi Masuk',
+      statuses: ['draft', 'submitted']
+    },
+    {
+      label: 'Proses Seleksi',
+      statuses: ['tes_kepribadian', 'document_submission', 'verification', 'interview']
+    },
+    {
+      label: 'Keputusan Akhir',
+      statuses: ['hired', 'rejected']
+    }
+  ];
 
   const handleUpdate = async () => {
     setIsUpdating(true);
@@ -65,15 +80,20 @@ function StatusManager({ application }: { application: JobApplication }) {
           <SelectValue placeholder="Update status" />
         </SelectTrigger>
         <SelectContent>
-          {APPLICATION_STATUSES.map(status => (
-            <SelectItem key={status} value={status}>
-              {statusDisplayLabels[status]}
-            </SelectItem>
+          {statusGroups.map(group => (
+            <SelectGroup key={group.label}>
+                <SelectLabel>{group.label}</SelectLabel>
+                {group.statuses.map(status => (
+                    <SelectItem key={status} value={status}>
+                        {statusDisplayLabels[status as JobApplication['status']]}
+                    </SelectItem>
+                ))}
+            </SelectGroup>
           ))}
         </SelectContent>
       </Select>
       <Button onClick={handleUpdate} disabled={selectedStatus === application.status || isUpdating}>
-        {isUpdating ? 'Updating...' : 'Update'}
+        {isUpdating ? 'Updating...' : 'Update Status'}
       </Button>
     </div>
   );
