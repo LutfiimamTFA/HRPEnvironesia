@@ -6,9 +6,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { RotateCcw } from "lucide-react";
-import type { Job, UserProfile, Brand } from "@/lib/types";
+import type { Job, UserProfile, Brand, JobApplicationStatus } from "@/lib/types";
 import type { FilterState } from "./RecruitmentDashboardClient";
-import { APPLICATION_STATUSES, statusDisplayLabels } from './ApplicationStatusBadge';
+import { ORDERED_RECRUITMENT_STAGES } from '@/lib/types';
+import { statusDisplayLabels } from './ApplicationStatusBadge';
 import { GoogleDatePicker } from "../ui/google-date-picker";
 
 interface GlobalFilterBarProps {
@@ -40,11 +41,11 @@ export function GlobalFilterBar({ jobs, recruiters, brands, filters, setFilters 
   };
   
   const handleStageChange = (stage: string) => {
-    setFilters(prev => ({ ...prev, stages: stage === 'all' ? [] : [stage] }));
+    setFilters(prev => ({ ...prev, stages: stage === 'all' ? [] : [stage as JobApplicationStatus] }));
   };
 
   const handleReset = () => {
-    setFilters({ dateRange: {}, jobIds: [], recruiterIds: [], stages: [], brandId: undefined });
+    setFilters({ dateRange: { from: null, to: null }, jobIds: [], recruiterIds: [], stages: [], brandId: undefined });
   }
 
   return (
@@ -98,7 +99,7 @@ export function GlobalFilterBar({ jobs, recruiters, brands, filters, setFilters 
         </SelectTrigger>
         <SelectContent>
             <SelectItem value="all">All Stages</SelectItem>
-            {APPLICATION_STATUSES.map(stage => (
+            {ORDERED_RECRUITMENT_STAGES.map(stage => (
                 <SelectItem key={stage} value={stage}>{statusDisplayLabels[stage]}</SelectItem>
             ))}
         </SelectContent>
