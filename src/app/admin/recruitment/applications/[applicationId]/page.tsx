@@ -49,11 +49,6 @@ export default function ApplicationDetailPage() {
   const applicationId = params.applicationId as string;
   const [hasTriggeredAutoScreen, setHasTriggeredAutoScreen] = useState(false);
 
-  // State for manual stage change dialog
-  const [isStageChangeConfirmOpen, setIsStageChangeConfirmOpen] = useState(false);
-  const [targetStage, setTargetStage] = useState<JobApplication['status'] | null>(null);
-  const [isConfirmingStageChange, setIsConfirmingStageChange] = useState(false);
-
   const applicationRef = useMemoFirebase(
     () => (applicationId ? doc(firestore, 'applications', applicationId) : null),
     [firestore, applicationId]
@@ -116,23 +111,6 @@ export default function ApplicationDetailPage() {
         toast({ variant: 'destructive', title: 'Gagal Memperbarui', description: error.message });
         return false;
     }
-  };
-
-  const handleStepperClick = (stage: JobApplication['status']) => {
-    if (stage === application?.status) return;
-    setTargetStage(stage);
-    setIsStageChangeConfirmOpen(true);
-  };
-
-  const confirmManualStageChange = async () => {
-    if (!targetStage) return;
-    setIsConfirmingStageChange(true);
-    const success = await handleStageChange(targetStage, `Status diubah secara manual ke ${statusDisplayLabels[targetStage]}`);
-    if (success) {
-      setIsStageChangeConfirmOpen(false);
-      setTargetStage(null);
-    }
-    setIsConfirmingStageChange(false);
   };
 
   useEffect(() => {
@@ -223,7 +201,7 @@ export default function ApplicationDetailPage() {
             <CardContent className="border-t pt-6 space-y-6">
                 <h3 className="font-semibold text-lg">Applied for: {application.jobPosition}</h3>
                  {application.status !== 'rejected' ? (
-                  <ApplicationProgressStepper currentStatus={application.status} onStageClick={handleStepperClick} />
+                  <ApplicationProgressStepper currentStatus={application.status} />
                  ) : (
                     <div className="p-4 rounded-md border border-destructive/50 bg-destructive/10 text-destructive flex items-center gap-3">
                         <XCircle className="h-5 w-5" />
@@ -243,24 +221,6 @@ export default function ApplicationDetailPage() {
             </div>
           </div>
         </div>
-
-        <AlertDialog open={isStageChangeConfirmOpen} onOpenChange={setIsStageChangeConfirmOpen}>
-            <AlertDialogContent>
-                <AlertDialogHeader>
-                    <AlertDialogTitle>Konfirmasi Perubahan Tahap</AlertDialogTitle>
-                    <AlertDialogDescription>
-                        Anda yakin ingin mengubah status kandidat ini ke tahap "{targetStage ? statusDisplayLabels[targetStage] : ''}"? Tindakan ini akan tercatat.
-                    </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                    <AlertDialogCancel>Batal</AlertDialogCancel>
-                    <AlertDialogAction onClick={confirmManualStageChange} disabled={isConfirmingStageChange}>
-                        {isConfirmingStageChange && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        Konfirmasi
-                    </AlertDialogAction>
-                </AlertDialogFooter>
-            </AlertDialogContent>
-        </AlertDialog>
         </>
       )}
     </DashboardLayout>

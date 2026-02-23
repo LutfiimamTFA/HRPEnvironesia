@@ -17,10 +17,9 @@ const applicationSteps = [
 
 interface ApplicationProgressStepperProps {
   currentStatus: JobApplication['status'];
-  onStageClick?: (stage: JobApplication['status']) => void;
 }
 
-export function ApplicationProgressStepper({ currentStatus, onStageClick }: ApplicationProgressStepperProps) {
+export function ApplicationProgressStepper({ currentStatus }: ApplicationProgressStepperProps) {
   const currentStepIndex = applicationSteps.findIndex(step => step.status === currentStatus);
   const isRejected = currentStatus === 'rejected';
 
@@ -34,15 +33,12 @@ export function ApplicationProgressStepper({ currentStatus, onStageClick }: Appl
         {applicationSteps.map((step, index) => {
           const isActive = index === currentStepIndex;
           const isCompleted = !isRejected && currentStepIndex > index;
-          const isClickable = onStageClick && !isActive;
           
-          const StepContainer = isClickable ? 'button' : 'div';
+          const StepContainer = 'div';
           const containerProps = {
             className: cn(
               "flex flex-col items-center text-center w-24 flex-shrink-0 z-10 rounded-md p-1",
-              isClickable && "cursor-pointer transition-colors hover:bg-muted"
             ),
-            onClick: isClickable ? () => onStageClick(step.status as JobApplication['status']) : undefined,
           };
 
           return (

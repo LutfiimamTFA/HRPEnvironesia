@@ -14,10 +14,11 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { ArrowRight, ThumbsDown, Check, MoreVertical, Loader2 } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
+import { ThumbsDown, MoreVertical, Loader2, ChevronDown } from 'lucide-react';
 import type { JobApplication } from '@/lib/types';
-import { statusDisplayLabels } from './ApplicationStatusBadge';
+import { APPLICATION_STAGES, statusDisplayLabels } from './ApplicationStatusBadge';
+import { cn } from '@/lib/utils';
 
 interface ApplicationActionBarProps {
   application: JobApplication;
@@ -27,7 +28,7 @@ interface ApplicationActionBarProps {
 interface StageAction {
   stage: JobApplication['status'];
   label: string;
-  icon: React.ReactNode;
+  icon?: React.ReactNode;
   reasonRequired?: boolean;
   variant?: 'default' | 'destructive';
 }
@@ -41,9 +42,6 @@ export function ApplicationActionBar({ application, onStageChange }: Application
   const handleActionClick = (action: StageAction) => {
     setSelectedAction(action);
     setReason('');
-    // For actions that need a reason, always open the dialog.
-    // For actions that don't, we can consider confirming directly or still use a simpler dialog.
-    // For consistency, we'll use the dialog for all state changes that need confirmation.
     setDialogOpen(true);
   };
 
@@ -58,33 +56,7 @@ export function ApplicationActionBar({ application, onStageChange }: Application
     setIsUpdating(false);
   };
 
-  const nextStageMap: Partial<Record<JobApplication['status'], JobApplication['status']>> = {
-    submitted: 'screening',
-    screening: 'tes_kepribadian',
-    tes_kepribadian: 'document_submission',
-    document_submission: 'verification',
-    verification: 'interview',
-    interview: 'hired',
-  };
-
-  const primaryAction: StageAction | null = nextStageMap[application.status]
-    ? {
-        stage: nextStageMap[application.status]!,
-        label: `Pindah ke ${statusDisplayLabels[nextStageMap[application.status]!]}`,
-        icon: <ArrowRight className="mr-2 h-4 w-4" />,
-        reasonRequired: false,
-      }
-    : application.status !== 'hired' && application.status !== 'rejected' 
-    ? {
-        stage: 'hired',
-        label: 'Terima Kandidat',
-        icon: <Check className="mr-2 h-4 w-4" />,
-        reasonRequired: true,
-        variant: 'default',
-    }
-    : null;
-
-  const secondaryActions: StageAction[] = [
+  const otherActions: StageAction[] = [
     {
       stage: 'rejected',
       label: 'Tolak Kandidat',
@@ -92,21 +64,41 @@ export function ApplicationActionBar({ application, onStageChange }: Application
       reasonRequired: true,
       variant: 'destructive',
     },
-    // Future actions like 'On Hold' can be added here
   ];
+
+  const currentStageIndex = APPLICATION_STAGES.indexOf(application.status);
   
   if (application.status === 'hired' || application.status === 'rejected') {
-      return null; // No actions for completed applications
+      return null;
   }
 
   return (
     <div className="flex items-center gap-2">
-      {primaryAction && (
-        <Button onClick={() => handleActionClick(primaryAction)} disabled={isUpdating} className={primaryAction.stage === 'hired' ? 'bg-green-600 hover:bg-green-700' : ''}>
-          {primaryAction.icon}
-          {primaryAction.label}
-        </Button>
-      )}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button>
+            Ubah Tahap
+            <ChevronDown className="ml-2 h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuLabel>Pindahkan kandidat ke...</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          {APPLICATION_STAGES.filter(s => s !== 'draft').map((stage, index) => {
+            const isCurrent = application.status === stage;
+            const isNext = index === currentStageIndex + 1;
+            return (
+              <DropdownMenuItem 
+                key={stage} 
+                disabled={isCurrent}
+                onSelect={() => handleActionClick({ stage, label: `Pindah ke ${statusDisplayLabels[stage]}`})}
+              >
+                <span className={cn(isNext && "font-bold")}>{statusDisplayLabels[stage]}</span>
+              </DropdownMenuItem>
+            )
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -116,7 +108,7 @@ export function ApplicationActionBar({ application, onStageChange }: Application
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          {secondaryActions.map((action) => (
+          {otherActions.map((action) => (
             <DropdownMenuItem
               key={action.stage}
               onClick={() => handleActionClick(action)}
