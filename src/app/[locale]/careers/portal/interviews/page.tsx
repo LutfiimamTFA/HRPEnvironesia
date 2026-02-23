@@ -22,10 +22,13 @@ interface EnrichedInterview extends ApplicationInterview {
 
 function InterviewCard({ interview, onMutate }: { interview: EnrichedInterview, onMutate: () => void }) {
     const isUpcoming = interview.startAt.toDate() > new Date();
-    const isRescheduleRequested = interview.status === 'reschedule_requested';
     const [isRescheduleDialogOpen, setIsRescheduleDialogOpen] = useState(false);
     
     const rescheduleStatus = interview.rescheduleRequest?.status;
+
+    // Show reschedule button if the interview is upcoming AND there is no pending request.
+    // A denied request allows the user to request again.
+    const showRescheduleButton = isUpcoming && (rescheduleStatus !== 'pending' && rescheduleStatus !== 'countered');
 
     return (
         <>
@@ -68,7 +71,7 @@ function InterviewCard({ interview, onMutate }: { interview: EnrichedInterview, 
                         </div>
                     )}
                     <div className="flex justify-end items-center gap-2 flex-wrap pt-4">
-                        {isUpcoming && !isRescheduleRequested && (
+                        {showRescheduleButton && (
                             <Button onClick={() => setIsRescheduleDialogOpen(true)} variant="outline" size="sm">
                                 <RefreshCw className="mr-2 h-4 w-4" />
                                 Minta Jadwal Ulang
