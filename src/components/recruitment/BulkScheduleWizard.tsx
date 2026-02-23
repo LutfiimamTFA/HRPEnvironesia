@@ -86,7 +86,7 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
 
   const panelistOptions = useMemo(() => {
     if (!internalUsers) return [];
-    return internalUsers.map(u => ({ value: u.uid, label: u.fullName }));
+    return internalUsers.map(u => ({ value: u.uid, label: `${u.fullName} (${u.email})` }));
   }, [internalUsers]);
 
   useEffect(() => {
@@ -104,7 +104,7 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
       slotDuration: 30,
       buffer: 10,
       workdayEndTime: '17:00',
-      panelists: recruiter ? [{ value: recruiter.uid, label: recruiter.fullName }] : [],
+      panelists: recruiter ? [{ value: recruiter.uid, label: `${recruiter.fullName} (${recruiter.email})` }] : [],
       meetingLink: '',
     },
   });

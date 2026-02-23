@@ -48,7 +48,7 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
 
   const panelistOptions = useMemo(() => {
     if (!internalUsers) return [];
-    return internalUsers.map(u => ({ value: u.uid, label: u.fullName }));
+    return internalUsers.map(u => ({ value: u.uid, label: `${u.fullName} (${u.email})` }));
   }, [internalUsers]);
 
   const form = useForm<ScheduleInterviewData>({
@@ -57,7 +57,7 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
 
   useEffect(() => {
     if (open) {
-      const defaultPanelists = recruiter ? [{ value: recruiter.uid, label: recruiter.fullName }] : [];
+      const defaultPanelists = recruiter ? [{ value: recruiter.uid, label: `${recruiter.fullName} (${recruiter.email})` }] : [];
       form.reset({
         dateTime: initialData?.dateTime,
         duration: initialData?.duration || 30,
