@@ -1,8 +1,8 @@
 'use server';
 
 import type { JobApplication } from '@/lib/types';
-import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import admin from '@/lib/firebase/admin';
+import { Timestamp } from 'firebase-admin/firestore';
 import pdf from 'pdf-parse';
 import { Readable } from 'stream';
 
@@ -21,7 +21,7 @@ const CACHE_STALE_DAYS = 30;
  */
 export async function extractCvText(application: JobApplication): Promise<{ cvText: string; source: string; charCount: number; fileName: string; }> {
     const db = admin.firestore();
-    const appRef = doc(db, 'applications', application.id!);
+    const appRef = db.collection('applications').doc(application.id!);
     
     // 1. Check for fresh cache
     if (application.cvText && application.cvTextExtractedAt) {
@@ -80,10 +80,10 @@ export async function extractCvText(application: JobApplication): Promise<{ cvTe
         cvText,
         cvTextSource: source,
         cvCharCount: cvText.length,
-        cvTextExtractedAt: serverTimestamp(),
+        cvTextExtractedAt: Timestamp.now(),
     };
 
-    updateDoc(appRef, cacheData).catch(err => {
+    appRef.update(cacheData).catch(err => {
         console.error(`Failed to cache CV text for application ${application.id}:`, err);
     });
 
