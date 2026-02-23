@@ -17,7 +17,7 @@ import { Label } from '@/components/ui/label';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { ThumbsDown, MoreVertical, Loader2, ChevronDown } from 'lucide-react';
 import type { JobApplication } from '@/lib/types';
-import { APPLICATION_STAGES, statusDisplayLabels } from './ApplicationStatusBadge';
+import { APPLICATION_STATUSES, statusDisplayLabels } from './ApplicationStatusBadge';
 import { cn } from '@/lib/utils';
 
 interface ApplicationActionBarProps {
@@ -66,7 +66,7 @@ export function ApplicationActionBar({ application, onStageChange }: Application
     },
   ];
 
-  const currentStageIndex = APPLICATION_STAGES.indexOf(application.status);
+  const currentStageIndex = APPLICATION_STATUSES.indexOf(application.status);
   
   if (application.status === 'hired' || application.status === 'rejected') {
       return null;
@@ -84,7 +84,7 @@ export function ApplicationActionBar({ application, onStageChange }: Application
         <DropdownMenuContent>
           <DropdownMenuLabel>Pindahkan kandidat ke...</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          {APPLICATION_STAGES.filter(s => s !== 'draft').map((stage, index) => {
+          {APPLICATION_STATUSES.filter(s => s !== 'draft').map((stage, index) => {
             const isCurrent = application.status === stage;
             const isNext = index === currentStageIndex + 1;
             return (
