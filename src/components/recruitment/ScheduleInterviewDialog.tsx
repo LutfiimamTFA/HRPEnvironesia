@@ -70,9 +70,7 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
 
   const handleSubmit = async (values: ScheduleInterviewData) => {
     setIsSaving(true);
-    // Combine names from panelists for the confirmation data
-    const panelistNames = values.panelists.map(p => p.label);
-    const success = await onConfirm({...values, interviewerNames: panelistNames.join(', ')} as any);
+    const success = await onConfirm(values);
     setIsSaving(false);
     if (success) {
       onOpenChange(false);

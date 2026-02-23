@@ -53,7 +53,7 @@ function InterviewCard({ interview }: { interview: EnrichedInterview }) {
                     <Users className="h-5 w-5 mt-0.5 text-primary" />
                     <div>
                         <p className="font-semibold">Pewawancara</p>
-                        <p>{interview.panelistNames.join(', ')}</p>
+                        <p>{(interview.panelistNames || interview.interviewerNames || []).join(', ')}</p>
                     </div>
                 </div>
             </CardContent>
@@ -100,7 +100,7 @@ export default function MyInterviewsPage() {
 
     const interviewsQuery = useMemoFirebase(() => {
         if (!userProfile) return null;
-        // HRD and Super Admins see all interviews
+        // HRD and Super Admins see all interviews with status 'interview'
         if (['super-admin', 'hrd'].includes(userProfile.role)) {
             return query(
                 collection(firestore, 'applications'),
@@ -123,8 +123,9 @@ export default function MyInterviewsPage() {
         applications.forEach(app => {
             if (app.interviews) {
                 app.interviews.forEach(interview => {
-                    // Filter again on the client for non-HR roles to be extra sure
-                    if (['super-admin', 'hrd'].includes(userProfile.role) || (interview.panelistIds && interview.panelistIds.includes(userProfile.uid))) {
+                    const isPanelist = (interview.panelistIds && interview.panelistIds.includes(userProfile.uid)) || (interview.interviewerIds && interview.interviewerIds.includes(userProfile.uid));
+
+                    if (['super-admin', 'hrd'].includes(userProfile.role) || isPanelist) {
                         if (interview.status === 'scheduled' || interview.status === 'reschedule_requested' || interview.status === 'completed') {
                             interviews.push({ ...interview, application: app });
                         }

@@ -56,6 +56,9 @@ function InterviewManagement({ application, onUpdate }: { application: JobApplic
     const newTimeline = [...(application.timeline || [])];
     
     try {
+        const panelistIds = data.panelists.map(p => p.value);
+        const panelistNames = data.panelists.map(p => p.label);
+
         if (activeInterview && !activeInterview.rescheduleRequest) { // Pure Edit
             const index = newInterviews.findIndex(iv => iv.interviewId === activeInterview.interviewId);
             if (index !== -1) {
@@ -63,7 +66,8 @@ function InterviewManagement({ application, onUpdate }: { application: JobApplic
                     ...newInterviews[index],
                     startAt: Timestamp.fromDate(data.dateTime),
                     endAt: Timestamp.fromDate(add(data.dateTime, { minutes: data.duration })),
-                    interviewerNames: data.interviewerNames.split(',').map(s => s.trim()),
+                    panelistIds: panelistIds,
+                    panelistNames: panelistNames,
                     meetingLink: data.meetingLink,
                     notes: data.notes,
                 };
@@ -73,7 +77,15 @@ function InterviewManagement({ application, onUpdate }: { application: JobApplic
                     by: userProfile.uid,
                     meta: { note: `Jadwal wawancara diperbarui oleh HRD.` },
                 });
-                await updateDoc(doc(firestore, 'applications', application.id!), { interviews: newInterviews, timeline: newTimeline });
+
+                const allPanelistIds = new Set<string>();
+                newInterviews.forEach(iv => {
+                    if (iv.status === 'scheduled') {
+                        iv.panelistIds.forEach(id => allPanelistIds.add(id));
+                    }
+                });
+
+                await updateDoc(doc(firestore, 'applications', application.id!), { interviews: newInterviews, timeline: newTimeline, allPanelistIds: Array.from(allPanelistIds) });
                 toast({ title: 'Wawancara Diperbarui' });
             } else {
                  throw new Error("Wawancara yang akan diedit tidak ditemukan.");
@@ -94,8 +106,8 @@ function InterviewManagement({ application, onUpdate }: { application: JobApplic
                 interviewId: crypto.randomUUID(),
                 startAt: Timestamp.fromDate(data.dateTime),
                 endAt: Timestamp.fromDate(add(data.dateTime, { minutes: data.duration })),
-                interviewerIds: [], // TODO: Link to user IDs from a multi-select component
-                interviewerNames: data.interviewerNames.split(',').map(s => s.trim()),
+                panelistIds: panelistIds,
+                panelistNames: panelistNames,
                 status: 'scheduled',
                 meetingLink: data.meetingLink,
                 notes: data.notes,
@@ -108,7 +120,10 @@ function InterviewManagement({ application, onUpdate }: { application: JobApplic
                 by: userProfile.uid,
                 meta: { interviewDate: Timestamp.fromDate(data.dateTime) }
             });
-            await updateDoc(doc(firestore, 'applications', application.id!), { interviews: newInterviews, timeline: newTimeline });
+            const allPanelistIds = new Set<string>(application.allPanelistIds || []);
+            panelistIds.forEach(id => allPanelistIds.add(id));
+
+            await updateDoc(doc(firestore, 'applications', application.id!), { interviews: newInterviews, timeline: newTimeline, allPanelistIds: Array.from(allPanelistIds) });
             toast({ title: activeInterview ? 'Jadwal Baru Diajukan' : 'Wawancara Dijadwalkan' });
         }
         
@@ -219,7 +234,7 @@ function InterviewManagement({ application, onUpdate }: { application: JobApplic
                         <div className="flex justify-between items-start">
                             <div>
                                 <p className="font-semibold">{format(iv.startAt.toDate(), 'eeee, dd MMM yyyy, HH:mm', { locale: idLocale })}</p>
-                                <p className="text-sm text-muted-foreground">Pewawancara: {iv.interviewerNames.join(', ')}</p>
+                                <p className="text-sm text-muted-foreground">Pewawancara: {(iv.panelistNames || iv.interviewerNames || []).join(', ')}</p>
                             </div>
                             <div className="flex items-center gap-2">
                                 <Button variant="ghost" size="sm" onClick={() => handleOpenScheduleDialog(iv)}>
@@ -264,11 +279,12 @@ function InterviewManagement({ application, onUpdate }: { application: JobApplic
         onOpenChange={setScheduleDialogOpen}
         onConfirm={handleConfirmSchedule}
         candidateName={application.candidateName}
+        recruiter={userProfile!}
         initialData={activeInterview ? {
             dateTime: activeInterview.startAt.toDate(),
             duration: differenceInMinutes(activeInterview.endAt.toDate(), activeInterview.startAt.toDate()),
             meetingLink: activeInterview.meetingLink,
-            interviewerNames: activeInterview.interviewerNames.join(', '),
+            panelists: activeInterview.panelistIds?.map((id, index) => ({ value: id, label: (activeInterview.panelistNames || [])[index] || id })) || [],
             notes: activeInterview.notes,
         } : undefined}
       />
