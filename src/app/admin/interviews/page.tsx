@@ -27,11 +27,11 @@ function InterviewCard({ interview }: { interview: EnrichedInterview }) {
     const isUpcoming = interview.startAt.toDate() > new Date();
 
     return (
-        <Card>
+        <Card className="flex flex-col">
             <CardHeader>
                 <div className="flex justify-between items-start gap-4">
                     <div>
-                        <CardTitle>{interview.application.candidateName}</CardTitle>
+                        <CardTitle className="text-lg">{interview.application.candidateName}</CardTitle>
                         <CardDescription>{interview.application.jobPosition}</CardDescription>
                     </div>
                     {isUpcoming ? (
@@ -41,7 +41,7 @@ function InterviewCard({ interview }: { interview: EnrichedInterview }) {
                     )}
                 </div>
             </CardHeader>
-            <CardContent className="space-y-3 text-sm">
+            <CardContent className="space-y-3 text-sm flex-grow">
                 <div className="flex items-start gap-3">
                     <Calendar className="h-5 w-5 mt-0.5 text-primary" />
                     <div>
@@ -84,7 +84,8 @@ function InterviewsPageSkeleton() {
                 <Skeleton className="h-8 w-64" />
                 <Skeleton className="h-5 w-80" />
             </div>
-            <div className="grid md:grid-cols-2 gap-4">
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <Skeleton className="h-48 w-full" />
                 <Skeleton className="h-48 w-full" />
                 <Skeleton className="h-48 w-full" />
             </div>

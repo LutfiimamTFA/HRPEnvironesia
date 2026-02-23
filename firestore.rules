@@ -133,7 +133,7 @@ service cloud.firestore {
     match /jobs/{jobId} {
       allow list: if true;
       allow get: if resource.data.publishStatus == "published" || isInternal();
-      allow write: if isInternal() && getUserData().role in ['super_admin', 'hrd'];
+      allow write: if isInternal() && getUserData().role in ['super-admin', 'hrd'];
     }
 
     /**
@@ -147,9 +147,8 @@ service cloud.firestore {
         // runs on each document in the result set.
         allow list: if isSignedIn();
 
-        // GET: Allow if internal, or if the document doesn't exist, or if the user is the owner.
-        // This allows checking for a document's existence without causing a permission error.
-        allow get: if isInternal() || !exists(/databases/$(database)/documents/applications/$(applicationId)) || resource.data.candidateUid == request.auth.uid;
+        // GET: Allow if the user is an admin, the document owner, or an assigned panelist.
+        allow get: if isInternal() || !exists(/databases/$(database)/documents/applications/$(applicationId)) || resource.data.candidateUid == request.auth.uid || request.auth.uid in resource.data.allPanelistIds;
 
         // CREATE: A user can create an application only if they are the owner.
         allow create: if isCreatingOwn() && (request.resource.data.status == "draft" || request.resource.data.status == "submitted");
@@ -198,7 +197,7 @@ service cloud.firestore {
         }
         function isInternalStatusUpdate() {
             let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
-            let allowedKeys = ['status', 'updatedAt', 'personalityTestAssignedAt', 'cvVerified', 'ijazahVerified', 'timeline', 'interviews'];
+            let allowedKeys = ['status', 'updatedAt', 'personalityTestAssignedAt', 'cvVerified', 'ijazahVerified', 'timeline', 'interviews', 'allPanelistIds'];
             return isInternal() && changedKeys.hasOnly(allowedKeys);
         }
         function isRequestingReschedule() {
@@ -278,4 +277,3 @@ service cloud.firestore {
     }
   }
 }
-    
