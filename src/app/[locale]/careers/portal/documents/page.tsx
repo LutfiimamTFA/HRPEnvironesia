@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useMemo, useState, useCallback, ChangeEvent, useEffect } from 'react';
@@ -190,7 +189,7 @@ export default function DocumentsPage() {
     return query(
       collection(firestore, 'applications'),
       where('candidateUid', '==', userProfile.uid),
-      where('status', 'in', ['document_submission', 'verification', 'interview', 'hired'])
+      where('status', 'in', ['document_submission', 'interview', 'hired'])
     );
   }, [userProfile?.uid, firestore]);
 
@@ -198,12 +197,12 @@ export default function DocumentsPage() {
   const isLoading = authLoading || appsLoading;
 
   const applicationsForEditing = useMemo(() => 
-    applications?.filter(app => ['document_submission', 'verification'].includes(app.status)) || [], 
+    applications?.filter(app => ['document_submission', 'interview'].includes(app.status)) || [], 
     [applications]
   );
   
   const applicationsReadOnly = useMemo(() => 
-    applications?.filter(app => ['interview', 'hired'].includes(app.status)) || [],
+    applications?.filter(app => ['hired'].includes(app.status)) || [],
     [applications]
   );
 
@@ -239,7 +238,7 @@ export default function DocumentsPage() {
     };
 
     if (isFirstSubmission) {
-      updatePayload.status = 'verification';
+      updatePayload.status = 'interview';
     }
 
     applicationsForEditing.forEach(app => {
@@ -251,7 +250,7 @@ export default function DocumentsPage() {
       await batch.commit();
       toast({
         title: isFirstSubmission ? "Dokumen Berhasil Dikirim" : "Dokumen Diperbarui",
-        description: isFirstSubmission ? "Dokumen Anda akan diverifikasi oleh tim HRD." : "Perubahan dokumen Anda telah disimpan.",
+        description: isFirstSubmission ? "Selamat, Anda lolos ke tahap wawancara!" : "Perubahan dokumen Anda telah disimpan.",
       });
       // The useCollection hook will update automatically
     } catch (error: any) {
