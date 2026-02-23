@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
@@ -16,7 +15,8 @@ import { Link } from "@/navigation";
 import { ArrowRight, Check, Briefcase, Building, FileSignature, FileUp, ClipboardCheck, Users, Award, XCircle, BrainCircuit, FileText, Search } from "lucide-react";
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
-import { ORDERED_RECRUITMENT_STAGES, statusDisplayLabels } from '@/lib/types';
+import { ORDERED_RECRUITMENT_STAGES } from '@/lib/types';
+import { statusDisplayLabels } from '@/components/recruitment/ApplicationStatusBadge';
 
 const visibleSteps = [
   { status: 'submitted', label: 'Terkirim', icon: FileUp },
