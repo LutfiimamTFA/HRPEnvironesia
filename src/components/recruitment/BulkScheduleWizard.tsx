@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
@@ -183,7 +182,7 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
         return (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">Seret dan lepas untuk mengatur urutan wawancara. Kandidat di urutan atas akan dijadwalkan lebih awal.</p>
-            <ScrollArea className="h-96 w-full rounded-md border p-2">
+            <div className="w-full rounded-md border p-2">
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                     <SortableContext items={orderedCandidates.map(c => c.id!)} strategy={verticalListSortingStrategy}>
                         <div className="space-y-2">
@@ -193,7 +192,7 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
                         </div>
                     </SortableContext>
                 </DndContext>
-            </ScrollArea>
+            </div>
           </div>
         );
       case 2: // Configure Schedule
@@ -226,19 +225,21 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
                         </AlertDescription>
                     </Alert>
                 )}
-                <ScrollArea className="h-96">
-                    <div className="space-y-2">
-                        {generatedSlots.map(slot => (
-                            <div key={slot.candidate.id} className="flex items-center gap-3 p-2 rounded-md bg-background border">
-                                <Avatar className="h-9 w-9"><AvatarFallback>{getInitials(slot.candidate.candidateName)}</AvatarFallback></Avatar>
-                                <div className="flex-grow">
-                                    <p className="font-medium text-sm">{slot.candidate.candidateName}</p>
-                                    <p className="text-xs text-primary">{format(slot.startAt, 'dd MMM, HH:mm')} - {format(slot.endAt, 'HH:mm')}</p>
+                <div className="rounded-md border">
+                    <ScrollArea className="h-96">
+                        <div className="space-y-2 p-2">
+                            {generatedSlots.map(slot => (
+                                <div key={slot.candidate.id} className="flex items-center gap-3 p-2 rounded-md bg-background border">
+                                    <Avatar className="h-9 w-9"><AvatarFallback>{getInitials(slot.candidate.candidateName)}</AvatarFallback></Avatar>
+                                    <div className="flex-grow">
+                                        <p className="font-medium text-sm">{slot.candidate.candidateName}</p>
+                                        <p className="text-xs text-primary">{format(slot.startAt, 'dd MMM, HH:mm')} - {format(slot.endAt, 'HH:mm')}</p>
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
-                    </div>
-                </ScrollArea>
+                            ))}
+                        </div>
+                    </ScrollArea>
+                </div>
             </div>
         );
       default:
@@ -248,7 +249,7 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Jadwalkan Wawancara Massal ({step}/3)</DialogTitle>
           <DialogDescription>
@@ -260,9 +261,9 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
           </DialogDescription>
         </DialogHeader>
         
-        <div className="py-4">{renderStepContent()}</div>
+        <div className="flex-grow py-4 overflow-y-auto -mx-6 px-6">{renderStepContent()}</div>
 
-        <DialogFooter className="justify-between">
+        <DialogFooter className="flex-shrink-0 justify-between border-t pt-4">
             <div>
               {step > 1 && <Button variant="ghost" onClick={() => setStep(s => s - 1)}><ArrowLeft className="mr-2 h-4 w-4" /> Kembali</Button>}
             </div>
@@ -277,4 +278,3 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
     </Dialog>
   );
 }
-
