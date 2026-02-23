@@ -112,8 +112,13 @@ export function ApplicantsPageClient({ applications }: { applications: JobApplic
             <TableRow>
               <TableHead className="w-[50px]">
                 <Checkbox
-                  checked={selection.mode === 'all'}
-                  indeterminate={selection.mode === 'some'}
+                  checked={
+                    selection.mode === 'all'
+                      ? true
+                      : selection.mode === 'some'
+                      ? 'indeterminate'
+                      : false
+                  }
                   onCheckedChange={handleSelectAll}
                   aria-label="Select all"
                 />
