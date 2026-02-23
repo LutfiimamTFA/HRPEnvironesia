@@ -1,36 +1,19 @@
-
 'use client';
 
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuGroup } from '@/components/ui/dropdown-menu';
 import { Check, MoreVertical, Loader2, ThumbsDown } from 'lucide-react';
 import type { JobApplication } from '@/lib/types';
-import { statusDisplayLabels } from './ApplicationStatusBadge';
+import { APPLICATION_STATUSES, statusDisplayLabels } from './ApplicationStatusBadge';
 import { cn } from '@/lib/utils';
-
-interface StageAction {
-  stage: JobApplication['status'];
-  label: string;
-  icon?: React.ReactNode;
-  variant?: 'default' | 'destructive';
-}
+import { StageChangeDialog } from './StageChangeDialog';
+import { ScheduleInterviewDialog, type ScheduleInterviewData } from './ScheduleInterviewDialog';
 
 interface ApplicationActionBarProps {
   application: JobApplication;
   onStageChange: (newStage: JobApplication['status'], reason: string) => Promise<boolean>;
+  onScheduleInterview: (data: ScheduleInterviewData) => Promise<boolean>;
 }
 
 // Ordered list of stages for logical progression
@@ -54,128 +37,105 @@ const getStageActions = (currentStatus: JobApplication['status']) => {
 
     const nextLogicalStage = orderedStages[currentIndex + 1];
 
-    const primaryAction: StageAction | null = nextLogicalStage ? {
-        stage: nextLogicalStage,
-        label: `Lolos ke ${statusDisplayLabels[nextLogicalStage]}`,
-        variant: 'default',
-        icon: <Check className="mr-2 h-4 w-4" />,
-    } : null;
+    const primaryAction: JobApplication['status'] | null = nextLogicalStage;
 
-    // All other stages, plus 'rejected'
-    const otherActions: StageAction[] = orderedStages
-        .filter(stage => stage !== currentStatus && stage !== nextLogicalStage)
-        .map(stage => ({
-            stage,
-            label: `Pindah ke ${statusDisplayLabels[stage]}`,
-            variant: 'default',
-        }));
+    const otherActions: JobApplication['status'][] = orderedStages
+        .filter(stage => stage !== currentStatus && stage !== nextLogicalStage);
         
-    otherActions.push({
-        stage: 'rejected',
-        label: 'Tolak Kandidat',
-        variant: 'destructive',
-        icon: <ThumbsDown className="mr-2 h-4 w-4" />
-    });
-    
     return { primaryAction, otherActions };
 }
 
+export function ApplicationActionBar({ application, onStageChange, onScheduleInterview }: ApplicationActionBarProps) {
+  const [stageChangeDialogOpen, setStageChangeDialogOpen] = useState(false);
+  const [interviewDialogOpen, setInterviewDialogOpen] = useState(false);
+  const [targetStage, setTargetStage] = useState<JobApplication['status'] | null>(null);
 
-export function ApplicationActionBar({ application, onStageChange }: ApplicationActionBarProps) {
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedAction, setSelectedAction] = useState<StageAction | null>(null);
-  const [reason, setReason] = useState('');
-  const [isUpdating, setIsUpdating] = useState(false);
-
-  const handleActionClick = (action: StageAction) => {
-    setSelectedAction(action);
-    setReason('');
-    setDialogOpen(true);
+  const handleActionClick = (stage: JobApplication['status']) => {
+    setTargetStage(stage);
+    if (stage === 'interview') {
+        setInterviewDialogOpen(true);
+    } else {
+        setStageChangeDialogOpen(true);
+    }
   };
 
-  const handleConfirm = async () => {
-    if (!selectedAction) return;
-    setIsUpdating(true);
-    const success = await onStageChange(selectedAction.stage, reason);
-    if (success) {
-      setDialogOpen(false);
-      setSelectedAction(null);
-    }
-    setIsUpdating(false);
+  const handleConfirmStageChange = async (reason: string) => {
+    if (!targetStage) return;
+    await onStageChange(targetStage, reason);
+    setStageChangeDialogOpen(false);
+    setTargetStage(null);
+  };
+  
+  const handleConfirmInterviewSchedule = async (data: ScheduleInterviewData) => {
+    await onScheduleInterview(data);
+    setInterviewDialogOpen(false);
+    setTargetStage(null);
   };
 
   const { primaryAction, otherActions } = getStageActions(application.status);
-
-  if (!primaryAction && otherActions.length === 0) {
-      return null;
-  }
+  
+  const finalStageActions = ['hired', 'rejected'];
+  const backAndSkipActions = otherActions.filter(stage => !finalStageActions.includes(stage));
 
   return (
-    <div className="flex items-center gap-2">
-      {primaryAction && (
-        <Button onClick={() => handleActionClick(primaryAction)}>
-          {primaryAction.icon}
-          {primaryAction.label}
-        </Button>
-      )}
+    <>
+      <div className="flex items-center gap-2">
+        {primaryAction && (
+          <Button onClick={() => handleActionClick(primaryAction)}>
+            <Check className="mr-2 h-4 w-4" />
+            {`Lolos ke ${statusDisplayLabels[primaryAction]}`}
+          </Button>
+        )}
 
-      {otherActions.length > 0 && (
-          <DropdownMenu>
+        <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" className="h-10 w-10">
+                <Button variant="outline" size="icon" className="h-10 w-10">
                 <MoreVertical className="h-4 w-4" />
                 <span className="sr-only">Tindakan Lain</span>
-              </Button>
+                </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Tindakan Lain</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {otherActions.map(action => (
-                <DropdownMenuItem
-                  key={action.stage}
-                  onSelect={() => handleActionClick(action)}
-                  className={cn(
-                    "cursor-pointer",
-                    action.variant === 'destructive' && "text-destructive focus:text-destructive"
-                  )}
-                >
-                  {action.icon}
-                  {action.label}
-                </DropdownMenuItem>
-              ))}
+                {backAndSkipActions.length > 0 && (
+                    <DropdownMenuGroup>
+                        <DropdownMenuLabel>Pindahkan ke Tahap Lain</DropdownMenuLabel>
+                        {backAndSkipActions.map(stage => (
+                            <DropdownMenuItem key={stage} onSelect={() => handleActionClick(stage)} className="cursor-pointer">
+                                {statusDisplayLabels[stage]}
+                            </DropdownMenuItem>
+                        ))}
+                    </DropdownMenuGroup>
+                )}
+                
+                <DropdownMenuSeparator />
+                
+                <DropdownMenuGroup>
+                    <DropdownMenuLabel>Keputusan Final</DropdownMenuLabel>
+                    <DropdownMenuItem onSelect={() => handleActionClick('hired')} className="cursor-pointer">
+                        Diterima Kerja
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                        onSelect={() => handleActionClick('rejected')}
+                        className="cursor-pointer text-destructive focus:text-destructive"
+                    >
+                        Tolak Kandidat
+                    </DropdownMenuItem>
+                </DropdownMenuGroup>
             </DropdownMenuContent>
-          </DropdownMenu>
-      )}
-
-
-      <AlertDialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Konfirmasi: {selectedAction?.label}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {`Anda akan memindahkan kandidat ini ke tahap "${statusDisplayLabels[selectedAction?.stage!]}". Lanjutkan?`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="grid w-full gap-1.5 pt-2">
-            <Label htmlFor="reason">
-              Catatan {selectedAction?.stage === 'rejected' ? <span className="text-destructive">(Wajib)</span> : '(Opsional)'}
-            </Label>
-            <Textarea 
-                placeholder={selectedAction?.stage === 'rejected' ? "Jelaskan alasan penolakan..." : "Tinggalkan catatan singkat untuk internal..."}
-                id="reason" 
-                value={reason} 
-                onChange={(e) => setReason(e.target.value)} 
-            />
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Batal</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirm} disabled={isUpdating || (selectedAction?.stage === 'rejected' && !reason.trim())}>
-              {isUpdating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Konfirmasi
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
+        </DropdownMenu>
+      </div>
+      
+      <StageChangeDialog 
+        open={stageChangeDialogOpen}
+        onOpenChange={setStageChangeDialogOpen}
+        targetStage={targetStage}
+        onConfirm={handleConfirmStageChange}
+      />
+      
+      <ScheduleInterviewDialog
+        open={interviewDialogOpen}
+        onOpenChange={setInterviewDialogOpen}
+        onConfirm={handleConfirmInterviewSchedule}
+      />
+    </>
   );
 }

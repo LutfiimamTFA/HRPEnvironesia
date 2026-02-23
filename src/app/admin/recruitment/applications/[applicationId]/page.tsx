@@ -4,8 +4,8 @@ import { useMemo, useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
-import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
-import type { JobApplication, Profile, Job } from '@/lib/types';
+import { doc, serverTimestamp, updateDoc, Timestamp } from 'firebase/firestore';
+import type { JobApplication, Profile, Job, ApplicationTimelineEvent, ApplicationInterview } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -23,17 +23,7 @@ import { CandidateDocumentsCard } from '@/components/recruitment/CandidateDocume
 import { CandidateFitAnalysis } from '@/components/recruitment/CandidateFitAnalysis';
 import { ApplicationActionBar } from '@/components/recruitment/ApplicationActionBar';
 import { ApplicationNotes } from '@/components/recruitment/ApplicationNotes';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Button } from '@/components/ui/button';
+import type { ScheduleInterviewData } from '@/components/recruitment/ScheduleInterviewDialog';
 
 
 function ApplicationDetailSkeleton() {
@@ -78,9 +68,9 @@ export default function ApplicationDetailPage() {
   const handleStageChange = async (newStage: JobApplication['status'], reason: string) => {
     if (!application || !userProfile) return false;
 
-    const timelineEvent = {
-        type: 'stage_changed' as const,
-        at: serverTimestamp(),
+    const timelineEvent: ApplicationTimelineEvent = {
+        type: 'stage_changed',
+        at: serverTimestamp() as any,
         by: userProfile.uid,
         meta: {
             from: application.status,
@@ -113,6 +103,52 @@ export default function ApplicationDetailPage() {
     }
   };
 
+  const handleScheduleInterview = async (data: ScheduleInterviewData): Promise<boolean> => {
+    if (!application || !userProfile) return false;
+
+    const interviewEvent: ApplicationTimelineEvent = {
+      type: 'interview_scheduled',
+      at: serverTimestamp() as any,
+      by: userProfile.uid,
+      meta: {
+        from: application.status,
+        to: 'interview',
+        note: data.notes,
+        interviewType: data.type,
+        interviewDate: Timestamp.fromDate(data.dateTime),
+        meetingLink: data.meetingLink,
+      },
+    };
+
+    const newInterview: ApplicationInterview = {
+      type: data.type,
+      dateTime: Timestamp.fromDate(data.dateTime),
+      interviewerIds: [], // placeholder for future functionality
+      interviewerNames: data.interviewerNames.split(',').map(s => s.trim()),
+      status: 'scheduled',
+      meetingLink: data.meetingLink,
+      notes: data.notes,
+    };
+
+    const updatePayload = {
+      status: 'interview' as JobApplication['status'],
+      updatedAt: serverTimestamp(),
+      timeline: [...(application.timeline || []), interviewEvent],
+      interviews: [...(application.interviews || []), newInterview],
+    };
+
+    try {
+      await updateDoc(applicationRef!, updatePayload);
+      mutateApplication();
+      toast({ title: 'Wawancara Dijadwalkan', description: `Kandidat telah dipindahkan ke tahap Wawancara.` });
+      return true;
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Gagal Menjadwalkan', description: error.message });
+      return false;
+    }
+  };
+
+
   useEffect(() => {
     const autoScreening = async () => {
       // Only run if data is loaded, user exists, status is 'submitted', and it hasn't run before.
@@ -121,9 +157,9 @@ export default function ApplicationDetailPage() {
       }
       setHasTriggeredAutoScreen(true); // Prevent re-triggering
 
-      const timelineEvent = {
-        type: 'stage_changed' as const,
-        at: serverTimestamp(),
+      const timelineEvent: ApplicationTimelineEvent = {
+        type: 'stage_changed',
+        at: serverTimestamp() as any,
         by: userProfile.uid,
         meta: {
           from: 'submitted',
@@ -173,7 +209,11 @@ export default function ApplicationDetailPage() {
       ) : (
         <>
         <div className="space-y-6">
-          <ApplicationActionBar application={application} onStageChange={handleStageChange} />
+          <ApplicationActionBar 
+            application={application} 
+            onStageChange={handleStageChange}
+            onScheduleInterview={handleScheduleInterview}
+          />
           
           <Card>
             <CardHeader>
