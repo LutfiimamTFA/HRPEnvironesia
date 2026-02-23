@@ -159,6 +159,7 @@ service cloud.firestore {
                         (isOwner() && resource.data.status == "draft") ||
                         isSubmittingDocuments() ||
                         isUpdatingSubmittedDocuments() ||
+                        isRequestingReschedule() ||
                         (isInternal() && isInternalStatusUpdate()) ||
                         (isInternal() && isUpdatingCvCache())
                       );
@@ -199,6 +200,14 @@ service cloud.firestore {
             let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
             let allowedKeys = ['status', 'updatedAt', 'personalityTestAssignedAt', 'cvVerified', 'ijazahVerified', 'timeline', 'interviews'];
             return isInternal() && changedKeys.hasOnly(allowedKeys);
+        }
+        function isRequestingReschedule() {
+          let isOwner = request.auth.uid == resource.data.candidateUid;
+          let isInterviewStage = resource.data.status == 'interview';
+          let allowedKeys = ['interviews', 'timeline', 'updatedAt'];
+          let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
+          let onlyAllowedFieldsChanged = changedKeys.hasOnly(allowedKeys);
+          return isOwner && isInterviewStage && onlyAllowedFieldsChanged;
         }
     }
 
@@ -269,3 +278,4 @@ service cloud.firestore {
     }
   }
 }
+    
