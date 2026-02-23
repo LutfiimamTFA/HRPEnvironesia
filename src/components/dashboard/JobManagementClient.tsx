@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useMemo, useState } from 'react';
@@ -30,6 +29,7 @@ import { useToast } from '@/hooks/use-toast';
 import { JobFormDialog } from './JobFormDialog';
 import { DeleteConfirmationDialog } from './DeleteConfirmationDialog';
 import { useAuth } from '@/providers/auth-provider';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 function JobTableSkeleton() {
   return (
@@ -82,6 +82,7 @@ export function JobManagementClient() {
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [brandFilter, setBrandFilter] = useState('all');
 
 
   const jobsRef = useMemoFirebase(() => collection(firestore, 'jobs'), [firestore]);
@@ -108,7 +109,13 @@ export function JobManagementClient() {
 
   const jobsWithDetails = useMemo(() => {
     if (!jobs) return [];
-    return jobs.map(job => ({
+
+    let filteredJobs = jobs;
+    if (brandFilter !== 'all') {
+        filteredJobs = jobs.filter(job => job.brandId === brandFilter);
+    }
+
+    return filteredJobs.map(job => ({
       ...job,
       brandName: brandMap.get(job.brandId) || 'N/A',
       updatedByName: userMap.get(job.updatedBy) || 'Unknown',
@@ -117,7 +124,7 @@ export function JobManagementClient() {
       const timeB = b.updatedAt?.toMillis ? b.updatedAt.toMillis() : Date.now();
       return timeB - timeA;
     });
-  }, [jobs, brandMap, userMap]);
+  }, [jobs, brandMap, userMap, brandFilter]);
 
 
   const handleCreate = () => {
@@ -194,7 +201,18 @@ export function JobManagementClient() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between">
+         <Select value={brandFilter} onValueChange={setBrandFilter} disabled={isLoadingBrands}>
+            <SelectTrigger className="w-[240px]">
+                <SelectValue placeholder="Filter by brand..." />
+            </SelectTrigger>
+            <SelectContent>
+                <SelectItem value="all">All Brands</SelectItem>
+                {brands?.map(brand => (
+                    <SelectItem key={brand.id} value={brand.id!}>{brand.name}</SelectItem>
+                ))}
+            </SelectContent>
+        </Select>
         <Button onClick={handleCreate}>
           <PlusCircle className="mr-2 h-4 w-4" />
           Create Job
@@ -316,5 +334,3 @@ export function JobManagementClient() {
     </div>
   );
 }
-
-    
