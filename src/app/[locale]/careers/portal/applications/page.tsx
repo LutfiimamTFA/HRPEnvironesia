@@ -35,7 +35,7 @@ const statusLabels: Record<JobApplication['status'], string> = {
   submitted: 'Lamaran Terkirim',
   screening: 'Screening',
   tes_kepribadian: 'Tahap Tes Kepribadian',
-  verification: 'Verifikasi HRD',
+  verification: 'Dokumen Ditinjau',
   document_submission: 'Pengumpulan Dokumen',
   interview: 'Tahap Wawancara',
   rejected: 'Tidak Lolos',
