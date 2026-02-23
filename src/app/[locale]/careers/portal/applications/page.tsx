@@ -25,7 +25,6 @@ const visibleSteps = [
   { status: 'screening', label: 'Screening', icon: Search },
   { status: 'tes_kepribadian', label: 'Tes Kepribadian', icon: BrainCircuit },
   { status: 'document_submission', label: 'Pengumpulan Dokumen', icon: FileText },
-  { status: 'verification', label: 'Verifikasi', icon: ClipboardCheck },
   { status: 'interview', label: 'Wawancara', icon: Users },
   { status: 'hired', label: 'Diterima', icon: Award },
 ];
@@ -297,3 +296,5 @@ export default function ApplicationsPage() {
         </div>
     );
 }
+
+    
