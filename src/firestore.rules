@@ -85,10 +85,15 @@ service cloud.firestore {
      * - Only a super_admin can list all users or create/delete them.
      */
     match /users/{userId} {
-      allow get, update: if isOwner(userId) || isSuperAdmin();
-      allow list: if isSuperAdmin();
+      allow get: if isOwner(userId) || isInternal();
+      allow update: if isOwner(userId) || isSuperAdmin();
+      allow list: if getUserData().role == 'super-admin' || getUserData().role == 'hrd';
       allow create: if isSuperAdmin() && hasValidCreateData(userId);
       allow delete: if isSuperAdmin();
+
+      match /saved_jobs/{jobId} {
+        allow read, write, delete: if isOwner(userId);
+      }
     }
 
     /**
@@ -154,8 +159,9 @@ service cloud.firestore {
                         (isOwner() && resource.data.status == "draft") ||
                         isSubmittingDocuments() ||
                         isUpdatingSubmittedDocuments() ||
-                        (isInternal() && isInternalStatusUpdate())
-                      ) && request.resource.data.candidateUid == resource.data.candidateUid;
+                        (isInternal() && isInternalStatusUpdate()) ||
+                        (isInternal() && isUpdatingCvCache())
+                      );
 
         // DELETE: Only internal users can delete applications.
         allow delete: if isInternal();
@@ -184,9 +190,14 @@ service cloud.firestore {
                 && resource.data.status == 'verification'
                 && changedKeys.hasOnly(allowedKeys);
         }
+        function isUpdatingCvCache() {
+            let allowedKeys = ['cvText', 'cvTextExtractedAt', 'cvTextSource', 'cvCharCount'];
+            let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
+            return isInternal() && changedKeys.hasOnly(allowedKeys);
+        }
         function isInternalStatusUpdate() {
             let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
-            let allowedKeys = ['status', 'updatedAt', 'personalityTestAssignedAt'];
+            let allowedKeys = ['status', 'updatedAt', 'personalityTestAssignedAt', 'cvVerified', 'ijazahVerified', 'timeline'];
             return isInternal() && changedKeys.hasOnly(allowedKeys);
         }
     }
@@ -251,9 +262,6 @@ service cloud.firestore {
         
         return isInternal()
           && resource.data.status == 'submitted'
-          && request.resource.data.candidateUid == resource.data.candidateUid
-          && request.resource.data.assessmentId == resource.data.assessmentId
-          && request.resource.data.status == resource.data.status
           && changedKeys.hasOnly(allowedUpdateKeys)
           && request.resource.data.hrdDecisionBy == request.auth.uid
           && request.resource.data.hrdDecision in ['pending', 'approved', 'rejected'];

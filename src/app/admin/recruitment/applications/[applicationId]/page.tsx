@@ -1,102 +1,31 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useMemo, useState, useEffect } from 'react';
+import { useParams } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
-import { doc, serverTimestamp } from 'firebase/firestore';
+import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import type { JobApplication, Profile, Job } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft, Briefcase, Calendar, Mail, Phone, XCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Mail, Phone, XCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from '@/components/ui/select';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { ProfileView } from '@/components/recruitment/ProfileView';
-import { ApplicationStatusBadge, APPLICATION_STATUSES, statusDisplayLabels } from '@/components/recruitment/ApplicationStatusBadge';
+import { ApplicationStatusBadge, statusDisplayLabels } from '@/components/recruitment/ApplicationStatusBadge';
 import { useToast } from '@/hooks/use-toast';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { getInitials } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ApplicationProgressStepper } from '@/components/recruitment/ApplicationProgressStepper';
-import { Separator } from '@/components/ui/separator';
 import { CandidateDocumentsCard } from '@/components/recruitment/CandidateDocumentsCard';
 import { CandidateFitAnalysis } from '@/components/recruitment/CandidateFitAnalysis';
+import { ApplicationActionBar } from '@/components/recruitment/ApplicationActionBar';
+import { ApplicationNotes } from '@/components/recruitment/ApplicationNotes';
 
 function ApplicationDetailSkeleton() {
   return <Skeleton className="h-[500px] w-full" />;
-}
-
-function StatusManager({ application }: { application: JobApplication }) {
-  const [selectedStatus, setSelectedStatus] = useState(application.status);
-  const [isUpdating, setIsUpdating] = useState(false);
-  const firestore = useFirestore();
-  const { toast } = useToast();
-
-  const statusGroups = [
-    {
-      label: 'Aplikasi Masuk',
-      statuses: ['draft', 'submitted']
-    },
-    {
-      label: 'Proses Seleksi',
-      statuses: ['screening', 'tes_kepribadian', 'document_submission', 'verification', 'interview']
-    },
-    {
-      label: 'Keputusan Akhir',
-      statuses: ['hired', 'rejected']
-    }
-  ];
-
-  const handleUpdate = async () => {
-    setIsUpdating(true);
-    try {
-      const appRef = doc(firestore, 'applications', application.id!);
-      const updatePayload: any = {
-        status: selectedStatus,
-        updatedAt: serverTimestamp(),
-      };
-
-      if (selectedStatus === 'tes_kepribadian' && !application.personalityTestAssignedAt) {
-        updatePayload.personalityTestAssignedAt = serverTimestamp();
-      }
-
-      await updateDocumentNonBlocking(appRef, updatePayload);
-
-      toast({ title: 'Success', description: 'Application status has been updated.' });
-    } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Error', description: error.message });
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  return (
-    <div className="flex items-center gap-2">
-      <Select value={selectedStatus} onValueChange={(v) => setSelectedStatus(v as JobApplication['status'])}>
-        <SelectTrigger className="w-[220px]">
-          <SelectValue placeholder="Update status" />
-        </SelectTrigger>
-        <SelectContent>
-          {statusGroups.map(group => (
-            <SelectGroup key={group.label}>
-                <SelectLabel className="px-2 py-1.5 text-xs font-semibold uppercase text-muted-foreground">{group.label}</SelectLabel>
-                {group.statuses.map(status => (
-                    <SelectItem key={status} value={status}>
-                        {statusDisplayLabels[status as JobApplication['status']]}
-                    </SelectItem>
-                ))}
-            </SelectGroup>
-          ))}
-        </SelectContent>
-      </Select>
-      <Button onClick={handleUpdate} disabled={selectedStatus === application.status || isUpdating}>
-        {isUpdating ? 'Updating...' : 'Update Status'}
-      </Button>
-    </div>
-  );
 }
 
 export default function ApplicationDetailPage() {
@@ -104,14 +33,15 @@ export default function ApplicationDetailPage() {
   const { userProfile } = useAuth();
   const firestore = useFirestore();
   const params = useParams();
-  const router = useRouter();
+  const { toast } = useToast();
   const applicationId = params.applicationId as string;
+  const [hasTriggeredAutoScreen, setHasTriggeredAutoScreen] = useState(false);
 
   const applicationRef = useMemoFirebase(
     () => (applicationId ? doc(firestore, 'applications', applicationId) : null),
     [firestore, applicationId]
   );
-  const { data: application, isLoading: isLoadingApp } = useDoc<JobApplication>(applicationRef);
+  const { data: application, isLoading: isLoadingApp, mutate: mutateApplication } = useDoc<JobApplication>(applicationRef);
 
   const profileRef = useMemoFirebase(
     () => (application ? doc(firestore, 'profiles', application.candidateUid) : null),
@@ -133,6 +63,86 @@ export default function ApplicationDetailPage() {
     return [];
   }, [userProfile]);
 
+  const handleStageChange = async (newStage: JobApplication['status'], reason: string) => {
+    if (!application || !userProfile) return false;
+
+    const timelineEvent = {
+        type: 'stage_changed' as const,
+        at: serverTimestamp(),
+        by: userProfile.uid,
+        meta: {
+            from: application.status,
+            to: newStage,
+            note: reason,
+        }
+    };
+    
+    const updatePayload: any = {
+        status: newStage,
+        updatedAt: serverTimestamp(),
+        timeline: [
+            ...(application.timeline || []),
+            timelineEvent
+        ]
+    };
+    
+    if (newStage === 'tes_kepribadian' && !application.personalityTestAssignedAt) {
+      updatePayload.personalityTestAssignedAt = serverTimestamp();
+    }
+
+    try {
+        await updateDoc(applicationRef!, updatePayload);
+        mutateApplication(); // Re-fetch data
+        toast({ title: 'Status Diperbarui', description: `Kandidat dipindahkan ke tahap "${statusDisplayLabels[newStage]}".` });
+        return true;
+    } catch (error: any) {
+        toast({ variant: 'destructive', title: 'Gagal Memperbarui', description: error.message });
+        return false;
+    }
+  };
+
+  useEffect(() => {
+    const autoScreening = async () => {
+      // Only run if data is loaded, user exists, status is 'submitted', and it hasn't run before.
+      if (isLoadingApp || !application || !userProfile || application.status !== 'submitted' || hasTriggeredAutoScreen) {
+        return;
+      }
+      setHasTriggeredAutoScreen(true); // Prevent re-triggering
+
+      const timelineEvent = {
+        type: 'stage_changed' as const,
+        at: serverTimestamp(),
+        by: userProfile.uid,
+        meta: {
+          from: 'submitted',
+          to: 'screening',
+          note: 'Application automatically moved to screening upon HR review.',
+        },
+      };
+
+      const updatePayload = {
+        status: 'screening',
+        updatedAt: serverTimestamp(),
+        timeline: [...(application.timeline || []), timelineEvent],
+      };
+
+      try {
+        await updateDocumentNonBlocking(applicationRef!, updatePayload);
+        mutateApplication(); // Refresh the UI with new status
+        toast({
+          title: 'Lamaran Discreening',
+          description: `Status lamaran ini secara otomatis diperbarui menjadi "Screening".`,
+        });
+      } catch (error) {
+        console.error("Failed to auto-update status to screening:", error);
+        // We don't show a toast for this background failure to avoid interrupting the user.
+      }
+    };
+
+    autoScreening();
+  }, [application, isLoadingApp, userProfile, hasTriggeredAutoScreen, applicationRef, mutateApplication, toast]);
+
+
   const isLoading = isLoadingApp || isLoadingProfile || isLoadingJob;
 
   if (!hasAccess) {
@@ -150,18 +160,14 @@ export default function ApplicationDetailPage() {
         <p>Application, profile, or job details not found.</p>
       ) : (
         <div className="space-y-6">
-          <div className="flex items-center justify-between gap-4">
-            <Button variant="outline" size="sm" onClick={() => router.back()}>
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Applicants
-            </Button>
-          </div>
+          <ApplicationActionBar application={application} onStageChange={handleStageChange} />
+          
           <Card>
             <CardHeader>
               <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
                 <div className="flex items-start gap-4">
                   <Avatar className="h-16 w-16 border">
-                     <AvatarImage src={`https://picsum.photos/seed/${application.candidateUid}/100/100`} alt={profile.fullName} data-ai-hint="profile avatar" />
+                     <AvatarImage src={profile.photoUrl || `https://picsum.photos/seed/${application.candidateUid}/100/100`} alt={profile.fullName} data-ai-hint="profile avatar" />
                      <AvatarFallback className="text-xl">{getInitials(profile.fullName)}</AvatarFallback>
                   </Avatar>
                   <div>
@@ -180,31 +186,27 @@ export default function ApplicationDetailPage() {
               </div>
             </CardHeader>
             <CardContent className="border-t pt-6 space-y-6">
-                 {application.status !== 'rejected' && (
-                  <ApplicationProgressStepper currentStatus={application.status} />
-                 )}
-
-                 {application.status === 'rejected' && (
+                <h3 className="font-semibold text-lg">Applied for: {application.jobPosition}</h3>
+                 {application.status !== 'rejected' ? (
+                  <ApplicationProgressStepper currentStatus={application.status} onStageClick={(stage) => handleStageChange(stage, "Perubahan status manual oleh HR.")} />
+                 ) : (
                     <div className="p-4 rounded-md border border-destructive/50 bg-destructive/10 text-destructive flex items-center gap-3">
                         <XCircle className="h-5 w-5" />
                         <p className="text-sm font-medium">This application was rejected.</p>
                     </div>
                  )}
-
-                 <Separator />
-
-                 <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
-                    <div>
-                        <h3 className="font-semibold text-lg">Applied for: {application.jobPosition}</h3>
-                        <p className="flex items-center gap-2 text-muted-foreground"><Briefcase className="h-4 w-4" />{application.brandName} - {application.location}</p>
-                    </div>
-                    <StatusManager application={application} />
-                 </div>
             </CardContent>
           </Card>
-          <CandidateDocumentsCard application={application} />
-          <CandidateFitAnalysis profile={profile} job={job} application={application} />
-          <ProfileView profile={profile} />
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+            <div className="lg:col-span-2 space-y-6">
+                <CandidateFitAnalysis profile={profile} job={job} application={application}/>
+                <ProfileView profile={profile} />
+            </div>
+            <div className="lg:sticky lg:top-24 space-y-6">
+                <CandidateDocumentsCard application={application} onVerificationChange={mutateApplication}/>
+                <ApplicationNotes application={application} onNoteAdded={mutateApplication} />
+            </div>
+          </div>
         </div>
       )}
     </DashboardLayout>

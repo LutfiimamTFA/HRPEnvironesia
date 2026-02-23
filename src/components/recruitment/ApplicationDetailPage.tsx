@@ -1,18 +1,16 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useMemo, useState, useEffect } from 'react';
+import { useParams } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
-import { useDoc, useFirestore, useMemoFirebase } from '@/firebase';
+import { useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
 import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import type { JobApplication, Profile, Job } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft, Briefcase, Calendar, Mail, Phone, XCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Mail, Phone, XCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from '@/components/ui/select';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { ProfileView } from '@/components/recruitment/ProfileView';
 import { ApplicationStatusBadge, statusDisplayLabels } from '@/components/recruitment/ApplicationStatusBadge';
@@ -21,7 +19,6 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { getInitials } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ApplicationProgressStepper } from '@/components/recruitment/ApplicationProgressStepper';
-import { Separator } from '@/components/ui/separator';
 import { CandidateDocumentsCard } from '@/components/recruitment/CandidateDocumentsCard';
 import { CandidateFitAnalysis } from '@/components/recruitment/CandidateFitAnalysis';
 import { ApplicationActionBar } from './ApplicationActionBar';
@@ -36,9 +33,9 @@ export default function ApplicationDetailPage() {
   const { userProfile } = useAuth();
   const firestore = useFirestore();
   const params = useParams();
-  const router = useRouter();
   const { toast } = useToast();
   const applicationId = params.applicationId as string;
+  const [hasTriggeredAutoScreen, setHasTriggeredAutoScreen] = useState(false);
 
   const applicationRef = useMemoFirebase(
     () => (applicationId ? doc(firestore, 'applications', applicationId) : null),
@@ -70,7 +67,7 @@ export default function ApplicationDetailPage() {
     if (!application || !userProfile) return false;
 
     const timelineEvent = {
-        type: 'stage_changed',
+        type: 'stage_changed' as const,
         at: serverTimestamp(),
         by: userProfile.uid,
         meta: {
@@ -82,9 +79,6 @@ export default function ApplicationDetailPage() {
     
     const updatePayload: any = {
         status: newStage,
-        stage: newStage, // For new data model
-        stageEnteredAt: serverTimestamp(),
-        lastActivityAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         timeline: [
             ...(application.timeline || []),
@@ -106,6 +100,48 @@ export default function ApplicationDetailPage() {
         return false;
     }
   };
+
+  useEffect(() => {
+    const autoScreening = async () => {
+      // Only run if data is loaded, user exists, status is 'submitted', and it hasn't run before.
+      if (isLoadingApp || !application || !userProfile || application.status !== 'submitted' || hasTriggeredAutoScreen) {
+        return;
+      }
+      setHasTriggeredAutoScreen(true); // Prevent re-triggering
+
+      const timelineEvent = {
+        type: 'stage_changed' as const,
+        at: serverTimestamp(),
+        by: userProfile.uid,
+        meta: {
+          from: 'submitted',
+          to: 'screening',
+          note: 'Application automatically moved to screening upon HR review.',
+        },
+      };
+
+      const updatePayload = {
+        status: 'screening',
+        updatedAt: serverTimestamp(),
+        timeline: [...(application.timeline || []), timelineEvent],
+      };
+
+      try {
+        await updateDocumentNonBlocking(applicationRef!, updatePayload);
+        mutateApplication(); // Refresh the UI with new status
+        toast({
+          title: 'Lamaran Discreening',
+          description: `Status lamaran ini secara otomatis diperbarui menjadi "Screening".`,
+        });
+      } catch (error) {
+        console.error("Failed to auto-update status to screening:", error);
+        // We don't show a toast for this background failure to avoid interrupting the user.
+      }
+    };
+
+    autoScreening();
+  }, [application, isLoadingApp, userProfile, hasTriggeredAutoScreen, applicationRef, mutateApplication, toast]);
+
 
   const isLoading = isLoadingApp || isLoadingProfile || isLoadingJob;
 
@@ -131,7 +167,7 @@ export default function ApplicationDetailPage() {
               <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
                 <div className="flex items-start gap-4">
                   <Avatar className="h-16 w-16 border">
-                     <AvatarImage src={`https://picsum.photos/seed/${application.candidateUid}/100/100`} alt={profile.fullName} data-ai-hint="profile avatar" />
+                     <AvatarImage src={profile.photoUrl || `https://picsum.photos/seed/${application.candidateUid}/100/100`} alt={profile.fullName} data-ai-hint="profile avatar" />
                      <AvatarFallback className="text-xl">{getInitials(profile.fullName)}</AvatarFallback>
                   </Avatar>
                   <div>
