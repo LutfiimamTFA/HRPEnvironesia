@@ -5,10 +5,10 @@ import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, query, where, doc, updateDoc } from 'firebase/firestore';
 import type { JobApplication, ApplicationInterview } from '@/lib/types';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Link as LinkIcon, Calendar, Video, RefreshCw, Loader2, Info } from "lucide-react";
+import { Link as LinkIcon, Calendar, Video, RefreshCw, Users, Info } from "lucide-react";
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { Badge } from '@/components/ui/badge';
@@ -26,24 +26,26 @@ function InterviewCard({ interview, onMutate }: { interview: EnrichedInterview, 
     
     const rescheduleStatus = interview.rescheduleRequest?.status;
 
-    // Show reschedule button if the interview is upcoming AND there is no pending request.
-    // A denied request allows the user to request again.
-    const showRescheduleButton = isUpcoming && (rescheduleStatus !== 'pending' && rescheduleStatus !== 'countered');
-
+    // Show reschedule button ONLY if the interview is in the future AND its status is 'scheduled'.
+    // If a request is denied, HRD will set the status back to 'scheduled', making the button reappear.
+    const showRescheduleButton = isUpcoming && interview.status === 'scheduled';
+    
     return (
         <>
             <Card>
                 <CardHeader>
-                    <div className="flex justify-between items-start">
+                    <div className="flex justify-between items-start gap-4">
                         <div>
                             <CardTitle>{interview.application.jobPosition}</CardTitle>
                             <CardDescription>{interview.application.brandName}</CardDescription>
                         </div>
-                        {isUpcoming && !rescheduleStatus && <Badge>Akan Datang</Badge>}
-                        {rescheduleStatus === 'pending' && <Badge variant="outline" className="text-amber-600 border-amber-500">Menunggu Konfirmasi HRD</Badge>}
-                        {rescheduleStatus === 'approved' && <Badge className="bg-green-600">Jadwal Diperbarui</Badge>}
-                        {rescheduleStatus === 'denied' && <Badge variant="destructive">Permintaan Ditolak</Badge>}
-                        {rescheduleStatus === 'countered' && <Badge className="bg-blue-500">Usulan Jadwal Baru dari HRD</Badge>}
+                        <div className="flex-shrink-0">
+                            {rescheduleStatus === 'pending' && <Badge variant="outline" className="text-amber-600 border-amber-500">Menunggu Konfirmasi HRD</Badge>}
+                            {rescheduleStatus === 'approved' && <Badge className="bg-green-600">Jadwal Diperbarui</Badge>}
+                            {rescheduleStatus === 'denied' && <Badge variant="destructive">Permintaan Ditolak</Badge>}
+                            {rescheduleStatus === 'countered' && <Badge className="bg-blue-500">Usulan Jadwal Baru dari HRD</Badge>}
+                            {!rescheduleStatus && (isUpcoming ? <Badge>Akan Datang</Badge> : <Badge variant="secondary">Telah Lewat</Badge>)}
+                        </div>
                     </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -57,7 +59,7 @@ function InterviewCard({ interview, onMutate }: { interview: EnrichedInterview, 
                             </div>
                         </div>
                          <div className="flex items-start gap-3">
-                            <Calendar className="h-5 w-5 mt-0.5 text-primary" />
+                            <Users className="h-5 w-5 mt-0.5 text-primary" />
                             <div>
                                 <p className="font-semibold">Pewawancara</p>
                                 <p>{interview.interviewerNames.join(', ')}</p>
@@ -70,21 +72,23 @@ function InterviewCard({ interview, onMutate }: { interview: EnrichedInterview, 
                             <p className="italic">"{interview.rescheduleRequest.hrResponseNote}"</p>
                         </div>
                     )}
-                    <div className="flex justify-end items-center gap-2 flex-wrap pt-4">
-                        {showRescheduleButton && (
-                            <Button onClick={() => setIsRescheduleDialogOpen(true)} variant="outline" size="sm">
-                                <RefreshCw className="mr-2 h-4 w-4" />
-                                Minta Jadwal Ulang
-                            </Button>
-                        )}
-                        <Button asChild>
+                </CardContent>
+                <CardFooter className="flex flex-col sm:flex-row justify-end items-center gap-2 pt-4 border-t">
+                    {showRescheduleButton && (
+                        <Button onClick={() => setIsRescheduleDialogOpen(true)} variant="outline" size="sm" className="w-full sm:w-auto">
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            Minta Jadwal Ulang
+                        </Button>
+                    )}
+                     {isUpcoming && (
+                        <Button asChild className="w-full sm:w-auto">
                             <a href={interview.meetingLink} target="_blank" rel="noopener noreferrer">
                                 <LinkIcon className="mr-2 h-4 w-4" />
                                 Buka Link Wawancara
                             </a>
                         </Button>
-                    </div>
-                </CardContent>
+                     )}
+                </CardFooter>
             </Card>
             <RescheduleRequestDialog
                 open={isRescheduleDialogOpen}
@@ -141,8 +145,25 @@ export default function InterviewsPage() {
             }
         });
         
-        // Sort by start date, upcoming first
-        return interviews.sort((a, b) => a.startAt.toDate().getTime() - b.startAt.toDate().getTime());
+        // Sort by start date, upcoming first, then past ones most recent first
+        return interviews.sort((a, b) => {
+            const aTime = a.startAt.toDate().getTime();
+            const bTime = b.startAt.toDate().getTime();
+            const now = new Date().getTime();
+
+            const aIsUpcoming = aTime >= now;
+            const bIsUpcoming = bTime >= now;
+
+            if (aIsUpcoming && !bIsUpcoming) return -1;
+            if (!aIsUpcoming && bIsUpcoming) return 1;
+            
+            // Both upcoming or both past
+            if (aIsUpcoming) {
+                return aTime - bTime; // Sort upcoming interviews chronologically
+            } else {
+                return bTime - aTime; // Sort past interviews reverse-chronologically
+            }
+        });
     }, [applications]);
 
     const isLoading = authLoading || appsLoading;
@@ -161,7 +182,7 @@ export default function InterviewsPage() {
             {allInterviews.length > 0 ? (
                 <div className="space-y-4">
                     {allInterviews.map((interview, index) => (
-                        <InterviewCard key={`${interview.application.id}-${index}`} interview={interview} onMutate={mutate} />
+                        <InterviewCard key={`${interview.application.id}-${interview.interviewId || index}`} interview={interview} onMutate={mutate} />
                     ))}
                 </div>
             ) : (
