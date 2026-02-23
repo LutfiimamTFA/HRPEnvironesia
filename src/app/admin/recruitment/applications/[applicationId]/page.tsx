@@ -263,6 +263,7 @@ function InterviewManagement({ application, onUpdate }: { application: JobApplic
         open={isScheduleDialogOpen}
         onOpenChange={setScheduleDialogOpen}
         onConfirm={handleConfirmSchedule}
+        candidateName={application.candidateName}
         initialData={activeInterview ? {
             dateTime: activeInterview.startAt.toDate(),
             duration: differenceInMinutes(activeInterview.endAt.toDate(), activeInterview.startAt.toDate()),

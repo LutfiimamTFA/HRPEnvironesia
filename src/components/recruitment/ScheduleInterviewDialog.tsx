@@ -28,9 +28,10 @@ interface ScheduleInterviewDialogProps {
   onOpenChange: (open: boolean) => void;
   onConfirm: (data: ScheduleInterviewData) => Promise<boolean>;
   initialData?: Partial<ScheduleInterviewData>;
+  candidateName?: string;
 }
 
-export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initialData }: ScheduleInterviewDialogProps) {
+export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initialData, candidateName }: ScheduleInterviewDialogProps) {
   const [isSaving, setIsSaving] = useState(false);
   const form = useForm<ScheduleInterviewData>({
     resolver: zodResolver(scheduleSchema),
@@ -57,11 +58,15 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
     }
   };
   
+  const title = initialData 
+    ? `Edit Wawancara untuk ${candidateName}`
+    : `Jadwalkan Wawancara untuk ${candidateName}`;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{initialData ? 'Edit Wawancara' : 'Jadwalkan Wawancara'}</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
             Masukkan detail untuk jadwal wawancara kandidat.
           </DialogDescription>
