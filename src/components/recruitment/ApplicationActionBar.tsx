@@ -56,16 +56,6 @@ export function ApplicationActionBar({ application, onStageChange }: Application
     setIsUpdating(false);
   };
 
-  const otherActions: StageAction[] = [
-    {
-      stage: 'rejected',
-      label: 'Tolak Kandidat',
-      icon: <ThumbsDown className="mr-2 h-4 w-4" />,
-      reasonRequired: true,
-      variant: 'destructive',
-    },
-  ];
-
   if (application.status === 'hired' || application.status === 'rejected') {
       return null;
   }
@@ -104,46 +94,32 @@ export function ApplicationActionBar({ application, onStageChange }: Application
                     {group.label !== "Proses Awal" && <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{group.label}</DropdownMenuLabel>}
                     {group.stages.map(stage => {
                         const isCurrent = application.status === stage;
-                        const action = { stage, label: `Pindah ke ${statusDisplayLabels[stage]}` };
-                        if (stage === 'rejected') return null; // 'rejected' is handled in "other actions"
+                        const isRejected = stage === 'rejected';
+                        const action = { 
+                            stage, 
+                            label: isRejected ? 'Tolak Kandidat' : `Pindah ke ${statusDisplayLabels[stage]}`,
+                            reasonRequired: isRejected // Only require reason for rejection
+                        };
 
                         return (
                             <DropdownMenuItem
                                 key={stage}
                                 onSelect={() => handleActionClick(action)}
                                 disabled={isCurrent}
-                                className="pr-4"
+                                className={cn(
+                                    "pr-4",
+                                    isRejected && "text-destructive focus:text-destructive"
+                                )}
                             >
                                 <span className={cn("w-6 mr-2 flex items-center justify-center", isCurrent && "text-primary")}>
                                   {isCurrent && <Check className="h-4 w-4" />}
                                 </span>
-                                {statusDisplayLabels[stage]}
+                                {isRejected ? 'Tolak Kandidat' : statusDisplayLabels[stage]}
                             </DropdownMenuItem>
                         )
                     })}
                 </DropdownMenuGroup>
             </React.Fragment>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="icon">
-            <MoreVertical className="h-4 w-4" />
-            <span className="sr-only">Tindakan Lainnya</span>
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {otherActions.map((action) => (
-            <DropdownMenuItem
-              key={action.stage}
-              onClick={() => handleActionClick(action)}
-              className={action.variant === 'destructive' ? 'text-destructive focus:text-destructive' : ''}
-            >
-              {action.icon}
-              <span>{action.label}</span>
-            </DropdownMenuItem>
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
