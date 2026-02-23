@@ -1,13 +1,13 @@
-
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { JobApplication } from "@/lib/types";
 
-export const APPLICATION_STATUSES: JobApplication['status'][] = ['draft', 'submitted', 'tes_kepribadian', 'verification', 'document_submission', 'interview', 'hired', 'rejected'];
+export const APPLICATION_STATUSES: JobApplication['status'][] = ['draft', 'submitted', 'screening', 'tes_kepribadian', 'verification', 'document_submission', 'interview', 'hired', 'rejected'];
 
 export const statusDisplayLabels: Record<JobApplication['status'], string> = {
     draft: 'Draf',
     submitted: 'Lamaran Diterima',
+    screening: 'Screening',
     tes_kepribadian: 'Tes Kepribadian',
     verification: 'Verifikasi',
     document_submission: 'Pengumpulan Dokumen',
@@ -25,6 +25,7 @@ export function ApplicationStatusBadge({ status, className }: ApplicationStatusB
   const statusConfig = {
     draft: { label: statusDisplayLabels.draft, variant: 'secondary' as const },
     submitted: { label: statusDisplayLabels.submitted, variant: 'default' as const },
+    screening: { label: statusDisplayLabels.screening, variant: 'default' as const, className: 'bg-cyan-600 hover:bg-cyan-700' },
     tes_kepribadian: { label: statusDisplayLabels.tes_kepribadian, variant: 'default' as const, className: 'bg-blue-600 hover:bg-blue-700' },
     verification: { label: statusDisplayLabels.verification, variant: 'default' as const, className: 'bg-purple-600 hover:bg-purple-700' },
     document_submission: { label: statusDisplayLabels.document_submission, variant: 'default' as const, className: 'bg-cyan-600 hover:bg-cyan-700' },

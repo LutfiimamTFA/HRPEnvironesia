@@ -52,7 +52,7 @@ export type Job = {
   updatedBy: string;
 };
 
-export const APPLICATION_STAGES = ['applied', 'screening', 'assessment', 'interview', 'offer', 'hired', 'rejected'] as const;
+export const APPLICATION_STAGES = ['draft', 'submitted', 'screening', 'tes_kepribadian', 'verification', 'document_submission', 'interview', 'hired', 'rejected'] as const;
 export type ApplicationStage = (typeof APPLICATION_STAGES)[number];
 
 export const APPLICATION_SOURCES = ['website', 'linkedin', 'jobstreet', 'referral', 'instagram', 'other'] as const;
@@ -92,17 +92,9 @@ export type ApplicationOffer = {
 
 export type JobApplication = {
   id?: string;
+  // This is a mix of new and old fields. They need to be harmonized.
+  // New ATS fields:
   candidateId: string;
-  jobId: string;
-  
-  // Denormalized data for quick access
-  candidateName: string;
-  candidateEmail: string;
-  candidatePhotoUrl?: string;
-  jobPosition: string;
-  jobLocation: string;
-
-  // Core application data
   stage: ApplicationStage;
   stageEnteredAt: Timestamp;
   appliedAt: Timestamp;
@@ -111,21 +103,29 @@ export type JobApplication = {
   assignedRecruiterId: string;
   scoreManual?: number; // 0-5
   scoreAssessment?: number; // 0-100
-  status: 'active' | 'rejected' | 'hired' | 'withdrawn';
   tags?: string[];
-
-  // Linked objects
   interviews?: ApplicationInterview[];
   offer?: ApplicationOffer;
   timeline?: ApplicationTimelineEvent[];
+  cvVerified?: boolean;
+  ijazahVerified?: boolean;
 
-  // Legacy fields to be harmonized
+  // Denormalized data
+  candidateName: string;
+  candidateEmail: string;
+  candidatePhotoUrl?: string;
+  jobPosition: string;
+  jobLocation: string;
+
+  // Legacy fields for compatibility
   candidateUid: string;
+  jobId: string;
   jobSlug: string;
   brandId: string;
   brandName: string;
   jobType: 'fulltime' | 'internship' | 'contract';
   location: string;
+  status: 'draft' | 'submitted' | 'screening' | 'tes_kepribadian' | 'verification' | 'document_submission' | 'interview' | 'hired' | 'rejected';
   personalityTestAssignedAt?: Timestamp;
   createdAt: Timestamp;
   updatedAt: Timestamp;
