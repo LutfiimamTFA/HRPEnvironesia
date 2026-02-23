@@ -1,9 +1,10 @@
+
 'use client';
 
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuGroup } from '@/components/ui/dropdown-menu';
-import { Check, MoreVertical, Loader2, ThumbsDown } from 'lucide-react';
+import { Check, MoreVertical, Loader2, ThumbsDown, CalendarPlus } from 'lucide-react';
 import { type JobApplication, ORDERED_RECRUITMENT_STAGES } from '@/lib/types';
 import { statusDisplayLabels } from '@/components/recruitment/ApplicationStatusBadge';
 import { cn } from '@/lib/utils';
@@ -73,6 +74,13 @@ export function ApplicationActionBar({ application, onStageChange, onScheduleInt
             <Check className="mr-2 h-4 w-4" />
             {`Lolos ke ${statusDisplayLabels[primaryAction]}`}
           </Button>
+        )}
+        
+        {application.status === 'interview' && (
+             <Button variant="outline" onClick={() => setInterviewDialogOpen(true)}>
+                <CalendarPlus className="mr-2 h-4 w-4" />
+                Jadwal Ulang Wawancara
+            </Button>
         )}
 
         <DropdownMenu>

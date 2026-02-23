@@ -79,7 +79,7 @@ export type ApplicationInterview = {
     meetingLink: string;
     interviewerIds: string[];
     interviewerNames: string[];
-    status: 'scheduled' | 'completed' | 'canceled';
+    status: 'scheduled' | 'completed' | 'canceled' | 'reschedule_requested';
     notes?: string;
 };
 

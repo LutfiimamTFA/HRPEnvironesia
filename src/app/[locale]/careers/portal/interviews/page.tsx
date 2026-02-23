@@ -1,25 +1,59 @@
 
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useAuth } from '@/providers/auth-provider';
-import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, query, where } from 'firebase/firestore';
+import { useCollection, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
+import { collection, query, where, doc, updateDoc } from 'firebase/firestore';
 import type { JobApplication, ApplicationInterview } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Link as LinkIcon, Calendar, Clock, Users, Building, Video } from "lucide-react";
+import { Link as LinkIcon, Calendar, Clock, Users, Building, Video, RefreshCw, Loader2, Send } from "lucide-react";
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/hooks/use-toast';
 
 interface EnrichedInterview extends ApplicationInterview {
   application: JobApplication;
+  interviewIndex: number;
 }
 
-function InterviewCard({ interview }: { interview: EnrichedInterview }) {
+function InterviewCard({ interview, onMutate }: { interview: EnrichedInterview, onMutate: () => void }) {
     const isUpcoming = interview.startAt.toDate() > new Date();
+    const isRescheduleRequested = interview.status === 'reschedule_requested';
+    const [isRequesting, setIsRequesting] = useState(false);
+    const firestore = useFirestore();
+    const { toast } = useToast();
+
+    const handleRequestReschedule = async () => {
+        setIsRequesting(true);
+        const appRef = doc(firestore, 'applications', interview.application.id!);
+
+        const updatedInterviews = [...interview.application.interviews!];
+        updatedInterviews[interview.interviewIndex] = {
+            ...updatedInterviews[interview.interviewIndex],
+            status: 'reschedule_requested',
+        };
+
+        try {
+            await updateDoc(appRef, { interviews: updatedInterviews });
+            toast({
+                title: 'Permintaan Terkirim',
+                description: 'Permintaan jadwal ulang Anda telah dikirim ke tim HRD.',
+            });
+            onMutate();
+        } catch (error: any) {
+            toast({
+                variant: 'destructive',
+                title: 'Gagal Mengirim Permintaan',
+                description: error.message,
+            });
+        } finally {
+            setIsRequesting(false);
+        }
+    };
 
     return (
         <Card>
@@ -29,7 +63,8 @@ function InterviewCard({ interview }: { interview: EnrichedInterview }) {
                         <CardTitle>{interview.application.jobPosition}</CardTitle>
                         <CardDescription className="flex items-center gap-2 pt-1"><Building className="h-4 w-4" /> {interview.application.brandName}</CardDescription>
                     </div>
-                    {isUpcoming && <Badge>Akan Datang</Badge>}
+                    {isUpcoming && !isRescheduleRequested && <Badge>Akan Datang</Badge>}
+                    {isRescheduleRequested && <Badge variant="outline" className="text-amber-600 border-amber-500">Jadwal Ulang Diminta</Badge>}
                 </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -50,7 +85,17 @@ function InterviewCard({ interview }: { interview: EnrichedInterview }) {
                         </div>
                     </div>
                 </div>
-                <div className="flex justify-end">
+                <div className="flex justify-between items-center gap-2 flex-wrap">
+                    {isUpcoming && (
+                        isRescheduleRequested ? (
+                            <p className="text-sm text-amber-600 font-medium">Menunggu konfirmasi dari HRD.</p>
+                        ) : (
+                            <Button onClick={handleRequestReschedule} variant="outline" size="sm" disabled={isRequesting}>
+                                {isRequesting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                                Minta Jadwal Ulang
+                            </Button>
+                        )
+                    )}
                     <Button asChild>
                         <a href={interview.meetingLink} target="_blank" rel="noopener noreferrer">
                             <LinkIcon className="mr-2 h-4 w-4" />
@@ -91,7 +136,7 @@ export default function InterviewsPage() {
         );
     }, [userProfile?.uid, firestore]);
 
-    const { data: applications, isLoading: appsLoading } = useCollection<JobApplication>(applicationsQuery);
+    const { data: applications, isLoading: appsLoading, mutate } = useCollection<JobApplication>(applicationsQuery);
 
     const allInterviews = useMemo(() => {
         if (!applications) return [];
@@ -99,9 +144,9 @@ export default function InterviewsPage() {
         const interviews: EnrichedInterview[] = [];
         applications.forEach(app => {
             if (app.interviews) {
-                app.interviews.forEach(interview => {
-                    if(interview.status === 'scheduled') {
-                        interviews.push({ ...interview, application: app });
+                app.interviews.forEach((interview, index) => {
+                    if(interview.status === 'scheduled' || interview.status === 'reschedule_requested') {
+                        interviews.push({ ...interview, application: app, interviewIndex: index });
                     }
                 });
             }
@@ -127,7 +172,7 @@ export default function InterviewsPage() {
             {allInterviews.length > 0 ? (
                 <div className="space-y-4">
                     {allInterviews.map((interview, index) => (
-                        <InterviewCard key={`${interview.application.id}-${index}`} interview={interview} />
+                        <InterviewCard key={`${interview.application.id}-${index}`} interview={interview} onMutate={mutate} />
                     ))}
                 </div>
             ) : (

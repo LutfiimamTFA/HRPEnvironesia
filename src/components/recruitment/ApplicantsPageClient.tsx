@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
@@ -5,7 +6,7 @@ import { useAuth } from '@/providers/auth-provider';
 import type { JobApplication, JobApplicationStatus } from '@/lib/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { Eye, CalendarPlus, List, LayoutGrid } from 'lucide-react';
+import { Eye, CalendarPlus, List, LayoutGrid, RefreshCw } from 'lucide-react';
 import { ApplicationStatusBadge, statusDisplayLabels } from '@/components/recruitment/ApplicationStatusBadge';
 import { Checkbox } from '@/components/ui/checkbox';
 import Link from 'next/link';
@@ -77,29 +78,29 @@ export function ApplicantsPageClient({ applications }: { applications: JobApplic
     });
   }, [filteredApplications]);
   
-  const getNextScheduledInterview = (app: JobApplication) => {
+  const getMostRelevantInterview = (app: JobApplication) => {
     if (!app.interviews || app.interviews.length === 0) return null;
     
     const now = new Date().getTime();
     
-    const scheduledInterviews = app.interviews.filter(i => i.status === 'scheduled');
+    const relevantInterviews = app.interviews.filter(i => ['scheduled', 'reschedule_requested'].includes(i.status));
     
-    if (scheduledInterviews.length === 0) return null;
+    if (relevantInterviews.length === 0) return null;
 
-    const upcoming = scheduledInterviews
+    const upcoming = relevantInterviews
       .filter(i => i.startAt.toMillis() >= now)
       .sort((a, b) => a.startAt.toMillis() - b.startAt.toMillis());
 
     if (upcoming.length > 0) {
-      return upcoming[0]; // The soonest upcoming interview
+      return upcoming[0];
     }
 
-    const past = scheduledInterviews
+    const past = relevantInterviews
       .filter(i => i.startAt.toMillis() < now)
       .sort((a, b) => b.startAt.toMillis() - a.startAt.toMillis());
       
     if (past.length > 0) {
-        return past[0]; // The most recent past interview
+        return past[0];
     }
 
     return null;
@@ -162,7 +163,7 @@ export function ApplicantsPageClient({ applications }: { applications: JobApplic
               <TableBody>
                 {sortedApplications.length > 0 ? (
                   sortedApplications.map(app => {
-                    const scheduledInterview = getNextScheduledInterview(app);
+                    const scheduledInterview = getMostRelevantInterview(app);
                     return (
                       <TableRow key={app.id} data-state={selection.selectedIds.has(app.id!) && "selected"}>
                         <TableCell>
@@ -176,7 +177,13 @@ export function ApplicantsPageClient({ applications }: { applications: JobApplic
                         <TableCell><ApplicationStatusBadge status={app.status} /></TableCell>
                         <TableCell>
                           {scheduledInterview ? (
-                            <Badge variant="outline">{format(scheduledInterview.startAt.toDate(), 'dd MMM, HH:mm')}</Badge>
+                            scheduledInterview.status === 'reschedule_requested' ? (
+                                <Badge variant="outline" className="text-amber-600 border-amber-500">
+                                    <RefreshCw className="mr-2 h-3 w-3" /> Reschedule
+                                </Badge>
+                            ) : (
+                                <Badge variant="outline">{format(scheduledInterview.startAt.toDate(), 'dd MMM, HH:mm')}</Badge>
+                            )
                           ) : '-'}
                         </TableCell>
                         <TableCell>{app.submittedAt ? format(app.submittedAt.toDate(), 'dd MMM yyyy') : '-'}</TableCell>
