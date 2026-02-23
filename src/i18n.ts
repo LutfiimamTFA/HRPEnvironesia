@@ -8,8 +8,20 @@ export default getRequestConfig(async ({locale}) => {
   // Validate that the incoming `locale` parameter is valid
   if (!locales.includes(locale as any)) notFound();
  
+  let messages;
+  switch (locale) {
+    case 'en':
+      messages = (await import('../messages/en.json')).default;
+      break;
+    case 'id':
+      messages = (await import('../messages/id.json')).default;
+      break;
+    default:
+      notFound();
+  }
+ 
   return {
-    messages: (await import(`../messages/${locale}.json`)).default,
+    messages,
     locale,
   };
 });
