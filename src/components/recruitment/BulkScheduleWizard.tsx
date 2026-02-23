@@ -143,7 +143,7 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
 
         const timelineEvent: ApplicationTimelineEvent = {
             type: 'interview_scheduled',
-            at: serverTimestamp() as any,
+            at: Timestamp.now(),
             by: recruiter.uid,
             meta: {
                 from: slot.candidate.status,
