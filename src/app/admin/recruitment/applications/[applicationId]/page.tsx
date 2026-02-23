@@ -203,7 +203,7 @@ export default function ApplicationDetailPage() {
             </CardContent>
           </Card>
           <CandidateDocumentsCard application={application} />
-          <CandidateFitAnalysis profile={profile} job={job} />
+          <CandidateFitAnalysis profile={profile} job={job} application={application} />
           <ProfileView profile={profile} />
         </div>
       )}
