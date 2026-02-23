@@ -17,15 +17,15 @@ const applicationSteps = [
 
 interface ApplicationProgressStepperProps {
   currentStatus: JobApplication['status'];
+  onStageClick?: (stage: JobApplication['status']) => void;
 }
 
-export function ApplicationProgressStepper({ currentStatus }: ApplicationProgressStepperProps) {
+export function ApplicationProgressStepper({ currentStatus, onStageClick }: ApplicationProgressStepperProps) {
   const currentStepIndex = applicationSteps.findIndex(step => step.status === currentStatus);
   const isRejected = currentStatus === 'rejected';
 
-  // If rejected, we don't show the stepper in a "progress" state.
   if (isRejected) {
-    return null; // Or a specific "rejected" state UI if desired
+    return null;
   }
 
   return (
@@ -34,10 +34,20 @@ export function ApplicationProgressStepper({ currentStatus }: ApplicationProgres
         {applicationSteps.map((step, index) => {
           const isActive = index === currentStepIndex;
           const isCompleted = !isRejected && currentStepIndex > index;
+          const isClickable = onStageClick && !isActive;
+          
+          const StepContainer = isClickable ? 'button' : 'div';
+          const containerProps = {
+            className: cn(
+              "flex flex-col items-center text-center w-24 flex-shrink-0 z-10 rounded-md p-1",
+              isClickable && "cursor-pointer transition-colors hover:bg-muted"
+            ),
+            onClick: isClickable ? () => onStageClick(step.status as JobApplication['status']) : undefined,
+          };
 
           return (
             <React.Fragment key={step.status}>
-              <div className="flex flex-col items-center text-center w-24 flex-shrink-0 z-10">
+              <StepContainer {...containerProps}>
                 <div
                   className={cn(
                     'h-10 w-10 rounded-full flex items-center justify-center border-2 transition-all duration-300',
@@ -56,7 +66,7 @@ export function ApplicationProgressStepper({ currentStatus }: ApplicationProgres
                 )}>
                   {step.label}
                 </p>
-              </div>
+              </StepContainer>
 
               {index < applicationSteps.length - 1 && (
                 <div className={cn(

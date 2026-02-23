@@ -9,7 +9,7 @@ import type { JobApplication, Profile, Job } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Mail, Phone, XCircle } from 'lucide-react';
+import { Mail, Phone, XCircle, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { ProfileView } from '@/components/recruitment/ProfileView';
@@ -23,6 +23,18 @@ import { CandidateDocumentsCard } from '@/components/recruitment/CandidateDocume
 import { CandidateFitAnalysis } from '@/components/recruitment/CandidateFitAnalysis';
 import { ApplicationActionBar } from '@/components/recruitment/ApplicationActionBar';
 import { ApplicationNotes } from '@/components/recruitment/ApplicationNotes';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
+
 
 function ApplicationDetailSkeleton() {
   return <Skeleton className="h-[500px] w-full" />;
@@ -36,6 +48,11 @@ export default function ApplicationDetailPage() {
   const { toast } = useToast();
   const applicationId = params.applicationId as string;
   const [hasTriggeredAutoScreen, setHasTriggeredAutoScreen] = useState(false);
+
+  // State for manual stage change dialog
+  const [isStageChangeConfirmOpen, setIsStageChangeConfirmOpen] = useState(false);
+  const [targetStage, setTargetStage] = useState<JobApplication['status'] | null>(null);
+  const [isConfirmingStageChange, setIsConfirmingStageChange] = useState(false);
 
   const applicationRef = useMemoFirebase(
     () => (applicationId ? doc(firestore, 'applications', applicationId) : null),
@@ -101,6 +118,23 @@ export default function ApplicationDetailPage() {
     }
   };
 
+  const handleStepperClick = (stage: JobApplication['status']) => {
+    if (stage === application?.status) return;
+    setTargetStage(stage);
+    setIsStageChangeConfirmOpen(true);
+  };
+
+  const confirmManualStageChange = async () => {
+    if (!targetStage) return;
+    setIsConfirmingStageChange(true);
+    const success = await handleStageChange(targetStage, `Status diubah secara manual ke ${statusDisplayLabels[targetStage]}`);
+    if (success) {
+      setIsStageChangeConfirmOpen(false);
+      setTargetStage(null);
+    }
+    setIsConfirmingStageChange(false);
+  };
+
   useEffect(() => {
     const autoScreening = async () => {
       // Only run if data is loaded, user exists, status is 'submitted', and it hasn't run before.
@@ -159,6 +193,7 @@ export default function ApplicationDetailPage() {
       ) : !application || !profile || !job ? (
         <p>Application, profile, or job details not found.</p>
       ) : (
+        <>
         <div className="space-y-6">
           <ApplicationActionBar application={application} onStageChange={handleStageChange} />
           
@@ -188,7 +223,7 @@ export default function ApplicationDetailPage() {
             <CardContent className="border-t pt-6 space-y-6">
                 <h3 className="font-semibold text-lg">Applied for: {application.jobPosition}</h3>
                  {application.status !== 'rejected' ? (
-                  <ApplicationProgressStepper currentStatus={application.status} onStageClick={(stage) => handleStageChange(stage, "Perubahan status manual oleh HR.")} />
+                  <ApplicationProgressStepper currentStatus={application.status} onStageClick={handleStepperClick} />
                  ) : (
                     <div className="p-4 rounded-md border border-destructive/50 bg-destructive/10 text-destructive flex items-center gap-3">
                         <XCircle className="h-5 w-5" />
@@ -208,6 +243,25 @@ export default function ApplicationDetailPage() {
             </div>
           </div>
         </div>
+
+        <AlertDialog open={isStageChangeConfirmOpen} onOpenChange={setIsStageChangeConfirmOpen}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Konfirmasi Perubahan Tahap</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        Anda yakin ingin mengubah status kandidat ini ke tahap "{targetStage ? statusDisplayLabels[targetStage] : ''}"? Tindakan ini akan tercatat.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel>Batal</AlertDialogCancel>
+                    <AlertDialogAction onClick={confirmManualStageChange} disabled={isConfirmingStageChange}>
+                        {isConfirmingStageChange && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Konfirmasi
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+        </>
       )}
     </DashboardLayout>
   );
