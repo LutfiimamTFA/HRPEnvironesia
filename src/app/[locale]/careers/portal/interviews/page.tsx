@@ -8,7 +8,7 @@ import type { JobApplication, ApplicationInterview } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Link as LinkIcon, Calendar, Video, RefreshCw, Loader2 } from "lucide-react";
+import { Link as LinkIcon, Calendar, Video, RefreshCw, Loader2, Info } from "lucide-react";
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { Badge } from '@/components/ui/badge';
@@ -25,6 +25,8 @@ function InterviewCard({ interview, onMutate }: { interview: EnrichedInterview, 
     const isRescheduleRequested = interview.status === 'reschedule_requested';
     const [isRescheduleDialogOpen, setIsRescheduleDialogOpen] = useState(false);
     
+    const rescheduleStatus = interview.rescheduleRequest?.status;
+
     return (
         <>
             <Card>
@@ -34,8 +36,11 @@ function InterviewCard({ interview, onMutate }: { interview: EnrichedInterview, 
                             <CardTitle>{interview.application.jobPosition}</CardTitle>
                             <CardDescription>{interview.application.brandName}</CardDescription>
                         </div>
-                        {isUpcoming && !isRescheduleRequested && <Badge>Akan Datang</Badge>}
-                        {isRescheduleRequested && <Badge variant="outline" className="text-amber-600 border-amber-500">Jadwal Ulang Diminta</Badge>}
+                        {isUpcoming && !rescheduleStatus && <Badge>Akan Datang</Badge>}
+                        {rescheduleStatus === 'pending' && <Badge variant="outline" className="text-amber-600 border-amber-500">Menunggu Konfirmasi HRD</Badge>}
+                        {rescheduleStatus === 'approved' && <Badge className="bg-green-600">Jadwal Diperbarui</Badge>}
+                        {rescheduleStatus === 'denied' && <Badge variant="destructive">Permintaan Ditolak</Badge>}
+                        {rescheduleStatus === 'countered' && <Badge className="bg-blue-500">Usulan Jadwal Baru dari HRD</Badge>}
                     </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -56,10 +61,13 @@ function InterviewCard({ interview, onMutate }: { interview: EnrichedInterview, 
                             </div>
                         </div>
                     </div>
+                    {interview.rescheduleRequest?.hrResponseNote && (
+                        <div className="p-3 bg-muted/50 rounded-md text-sm">
+                            <p className="font-semibold text-muted-foreground">Catatan dari HRD:</p>
+                            <p className="italic">"{interview.rescheduleRequest.hrResponseNote}"</p>
+                        </div>
+                    )}
                     <div className="flex justify-end items-center gap-2 flex-wrap pt-4">
-                        {isRescheduleRequested && (
-                            <p className="text-sm text-amber-600 font-medium mr-auto">Menunggu konfirmasi dari HRD.</p>
-                        )}
                         {isUpcoming && !isRescheduleRequested && (
                             <Button onClick={() => setIsRescheduleDialogOpen(true)} variant="outline" size="sm">
                                 <RefreshCw className="mr-2 h-4 w-4" />
@@ -123,7 +131,7 @@ export default function InterviewsPage() {
         applications.forEach(app => {
             if (app.interviews) {
                 app.interviews.forEach((interview, index) => {
-                    if(interview.status === 'scheduled' || interview.status === 'reschedule_requested') {
+                    if(interview.status !== 'canceled') {
                         interviews.push({ ...interview, application: app, interviewIndex: index });
                     }
                 });
