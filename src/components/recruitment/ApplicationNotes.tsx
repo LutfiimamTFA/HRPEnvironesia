@@ -10,7 +10,7 @@ import { Loader2, MessageSquare, Send } from 'lucide-react';
 import type { JobApplication, ApplicationTimelineEvent } from '@/lib/types';
 import { formatDistanceToNow } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
-import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { doc, serverTimestamp, updateDoc, Timestamp } from 'firebase/firestore';
 import { useAuth } from '@/providers/auth-provider';
 import { useFirestore } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
@@ -37,7 +37,7 @@ export function ApplicationNotes({ application, onNoteAdded }: ApplicationNotesP
         
         const noteEvent: ApplicationTimelineEvent = {
             type: 'note_added',
-            at: serverTimestamp() as any,
+            at: Timestamp.now(),
             by: userProfile.uid,
             meta: {
                 note: newNote,

@@ -3,13 +3,13 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
-import { useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
+import { useDoc, useFirestore, useMemoFirebase } from '@/firebase';
 import { doc, serverTimestamp, updateDoc, Timestamp } from 'firebase/firestore';
 import type { JobApplication, Profile, Job, ApplicationTimelineEvent, ApplicationInterview } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Mail, Phone, XCircle, Loader2 } from 'lucide-react';
+import { Mail, Phone, XCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { ProfileView } from '@/components/recruitment/ProfileView';
@@ -70,7 +70,7 @@ export default function ApplicationDetailPage() {
 
     const timelineEvent: ApplicationTimelineEvent = {
         type: 'stage_changed',
-        at: serverTimestamp() as any,
+        at: Timestamp.now(),
         by: userProfile.uid,
         meta: {
             from: application.status,
@@ -108,7 +108,7 @@ export default function ApplicationDetailPage() {
 
     const interviewEvent: ApplicationTimelineEvent = {
       type: 'interview_scheduled',
-      at: serverTimestamp() as any,
+      at: Timestamp.now(),
       by: userProfile.uid,
       meta: {
         from: application.status,
@@ -120,7 +120,8 @@ export default function ApplicationDetailPage() {
     };
 
     const newInterview: ApplicationInterview = {
-      dateTime: Timestamp.fromDate(data.dateTime),
+      startAt: Timestamp.fromDate(data.dateTime),
+      endAt: Timestamp.fromDate(new Date(data.dateTime.getTime() + (data.duration || 30) * 60000)),
       interviewerIds: [], // placeholder for future functionality
       interviewerNames: data.interviewerNames.split(',').map(s => s.trim()),
       status: 'scheduled',
@@ -149,15 +150,14 @@ export default function ApplicationDetailPage() {
 
   useEffect(() => {
     const autoScreening = async () => {
-      // Only run if data is loaded, user exists, status is 'submitted', and it hasn't run before.
       if (isLoadingApp || !application || !userProfile || application.status !== 'submitted' || hasTriggeredAutoScreen) {
         return;
       }
-      setHasTriggeredAutoScreen(true); // Prevent re-triggering
-
+      setHasTriggeredAutoScreen(true);
+      
       const timelineEvent: ApplicationTimelineEvent = {
         type: 'stage_changed',
-        at: serverTimestamp() as any,
+        at: Timestamp.now(),
         by: userProfile.uid,
         meta: {
           from: 'submitted',
@@ -174,14 +174,13 @@ export default function ApplicationDetailPage() {
 
       try {
         await updateDocumentNonBlocking(applicationRef!, updatePayload);
-        mutateApplication(); // Refresh the UI with new status
+        mutateApplication(); 
         toast({
           title: 'Lamaran Discreening',
           description: `Status lamaran ini secara otomatis diperbarui menjadi "Screening".`,
         });
       } catch (error) {
         console.error("Failed to auto-update status to screening:", error);
-        // We don't show a toast for this background failure to avoid interrupting the user.
       }
     };
 
