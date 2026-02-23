@@ -159,7 +159,8 @@ service cloud.firestore {
                         (isOwner() && resource.data.status == "draft") ||
                         isSubmittingDocuments() ||
                         isUpdatingSubmittedDocuments() ||
-                        (isInternal() && isInternalStatusUpdate())
+                        (isInternal() && isInternalStatusUpdate()) ||
+                        (isInternal() && isUpdatingCvCache())
                       );
 
         // DELETE: Only internal users can delete applications.
@@ -189,10 +190,15 @@ service cloud.firestore {
                 && resource.data.status == 'verification'
                 && changedKeys.hasOnly(allowedKeys);
         }
+        function isUpdatingCvCache() {
+            let allowedKeys = ['cvText', 'cvTextExtractedAt', 'cvTextSource', 'cvCharCount'];
+            let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
+            return isInternal() && changedKeys.hasOnly(allowedKeys);
+        }
         function isInternalStatusUpdate() {
             let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
-            let allowedKeys = ['status', 'updatedAt', 'personalityTestAssignedAt'];
-            return isInternal() && changedKeys.hasOnly(allowedKeys);
+            let allowedKeys = ['status', 'updatedAt', 'personalityTestAssignedAt', 'cvVerified', 'ijazahVerified', 'timeline'];
+            return isInternal() && changedKeys.hasAll(allowedKeys);
         }
     }
 

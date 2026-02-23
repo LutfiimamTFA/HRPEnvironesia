@@ -134,6 +134,12 @@ export type JobApplication = {
   ijazahUrl?: string;
   cvFileName?: string;
   ijazahFileName?: string;
+
+  // CV text extraction cache
+  cvText?: string;
+  cvTextExtractedAt?: Timestamp;
+  cvTextSource?: 'pdf-parse' | 'ocr-vision' | 'ocr-docai' | 'unknown';
+  cvCharCount?: number;
 };
 
 export type Candidate = {
@@ -447,6 +453,9 @@ export type InterviewQuestion = {
 export type CandidateFitAnalysisOutput = {
   recommendedDecision: RecommendedDecision;
   confidence: Confidence;
+  overallFitScore: number;
+  overallFitLabel: 'strong_fit' | 'moderate_fit' | 'weak_fit';
+  scoreSummary: string[];
   requirementMatchMatrix: RequirementMatch[];
   scoreBreakdown: ScoreBreakdown;
   strengths: Strength[];

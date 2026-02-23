@@ -2,26 +2,31 @@
 'use client';
 
 import { useState } from 'react';
-import type { Profile, Job, CandidateFitAnalysisOutput, RequirementMatch } from '@/lib/types';
+import type { Profile, Job, CandidateFitAnalysisOutput, RequirementMatch, ScoreBreakdown } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from '../ui/button';
-import { Sparkles, Loader2, AlertCircle, CheckCircle, XCircle, FileQuestion, Lightbulb, FlaskConical, Target } from 'lucide-react';
-import { analyzeCandidateFit } from '@/ai/flows/analyze-candidate-fit-flow';
+import { Sparkles, Loader2, AlertCircle, CheckCircle, XCircle, FileQuestion, Lightbulb, FlaskConical, Target, BrainCircuit, FileClock } from 'lucide-react';
+import { getCandidateAnalysis } from '@/app/actions/analyze-candidate';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '../ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
 import { Separator } from '../ui/separator';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
+import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
+import type { JobApplication } from '@/lib/types';
 
 interface CandidateFitAnalysisProps {
   profile: Profile;
   job: Job;
+  application: JobApplication;
 }
 
 const decisionConfig = {
     advance_interview: { label: 'Lanjutkan ke Wawancara', icon: CheckCircle, className: 'text-green-600' },
-    advance_test: { label: 'Lanjutkan ke Tes', icon: CheckCircle, className: 'text-blue-600' },
+    advance_test: { label: 'Lanjutkan ke Tes', icon: BrainCircuit, className: 'text-blue-600' },
     hold: { label: 'Tahan (Hold)', icon: AlertCircle, className: 'text-yellow-600' },
     reject: { label: 'Tolak', icon: XCircle, className: 'text-red-600' },
 };
@@ -32,20 +37,27 @@ const matchConfig = {
     no: { label: 'Tidak', icon: XCircle, className: 'text-red-600' },
 };
 
-const scoreLabels: Record<string, string> = {
-    relevantExperience: 'Pengalaman Relevan',
-    adminDocumentation: 'Administrasi/Dokumentasi',
-    communicationTeamwork: 'Komunikasi/Kerja Tim',
-    analyticalProblemSolving: 'Analitis/Penyelesaian Masalah',
-    toolsHardSkills: 'Alat/Keterampilan Teknis',
-    initiativeOwnership: 'Inisiatif/Kepemilikan',
-    cultureFit: 'Kecocokan Budaya'
+const scoreLabels: Record<keyof ScoreBreakdown | 'cultureFitScore', string> = {
+    relevantExperience: 'Pengalaman',
+    adminDocumentation: 'Administrasi',
+    communicationTeamwork: 'Komunikasi',
+    analyticalProblemSolving: 'Analitis',
+    toolsHardSkills: 'Keahlian Teknis',
+    initiativeOwnership: 'Inisiatif',
+    cultureFit: 'Kecocokan Budaya',
+    cultureFitScore: 'Kecocokan Budaya',
 };
 
 const confidenceLabels: Record<string, string> = {
     high: 'Tinggi',
     medium: 'Sedang',
     low: 'Rendah'
+};
+
+const fitLabels: Record<string, string> = {
+    strong_fit: 'Sangat Cocok',
+    moderate_fit: 'Cukup Cocok',
+    weak_fit: 'Kurang Cocok',
 }
 
 const AnalysisSection = ({ title, icon, children }: { title: string, icon: React.ReactNode, children: React.ReactNode }) => (
@@ -60,40 +72,27 @@ const AnalysisSection = ({ title, icon, children }: { title: string, icon: React
     </Card>
 );
 
-export function CandidateFitAnalysis({ profile, job }: CandidateFitAnalysisProps) {
+export function CandidateFitAnalysis({ profile, job, application }: CandidateFitAnalysisProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [analysis, setAnalysis] = useState<CandidateFitAnalysisOutput | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
   const handleAnalyze = async () => {
+    if (!application.cvUrl) {
+      toast({
+        variant: 'destructive',
+        title: 'CV Tidak Ditemukan',
+        description: 'Kandidat ini belum mengunggah CV. Analisis tidak dapat dilakukan.',
+      });
+      return;
+    }
     setIsLoading(true);
     setError(null);
     setAnalysis(null);
 
     try {
-      const profileForAnalysis = {
-        skills: profile.skills || [],
-        workExperience: profile.workExperience?.map(exp => ({
-            company: exp.company,
-            position: exp.position,
-            jobType: exp.jobType,
-            startDate: exp.startDate,
-            endDate: exp.endDate,
-            isCurrent: exp.isCurrent,
-            description: exp.description
-        })) || [],
-        education: profile.education?.map(edu => ({
-            institution: edu.institution,
-            level: edu.level,
-            fieldOfStudy: edu.fieldOfStudy
-        })) || []
-      };
-
-      const result = await analyzeCandidateFit({
-        candidateProfile: profileForAnalysis,
-        jobRequirements: job.specialRequirementsHtml,
-      });
+      const result = await getCandidateAnalysis(application.id!);
       setAnalysis(result);
     } catch (e: any) {
       setError("Gagal melakukan analisis. Silakan coba lagi.");
@@ -109,6 +108,14 @@ export function CandidateFitAnalysis({ profile, job }: CandidateFitAnalysisProps
 
   const Decision = analysis ? decisionConfig[analysis.recommendedDecision] : null;
 
+  const chartData = analysis ? Object.entries(analysis.scoreBreakdown)
+    .map(([key, value]) => {
+      if (key === 'cultureFit') {
+        return { name: scoreLabels['cultureFitScore'], score: value.score };
+      }
+      return { name: scoreLabels[key as keyof typeof scoreLabels], score: value };
+    }) : [];
+
   return (
     <Card>
       <CardHeader>
@@ -118,9 +125,9 @@ export function CandidateFitAnalysis({ profile, job }: CandidateFitAnalysisProps
               <Sparkles className="h-5 w-5 text-primary" />
               Analisis AI (HR Analyst)
             </CardTitle>
-            <CardDescription>Analisis kesesuaian kandidat dengan kualifikasi khusus (didukung oleh AI).</CardDescription>
+            <CardDescription>Analisis kesesuaian kandidat berdasarkan CV dengan kualifikasi khusus (didukung oleh AI).</CardDescription>
           </div>
-           <Button onClick={handleAnalyze} disabled={isLoading}>
+           <Button onClick={handleAnalyze} disabled={isLoading || !application.cvUrl}>
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
             {isLoading ? 'Menganalisis...' : 'Lakukan Analisis'}
           </Button>
@@ -146,7 +153,45 @@ export function CandidateFitAnalysis({ profile, job }: CandidateFitAnalysisProps
         )}
         {analysis && Decision && (
             <div className="space-y-6">
-                 {/* Section A & B: Decision and Confidence */}
+                 {analysis.confidence.level === 'low' && (
+                    <Alert variant="destructive">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertTitle>Akurasi Analisis Rendah</AlertTitle>
+                        <AlertDescription>
+                            {analysis.confidence.reasons.join(' ')} Analisis mungkin tidak akurat. Disarankan untuk meminta kandidat mengunggah ulang CV berbasis teks.
+                        </AlertDescription>
+                    </Alert>
+                 )}
+                 <div className="grid md:grid-cols-3 gap-6">
+                    <Card className="md:col-span-1">
+                         <CardHeader><CardTitle className="text-base">Skor Kesesuaian</CardTitle></CardHeader>
+                         <CardContent className="text-center">
+                            <div className="text-6xl font-bold text-primary">{analysis.overallFitScore}</div>
+                            <div className="text-lg font-semibold text-muted-foreground">{fitLabels[analysis.overallFitLabel]}</div>
+                            <ul className="text-xs text-muted-foreground mt-2 list-disc list-inside text-left">
+                                {analysis.scoreSummary.map((reason, i) => <li key={i}>{reason}</li>)}
+                            </ul>
+                         </CardContent>
+                    </Card>
+                     <Card className="md:col-span-2">
+                        <CardHeader><CardTitle className="text-base">Rincian Skor per Dimensi</CardTitle></CardHeader>
+                         <CardContent>
+                            <ChartContainer config={{}} className="h-48 w-full">
+                                <BarChart data={chartData} layout="vertical" margin={{ left: 20, right: 20 }}>
+                                    <CartesianGrid horizontal={false} />
+                                    <XAxis type="number" domain={[0, 100]} hide />
+                                    <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 12 }} width={100} />
+                                    <Tooltip cursor={{ fill: 'hsl(var(--muted))' }} content={<ChartTooltipContent />} />
+                                    <Bar dataKey="score" radius={4}>
+                                        {chartData.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill="hsl(var(--primary))" />
+                                        ))}
+                                    </Bar>
+                                </BarChart>
+                            </ChartContainer>
+                         </CardContent>
+                     </Card>
+                 </div>
                 <div className="grid md:grid-cols-2 gap-6">
                     <Card>
                         <CardHeader>
@@ -173,8 +218,6 @@ export function CandidateFitAnalysis({ profile, job }: CandidateFitAnalysisProps
                         </CardContent>
                     </Card>
                 </div>
-
-                {/* Section C: Requirement Match Matrix */}
                 <AnalysisSection title="C. Matriks Kecocokan Kebutuhan" icon={<Target className="h-5 w-5" />}>
                     <div className="overflow-x-auto">
                         <Table>
@@ -209,29 +252,7 @@ export function CandidateFitAnalysis({ profile, job }: CandidateFitAnalysisProps
                         </Table>
                     </div>
                 </AnalysisSection>
-
-                {/* Section D, E, F */}
-                <div className="grid lg:grid-cols-3 gap-6 items-start">
-                    <AnalysisSection title="D. Rincian Skor" icon={<Sparkles className="h-5 w-5" />}>
-                        <ul className="space-y-2 text-sm">
-                            {Object.entries(analysis.scoreBreakdown).map(([key, value]) => {
-                                const label = scoreLabels[key as keyof typeof scoreLabels] || key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-                                if (key === 'cultureFit') {
-                                    return (
-                                        <li key={key} className="flex justify-between items-start">
-                                            <span>{label}: <strong className="text-primary">{value.score}</strong></span>
-                                            <p className="text-xs text-muted-foreground text-right ml-2">({value.reason})</p>
-                                        </li>
-                                    )
-                                }
-                                return (
-                                    <li key={key} className="flex justify-between items-center">
-                                        <span>{label}</span> <strong className="text-primary">{value}</strong>
-                                    </li>
-                                )
-                            })}
-                        </ul>
-                    </AnalysisSection>
+                <div className="grid lg:grid-cols-2 gap-6 items-start">
                      <AnalysisSection title="E. Kekuatan" icon={<CheckCircle className="h-5 w-5 text-green-600" />}>
                          <ul className="space-y-3 text-sm">
                             {analysis.strengths.map((item, i) => (
@@ -262,8 +283,6 @@ export function CandidateFitAnalysis({ profile, job }: CandidateFitAnalysisProps
                     </AnalysisSection>
                  )}
                  <Separator />
-
-                {/* Section H: Interview Questions */}
                  <AnalysisSection title="H. Pertanyaan Wawancara" icon={<FileQuestion className="h-5 w-5" />}>
                      <Accordion type="single" collapsible className="w-full">
                         {analysis.interviewQuestions.map((item, i) => (
@@ -276,8 +295,6 @@ export function CandidateFitAnalysis({ profile, job }: CandidateFitAnalysisProps
                         ))}
                     </Accordion>
                 </AnalysisSection>
-
-                {/* Section I & J */}
                  <div className="grid md:grid-cols-2 gap-6 items-start">
                     <AnalysisSection title="I. Rekomendasi Tes Cepat" icon={<FlaskConical className="h-5 w-5" />}>
                         <ul className="list-disc list-inside text-sm space-y-1">
@@ -290,6 +307,11 @@ export function CandidateFitAnalysis({ profile, job }: CandidateFitAnalysisProps
                         </ul>
                     </AnalysisSection>
                  </div>
+                 {application.cvTextExtractedAt && (
+                    <div className="text-center text-xs text-muted-foreground pt-4">
+                        <p>CV dianalisis menggunakan '{application.cvTextSource}' pada {application.cvTextExtractedAt.toDate().toLocaleString()}. ({application.cvCharCount} karakter).</p>
+                    </div>
+                )}
             </div>
         )}
       </CardContent>

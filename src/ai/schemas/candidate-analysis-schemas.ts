@@ -1,4 +1,3 @@
-
 import { z } from 'genkit';
 
 const SimplifiedWorkExperienceSchema = z.object({
@@ -23,10 +22,18 @@ const SimplifiedProfileSchema = z.object({
   education: z.array(SimplifiedEducationSchema).optional().describe("Riwayat pendidikan kandidat."),
 });
 
+const CvMetaSchema = z.object({
+    fileName: z.string().optional(),
+    extractedAt: z.string().optional(),
+    source: z.string().optional(),
+    charCount: z.number().optional(),
+});
+
 export const CandidateFitAnalysisInputSchema = z.object({
-    candidateProfile: SimplifiedProfileSchema.describe("Objek JSON yang berisi profil kandidat (CV, pengalaman, dll)."),
-    jobRequirements: z.string().describe("String HTML yang berisi kualifikasi khusus untuk pekerjaan yang dilamar."),
-    personalityAnalysis: z.any().optional(), // This is no longer used by the new prompt, but kept for compatibility.
+    jobRequirementsHtml: z.string().describe("String HTML yang berisi kualifikasi khusus untuk pekerjaan yang dilamar."),
+    cvText: z.string().describe("Teks mentah yang diekstrak dari CV kandidat. Ini adalah sumber utama untuk analisis."),
+    cvMeta: CvMetaSchema.optional().describe("Metadata tentang proses ekstraksi CV."),
+    candidateProfileJson: SimplifiedProfileSchema.optional().describe("Data profil terstruktur dari formulir aplikasi, digunakan sebagai pelengkap."),
 });
 export type CandidateFitAnalysisInput = z.infer<typeof CandidateFitAnalysisInputSchema>;
 
@@ -80,6 +87,9 @@ const InterviewQuestionSchema = z.object({
 export const CandidateFitAnalysisOutputSchema = z.object({
   recommendedDecision: RecommendedDecisionSchema.describe('A. Recommended Decision'),
   confidence: ConfidenceSchema.describe('B. Confidence level and reasons'),
+  overallFitScore: z.number().int().min(0).max(100).describe("Skor kesesuaian keseluruhan dari 0-100."),
+  overallFitLabel: z.enum(['strong_fit', 'moderate_fit', 'weak_fit']).describe("Label kualitatif untuk skor keseluruhan."),
+  scoreSummary: z.array(z.string()).max(3).describe("Ringkasan 2-3 poin utama yang menjadi alasan skor tersebut."),
   requirementMatchMatrix: z.array(RequirementMatchSchema).describe('C. Requirement Match Matrix'),
   scoreBreakdown: ScoreBreakdownSchema.describe('D. Score Breakdown (0-100) per dimension'),
   strengths: z.array(StrengthSchema).max(5).describe('E. Strengths with evidence from CV'),

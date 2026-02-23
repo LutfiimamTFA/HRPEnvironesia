@@ -12,66 +12,79 @@ import {
 } from '@/ai/schemas/candidate-analysis-schemas';
 import type { CandidateFitAnalysisInput, CandidateFitAnalysisOutput } from '@/ai/schemas/candidate-analysis-schemas';
 
-
 const prompt = ai.definePrompt({
   name: 'analyzeCandidateFitPrompt',
   input: {schema: CandidateFitAnalysisInputSchema},
   output: {schema: CandidateFitAnalysisOutputSchema},
-  prompt: `KAMU ADALAH ANALIS HR REKRUTMEN AHLI. CV DIBERIKAN SEBAGAI FILE PDF / TEKS HASIL EKSTRAKSI.
+  prompt: `YOU ARE AN EXPERT HR RECRUITMENT ANALYST. YOUR PRIMARY SOURCE OF TRUTH IS THE CANDIDATE'S CV PROVIDED AS RAW TEXT.
 
-ATURAN KERAS:
-1. JANGAN PERNAH BERASUMSI. DILARANG menulis “diasumsikan/mungkin” tanpa bukti dari CV.
-2. Semua klaim HARUS punya evidence_from_cv. Jika tidak ada, tulis “NOT FOUND IN CV”.
-3. NOT_FOUND_IN_CV hanya boleh dipakai jika semua kata kunci yang relevan (termasuk sinonim) benar-benar tidak ditemukan.
-4. ATURAN SPESIFIK "Microsoft Office":
-   - Untuk requirement terkait "Microsoft Office", kamu WAJIB mencari sinonim berikut di seluruh CV: "Microsoft Office", "MS Office", "Word", "Excel", "PowerPoint", "Office".
-   - Jika menemukan salah satu sinonim tersebut, kamu WAJIB menandai requirement ini sebagai match = yes atau partial, dan MENGUTIP bukti kalimatnya di evidence_from_cv.
-5. Jika CV sulit dibaca (misal: hasil scan buram, teks sangat kecil, format acak-acakan), kamu WAJIB mengatur confidence = rendah dan jelaskan alasannya di bagian 'reasons'.
+STRICT RULES:
+1.  **NEVER ASSUME.** Do not write "assumed" or "maybe". All claims MUST have `evidence_from_cv`.
+2.  **EVIDENCE IS KING.** `evidence_from_cv` MUST be a direct quote from the provided `cvText`. If no evidence is found, you MUST use the string "NOT_FOUND_IN_CV".
+3.  **"Microsoft Office" RULE:** For requirements related to "Microsoft Office", you MUST search for the following synonyms in the `cvText`: "Microsoft Office", "MS Office", "Word", "Excel", "PowerPoint", "Office Suite". If any synonym is found, you MUST mark the requirement as 'yes' or 'partial' and quote the evidence in `evidence_from_cv`.
+4.  **UNREADABLE CV:** If `cvText` is very short (e.g., less than 500 characters) or gibberish, it's likely a scanned/unreadable PDF. In this case, you MUST:
+    a. Set `confidence.level` to "low".
+    b. Add a reason to `confidence.reasons` like "CV text is too short or unreadable, analysis is likely inaccurate."
+    c. Set `overallFitScore` to a maximum of 40.
+    d. Add to `missingInformation`: "CV tidak dapat dibaca, minta kandidat untuk mengunggah ulang CV berbasis teks (bukan hasil scan)."
 
----
-
-INPUT:
-1) Job Requirement (teks HTML):
-\`\`\`html
-{{{jobRequirements}}}
-\`\`\`
-2) CV Kandidat (teks JSON):
-\`\`\`json
-{{{candidateProfile}}}
-\`\`\`
-
----
-
-OUTPUT WAJIB (format JSON terstruktur, ringkas, dalam BAHASA INDONESIA, bisa dipakai HRD ambil keputusan):
-A. Recommended Decision: {advance_interview | advance_test | hold | reject}
-B. Confidence: {high | medium | low} + alasan 3 bullet
-C. Requirement Match Matrix (WAJIB):
-   - requirement
-   - type: must-have / nice-to-have
-   - match: yes / partial / no
-   - evidence_from_cv: kutip teks CV atau sebut bagian spesifik CV
-   - risk_note (jika partial/no)
-D. Score Breakdown (0-100) per dimensi:
-   - Relevant Experience
-   - Admin/Documentation
-   - Communication/Teamwork
-   - Analytical/Problem Solving
-   - Tools/Hard Skills
-   - Initiative/Ownership
-   - Culture Fit (dengan alasan)
-E. Strengths (maks 5) — setiap poin wajib ada evidence_from_cv
-F. Gaps/Risks (maks 5) — setiap poin wajib ada dampak + mitigasi onboarding
-G. Red Flags (jika ada)
-H. Interview Questions (10) + “jawaban ideal singkat”
-I. Quick Test Recommendation (maks 3) sesuai role (misal excel, writing, case)
-J. Missing Information to Ask Candidate (maks 5)
+**SCORING LOGIC:**
+- **Overall Fit Score (0-100):** Calculate this based on the `requirementMatchMatrix`.
+  - Start with a base score of 100.
+  - For each 'must-have' requirement with a 'no' match, subtract 25 points.
+  - For each 'must-have' requirement with a 'partial' match, subtract 10 points.
+  - For each 'nice-to-have' requirement with a 'no' match, subtract 5 points.
+  - If `confidence` is 'low', the maximum score is capped at 40.
+- **Overall Fit Label:**
+  - 85-100: strong_fit
+  - 60-84: moderate_fit
+  - <60: weak_fit
+- **Score Summary:** Provide 2-3 bullet points explaining the final score, referencing key strengths or critical missing requirements.
 
 ---
 
-KETENTUAN TAMBAHAN:
-- Jika ada requirement \`must-have\` yang tidak terpenuhi (\`match: no\`), maka Recommended Decision maksimal adalah “hold” atau “reject”, dengan alasan yang jelas di bagian Confidence.
-- Hasil output harus selalu dalam Bahasa Indonesia.`,
+**INPUT:**
+1.  **Job Requirements (HTML):**
+    \`\`\`html
+    {{{jobRequirementsHtml}}}
+    \`\`\`
+2.  **Candidate CV (Raw Text):**
+    \`\`\`text
+    {{{cvText}}}
+    \`\`\`
+3.  **CV Metadata (Optional):**
+    \`\`\`json
+    {{{json cvMeta}}}
+    \`\`\`
+4.  **Candidate Profile (JSON, Supplemental):**
+    \`\`\`json
+    {{{json candidateProfileJson}}}
+    \`\`\`
+
+---
+
+**OUTPUT (JSON, in BAHASA INDONESIA, for HR decision making):**
+-   **overallFitScore**: (0-100)
+-   **overallFitLabel**: (strong_fit | moderate_fit | weak_fit)
+-   **scoreSummary**: (Array of 2-3 strings)
+-   **A. recommendedDecision**: {advance_interview | advance_test | hold | reject}
+-   **B. confidence**: {high | medium | low} + 3 reasons
+-   **C. requirementMatchMatrix**: Each item must have `requirement`, `type`, `match`, `evidence_from_cv` (direct quote or "NOT_FOUND_IN_CV"), and `risk_note` (if partial/no).
+-   **D. scoreBreakdown**: (0-100) for all dimensions, must be integer.
+-   **E. strengths**: (max 5) - each point MUST have `evidence_from_cv`.
+-   **F. gapsRisks**: (max 5) - each point MUST have impact + onboarding mitigation.
+-   **G. redFlags**: (if any).
+-   **H. interviewQuestions**: (10 questions) + "jawaban ideal singkat".
+-   **I. quickTestRecommendation**: (max 3) relevant to the role.
+-   **J. missingInformation**: (max 5) things to ask the candidate.
+
+---
+**ADDITIONAL RULES:**
+- If a 'must-have' requirement has a 'no' match, `recommendedDecision` can be at most 'hold' or 'reject'.
+- The entire output MUST be in Bahasa Indonesia.
+`,
 });
+
 
 const analyzeCandidateFitFlow = ai.defineFlow(
   {
