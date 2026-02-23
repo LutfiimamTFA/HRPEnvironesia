@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useMemo, useState } from 'react';
@@ -57,18 +56,16 @@ function InterviewCard({ interview, onMutate }: { interview: EnrichedInterview, 
                             </div>
                         </div>
                     </div>
-                    <div className="flex justify-between items-center gap-2 flex-wrap">
-                        <div>
-                            {isUpcoming && !isRescheduleRequested && (
-                                <Button onClick={() => setIsRescheduleDialogOpen(true)} variant="outline" size="sm">
-                                    <RefreshCw className="mr-2 h-4 w-4" />
-                                    Minta Jadwal Ulang
-                                </Button>
-                            )}
-                             {isRescheduleRequested && (
-                                <p className="text-sm text-amber-600 font-medium">Menunggu konfirmasi dari HRD.</p>
-                             )}
-                        </div>
+                    <div className="flex justify-end items-center gap-2 flex-wrap pt-4">
+                        {isRescheduleRequested && (
+                            <p className="text-sm text-amber-600 font-medium mr-auto">Menunggu konfirmasi dari HRD.</p>
+                        )}
+                        {isUpcoming && !isRescheduleRequested && (
+                            <Button onClick={() => setIsRescheduleDialogOpen(true)} variant="outline" size="sm">
+                                <RefreshCw className="mr-2 h-4 w-4" />
+                                Minta Jadwal Ulang
+                            </Button>
+                        )}
                         <Button asChild>
                             <a href={interview.meetingLink} target="_blank" rel="noopener noreferrer">
                                 <LinkIcon className="mr-2 h-4 w-4" />
