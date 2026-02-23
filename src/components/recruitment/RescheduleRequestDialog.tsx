@@ -80,23 +80,28 @@ export function RescheduleRequestDialog({ open, onOpenChange, application, inter
 
       if (currentInterviews[interviewIndex]) {
         const oldInterviewData = currentInterviews[interviewIndex];
-        currentInterviews[interviewIndex] = {
-            // Carry over essential fields to avoid 'undefined'
+        
+        // **FIX:** Explicitly rebuild the object to avoid any `undefined` values.
+        const newInterviewData: ApplicationInterview = {
             interviewId: oldInterviewData.interviewId,
             startAt: oldInterviewData.startAt,
             endAt: oldInterviewData.endAt,
-            meetingLink: oldInterviewData.meetingLink,
-            interviewerIds: oldInterviewData.interviewerIds,
-            interviewerNames: oldInterviewData.interviewerNames,
-            
-            // Set new status and request data
+            meetingLink: oldInterviewData.meetingLink ?? '', // Fallback
+            interviewerIds: oldInterviewData.interviewerIds ?? [], // Fallback
+            interviewerNames: oldInterviewData.interviewerNames ?? [], // Fallback
             status: 'reschedule_requested',
             rescheduleRequest: rescheduleRequestData,
-
-            // Conditionally carry over optional fields
-            ...(oldInterviewData.notes && { notes: oldInterviewData.notes }),
-            ...(oldInterviewData.leadInterviewerId && { leadInterviewerId: oldInterviewData.leadInterviewerId }),
         };
+
+        // Conditionally add optional fields ONLY if they exist to prevent undefined.
+        if (oldInterviewData.notes) {
+          newInterviewData.notes = oldInterviewData.notes;
+        }
+        if (oldInterviewData.leadInterviewerId) {
+          newInterviewData.leadInterviewerId = oldInterviewData.leadInterviewerId;
+        }
+
+        currentInterviews[interviewIndex] = newInterviewData;
       }
 
       await updateDocumentNonBlocking(appRef, { 
@@ -123,10 +128,11 @@ export function RescheduleRequestDialog({ open, onOpenChange, application, inter
       onOpenChange(false);
       form.reset();
     } catch (error: any) {
+      console.error("Error during reschedule request:", error);
       toast({
         variant: 'destructive',
         title: 'Gagal Mengirim Permintaan',
-        description: error.message,
+        description: error.message || 'Terjadi kesalahan tidak dikenal.',
       });
     } finally {
       setIsSaving(false);
