@@ -2,8 +2,9 @@
 
 import React from 'react';
 import { cn } from '@/lib/utils';
-import type { JobApplication } from '@/lib/types';
+import type { JobApplicationStatus } from '@/lib/types';
 import { Check, BrainCircuit, ClipboardCheck, Users, Award, FileUp, FileText, Search } from 'lucide-react';
+import { ORDERED_RECRUITMENT_STAGES } from '@/lib/types';
 
 const applicationSteps = [
   { status: 'submitted', label: 'Terkirim', icon: FileUp },
@@ -16,11 +17,11 @@ const applicationSteps = [
 ];
 
 interface ApplicationProgressStepperProps {
-  currentStatus: JobApplication['status'];
+  currentStatus: JobApplicationStatus;
 }
 
 export function ApplicationProgressStepper({ currentStatus }: ApplicationProgressStepperProps) {
-  const currentStepIndex = applicationSteps.findIndex(step => step.status === currentStatus);
+  const currentStepIndex = ORDERED_RECRUITMENT_STAGES.indexOf(currentStatus);
   const isRejected = currentStatus === 'rejected';
 
   if (isRejected) {
@@ -31,8 +32,11 @@ export function ApplicationProgressStepper({ currentStatus }: ApplicationProgres
     <div className="w-full overflow-x-auto pb-4">
       <div className="flex items-center min-w-[800px]">
         {applicationSteps.map((step, index) => {
-          const isActive = index === currentStepIndex;
-          const isCompleted = !isRejected && currentStepIndex > index;
+          // Find the index of the visual step in the canonical list
+          const canonicalIndex = ORDERED_RECRUITMENT_STAGES.indexOf(step.status as JobApplicationStatus);
+          
+          const isActive = canonicalIndex === currentStepIndex;
+          const isCompleted = !isRejected && currentStepIndex > canonicalIndex;
           
           const StepContainer = 'div';
           const containerProps = {

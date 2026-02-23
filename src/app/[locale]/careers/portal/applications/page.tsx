@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
@@ -6,7 +5,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
-import type { JobApplication } from '@/lib/types';
+import type { JobApplication, JobApplicationStatus } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
@@ -16,43 +15,40 @@ import { Link } from "@/navigation";
 import { ArrowRight, Check, Briefcase, Building, FileSignature, FileUp, ClipboardCheck, Users, Award, XCircle, BrainCircuit, FileText, Search } from "lucide-react";
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
+import { ORDERED_RECRUITMENT_STAGES } from '@/lib/types';
 
-
-const allStatuses: JobApplication['status'][] = ['draft', 'submitted', 'screening', 'tes_kepribadian', 'document_submission', 'verification', 'interview', 'hired', 'rejected'];
 const visibleSteps = [
-  { status: 'draft', label: 'Draf', icon: FileSignature },
   { status: 'submitted', label: 'Terkirim', icon: FileUp },
   { status: 'screening', label: 'Screening', icon: Search },
-  { status: 'tes_kepribadian', label: 'Tes Kepribadian', icon: BrainCircuit },
-  { status: 'document_submission', label: 'Pengumpulan Dokumen', icon: FileText },
+  { status: 'tes_kepribadian', label: 'Tes', icon: BrainCircuit },
+  { status: 'document_submission', label: 'Dokumen', icon: FileText },
+  { status: 'verification', label: 'Verifikasi', icon: ClipboardCheck },
   { status: 'interview', label: 'Wawancara', icon: Users },
   { status: 'hired', label: 'Diterima', icon: Award },
 ];
 
 
-const statusLabels: Record<JobApplication['status'], string> = {
+const statusLabels: Record<JobApplicationStatus, string> = {
   draft: 'Draf',
   submitted: 'Lamaran Terkirim',
-  screening: 'Screening',
+  screening: 'Screening oleh HRD',
   tes_kepribadian: 'Tahap Tes Kepribadian',
-  verification: 'Dokumen Ditinjau',
   document_submission: 'Pengumpulan Dokumen',
+  verification: 'Dokumen Ditinjau',
   interview: 'Tahap Wawancara',
   rejected: 'Tidak Lolos',
-  hired: 'Diterima',
+  hired: 'Diterima Kerja',
 };
 
 function ApplicationCard({ application }: { application: JobApplication }) {
   const [now, setNow] = useState(new Date());
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(new Date());
-    }, 60000); // Update every minute to check expiry
+    const timer = setInterval(() => setNow(new Date()), 60000); 
     return () => clearInterval(timer);
   }, []);
   
-  const currentStatusIndex = allStatuses.indexOf(application.status);
+  const currentStatusIndex = ORDERED_RECRUITMENT_STAGES.indexOf(application.status);
   const isRejected = application.status === 'rejected';
   const isHired = application.status === 'hired';
 
@@ -66,7 +62,7 @@ function ApplicationCard({ application }: { application: JobApplication }) {
   
   const timelineSteps = useMemo(() => {
     if (isRejected) {
-      const lastVisibleStepIndex = allStatuses.indexOf(application.status) -1;
+      const lastVisibleStepIndex = ORDERED_RECRUITMENT_STAGES.indexOf(application.status) -1;
       const stepsToShow = visibleSteps.filter((_, index) => index <= lastVisibleStepIndex);
       return [...stepsToShow, { status: 'rejected', label: 'Tidak Lolos', icon: XCircle }];
     }
@@ -91,12 +87,11 @@ function ApplicationCard({ application }: { application: JobApplication }) {
       <CardContent className="flex-grow space-y-4">
         <Separator />
         <div className="w-full overflow-x-auto pb-4">
-            <div className={cn("flex items-center", isRejected ? "min-w-[900px]" : "min-w-[800px]")}>
-            {timelineSteps.map((step, index) => {
-              const stepStatusIndex = allStatuses.indexOf(step.status as JobApplication['status']);
+            <div className={cn("flex items-center", isRejected ? "min-w-[800px]" : "min-w-[700px]")}>
+            {timelineSteps.map((step) => {
+              const stepStatusIndex = ORDERED_RECRUITMENT_STAGES.indexOf(step.status as JobApplicationStatus);
               const isCurrentRejectedStep = isRejected && step.status === 'rejected';
 
-              // A step is completed if its index is less than the current status index.
               const isCompleted = !isRejected && currentStatusIndex > stepStatusIndex;
               const isActive = !isRejected && currentStatusIndex === stepStatusIndex;
 
@@ -126,12 +121,9 @@ function ApplicationCard({ application }: { application: JobApplication }) {
                     )}>
                       {step.label}
                     </p>
-                    {isCompleted && !['draft', 'submitted'].includes(step.status) && (
-                      <p className="text-xs font-semibold text-green-600 mt-1">Lolos</p>
-                    )}
                   </div>
 
-                  {index < timelineSteps.length - 1 && (
+                  {step.status !== 'hired' && step.status !== 'rejected' && (
                     <div className={cn(
                       "flex-1 h-1 transition-colors duration-300 -mx-1",
                       isCompleted ? 'bg-primary' : 'bg-border'
@@ -296,5 +288,3 @@ export default function ApplicationsPage() {
         </div>
     );
 }
-
-    

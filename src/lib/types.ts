@@ -52,8 +52,9 @@ export type Job = {
   updatedBy: string;
 };
 
-export const APPLICATION_STAGES = ['draft', 'submitted', 'screening', 'tes_kepribadian', 'verification', 'document_submission', 'interview', 'hired', 'rejected'] as const;
-export type ApplicationStage = (typeof APPLICATION_STAGES)[number];
+export const ORDERED_RECRUITMENT_STAGES = ['submitted', 'screening', 'tes_kepribadian', 'document_submission', 'verification', 'interview', 'hired', 'rejected'] as const;
+export type JobApplicationStatus = (typeof ORDERED_RECRUITMENT_STAGES)[number];
+
 
 export const APPLICATION_SOURCES = ['website', 'linkedin', 'jobstreet', 'referral', 'instagram', 'other'] as const;
 export type ApplicationSource = (typeof APPLICATION_SOURCES)[number];
@@ -84,7 +85,7 @@ export type JobApplication = {
   id?: string;
   // This is a mix of new and old fields. They need to be harmonized.
   // New ATS fields:
-  stage?: ApplicationStage;
+  stage?: JobApplicationStatus;
   stageEnteredAt?: Timestamp;
   appliedAt?: Timestamp;
   lastActivityAt?: Timestamp;
@@ -113,7 +114,7 @@ export type JobApplication = {
   brandName: string;
   jobType: 'fulltime' | 'internship' | 'contract';
   location: string;
-  status: 'draft' | 'submitted' | 'screening' | 'tes_kepribadian' | 'verification' | 'document_submission' | 'interview' | 'hired' | 'rejected';
+  status: JobApplicationStatus;
   personalityTestAssignedAt?: Timestamp;
   createdAt: Timestamp;
   updatedAt: Timestamp;

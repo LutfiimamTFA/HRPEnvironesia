@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '@/providers/auth-provider';
-import type { JobApplication } from '@/lib/types';
+import type { JobApplication, JobApplicationStatus } from '@/lib/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Eye, CalendarPlus, List, LayoutGrid } from 'lucide-react';
@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { BulkScheduleWizard } from './BulkScheduleWizard';
 import { CandidatesKanban } from './CandidatesKanban';
 import { useToast } from '@/hooks/use-toast';
+import { ORDERED_RECRUITMENT_STAGES } from '@/lib/types';
 
 type SelectionState = {
   mode: 'none' | 'all' | 'some';
@@ -94,8 +95,8 @@ export function ApplicantsPageClient({ applications }: { applications: JobApplic
                 </SelectTrigger>
                 <SelectContent>
                     <SelectItem value="all">All Stages</SelectItem>
-                    {Object.entries(statusDisplayLabels).map(([key, label]) => (
-                        <SelectItem key={key} value={key}>{label}</SelectItem>
+                    {ORDERED_RECRUITMENT_STAGES.map((stage) => (
+                        <SelectItem key={stage} value={stage}>{statusDisplayLabels[stage]}</SelectItem>
                     ))}
                 </SelectContent>
             </Select>
