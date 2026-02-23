@@ -178,7 +178,7 @@ service cloud.firestore {
             let allowedKeys = ['cvUrl', 'ijazahUrl', 'cvFileName', 'ijazahFileName', 'status', 'updatedAt'];
             return isOwner()
                 && resource.data.status == 'document_submission'
-                && request.resource.data.status == 'verification'
+                && request.resource.data.status == 'interview'
                 && changedKeys.hasOnly(allowedKeys)
                 && request.resource.data.cvUrl is string
                 && request.resource.data.ijazahUrl is string;
@@ -187,7 +187,7 @@ service cloud.firestore {
             let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
             let allowedKeys = ['cvUrl', 'ijazahUrl', 'cvFileName', 'ijazahFileName', 'updatedAt'];
             return isOwner()
-                && resource.data.status == 'verification'
+                && resource.data.status == 'interview'
                 && changedKeys.hasOnly(allowedKeys);
         }
         function isUpdatingCvCache() {
@@ -197,8 +197,8 @@ service cloud.firestore {
         }
         function isInternalStatusUpdate() {
             let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
-            let allowedKeys = ['status', 'updatedAt', 'personalityTestAssignedAt', 'cvVerified', 'ijazahVerified', 'timeline'];
-            return isInternal() && changedKeys.hasAll(allowedKeys);
+            let allowedKeys = ['status', 'updatedAt', 'personalityTestAssignedAt', 'cvVerified', 'ijazahVerified', 'timeline', 'interviews'];
+            return isInternal() && changedKeys.hasOnly(allowedKeys);
         }
     }
 
