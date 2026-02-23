@@ -12,7 +12,7 @@ import { id } from 'date-fns/locale';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from "@/components/ui/button";
 import { Link } from "@/navigation";
-import { ArrowRight, Check, Briefcase, Building, FileSignature, FileUp, ClipboardCheck, Users, Award, XCircle, BrainCircuit, FileText, Search } from "lucide-react";
+import { ArrowRight, Check, Briefcase, Building, FileSignature, FileUp, ClipboardCheck, Users, Award, XCircle, BrainCircuit, FileText, Search, Calendar, Link as LinkIcon } from "lucide-react";
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 import { ORDERED_RECRUITMENT_STAGES } from '@/lib/types';
@@ -35,6 +35,27 @@ function ApplicationCard({ application }: { application: JobApplication }) {
     const timer = setInterval(() => setNow(new Date()), 60000); 
     return () => clearInterval(timer);
   }, []);
+
+  const scheduledInterview = useMemo(() => {
+    if (!application.interviews || application.interviews.length === 0) return null;
+    const now = new Date().getTime();
+    const scheduledInterviews = application.interviews.filter(i => i.status === 'scheduled');
+    if (scheduledInterviews.length === 0) return null;
+    
+    const upcoming = scheduledInterviews
+      .filter(i => i.startAt.toDate().getTime() >= now)
+      .sort((a, b) => a.startAt.toDate().getTime() - b.startAt.toDate().getTime());
+      
+    if (upcoming.length > 0) return upcoming[0];
+
+    const past = scheduledInterviews
+      .filter(i => i.startAt.toDate().getTime() < now)
+      .sort((a, b) => b.startAt.toDate().getTime() - a.startAt.toDate().getTime());
+
+    if (past.length > 0) return past[0];
+    
+    return null;
+  }, [application.interviews]);
   
   const currentStatusIndex = ORDERED_RECRUITMENT_STAGES.indexOf(application.status);
   const isRejected = application.status === 'rejected';
@@ -48,6 +69,7 @@ function ApplicationCard({ application }: { application: JobApplication }) {
   const canContinue = application.status === 'draft';
   const canTakeTest = application.status === 'tes_kepribadian' && !isTestExpired;
   const canSubmitDocuments = application.status === 'document_submission';
+  const isInterviewStage = application.status === 'interview';
   
   const timelineSteps = useMemo(() => {
     if (isRejected) {
@@ -135,7 +157,7 @@ function ApplicationCard({ application }: { application: JobApplication }) {
         )}
 
       </CardContent>
-      <CardFooter className="bg-muted/50 p-4 border-t flex justify-between items-center min-h-[76px]">
+      <CardFooter className="bg-muted/50 p-4 border-t flex flex-col sm:flex-row justify-between items-start sm:items-center min-h-[76px] gap-4">
         <div className="flex-1">
           {application.status === 'tes_kepribadian' && deadline ? (
             isTestExpired ? (
@@ -150,31 +172,44 @@ function ApplicationCard({ application }: { application: JobApplication }) {
             <p className="text-sm text-muted-foreground">
               Batas Lamaran: {application.jobApplyDeadline ? format(application.jobApplyDeadline.toDate(), 'dd MMM yyyy') : '-'}
             </p>
+          ) : isInterviewStage && scheduledInterview ? (
+            <div>
+                <p className="text-xs text-muted-foreground font-semibold flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" /> JADWAL WAWANCARA</p>
+                <p className="text-sm font-semibold">{format(scheduledInterview.startAt.toDate(), 'eeee, dd MMM yyyy', { locale: id })}</p>
+                <p className="text-sm font-semibold">{format(scheduledInterview.startAt.toDate(), 'HH:mm', { locale: id })} - {format(scheduledInterview.endAt.toDate(), 'HH:mm', { locale: id })} WIB</p>
+            </div>
           ) : (
             <div></div> // Placeholder for alignment
           )}
         </div>
         
-        <div className="flex-shrink-0">
+        <div className="flex-shrink-0 w-full sm:w-auto">
           {canContinue && !jobIsExpired && (
-            <Button asChild size="sm">
+            <Button asChild size="sm" className="w-full">
               <Link href={`/careers/jobs/${application.jobSlug}/apply`}>
                 Lanjutkan Draf <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
           )}
           {canTakeTest && (
-            <Button asChild size="sm">
+            <Button asChild size="sm" className="w-full">
               <Link href={`/careers/portal/assessment/personality?applicationId=${application.id}`}>
                 Kerjakan Tes <BrainCircuit className="ml-2 h-4 w-4" />
               </Link>
             </Button>
           )}
            {canSubmitDocuments && (
-            <Button asChild size="sm">
+            <Button asChild size="sm" className="w-full">
               <Link href={`/careers/portal/documents`}>
                 Unggah Dokumen <FileText className="ml-2 h-4 w-4" />
               </Link>
+            </Button>
+          )}
+          {isInterviewStage && scheduledInterview && (
+             <Button asChild size="sm" className="w-full">
+                <a href={scheduledInterview.meetingLink} target="_blank" rel="noopener noreferrer">
+                    <LinkIcon className="mr-2 h-4 w-4" /> Buka Link Wawancara
+                </a>
             </Button>
           )}
           {canContinue && jobIsExpired && (
