@@ -35,7 +35,8 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
         title: "Main",
         items: [
             { href: '/admin/super-admin', label: 'Overview', icon: createElement(LayoutDashboard) },
-            ...HRD_MENU_ITEMS[0].items
+            ...HRD_MENU_ITEMS[0].items,
+            { href: '/admin/interviews', label: 'My Interviews', icon: createElement(Video) },
         ]
     },
     {

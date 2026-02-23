@@ -95,6 +95,10 @@ export type ApplicationInterview = {
     status: 'scheduled' | 'completed' | 'canceled' | 'reschedule_requested';
     notes?: string;
     rescheduleRequest?: RescheduleRequest;
+    // Legacy support
+    interviewerIds?: string[];
+    interviewerNames?: string[];
+    rescheduleReason?: string;
 };
 
 export type JobApplication = {

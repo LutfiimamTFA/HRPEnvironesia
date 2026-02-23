@@ -22,8 +22,9 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { format } from 'date-fns';
-import { useFirestore, updateDocumentNonBlocking } from '@/firebase';
-import { doc, writeBatch, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { useFirestore, updateDocumentNonBlocking, useCollection, useMemoFirebase } from '@/firebase';
+import { doc, writeBatch, serverTimestamp, Timestamp, query, collection, where } from 'firebase/firestore';
+import { MultiSelect } from '../ui/multi-select';
 
 // --- Step 1: Candidate List Item ---
 
@@ -55,7 +56,7 @@ const scheduleConfigSchema = z.object({
   slotDuration: z.coerce.number().int().min(5, 'Durasi minimal 5 menit.'),
   buffer: z.coerce.number().int().min(0, 'Buffer tidak boleh negatif.'),
   workdayEndTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, "Format waktu harus HH:MM."),
-  interviewerNames: z.string().min(1, "Nama pewawancara harus diisi."),
+  panelists: z.array(z.object({ value: z.string(), label: z.string() })).min(1, 'Minimal satu panelis harus dipilih.'),
   meetingLink: z.string().url({ message: "URL meeting tidak valid." }),
 });
 
@@ -77,6 +78,17 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
   const { toast } = useToast();
   const firestore = useFirestore();
 
+  const internalUsersQuery = useMemoFirebase(
+    () => query(collection(firestore, 'users'), where('role', 'in', ['hrd', 'super-admin', 'manager', 'karyawan'])),
+    [firestore]
+  );
+  const { data: internalUsers } = useCollection<UserProfile>(internalUsersQuery);
+
+  const panelistOptions = useMemo(() => {
+    if (!internalUsers) return [];
+    return internalUsers.map(u => ({ value: u.uid, label: u.fullName }));
+  }, [internalUsers]);
+
   useEffect(() => {
     if (isOpen) {
       setOrderedCandidates(candidates.sort((a,b) => (a.submittedAt?.toMillis() || 0) - (b.submittedAt?.toMillis() || 0)));
@@ -92,7 +104,7 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
       slotDuration: 30,
       buffer: 10,
       workdayEndTime: '17:00',
-      interviewerNames: recruiter.fullName,
+      panelists: recruiter ? [{ value: recruiter.uid, label: recruiter.fullName }] : [],
       meetingLink: '',
     },
   });
@@ -129,15 +141,19 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
     }
     
     const batch = writeBatch(firestore);
+    const { panelists, meetingLink } = scheduleForm.getValues();
+    const panelistIds = panelists.map(p => p.value);
+    const panelistNames = panelists.map(p => p.label);
 
     generatedSlots.forEach(slot => {
         const appRef = doc(firestore, 'applications', slot.candidate.id!);
         const interviewData: ApplicationInterview = {
+            interviewId: crypto.randomUUID(),
             startAt: Timestamp.fromDate(slot.startAt),
             endAt: Timestamp.fromDate(slot.endAt),
-            interviewerIds: [recruiter.uid],
-            interviewerNames: [scheduleForm.getValues('interviewerNames')],
-            meetingLink: scheduleForm.getValues('meetingLink'),
+            panelistIds: panelistIds,
+            panelistNames: panelistNames,
+            meetingLink: meetingLink,
             status: 'scheduled',
         };
 
@@ -151,6 +167,8 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
                 interviewDate: Timestamp.fromDate(slot.startAt),
             }
         };
+        
+        const allPanelistIds = Array.from(new Set([...(slot.candidate.allPanelistIds || []), ...panelistIds]));
 
         batch.update(appRef, {
             status: 'interview',
@@ -158,6 +176,7 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
                 ...(slot.candidate.interviews || []),
                 interviewData,
             ],
+            allPanelistIds,
             timeline: [
                 ...(slot.candidate.timeline || []),
                 timelineEvent
@@ -208,7 +227,22 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
                     <FormField control={scheduleForm.control} name="slotDuration" render={({ field }) => (<FormItem><FormLabel>Durasi per Slot (menit)</FormLabel><Select onValueChange={(v) => field.onChange(parseInt(v))} value={String(field.value)}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent><SelectItem value="15">15</SelectItem><SelectItem value="20">20</SelectItem><SelectItem value="30">30</SelectItem><SelectItem value="45">45</SelectItem><SelectItem value="60">60</SelectItem></SelectContent></Select><FormMessage /></FormItem>)} />
                     <FormField control={scheduleForm.control} name="buffer" render={({ field }) => (<FormItem><FormLabel>Jeda antar Slot (menit)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
                 </div>
-                 <FormField control={scheduleForm.control} name="interviewerNames" render={({ field }) => ( <FormItem><FormLabel>Pewawancara</FormLabel><FormControl><Input placeholder="Contoh: Dina, Budi" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                 <FormField
+                    control={scheduleForm.control}
+                    name="panelists"
+                    render={({ field }) => (
+                        <FormItem>
+                        <FormLabel>Panelis Wawancara</FormLabel>
+                        <MultiSelect
+                                options={panelistOptions}
+                                selected={field.value}
+                                onChange={field.onChange}
+                                placeholder="Pilih panelis..."
+                            />
+                        <FormMessage />
+                        </FormItem>
+                    )}
+                />
                  <FormField control={scheduleForm.control} name="meetingLink" render={({ field }) => ( <FormItem><FormLabel>Link Meeting</FormLabel><FormControl><Input placeholder="https://zoom.us/j/..." {...field} /></FormControl><FormMessage /></FormItem>)} />
             </form>
           </Form>

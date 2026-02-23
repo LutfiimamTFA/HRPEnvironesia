@@ -1,16 +1,16 @@
-
 'use client';
 
 import React from 'react';
 import { cn } from '@/lib/utils';
 import type { JobApplicationStatus } from '@/lib/types';
-import { Check, BrainCircuit, Users, Award, FileUp, FileText, Search } from 'lucide-react';
+import { Check, BrainCircuit, Users, Award, FileUp, FileText, Search, ClipboardCheck } from 'lucide-react';
 import { ORDERED_RECRUITMENT_STAGES } from '@/lib/types';
 
 const applicationSteps = [
   { status: 'submitted', label: 'Terkirim', icon: FileUp },
   { status: 'screening', label: 'Screening', icon: Search },
   { status: 'tes_kepribadian', label: 'Tes', icon: BrainCircuit },
+  { status: 'verification', label: 'Verifikasi', icon: ClipboardCheck },
   { status: 'document_submission', label: 'Dokumen', icon: FileText },
   { status: 'interview', label: 'Wawancara', icon: Users },
   { status: 'hired', label: 'Diterima', icon: Award },
