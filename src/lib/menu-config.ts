@@ -73,6 +73,7 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
             { href: '/careers/portal', label: 'Dashboard', icon: createElement(LayoutDashboard) },
             { href: '/careers/portal/jobs', label: 'Daftar Lowongan', icon: createElement(Briefcase) },
             { href: '/careers/portal/applications', label: 'Lamaran Saya', icon: createElement(FileText) },
+            { href: '/careers/portal/interviews', label: 'Jadwal Wawancara', icon: createElement(Calendar) },
             { href: '/careers/portal/documents', label: 'Pengumpulan Dokumen', icon: createElement(FileUp) },
             { href: '/careers/portal/profile', label: 'Profil Saya', icon: createElement(User) },
         ]
