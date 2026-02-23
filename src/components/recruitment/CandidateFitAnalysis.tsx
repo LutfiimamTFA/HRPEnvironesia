@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState } from 'react';
@@ -15,7 +14,7 @@ import { cn } from '@/lib/utils';
 import { Separator } from '../ui/separator';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell } from 'recharts';
-import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
+import { ChartContainer, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import type { JobApplication } from '@/lib/types';
 
 interface CandidateFitAnalysisProps {
@@ -71,6 +70,13 @@ const AnalysisSection = ({ title, icon, children }: { title: string, icon: React
         <CardContent>{children}</CardContent>
     </Card>
 );
+
+const chartConfig = {
+  score: {
+    label: "Score",
+    color: "hsl(var(--primary))",
+  },
+} satisfies ChartConfig;
 
 export function CandidateFitAnalysis({ profile, job, application }: CandidateFitAnalysisProps) {
   const [isLoading, setIsLoading] = useState(false);
@@ -162,31 +168,43 @@ export function CandidateFitAnalysis({ profile, job, application }: CandidateFit
                         </AlertDescription>
                     </Alert>
                  )}
-                 <div className="grid md:grid-cols-3 gap-6">
-                    <Card className="md:col-span-1">
+                 <div className="grid md:grid-cols-5 gap-6">
+                    <Card className="md:col-span-2">
                          <CardHeader><CardTitle className="text-base">Skor Kesesuaian</CardTitle></CardHeader>
                          <CardContent className="text-center">
-                            <div className="text-6xl font-bold text-primary">{analysis.overallFitScore}</div>
+                            <div className="text-7xl font-bold text-primary">{analysis.overallFitScore}</div>
                             <div className="text-lg font-semibold text-muted-foreground">{fitLabels[analysis.overallFitLabel]}</div>
-                            <ul className="text-xs text-muted-foreground mt-2 list-disc list-inside text-left">
-                                {analysis.scoreSummary.map((reason, i) => <li key={i}>{reason}</li>)}
+                             <ul className="mt-4 space-y-1.5 text-left text-xs text-muted-foreground">
+                                {analysis.scoreSummary.map((reason, i) => (
+                                    <li key={i} className="flex items-start gap-2">
+                                        <CheckCircle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-primary/50" />
+                                        <span>{reason}</span>
+                                    </li>
+                                ))}
                             </ul>
                          </CardContent>
                     </Card>
-                     <Card className="md:col-span-2">
+                     <Card className="md:col-span-3">
                         <CardHeader><CardTitle className="text-base">Rincian Skor per Dimensi</CardTitle></CardHeader>
                          <CardContent>
-                            <ChartContainer config={{}} className="h-48 w-full">
-                                <BarChart data={chartData} layout="vertical" margin={{ left: 20, right: 20 }}>
+                            <ChartContainer config={chartConfig} className="h-56 w-full">
+                                <BarChart data={chartData} layout="vertical" margin={{ left: 10 }}>
                                     <CartesianGrid horizontal={false} />
-                                    <XAxis type="number" domain={[0, 100]} hide />
-                                    <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 12 }} width={100} />
-                                    <Tooltip cursor={{ fill: 'hsl(var(--muted))' }} content={<ChartTooltipContent />} />
-                                    <Bar dataKey="score" radius={4}>
-                                        {chartData.map((entry, index) => (
-                                            <Cell key={`cell-${index}`} fill="hsl(var(--primary))" />
-                                        ))}
-                                    </Bar>
+                                    <XAxis type="number" dataKey="score" domain={[0, 100]} hide />
+                                    <YAxis
+                                        type="category"
+                                        dataKey="name"
+                                        tickLine={false}
+                                        axisLine={false}
+                                        tickMargin={10}
+                                        tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+                                        width={110}
+                                    />
+                                    <Tooltip
+                                        cursor={{ fill: 'hsl(var(--muted))' }}
+                                        content={<ChartTooltipContent hideLabel />}
+                                    />
+                                    <Bar dataKey="score" fill="var(--color-score)" radius={4} background={{ fill: 'hsl(var(--secondary))', radius: 4 }} />
                                 </BarChart>
                             </ChartContainer>
                          </CardContent>
@@ -318,5 +336,3 @@ export function CandidateFitAnalysis({ profile, job, application }: CandidateFit
     </Card>
   );
 }
-
-    
