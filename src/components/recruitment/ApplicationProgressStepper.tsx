@@ -1,4 +1,3 @@
-
 'use client';
 
 import React from 'react';
@@ -11,6 +10,7 @@ const applicationSteps = [
   { status: 'screening', label: 'Screening', icon: Search },
   { status: 'tes_kepribadian', label: 'Tes Kepribadian', icon: BrainCircuit },
   { status: 'document_submission', label: 'Dokumen', icon: FileText },
+  { status: 'verification', label: 'Verifikasi', icon: ClipboardCheck },
   { status: 'interview', label: 'Wawancara', icon: Users },
   { status: 'hired', label: 'Diterima', icon: Award },
 ];
@@ -29,7 +29,7 @@ export function ApplicationProgressStepper({ currentStatus }: ApplicationProgres
 
   return (
     <div className="w-full overflow-x-auto pb-4">
-      <div className="flex items-center min-w-[700px]">
+      <div className="flex items-center min-w-[800px]">
         {applicationSteps.map((step, index) => {
           const isActive = index === currentStepIndex;
           const isCompleted = !isRejected && currentStepIndex > index;
@@ -77,5 +77,3 @@ export function ApplicationProgressStepper({ currentStatus }: ApplicationProgres
     </div>
   );
 }
-
-    

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -14,8 +14,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
-import { ThumbsDown, MoreVertical, Loader2, ChevronDown } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuGroup } from '@/components/ui/dropdown-menu';
+import { Check, ThumbsDown, MoreVertical, Loader2, ChevronDown } from 'lucide-react';
 import type { JobApplication } from '@/lib/types';
 import { APPLICATION_STATUSES, statusDisplayLabels } from './ApplicationStatusBadge';
 import { cn } from '@/lib/utils';
@@ -66,11 +66,25 @@ export function ApplicationActionBar({ application, onStageChange }: Application
     },
   ];
 
-  const currentStageIndex = APPLICATION_STATUSES.indexOf(application.status);
-  
   if (application.status === 'hired' || application.status === 'rejected') {
       return null;
   }
+  
+  const stageGroups = [
+    {
+        label: "Proses Awal",
+        stages: ['submitted', 'screening'] as const
+    },
+    {
+        label: "Proses Lanjutan",
+        stages: ['tes_kepribadian', 'document_submission', 'verification', 'interview'] as const
+    },
+    {
+        label: "Keputusan Final",
+        stages: ['hired', 'rejected'] as const
+    }
+  ];
+
 
   return (
     <div className="flex items-center gap-2">
@@ -81,22 +95,35 @@ export function ApplicationActionBar({ application, onStageChange }: Application
             <ChevronDown className="ml-2 h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent>
-          <DropdownMenuLabel>Pindahkan kandidat ke...</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          {APPLICATION_STATUSES.filter(s => s !== 'draft').map((stage, index) => {
-            const isCurrent = application.status === stage;
-            const isNext = index === currentStageIndex + 1;
-            return (
-              <DropdownMenuItem 
-                key={stage} 
-                disabled={isCurrent}
-                onSelect={() => handleActionClick({ stage, label: `Pindah ke ${statusDisplayLabels[stage]}`})}
-              >
-                <span className={cn(isNext && "font-bold")}>{statusDisplayLabels[stage]}</span>
-              </DropdownMenuItem>
-            )
-          })}
+        <DropdownMenuContent className="w-56">
+          <DropdownMenuLabel>Pindahkan kandidat ke tahap:</DropdownMenuLabel>
+          {stageGroups.map(group => (
+            <React.Fragment key={group.label}>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                    {group.label !== "Proses Awal" && <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{group.label}</DropdownMenuLabel>}
+                    {group.stages.map(stage => {
+                        const isCurrent = application.status === stage;
+                        const action = { stage, label: `Pindah ke ${statusDisplayLabels[stage]}` };
+                        if (stage === 'rejected') return null; // 'rejected' is handled in "other actions"
+
+                        return (
+                            <DropdownMenuItem
+                                key={stage}
+                                onSelect={() => handleActionClick(action)}
+                                disabled={isCurrent}
+                                className="pr-4"
+                            >
+                                <span className={cn("w-6 mr-2 flex items-center justify-center", isCurrent && "text-primary")}>
+                                  {isCurrent && <Check className="h-4 w-4" />}
+                                </span>
+                                {statusDisplayLabels[stage]}
+                            </DropdownMenuItem>
+                        )
+                    })}
+                </DropdownMenuGroup>
+            </React.Fragment>
+          ))}
         </DropdownMenuContent>
       </DropdownMenu>
 
