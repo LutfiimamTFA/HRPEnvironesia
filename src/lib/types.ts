@@ -71,12 +71,16 @@ export type ApplicationTimelineEvent = {
 };
 
 export type ApplicationInterview = {
-    dateTime: Timestamp;
-    interviewerIds: string[];
-    interviewerNames?: string[]; // Denormalized
-    status: 'scheduled' | 'completed' | 'canceled' | 'rescheduled';
+    id: string;
+    type: string; // e.g., 'HRD Screening', 'User Interview'
+    platform: 'zoom' | 'google_meet' | 'onsite';
     meetingLink?: string;
-    notes?: string;
+    startAt: Timestamp;
+    endAt: Timestamp;
+    timezone: string;
+    interviewerId: string;
+    createdAt: Timestamp;
+    status: 'scheduled' | 'completed' | 'canceled';
 };
 
 export type ApplicationOffer = {

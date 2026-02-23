@@ -11,33 +11,17 @@ import type { Job, JobApplication } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Eye, ArrowLeft } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { MENU_CONFIG } from '@/lib/menu-config';
-import { ApplicationStatusBadge } from '@/components/recruitment/ApplicationStatusBadge';
+import { ApplicantsPageClient } from '@/components/recruitment/ApplicantsPageClient';
 
-function ApplicantsTableSkeleton() {
+function ApplicantsPageSkeleton() {
   return (
     <div className="space-y-4">
       <Skeleton className="h-10 w-[240px]" />
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              {[...Array(5)].map((_, i) => <TableHead key={i}><Skeleton className="h-5 w-full" /></TableHead>)}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {[...Array(3)].map((_, i) => (
-              <TableRow key={i}>
-                {[...Array(5)].map((_, j) => <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>)}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+      <Skeleton className="h-48 w-full" />
     </div>
   );
 }
@@ -66,15 +50,6 @@ export default function RecruitmentApplicantsPage() {
     }
     return [];
   }, [userProfile]);
-
-  const sortedApplications = useMemo(() => {
-    if (!applications) return [];
-    return [...applications].sort((a, b) => {
-      const timeA = a.submittedAt?.toMillis() || a.createdAt.toMillis();
-      const timeB = b.submittedAt?.toMillis() || b.createdAt.toMillis();
-      return timeB - timeA;
-    });
-  }, [applications]);
   
   const isLoading = isLoadingApps || isLoadingJob;
 
@@ -84,7 +59,7 @@ export default function RecruitmentApplicantsPage() {
         pageTitle="Loading Applicants..." 
         menuConfig={menuConfig}
       >
-        <ApplicantsTableSkeleton />
+        <ApplicantsPageSkeleton />
       </DashboardLayout>
     );
   }
@@ -116,45 +91,7 @@ export default function RecruitmentApplicantsPage() {
             </Button>
         </div>
         
-        <div className="rounded-lg border">
-            <Table>
-            <TableHeader>
-                <TableRow>
-                <TableHead>Candidate</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Submitted</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-            </TableHeader>
-            <TableBody>
-                {sortedApplications.length > 0 ? (
-                sortedApplications.map(app => (
-                    <TableRow key={app.id}>
-                    <TableCell className="font-medium">{app.candidateName}</TableCell>
-                    <TableCell>{app.candidateEmail}</TableCell>
-                    <TableCell>{app.submittedAt ? format(app.submittedAt.toDate(), 'dd MMM yyyy') : '-'}</TableCell>
-                    <TableCell><ApplicationStatusBadge status={app.status} /></TableCell>
-                    <TableCell className="text-right">
-                        <Button asChild variant="ghost" size="icon">
-                        <Link href={`/admin/recruitment/applications/${app.id}`}>
-                            <Eye className="h-4 w-4" />
-                            <span className="sr-only">View Application</span>
-                        </Link>
-                        </Button>
-                    </TableCell>
-                    </TableRow>
-                ))
-                ) : (
-                <TableRow>
-                    <TableCell colSpan={5} className="h-24 text-center">
-                    No applicants for this job yet.
-                    </TableCell>
-                </TableRow>
-                )}
-            </TableBody>
-            </Table>
-        </div>
+        <ApplicantsPageClient applications={applications || []} />
       </div>
     </DashboardLayout>
   );
