@@ -79,10 +79,23 @@ export function RescheduleRequestDialog({ open, onOpenChange, application, inter
       };
 
       if (currentInterviews[interviewIndex]) {
+        const oldInterviewData = currentInterviews[interviewIndex];
         currentInterviews[interviewIndex] = {
-          ...currentInterviews[interviewIndex],
-          status: 'reschedule_requested',
-          rescheduleRequest: rescheduleRequestData,
+            // Carry over essential fields to avoid 'undefined'
+            interviewId: oldInterviewData.interviewId,
+            startAt: oldInterviewData.startAt,
+            endAt: oldInterviewData.endAt,
+            meetingLink: oldInterviewData.meetingLink,
+            interviewerIds: oldInterviewData.interviewerIds,
+            interviewerNames: oldInterviewData.interviewerNames,
+            
+            // Set new status and request data
+            status: 'reschedule_requested',
+            rescheduleRequest: rescheduleRequestData,
+
+            // Conditionally carry over optional fields
+            ...(oldInterviewData.notes && { notes: oldInterviewData.notes }),
+            ...(oldInterviewData.leadInterviewerId && { leadInterviewerId: oldInterviewData.leadInterviewerId }),
         };
       }
 
