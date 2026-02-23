@@ -9,15 +9,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { GoogleDatePicker } from '@/components/ui/google-date-picker';
 import { Loader2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
+import { collection, query, where } from 'firebase/firestore';
+import type { UserProfile } from '@/lib/types';
+import { MultiSelect } from '../ui/multi-select';
 
-const scheduleSchema = z.object({
-  dateTime: z.date({ required_error: 'Tanggal dan waktu harus diisi.' }),
+export const scheduleSchema = z.object({
+  dateTime: z.coerce.date({ required_error: 'Tanggal dan waktu harus diisi.' }),
   duration: z.coerce.number().int().min(5, 'Durasi minimal 5 menit.').default(30),
   meetingLink: z.string().url({ message: "URL meeting tidak valid." }),
-  interviewerNames: z.string().min(1, "Nama pewawancara harus diisi."),
+  panelists: z.array(z.object({ value: z.string(), label: z.string() })).min(1, 'Minimal satu panelis harus dipilih.'),
   notes: z.string().optional(),
 });
 
@@ -29,25 +32,40 @@ interface ScheduleInterviewDialogProps {
   onConfirm: (data: ScheduleInterviewData) => Promise<boolean>;
   initialData?: Partial<ScheduleInterviewData>;
   candidateName?: string;
+  recruiter: UserProfile;
 }
 
-export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initialData, candidateName }: ScheduleInterviewDialogProps) {
+export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initialData, candidateName, recruiter }: ScheduleInterviewDialogProps) {
   const [isSaving, setIsSaving] = useState(false);
+  const firestore = useFirestore();
+
+  const internalUsersQuery = useMemoFirebase(
+    () => query(collection(firestore, 'users'), where('role', 'in', ['hrd', 'super-admin', 'manager', 'karyawan'])),
+    [firestore]
+  );
+  const { data: internalUsers } = useCollection<UserProfile>(internalUsersQuery);
+
+  const panelistOptions = useMemo(() => {
+    if (!internalUsers) return [];
+    return internalUsers.map(u => ({ value: u.uid, label: u.fullName }));
+  }, [internalUsers]);
+
   const form = useForm<ScheduleInterviewData>({
     resolver: zodResolver(scheduleSchema),
   });
 
   useEffect(() => {
     if (open) {
+      const defaultPanelists = recruiter ? [{ value: recruiter.uid, label: recruiter.fullName }] : [];
       form.reset({
         dateTime: initialData?.dateTime,
         duration: initialData?.duration || 30,
         meetingLink: initialData?.meetingLink || '',
-        interviewerNames: initialData?.interviewerNames || '',
+        panelists: initialData?.panelists || defaultPanelists,
         notes: initialData?.notes || '',
       });
     }
-  }, [open, initialData, form]);
+  }, [open, initialData, form, recruiter]);
 
   const handleSubmit = async (values: ScheduleInterviewData) => {
     setIsSaving(true);
@@ -104,11 +122,16 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
             />
             <FormField
               control={form.control}
-              name="interviewerNames"
+              name="panelists"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Nama Pewawancara</FormLabel>
-                  <FormControl><Input {...field} placeholder="Contoh: Budi, Dina" /></FormControl>
+                  <FormLabel>Panelis Wawancara</FormLabel>
+                   <MultiSelect
+                        options={panelistOptions}
+                        selected={field.value}
+                        onChange={field.onChange}
+                        placeholder="Pilih panelis..."
+                    />
                   <FormMessage />
                 </FormItem>
               )}

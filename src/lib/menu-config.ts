@@ -2,7 +2,7 @@
 import { createElement, type ReactNode } from 'react';
 import { 
     LayoutDashboard, Users, Briefcase, User, Calendar, DollarSign, Settings, ShieldCheck, Database, History, 
-    Contact, UserPlus, FolderKanban, CalendarOff, UserMinus, KanbanSquare, CheckSquare, BarChart, ClipboardCheck, Award, Search, FileText, FileUp 
+    Contact, UserPlus, FolderKanban, CalendarOff, UserMinus, KanbanSquare, CheckSquare, BarChart, ClipboardCheck, Award, Search, FileText, FileUp, Video 
 } from 'lucide-react';
 import type { UserRole } from '@/lib/types';
 
@@ -47,11 +47,20 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
         ]
     }
   ],
-  'hrd': HRD_MENU_ITEMS,
+  'hrd': [
+    ...HRD_MENU_ITEMS,
+    {
+        title: "Personal",
+        items: [
+            { href: '/admin/interviews', label: 'My Interviews', icon: createElement(Video) }
+        ]
+    }
+  ],
   'manager': [
     {
         items: [
             { href: '/admin/manager', label: 'My Team', icon: createElement(Users) },
+            { href: '/admin/interviews', label: 'My Interviews', icon: createElement(Video) },
             { href: '/admin/manager/reports', label: 'Reports', icon: createElement(BarChart) },
             { href: '/admin/manager/approvals', label: 'Approvals', icon: createElement(CheckSquare), badge: 3 },
         ]
@@ -61,6 +70,7 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
     {
         items: [
             { href: '/admin/karyawan', label: 'My Profile', icon: createElement(User) },
+            { href: '/admin/interviews', label: 'My Interviews', icon: createElement(Video) },
             { href: '/admin/karyawan/documents', label: 'My Documents', icon: createElement(FileText) },
             { href: '/admin/karyawan/leave', label: 'My Leave', icon: createElement(Calendar) },
             { href: '/admin/karyawan/payslips', label: 'My Payslips', icon: createElement(DollarSign) },

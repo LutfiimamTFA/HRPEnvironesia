@@ -89,12 +89,14 @@ export type ApplicationInterview = {
     startAt: Timestamp;
     endAt: Timestamp;
     meetingLink: string;
-    interviewerIds: string[];
-    interviewerNames: string[];
-    leadInterviewerId?: string;
+    panelistIds: string[];
+    panelistNames: string[];
+    leadPanelistId?: string;
     status: 'scheduled' | 'completed' | 'canceled' | 'reschedule_requested';
     notes?: string;
     // Legacy support
+    interviewerIds?: string[]; // Kept for backward compatibility
+    interviewerNames?: string[]; // Kept for backward compatibility
     rescheduleReason?: string;
     // New reschedule flow
     rescheduleRequest?: RescheduleRequest;
@@ -114,6 +116,7 @@ export type JobApplication = {
   scoreAssessment?: number; // 0-100
   tags?: string[];
   interviews?: ApplicationInterview[];
+  allPanelistIds?: string[]; // Denormalized flat array for querying
   timeline?: ApplicationTimelineEvent[];
   cvVerified?: boolean;
   ijazahVerified?: boolean;
