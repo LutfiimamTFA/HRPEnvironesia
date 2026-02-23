@@ -1,20 +1,19 @@
 
+
 'use client';
 
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuGroup } from '@/components/ui/dropdown-menu';
-import { Check, MoreVertical, Loader2, ThumbsDown, CalendarPlus } from 'lucide-react';
+import { Check, MoreVertical } from 'lucide-react';
 import { type JobApplication, ORDERED_RECRUITMENT_STAGES } from '@/lib/types';
 import { statusDisplayLabels } from '@/components/recruitment/ApplicationStatusBadge';
-import { cn } from '@/lib/utils';
 import { StageChangeDialog } from './StageChangeDialog';
-import { ScheduleInterviewDialog, type ScheduleInterviewData } from './ScheduleInterviewDialog';
+import { ScheduleInterviewDialog } from './ScheduleInterviewDialog';
 
 interface ApplicationActionBarProps {
   application: JobApplication;
   onStageChange: (newStage: JobApplication['status'], reason: string) => Promise<boolean>;
-  onScheduleInterview: (data: ScheduleInterviewData) => Promise<boolean>;
 }
 
 const getStageActions = (currentStatus: JobApplication['status']) => {
@@ -25,40 +24,29 @@ const getStageActions = (currentStatus: JobApplication['status']) => {
     }
 
     const nextLogicalStage = ORDERED_RECRUITMENT_STAGES[currentIndex + 1];
-
     const primaryAction: JobApplication['status'] | null = nextLogicalStage;
-
     const otherActions: JobApplication['status'][] = ORDERED_RECRUITMENT_STAGES
         .filter(stage => stage !== currentStatus && stage !== nextLogicalStage);
         
     return { primaryAction, otherActions };
 }
 
-export function ApplicationActionBar({ application, onStageChange, onScheduleInterview }: ApplicationActionBarProps) {
+export function ApplicationActionBar({ application, onStageChange }: ApplicationActionBarProps) {
   const [stageChangeDialogOpen, setStageChangeDialogOpen] = useState(false);
-  const [interviewDialogOpen, setInterviewDialogOpen] = useState(false);
   const [targetStage, setTargetStage] = useState<JobApplication['status'] | null>(null);
 
   const handleActionClick = (stage: JobApplication['status']) => {
     setTargetStage(stage);
-    if (stage === 'interview') {
-        setInterviewDialogOpen(true);
-    } else {
-        setStageChangeDialogOpen(true);
-    }
+    setStageChangeDialogOpen(true);
   };
 
   const handleConfirmStageChange = async (reason: string) => {
     if (!targetStage) return;
-    await onStageChange(targetStage, reason);
-    setStageChangeDialogOpen(false);
-    setTargetStage(null);
-  };
-  
-  const handleConfirmInterviewSchedule = async (data: ScheduleInterviewData) => {
-    await onScheduleInterview(data);
-    setInterviewDialogOpen(false);
-    setTargetStage(null);
+    const success = await onStageChange(targetStage, reason);
+    if (success) {
+        setStageChangeDialogOpen(false);
+        setTargetStage(null);
+    }
   };
 
   const { primaryAction, otherActions } = getStageActions(application.status);
@@ -74,13 +62,6 @@ export function ApplicationActionBar({ application, onStageChange, onScheduleInt
             <Check className="mr-2 h-4 w-4" />
             {`Lolos ke ${statusDisplayLabels[primaryAction]}`}
           </Button>
-        )}
-        
-        {application.status === 'interview' && (
-             <Button variant="outline" onClick={() => setInterviewDialogOpen(true)}>
-                <CalendarPlus className="mr-2 h-4 w-4" />
-                Jadwal Ulang Wawancara
-            </Button>
         )}
 
         <DropdownMenu>
@@ -125,12 +106,6 @@ export function ApplicationActionBar({ application, onStageChange, onScheduleInt
         onOpenChange={setStageChangeDialogOpen}
         targetStage={targetStage}
         onConfirm={handleConfirmStageChange}
-      />
-      
-      <ScheduleInterviewDialog
-        open={interviewDialogOpen}
-        onOpenChange={setInterviewDialogOpen}
-        onConfirm={handleConfirmInterviewSchedule}
       />
     </>
   );

@@ -54,7 +54,7 @@ export type Job = {
   updatedBy: string;
 };
 
-export const ORDERED_RECRUITMENT_STAGES = ['submitted', 'screening', 'tes_kepribadian', 'document_submission', 'interview', 'hired', 'rejected'] as const;
+export const ORDERED_RECRUITMENT_STAGES = ['submitted', 'screening', 'personality_test', 'documents', 'interview', 'hired', 'rejected'] as const;
 export type JobApplicationStatus = (typeof ORDERED_RECRUITMENT_STAGES)[number];
 
 
@@ -81,6 +81,7 @@ export type ApplicationInterview = {
     interviewerNames: string[];
     status: 'scheduled' | 'completed' | 'canceled' | 'reschedule_requested';
     notes?: string;
+    rescheduleReason?: string;
 };
 
 export type JobApplication = {

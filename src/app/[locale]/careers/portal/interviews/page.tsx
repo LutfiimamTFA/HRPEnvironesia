@@ -3,17 +3,18 @@
 
 import { useMemo, useState } from 'react';
 import { useAuth } from '@/providers/auth-provider';
-import { useCollection, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
+import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, query, where, doc, updateDoc } from 'firebase/firestore';
 import type { JobApplication, ApplicationInterview } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Link as LinkIcon, Calendar, Clock, Users, Building, Video, RefreshCw, Loader2, Send } from "lucide-react";
+import { Link as LinkIcon, Calendar, Video, RefreshCw, Loader2 } from "lucide-react";
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
+import { RescheduleRequestDialog } from '@/components/recruitment/RescheduleRequestDialog';
 
 interface EnrichedInterview extends ApplicationInterview {
   application: JobApplication;
@@ -23,88 +24,67 @@ interface EnrichedInterview extends ApplicationInterview {
 function InterviewCard({ interview, onMutate }: { interview: EnrichedInterview, onMutate: () => void }) {
     const isUpcoming = interview.startAt.toDate() > new Date();
     const isRescheduleRequested = interview.status === 'reschedule_requested';
-    const [isRequesting, setIsRequesting] = useState(false);
-    const firestore = useFirestore();
-    const { toast } = useToast();
-
-    const handleRequestReschedule = async () => {
-        setIsRequesting(true);
-        const appRef = doc(firestore, 'applications', interview.application.id!);
-
-        const updatedInterviews = [...interview.application.interviews!];
-        updatedInterviews[interview.interviewIndex] = {
-            ...updatedInterviews[interview.interviewIndex],
-            status: 'reschedule_requested',
-        };
-
-        try {
-            await updateDoc(appRef, { interviews: updatedInterviews });
-            toast({
-                title: 'Permintaan Terkirim',
-                description: 'Permintaan jadwal ulang Anda telah dikirim ke tim HRD.',
-            });
-            onMutate();
-        } catch (error: any) {
-            toast({
-                variant: 'destructive',
-                title: 'Gagal Mengirim Permintaan',
-                description: error.message,
-            });
-        } finally {
-            setIsRequesting(false);
-        }
-    };
-
+    const [isRescheduleDialogOpen, setIsRescheduleDialogOpen] = useState(false);
+    
     return (
-        <Card>
-            <CardHeader>
-                <div className="flex justify-between items-start">
-                    <div>
-                        <CardTitle>{interview.application.jobPosition}</CardTitle>
-                        <CardDescription className="flex items-center gap-2 pt-1"><Building className="h-4 w-4" /> {interview.application.brandName}</CardDescription>
-                    </div>
-                    {isUpcoming && !isRescheduleRequested && <Badge>Akan Datang</Badge>}
-                    {isRescheduleRequested && <Badge variant="outline" className="text-amber-600 border-amber-500">Jadwal Ulang Diminta</Badge>}
-                </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                    <div className="flex items-start gap-3">
-                        <Calendar className="h-5 w-5 mt-0.5 text-primary" />
+        <>
+            <Card>
+                <CardHeader>
+                    <div className="flex justify-between items-start">
                         <div>
-                            <p className="font-semibold">Tanggal & Waktu</p>
-                            <p>{format(interview.startAt.toDate(), 'eeee, dd MMMM yyyy', { locale: id })}</p>
-                            <p>{format(interview.startAt.toDate(), 'HH:mm')} - {format(interview.endAt.toDate(), 'HH:mm')} WIB</p>
+                            <CardTitle>{interview.application.jobPosition}</CardTitle>
+                            <CardDescription>{interview.application.brandName}</CardDescription>
+                        </div>
+                        {isUpcoming && !isRescheduleRequested && <Badge>Akan Datang</Badge>}
+                        {isRescheduleRequested && <Badge variant="outline" className="text-amber-600 border-amber-500">Jadwal Ulang Diminta</Badge>}
+                    </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                        <div className="flex items-start gap-3">
+                            <Calendar className="h-5 w-5 mt-0.5 text-primary" />
+                            <div>
+                                <p className="font-semibold">Tanggal & Waktu</p>
+                                <p>{format(interview.startAt.toDate(), 'eeee, dd MMMM yyyy', { locale: id })}</p>
+                                <p>{format(interview.startAt.toDate(), 'HH:mm')} - {format(interview.endAt.toDate(), 'HH:mm')} WIB</p>
+                            </div>
+                        </div>
+                         <div className="flex items-start gap-3">
+                            <Calendar className="h-5 w-5 mt-0.5 text-primary" />
+                            <div>
+                                <p className="font-semibold">Pewawancara</p>
+                                <p>{interview.interviewerNames.join(', ')}</p>
+                            </div>
                         </div>
                     </div>
-                     <div className="flex items-start gap-3">
-                        <Users className="h-5 w-5 mt-0.5 text-primary" />
-                        <div>
-                            <p className="font-semibold">Pewawancara</p>
-                            <p>{interview.interviewerNames.join(', ')}</p>
-                        </div>
+                    <div className="flex justify-between items-center gap-2 flex-wrap">
+                        {isUpcoming && (
+                            isRescheduleRequested ? (
+                                <p className="text-sm text-amber-600 font-medium">Menunggu konfirmasi dari HRD.</p>
+                            ) : (
+                                <Button onClick={() => setIsRescheduleDialogOpen(true)} variant="outline" size="sm">
+                                    <RefreshCw className="mr-2 h-4 w-4" />
+                                    Minta Jadwal Ulang
+                                </Button>
+                            )
+                        )}
+                        <Button asChild>
+                            <a href={interview.meetingLink} target="_blank" rel="noopener noreferrer">
+                                <LinkIcon className="mr-2 h-4 w-4" />
+                                Buka Link Wawancara
+                            </a>
+                        </Button>
                     </div>
-                </div>
-                <div className="flex justify-between items-center gap-2 flex-wrap">
-                    {isUpcoming && (
-                        isRescheduleRequested ? (
-                            <p className="text-sm text-amber-600 font-medium">Menunggu konfirmasi dari HRD.</p>
-                        ) : (
-                            <Button onClick={handleRequestReschedule} variant="outline" size="sm" disabled={isRequesting}>
-                                {isRequesting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                                Minta Jadwal Ulang
-                            </Button>
-                        )
-                    )}
-                    <Button asChild>
-                        <a href={interview.meetingLink} target="_blank" rel="noopener noreferrer">
-                            <LinkIcon className="mr-2 h-4 w-4" />
-                            Buka Link Wawancara
-                        </a>
-                    </Button>
-                </div>
-            </CardContent>
-        </Card>
+                </CardContent>
+            </Card>
+            <RescheduleRequestDialog
+                open={isRescheduleDialogOpen}
+                onOpenChange={setIsRescheduleDialogOpen}
+                application={interview.application}
+                interviewIndex={interview.interviewIndex}
+                onSuccess={onMutate}
+            />
+        </>
     )
 }
 
