@@ -41,7 +41,7 @@ export function CandidatesTable({ applications }: { applications: JobApplication
                         </TableCell>
                         <TableCell className="text-sm">{app.jobPosition}</TableCell>
                         <TableCell><ApplicationStatusBadge status={app.status} /></TableCell>
-                        <TableCell>{format(app.updatedAt.toDate(), 'dd MMM yyyy')}</TableCell>
+                        <TableCell>{app.updatedAt?.toDate ? format(app.updatedAt.toDate(), 'dd MMM yyyy') : '-'}</TableCell>
                         <TableCell className="text-right">
                              <Button asChild variant="outline" size="sm">
                                 <Link href={`/admin/recruitment/applications/${app.id}`}>

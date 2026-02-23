@@ -43,7 +43,7 @@ const CandidateCard = ({ application, isDragging }: { application: JobApplicatio
                     </Link>
                     <p className="text-xs text-muted-foreground">{application.jobPosition}</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                        {formatDistanceToNow(application.updatedAt.toDate(), { addSuffix: true, locale: id })}
+                        {application.updatedAt?.toDate ? formatDistanceToNow(application.updatedAt.toDate(), { addSuffix: true, locale: id }) : ''}
                     </p>
                 </div>
             </div>
@@ -136,7 +136,7 @@ export function CandidatesKanban({ applications: initialApplications }: { applic
             return id as JobApplication['status'];
         }
         const stage = Object.keys(currentApplications).find(key =>
-            currentApplications[key as JobApplication['status']].some(app => app && app.id === id)
+            (currentApplications[key as JobApplication['status']] || []).some(app => app && app.id === id)
         );
         return stage as JobApplication['status'] | undefined;
     };
@@ -169,21 +169,23 @@ export function CandidatesKanban({ applications: initialApplications }: { applic
             const oldItems = prev[oldStage];
             
             if (oldStage === newStage) {
+                 if (!oldItems) return prev;
                 // Reorder within the same column
-                const oldIndex = oldItems.findIndex(item => item.id === activeId);
-                const newIndex = oldItems.findIndex(item => item.id === overId);
+                const oldIndex = oldItems.findIndex(item => item && item.id === activeId);
+                const newIndex = oldItems.findIndex(item => item && item.id === overId);
                 if (oldIndex !== -1 && newIndex !== -1) {
                     return { ...prev, [oldStage]: arrayMove(oldItems, oldIndex, newIndex) };
                 }
             } else {
+                if (!oldItems) return prev;
                 // Move to a different column
-                const newItemsForOldStage = oldItems.filter(item => item.id !== activeId);
-                const itemToMove = oldItems.find(item => item.id === activeId);
+                const newItemsForOldStage = oldItems.filter(item => item && item.id !== activeId);
+                const itemToMove = oldItems.find(item => item && item.id === activeId);
 
                 if (!itemToMove) return prev;
 
-                const newItemsForNewStage = [...prev[newStage]];
-                const overIndex = newItemsForNewStage.findIndex(item => item.id === overId);
+                const newItemsForNewStage = [...(prev[newStage] || [])];
+                const overIndex = newItemsForNewStage.findIndex(item => item && item.id === overId);
                 
                 if (overIndex !== -1) {
                     const isBelow = over.rect.top + over.rect.height / 2 > (active.rect.current.translated?.top ?? 0) + (active.rect.current.translated?.height ?? 0) / 2;
@@ -258,6 +260,3 @@ export function CandidatesKanban({ applications: initialApplications }: { applic
         </DndContext>
     );
 }
-    
-
-    
