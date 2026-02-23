@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -14,7 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
 import type { UserProfile } from '@/lib/types';
-import { MultiSelect } from '../ui/multi-select';
+import { MultiSelect } from '@/components/ui/multi-select';
+import { useAuth } from '@/providers/auth-provider';
 
 export const scheduleSchema = z.object({
   dateTime: z.coerce.date({ required_error: 'Tanggal dan waktu harus diisi.' }),
@@ -69,7 +70,9 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
 
   const handleSubmit = async (values: ScheduleInterviewData) => {
     setIsSaving(true);
-    const success = await onConfirm(values);
+    // Combine names from panelists for the confirmation data
+    const panelistNames = values.panelists.map(p => p.label);
+    const success = await onConfirm({...values, interviewerNames: panelistNames.join(', ')} as any);
     setIsSaving(false);
     if (success) {
       onOpenChange(false);
