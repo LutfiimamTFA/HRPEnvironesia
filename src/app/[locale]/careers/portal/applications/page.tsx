@@ -13,15 +13,16 @@ import { id } from 'date-fns/locale';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from "@/components/ui/button";
 import { Link } from "@/navigation";
-import { ArrowRight, Check, Briefcase, Building, FileSignature, FileUp, ClipboardCheck, Users, Award, XCircle, BrainCircuit, FileText } from "lucide-react";
+import { ArrowRight, Check, Briefcase, Building, FileSignature, FileUp, ClipboardCheck, Users, Award, XCircle, BrainCircuit, FileText, Search } from "lucide-react";
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 
 
-const allStatuses: JobApplication['status'][] = ['draft', 'submitted', 'tes_kepribadian', 'document_submission', 'verification', 'interview', 'hired', 'rejected'];
+const allStatuses: JobApplication['status'][] = ['draft', 'submitted', 'screening', 'tes_kepribadian', 'document_submission', 'verification', 'interview', 'hired', 'rejected'];
 const visibleSteps = [
   { status: 'draft', label: 'Draf', icon: FileSignature },
   { status: 'submitted', label: 'Terkirim', icon: FileUp },
+  { status: 'screening', label: 'Screening', icon: Search },
   { status: 'tes_kepribadian', label: 'Tes Kepribadian', icon: BrainCircuit },
   { status: 'document_submission', label: 'Pengumpulan Dokumen', icon: FileText },
   { status: 'verification', label: 'Verifikasi', icon: ClipboardCheck },
@@ -33,6 +34,7 @@ const visibleSteps = [
 const statusLabels: Record<JobApplication['status'], string> = {
   draft: 'Draf',
   submitted: 'Lamaran Terkirim',
+  screening: 'Screening',
   tes_kepribadian: 'Tahap Tes Kepribadian',
   verification: 'Verifikasi HRD',
   document_submission: 'Pengumpulan Dokumen',
@@ -90,7 +92,7 @@ function ApplicationCard({ application }: { application: JobApplication }) {
       <CardContent className="flex-grow space-y-4">
         <Separator />
         <div className="w-full overflow-x-auto pb-4">
-            <div className={cn("flex items-center", isRejected ? "min-w-[800px]" : "min-w-[700px]")}>
+            <div className={cn("flex items-center", isRejected ? "min-w-[900px]" : "min-w-[800px]")}>
             {timelineSteps.map((step, index) => {
               const stepStatusIndex = allStatuses.indexOf(step.status as JobApplication['status']);
               const isCurrentRejectedStep = isRejected && step.status === 'rejected';
