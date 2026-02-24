@@ -1,9 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import { Check, X, ChevronsUpDown } from 'lucide-react';
-
 import { cn } from '@/lib/utils';
+import { Check, X, ChevronsUpDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Command,
@@ -59,7 +58,7 @@ export function PanelistPicker({
     if (typeof user.brandId === 'string' && user.brandId) {
         return brandMap.get(user.brandId);
     }
-    return user.department || user.role;
+    return user.department || user.jobTitle || user.role;
   }
 
   const userOptions = React.useMemo(() => {
@@ -109,17 +108,17 @@ export function PanelistPicker({
                 <Badge
                   variant="secondary"
                   key={item.value}
-                  className="mr-1"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleUnselect(item.value);
-                  }}
+                  className="mr-1 flex items-center"
                 >
                   {item.label.split('(')[0].trim()}
-                  <button
-                    className="ml-1 rounded-full outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Remove ${item.label}`}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        e.stopPropagation();
                         handleUnselect(item.value);
                       }
                     }}
@@ -127,10 +126,15 @@ export function PanelistPicker({
                       e.preventDefault();
                       e.stopPropagation();
                     }}
-                    onClick={() => handleUnselect(item.value)}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleUnselect(item.value);
+                    }}
+                    className="ml-1 rounded-full outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2 cursor-pointer"
                   >
                     <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
-                  </button>
+                  </span>
                 </Badge>
               ))
             ) : (
