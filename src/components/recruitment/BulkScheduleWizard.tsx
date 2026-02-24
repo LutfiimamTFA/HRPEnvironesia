@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { GoogleDatePicker } from '@/components/ui/google-date-picker';
 import { useToast } from '@/hooks/use-toast';
 import { getInitials, cn, generateTimeSlots } from '@/lib/utils';
-import type { JobApplication, ApplicationInterview, UserProfile, ApplicationTimelineEvent } from '@/lib/types';
+import type { JobApplication, ApplicationInterview, UserProfile, ApplicationTimelineEvent, Brand } from '@/lib/types';
 import { ArrowLeft, ArrowRight, Calendar, Clock, GripVertical, Loader2, Save, Users, AlertCircle, Link as LinkIcon, Briefcase } from 'lucide-react';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -87,6 +87,7 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
     [firestore]
   );
   const { data: internalUsers } = useCollection<UserProfile>(internalUsersQuery);
+  const { data: brands } = useCollection<Brand>(useMemoFirebase(() => collection(firestore, 'brands'), [firestore]));
 
   useEffect(() => {
     if (isOpen) {
@@ -234,6 +235,7 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
                         <FormLabel>Panelis Wawancara</FormLabel>
                         <PanelistPicker
                             allUsers={internalUsers || []}
+                            allBrands={brands || []}
                             selected={field.value}
                             onChange={field.onChange}
                         />

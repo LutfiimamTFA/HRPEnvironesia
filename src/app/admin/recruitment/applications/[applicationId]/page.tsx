@@ -3,9 +3,9 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
-import { useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
-import { doc, serverTimestamp, updateDoc, Timestamp } from 'firebase/firestore';
-import type { JobApplication, Profile, Job, ApplicationTimelineEvent, ApplicationInterview, RescheduleRequest } from '@/lib/types';
+import { useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking, useCollection } from '@/firebase';
+import { doc, serverTimestamp, updateDoc, Timestamp, writeBatch, collection, where, query } from 'firebase/firestore';
+import type { JobApplication, Profile, Job, ApplicationTimelineEvent, ApplicationInterview, RescheduleRequest, Brand, UserProfile } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -34,7 +34,7 @@ function ApplicationDetailSkeleton() {
   return <Skeleton className="h-[500px] w-full" />;
 }
 
-function InterviewManagement({ application, onUpdate }: { application: JobApplication; onUpdate: () => void; }) {
+function InterviewManagement({ application, onUpdate, allUsers, allBrands }: { application: JobApplication; onUpdate: () => void; allUsers: UserProfile[], allBrands: Brand[] }) {
   const [isScheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeInterview, setActiveInterview] = useState<ApplicationInterview | null>(null);
@@ -287,6 +287,8 @@ function InterviewManagement({ application, onUpdate }: { application: JobApplic
             panelists: activeInterview.panelistIds?.map((id, index) => ({ value: id, label: (activeInterview.panelistNames || [])[index] || id })) || [],
             notes: activeInterview.notes,
         } : undefined}
+        allUsers={allUsers}
+        allBrands={allBrands}
       />
     </Card>
   );
@@ -319,6 +321,17 @@ export default function ApplicationDetailPage() {
     [firestore, application]
   );
   const { data: job, isLoading: isLoadingJob } = useDoc<Job>(jobRef);
+
+  const internalUsersQuery = useMemoFirebase(() =>
+    query(
+      collection(firestore, 'users'),
+      where('role', 'in', ['hrd', 'manager', 'karyawan', 'super-admin']),
+      where('isActive', '==', true)
+    ),
+    [firestore]
+  );
+  const { data: internalUsers, isLoading: isLoadingUsers } = useCollection<UserProfile>(internalUsersQuery);
+  const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(useMemoFirebase(() => collection(firestore, 'brands'), [firestore]));
 
   const menuConfig = useMemo(() => {
     if (userProfile?.role === 'super-admin') return MENU_CONFIG['super-admin'];
@@ -406,7 +419,7 @@ export default function ApplicationDetailPage() {
   }, [application, isLoadingApp, userProfile, hasTriggeredAutoScreen, applicationRef, mutateApplication, toast]);
 
 
-  const isLoading = isLoadingApp || isLoadingProfile || isLoadingJob;
+  const isLoading = isLoadingApp || isLoadingProfile || isLoadingJob || isLoadingUsers || isLoadingBrands;
 
   if (!hasAccess) {
     return <DashboardLayout pageTitle="Loading..." menuConfig={[]}><ApplicationDetailSkeleton /></DashboardLayout>;
@@ -466,7 +479,7 @@ export default function ApplicationDetailPage() {
           </Card>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
             <div className="lg:col-span-2 space-y-6">
-                <InterviewManagement application={application} onUpdate={mutateApplication} />
+                <InterviewManagement application={application} onUpdate={mutateApplication} allUsers={internalUsers || []} allBrands={brands || []} />
                 <CandidateFitAnalysis profile={profile} job={job} application={application}/>
                 <ProfileView profile={profile} />
             </div>

@@ -12,9 +12,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Loader2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { useFirestore } from '@/firebase';
-import type { UserProfile, JobApplication } from '@/lib/types';
+import type { UserProfile, JobApplication, Brand } from '@/lib/types';
 import { useAuth } from '@/providers/auth-provider';
 import { PanelistPicker } from './PanelistPicker';
+import { GoogleDatePicker } from '../ui/google-date-picker';
 
 export const scheduleSchema = z.object({
   dateTime: z.coerce.date({ required_error: 'Tanggal dan waktu harus diisi.' }),
@@ -31,11 +32,13 @@ interface ScheduleInterviewDialogProps {
   onOpenChange: (open: boolean) => void;
   onConfirm: (data: ScheduleInterviewData) => Promise<boolean>;
   initialData?: Partial<ScheduleInterviewData>;
-  application?: JobApplication;
+  candidateName: string;
   recruiter: UserProfile;
+  allUsers: UserProfile[];
+  allBrands: Brand[];
 }
 
-export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initialData, application, recruiter }: ScheduleInterviewDialogProps) {
+export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initialData, candidateName, recruiter, allUsers, allBrands }: ScheduleInterviewDialogProps) {
   const [isSaving, setIsSaving] = useState(false);
 
   const form = useForm<ScheduleInterviewData>({
@@ -65,8 +68,8 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
   };
   
   const title = initialData 
-    ? `Edit Wawancara untuk ${application?.candidateName}`
-    : `Jadwalkan Wawancara untuk ${application?.candidateName}`;
+    ? `Edit Wawancara untuk ${candidateName}`
+    : `Jadwalkan Wawancara untuk ${candidateName}`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -85,13 +88,13 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
               render={({ field }) => (
                 <FormItem className="flex flex-col">
                   <FormLabel>Tanggal & Waktu</FormLabel>
-                  <FormControl>
-                    <Input
-                        type="datetime-local"
-                        value={field.value ? new Date(field.value.getTime() - (field.value.getTimezoneOffset() * 60000)).toISOString().slice(0, 16) : ''}
-                        onChange={e => field.onChange(e.target.value ? new Date(e.target.value) : null)}
-                    />
-                  </FormControl>
+                   <FormControl>
+                        <GoogleDatePicker
+                          value={field.value}
+                          onChange={field.onChange}
+                          mode="general"
+                        />
+                      </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
@@ -108,23 +111,22 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
                 </FormItem>
               )}
             />
-            {application && (
-                <FormField
-                    control={form.control}
-                    name="panelists"
-                    render={({ field }) => (
-                    <FormItem>
-                        <FormLabel>Panelis Wawancara</FormLabel>
-                        <PanelistPicker
-                            job={application} // The job object is embedded in the application object
-                            selected={field.value}
-                            onChange={field.onChange}
-                        />
-                        <FormMessage />
-                    </FormItem>
-                    )}
-                />
-            )}
+            <FormField
+                control={form.control}
+                name="panelists"
+                render={({ field }) => (
+                <FormItem>
+                    <FormLabel>Panelis Wawancara</FormLabel>
+                    <PanelistPicker
+                        allUsers={allUsers}
+                        allBrands={allBrands}
+                        selected={field.value}
+                        onChange={field.onChange}
+                    />
+                    <FormMessage />
+                </FormItem>
+                )}
+            />
              <FormField
               control={form.control}
               name="notes"
