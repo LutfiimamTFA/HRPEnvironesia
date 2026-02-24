@@ -4,14 +4,7 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 import { Check, ChevronsUpDown, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command';
+import { Input } from '@/components/ui/input';
 import {
   Popover,
   PopoverContent,
@@ -42,9 +35,10 @@ export function PanelistPicker({
   placeholder = 'Pilih panelis...',
 }: PanelistPickerProps) {
   const [open, setOpen] = React.useState(false);
-  const [search, setSearch] = React.useState('');
+  const [searchQuery, setSearchQuery] = React.useState('');
 
   const handleToggle = (option: PanelistOption) => {
+    console.log("clicked panelist", option.value);
     const isSelected = selected.some((s) => s.value === option.value);
     if (isSelected) {
       onChange(selected.filter((s) => s.value !== option.value));
@@ -54,13 +48,14 @@ export function PanelistPicker({
   };
 
   const filteredUsers = React.useMemo(() => {
-    if (!search) return allUsers;
-    const lowercasedSearch = search.toLowerCase();
+    if (!searchQuery) return allUsers.filter(u => u.isActive);
+    const lowercasedQuery = searchQuery.toLowerCase();
     return allUsers.filter(user =>
-      user.fullName.toLowerCase().includes(lowercasedSearch) ||
-      user.email.toLowerCase().includes(lowercasedSearch)
+      user.isActive &&
+      (user.fullName.toLowerCase().includes(lowercasedQuery) ||
+      user.email.toLowerCase().includes(lowercasedQuery))
     );
-  }, [allUsers, search]);
+  }, [allUsers, searchQuery]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -95,36 +90,48 @@ export function PanelistPicker({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
-        <Command>
-          <CommandInput placeholder="Cari nama atau email..." value={search} onValueChange={setSearch} />
-          <CommandList>
-            <CommandEmpty>Tidak ada pengguna ditemukan.</CommandEmpty>
-            <ScrollArea className="h-48">
-              <CommandGroup>
-                {filteredUsers.map(user => {
-                  const option = { value: user.uid, label: `${user.fullName} (${user.email})` };
-                  return (
-                    <CommandItem
-                      key={user.uid}
-                      onSelect={() => handleToggle(option)}
-                      disabled={!user.isActive}
-                    >
-                      <Check
-                        className={cn(
-                          'mr-2 h-4 w-4',
-                          selected.some(s => s.value === user.uid)
-                            ? 'opacity-100'
-                            : 'opacity-0'
-                        )}
-                      />
-                      {user.fullName} <span className="text-xs text-muted-foreground ml-2">{`(${user.email})`}</span>
-                    </CommandItem>
-                  )
-                })}
-              </CommandGroup>
-            </ScrollArea>
-          </CommandList>
-        </Command>
+        <div className="p-2 border-b">
+           <Input
+            placeholder="Cari nama atau email..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-9"
+          />
+        </div>
+        <ScrollArea className="h-60">
+            {filteredUsers.length > 0 ? (
+                 <div className="p-1">
+                    {filteredUsers.map(user => {
+                        const option = { value: user.uid, label: `${user.fullName} (${user.email})` };
+                        const isSelected = selected.some((s) => s.value === option.value);
+                        return (
+                            <button
+                                type="button"
+                                key={user.uid}
+                                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                onClick={() => handleToggle(option)}
+                                className={cn(
+                                    "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 px-2 text-sm outline-none hover:bg-accent",
+                                    "aria-selected:bg-accent aria-selected:text-accent-foreground",
+                                    "data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
+                                )}
+                                disabled={!user.isActive}
+                            >
+                                <Check
+                                    className={cn(
+                                    'mr-2 h-4 w-4',
+                                    isSelected ? 'opacity-100' : 'opacity-0'
+                                    )}
+                                />
+                                {user.fullName} <span className="text-xs text-muted-foreground ml-2">{`(${user.email})`}</span>
+                            </button>
+                        )
+                    })}
+                </div>
+            ) : (
+                <p className="py-6 text-center text-sm">Tidak ada pengguna ditemukan.</p>
+            )}
+        </ScrollArea>
       </PopoverContent>
     </Popover>
   );
