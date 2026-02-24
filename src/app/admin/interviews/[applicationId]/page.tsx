@@ -6,7 +6,6 @@ import { useAuth } from '@/providers/auth-provider';
 import { useDoc, useFirestore, useMemoFirebase } from '@/firebase';
 import { doc } from 'firebase/firestore';
 import type { JobApplication, Profile, Job } from '@/lib/types';
-import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowLeft, Mail, Phone, User, Briefcase, FileText } from 'lucide-react';
@@ -48,9 +47,15 @@ export default function InterviewKitPage() {
         return MENU_CONFIG[userProfile.role] || [];
     }, [userProfile]);
 
-    const hasAccess = useRoleGuard(['hrd', 'super-admin']) || (!!userProfile && !!application?.allPanelistIds?.includes(userProfile.uid));
     const isLoading = isLoadingApp || isLoadingProfile;
     
+    // Perform a manual, side-effect-free check for access.
+    // This allows panelists who are not HRD/Admins to view the kit.
+    const hasAccess = !isLoading && userProfile && application && (
+        ['hrd', 'super-admin'].includes(userProfile.role) ||
+        (application.allPanelistIds?.includes(userProfile.uid) ?? false)
+    );
+
     if (isLoading) {
         return (
              <DashboardLayout pageTitle="Loading Interview Kit..." menuConfig={menuConfig}>
@@ -105,7 +110,7 @@ export default function InterviewKitPage() {
                         <ProfileView profile={profile} />
                     </div>
                     <div className="lg:sticky lg:top-24 space-y-6">
-                        <CandidateDocumentsCard application={application} />
+                        <CandidateDocumentsCard application={application} onVerificationChange={mutateApplication}/>
                         <ApplicationNotes application={application} onNoteAdded={mutateApplication} />
                     </div>
                 </div>
