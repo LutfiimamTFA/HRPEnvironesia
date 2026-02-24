@@ -44,7 +44,7 @@ export function PanelistPicker({
   placeholder = 'Pilih panelis...',
 }: PanelistPickerProps) {
   const [open, setOpen] = React.useState(false);
-
+  
   const brandMap = React.useMemo(() => {
     if (!allBrands) return new Map<string, string>();
     return new Map(allBrands.map(brand => [brand.id!, brand.name]));
@@ -77,10 +77,11 @@ export function PanelistPicker({
       onChange([...selected, newOption]);
     }
   };
-
+  
   const handleUnselect = (itemValue: string) => {
     onChange(selected.filter((s) => s.value !== itemValue));
   };
+
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -100,7 +101,7 @@ export function PanelistPicker({
                   className="mr-1 flex items-center"
                 >
                   {item.label.split('(')[0].trim()}
-                  <span
+                   <span
                     role="button"
                     tabIndex={0}
                     aria-label={`Remove ${item.label}`}
@@ -116,8 +117,8 @@ export function PanelistPicker({
                       e.stopPropagation();
                     }}
                     onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
+                       e.preventDefault();
+                       e.stopPropagation();
                       handleUnselect(item.value);
                     }}
                     className="ml-1 rounded-full outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2 cursor-pointer"
@@ -148,8 +149,8 @@ export function PanelistPicker({
                         <CommandItem
                             key={user.uid}
                             value={`${user.fullName} ${user.email} ${user.brandDisplay}`}
-                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                             onSelect={() => handleToggle(user)}
+                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                             className="cursor-pointer"
                             disabled={!user.isActive}
                         >
