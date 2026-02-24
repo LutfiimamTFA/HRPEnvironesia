@@ -67,13 +67,15 @@ export const APPLICATION_SOURCES = ['website', 'linkedin', 'jobstreet', 'referra
 export type ApplicationSource = (typeof APPLICATION_SOURCES)[number];
 
 export type ApplicationTimelineEvent = {
-    type: 'stage_changed' | 'note_added' | 'interview_scheduled' | 'offer_sent' | 'assessment_graded' | 'status_changed';
+    type: 'stage_changed' | 'note_added' | 'interview_scheduled' | 'offer_sent' | 'assessment_graded' | 'status_changed' | 'panelists_updated';
     at: Timestamp;
     by: string; // Recruiter UID
     meta: {
         from?: string;
         to?: string;
         note?: string;
+        added?: string[]; // UIDs
+        removed?: string[]; // UIDs
         [key: string]: any;
     };
 };
@@ -105,6 +107,27 @@ export type ApplicationInterview = {
     interviewerNames?: string[];
     rescheduleReason?: string;
 };
+
+export type InterviewChangeRequest = {
+    id?: string;
+    applicationId: string;
+    interviewId: string;
+    requestedByUid: string;
+    requestedByName: string;
+    type: 'replace_panelist' | 'add_panelist' | 'remove_panelist';
+    payload: {
+        removeUid?: string;
+        addUid?: string;
+        addUids?: string[];
+        removeUids?: string[];
+    };
+    reason: string;
+    status: 'pending' | 'approved' | 'denied';
+    createdAt: Timestamp;
+    decidedByUid?: string;
+    decidedAt?: Timestamp;
+};
+
 
 export type JobApplication = {
   id?: string;
@@ -482,3 +505,16 @@ export type CandidateFitAnalysisOutput = {
   quickTestRecommendation: string[];
   missingInformation: string[];
 };
+
+// Firestore document for interview assignments, denormalized for easy querying per user.
+export interface InterviewAssignment {
+  id?: string; // Composite key: `${applicationId}_${interviewId}`
+  applicationId: string;
+  interviewId: string;
+  jobId: string;
+  candidateName: string;
+  startAt: Timestamp;
+  endAt: Timestamp;
+  meetingLink: string;
+  createdAt: Timestamp;
+}

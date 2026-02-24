@@ -29,6 +29,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { id as idLocale } from 'date-fns/locale';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { ManagePanelistsDialog } from '@/components/recruitment/ManagePanelistsDialog';
 
 function ApplicationDetailSkeleton() {
   return <Skeleton className="h-[500px] w-full" />;
@@ -36,6 +37,7 @@ function ApplicationDetailSkeleton() {
 
 function InterviewManagement({ application, onUpdate, allUsers, allBrands }: { application: JobApplication; onUpdate: () => void; allUsers: UserProfile[], allBrands: Brand[] }) {
   const [isScheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [isManagePanelistsOpen, setManagePanelistsOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeInterview, setActiveInterview] = useState<ApplicationInterview | null>(null);
   const { userProfile } = useAuth();
@@ -45,6 +47,11 @@ function InterviewManagement({ application, onUpdate, allUsers, allBrands }: { a
   const handleOpenScheduleDialog = (interview: ApplicationInterview | null = null) => {
     setActiveInterview(interview);
     setScheduleDialogOpen(true);
+  };
+  
+  const handleOpenPanelistDialog = (interview: ApplicationInterview) => {
+    setActiveInterview(interview);
+    setManagePanelistsOpen(true);
   };
 
   const handleConfirmSchedule = async (data: ScheduleInterviewData) => {
@@ -237,6 +244,9 @@ function InterviewManagement({ application, onUpdate, allUsers, allBrands }: { a
                                 <p className="text-sm text-muted-foreground">Pewawancara: {(iv.panelistNames || iv.interviewerNames || []).join(', ')}</p>
                             </div>
                             <div className="flex items-center gap-2">
+                                <Button variant="outline" size="sm" onClick={() => handleOpenPanelistDialog(iv)}>
+                                    Kelola Panelis
+                                </Button>
                                 <Button variant="ghost" size="sm" onClick={() => handleOpenScheduleDialog(iv)}>
                                     <Edit className="h-4 w-4 mr-2" /> Edit
                                 </Button>
@@ -290,6 +300,17 @@ function InterviewManagement({ application, onUpdate, allUsers, allBrands }: { a
         allUsers={allUsers}
         allBrands={allBrands}
       />
+      {activeInterview && userProfile && (
+        <ManagePanelistsDialog
+            open={isManagePanelistsOpen}
+            onOpenChange={setManagePanelistsOpen}
+            application={application}
+            interview={activeInterview}
+            currentUser={userProfile}
+            allUsers={allUsers}
+            onSuccess={onUpdate}
+        />
+      )}
     </Card>
   );
 }
