@@ -20,6 +20,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import type { UserProfile, Brand } from '@/lib/types';
 import { ScrollArea } from '../ui/scroll-area';
+import { Checkbox } from '../ui/checkbox';
 
 export type PanelistOption = {
   value: string;
@@ -64,21 +65,21 @@ export function PanelistPicker({
       };
     });
   }, [allUsers, brandMap]);
-  
-  const handleToggle = (user: UserProfile) => {
+
+  const handleToggle = (user: (typeof userOptions)[0]) => {
     const option = { value: user.uid, label: `${user.fullName} (${user.email})` };
     const isSelected = selected.some(s => s.value === option.value);
+
     if (isSelected) {
       onChange(selected.filter((s) => s.value !== option.value));
     } else {
       onChange([...selected, option]);
     }
   };
-  
+
   const handleUnselect = (value: string) => {
     onChange(selected.filter((s) => s.value !== value));
   };
-
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -133,9 +134,7 @@ export function PanelistPicker({
       </PopoverTrigger>
       <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" portalled={false}>
         <Command>
-          <CommandInput 
-            placeholder="Cari nama, email, atau brand..."
-          />
+          <CommandInput placeholder="Cari nama, email, atau brand..." />
           <CommandList>
             <ScrollArea className="h-64">
                 <CommandEmpty>Tidak ada pengguna ditemukan.</CommandEmpty>
@@ -151,11 +150,9 @@ export function PanelistPicker({
                             className="cursor-pointer"
                             disabled={!user.isActive}
                         >
-                            <Check
-                                className={cn(
-                                'mr-2 h-4 w-4',
-                                isSelected ? 'opacity-100' : 'opacity-0'
-                                )}
+                            <Checkbox
+                                className="mr-2"
+                                checked={isSelected}
                             />
                             <div className="flex flex-col">
                                 <span className="text-sm">{user.fullName}</span>
