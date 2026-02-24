@@ -9,7 +9,7 @@ import {
   useFirestore, 
   useMemoFirebase,
 } from '@/firebase';
-import type { UserProfile, ROLES_INTERNAL } from '@/lib/types';
+import { type UserProfile, ROLES_INTERNAL } from '@/lib/types';
 
 type AuthContextType = {
   firebaseUser: FirebaseAuthUser | null;
