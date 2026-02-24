@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, ReactNode, useCallback } from 'react';
+import { createContext, useContext, ReactNode, useCallback, useEffect } from 'react';
 import { User as FirebaseAuthUser } from 'firebase/auth';
 import { doc } from 'firebase/firestore';
 import { 
@@ -9,6 +9,8 @@ import {
   useFirestore, 
   useMemoFirebase, 
   FirebaseClientProvider,
+  setDocumentNonBlocking,
+  deleteDocumentNonBlocking
 } from '@/firebase';
 import type { UserProfile } from '@/lib/types';
 
@@ -42,6 +44,35 @@ function AuthContent({ children }: { children: ReactNode }) {
   }, [mutate]);
 
   const userProfile = userProfileData ?? null;
+
+  useEffect(() => {
+    // This effect acts as a self-healing mechanism for role consistency.
+    if (!userProfile || !firestore) return;
+
+    const syncRoleDocument = async () => {
+      const { uid, role } = userProfile;
+      const hrdRoleDocRef = doc(firestore, 'roles_hrd', uid);
+      const adminRoleDocRef = doc(firestore, 'roles_admin', uid);
+
+      if (role === 'hrd') {
+        // Ensure the hrd role doc exists
+        await setDocumentNonBlocking(hrdRoleDocRef, { role: 'hrd' }, {});
+      } else {
+        // Ensure the hrd role doc does not exist
+        await deleteDocumentNonBlocking(hrdRoleDocRef).catch(() => {});
+      }
+      
+      if (role === 'super-admin') {
+        // Ensure the admin role doc exists
+        await setDocumentNonBlocking(adminRoleDocRef, { role: 'super-admin' }, {});
+      } else {
+        // Ensure the admin role doc does not exist
+        await deleteDocumentNonBlocking(adminRoleDocRef).catch(() => {});
+      }
+    };
+
+    syncRoleDocument();
+  }, [userProfile, firestore]);
 
   // The overall loading state is true if either the auth state or the profile data is still loading.
   // This prevents an infinite loading state if a user is authenticated but has no profile document.
