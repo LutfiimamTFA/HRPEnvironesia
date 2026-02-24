@@ -91,19 +91,20 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
 
   const [panelistIds, setPanelistIds] = useState<string[]>([]);
   const didInitPanelistsRef = useRef(false);
+  const [dialogContent, setDialogContent] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
-    if (!isOpen) {
+    if (isOpen) {
+      if (didInitPanelistsRef.current === false) {
+        if (panelistIds.length === 0 && recruiter?.uid) {
+          setPanelistIds([recruiter.uid]);
+        }
+        didInitPanelistsRef.current = true;
+      }
+    } else {
       didInitPanelistsRef.current = false;
-      return;
     }
-    if (didInitPanelistsRef.current) return;
-  
-    if (panelistIds.length === 0 && recruiter?.uid) {
-      setPanelistIds([recruiter.uid]);
-    }
-    didInitPanelistsRef.current = true;
-  }, [isOpen, recruiter?.uid]);
+  }, [isOpen, recruiter?.uid, panelistIds.length]);
   
   useEffect(() => {
     if (isOpen) {
@@ -241,13 +242,13 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
         return (
           <Form {...scheduleForm}>
             <form className="space-y-4">
-                <FormField control={scheduleForm.control} name="startDate" render={({ field }) => ( <FormItem className="flex flex-col"><FormLabel>Tanggal Mulai</FormLabel><FormControl><GoogleDatePicker portalled={false} value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>)} />
+                <FormField control={scheduleForm.control} name="startDate" render={({ field }) => ( <FormItem className="flex flex-col"><FormLabel>Tanggal Mulai</FormLabel><FormControl><GoogleDatePicker container={dialogContent} value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>)} />
                 <div className="grid grid-cols-2 gap-4">
                     <FormField control={scheduleForm.control} name="startTime" render={({ field }) => ( <FormItem><FormLabel>Waktu Mulai</FormLabel><FormControl><Input type="time" {...field} /></FormControl><FormMessage /></FormItem>)} />
                     <FormField control={scheduleForm.control} name="workdayEndTime" render={({ field }) => ( <FormItem><FormLabel>Batas Jam Kerja</FormLabel><FormControl><Input type="time" {...field} /></FormControl><FormMessage /></FormItem>)} />
                 </div>
                  <div className="grid grid-cols-2 gap-4">
-                    <FormField control={scheduleForm.control} name="duration" render={({ field }) => (<FormItem><FormLabel>Durasi per Slot (menit)</FormLabel><Select onValueChange={(v) => field.onChange(parseInt(v))} value={String(field.value)}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent portalled={false}><SelectItem value="15">15</SelectItem><SelectItem value="20">20</SelectItem><SelectItem value="30">30</SelectItem><SelectItem value="45">45</SelectItem><SelectItem value="60">60</SelectItem><SelectItem value="90">90</SelectItem></SelectContent></Select><FormMessage /></FormItem>)} />
+                    <FormField control={scheduleForm.control} name="slotDuration" render={({ field }) => (<FormItem><FormLabel>Durasi per Slot (menit)</FormLabel><Select onValueChange={(v) => field.onChange(parseInt(v))} value={String(field.value)}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent container={dialogContent}><SelectItem value="15">15</SelectItem><SelectItem value="20">20</SelectItem><SelectItem value="30">30</SelectItem><SelectItem value="45">45</SelectItem><SelectItem value="60">60</SelectItem><SelectItem value="90">90</SelectItem></SelectContent></Select><FormMessage /></FormItem>)} />
                     <FormField control={scheduleForm.control} name="buffer" render={({ field }) => (<FormItem><FormLabel>Jeda antar Slot (menit)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
                 </div>
                  <PanelistPickerSimple
@@ -296,7 +297,7 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl h-[90vh] flex flex-col">
+      <DialogContent ref={setDialogContent} className="max-w-2xl h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Jadwalkan Wawancara Massal ({step}/3)</DialogTitle>
           <DialogDescription>

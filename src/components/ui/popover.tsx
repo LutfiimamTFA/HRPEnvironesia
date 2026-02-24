@@ -14,10 +14,10 @@ const PopoverTrigger = PopoverPrimitive.Trigger
 const PopoverContent = React.forwardRef<
   React.ElementRef<typeof PopoverPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Content> & {
-    portalled?: boolean;
+    container?: HTMLElement;
   }
->(({ className, align = "center", sideOffset = 4, portalled = true, ...props }, ref) => {
-  const Content = (
+>(({ className, align = "center", sideOffset = 4, container, ...props }, ref) => (
+  <PopoverPrimitive.Portal container={container}>
     <PopoverPrimitive.Content
       ref={ref}
       align={align}
@@ -28,16 +28,8 @@ const PopoverContent = React.forwardRef<
       )}
       {...props}
     />
-  );
-
-  return portalled ? (
-    <PopoverPrimitive.Portal>
-      {Content}
-    </PopoverPrimitive.Portal>
-  ) : (
-    Content
-  );
-});
+  </PopoverPrimitive.Portal>
+));
 PopoverContent.displayName = PopoverPrimitive.Content.displayName
 
 export { Popover, PopoverTrigger, PopoverContent }
