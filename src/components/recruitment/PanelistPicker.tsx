@@ -80,7 +80,7 @@ export function PanelistPicker({
   const handleUnselect = (value: string) => {
     onChange(selected.filter((s) => s.value !== value));
   };
-
+  
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -99,7 +99,7 @@ export function PanelistPicker({
                   className="mr-1"
                 >
                   {item.label.split('(')[0].trim()}
-                   <span
+                  <span
                     role="button"
                     tabIndex={0}
                     aria-label={`Remove ${item.label}`}
