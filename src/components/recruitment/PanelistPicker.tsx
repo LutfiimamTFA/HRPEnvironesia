@@ -20,6 +20,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import type { UserProfile, Brand } from '@/lib/types';
 import { ScrollArea } from '../ui/scroll-area';
+import { Checkbox } from '../ui/checkbox';
 
 export type PanelistOption = {
   value: string;
@@ -152,11 +153,9 @@ export function PanelistPicker({
                         className="cursor-pointer"
                         disabled={!user.isActive}
                       >
-                        <Check
-                            className={cn(
-                            'mr-2 h-4 w-4',
-                            isSelected ? 'opacity-100' : 'opacity-0'
-                            )}
+                        <Checkbox
+                            className="mr-2"
+                            checked={isSelected}
                         />
                         <div className="flex flex-col">
                             <span className="text-sm">{user.fullName}</span>
