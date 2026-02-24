@@ -200,6 +200,14 @@ export async function POST(req: NextRequest) {
         await db.collection('roles_admin').doc(userRecord.uid).delete().catch(() => {}); // Ignore error if doc doesn't exist
       }
       
+      // Handle the roles_hrd collection for hrd
+      if (userData.role === 'hrd') {
+        await db.collection('roles_hrd').doc(userRecord.uid).set({ role: 'hrd' });
+      } else {
+        // In case a user's role was demoted, ensure they are not in roles_hrd
+        await db.collection('roles_hrd').doc(userRecord.uid).delete().catch(() => {});
+      }
+      
       results.push({ email: userData.email, status, uid: userRecord.uid });
 
     } catch (error: any) {

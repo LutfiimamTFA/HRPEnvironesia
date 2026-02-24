@@ -43,6 +43,14 @@ service cloud.firestore {
     function isSuperAdmin() {
       return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
     }
+    
+    /**
+     * WARNING: NOT SAFE FOR LIST QUERIES.
+     * Checks if the user is an 'hrd' via a performant existence check.
+     */
+    function isHrd() {
+      return isSignedIn() && exists(/databases/$(database)/documents/roles_hrd/$(request.auth.uid));
+    }
 
     /**
      * WARNING: NOT SAFE FOR LIST QUERIES.
@@ -87,7 +95,7 @@ service cloud.firestore {
     match /users/{userId} {
       allow get: if isOwner(userId) || isInternal();
       allow update: if isOwner(userId) || isSuperAdmin();
-      allow list: if getUserData().role == 'super-admin' || getUserData().role == 'hrd';
+      allow list: if isSuperAdmin() || isHrd();
       allow create: if isSuperAdmin() && hasValidCreateData(userId);
       allow delete: if isSuperAdmin();
 
@@ -115,6 +123,14 @@ service cloud.firestore {
     }
     
     /**
+     * /roles_hrd/{userId}
+     * - This is a private lookup table. No client access is allowed.
+     */
+    match /roles_hrd/{userId} {
+      allow read, write: if false;
+    }
+    
+    /**
      * /brands/{brandId}
      * - Brands are public for anyone to read.
      * - Only super_admins can manage (create, update, delete) brands.
@@ -133,7 +149,7 @@ service cloud.firestore {
     match /jobs/{jobId} {
       allow list: if true;
       allow get: if resource.data.publishStatus == "published" || isInternal();
-      allow write: if isInternal() && getUserData().role in ['super_admin', 'hrd'];
+      allow write: if isInternal() && getUserData().role in ['super-admin', 'hrd'];
     }
 
     /**
@@ -147,9 +163,8 @@ service cloud.firestore {
         // runs on each document in the result set.
         allow list: if isSignedIn();
 
-        // GET: Allow if internal, or if the document doesn't exist, or if the user is the owner.
-        // This allows checking for a document's existence without causing a permission error.
-        allow get: if isInternal() || !exists(/databases/$(database)/documents/applications/$(applicationId)) || resource.data.candidateUid == request.auth.uid;
+        // GET: Allow if the user is an admin, the document owner, or an assigned panelist.
+        allow get: if isInternal() || !exists(/databases/$(database)/documents/applications/$(applicationId)) || resource.data.candidateUid == request.auth.uid || request.auth.uid in resource.data.allPanelistIds;
 
         // CREATE: A user can create an application only if they are the owner.
         allow create: if isCreatingOwn() && (request.resource.data.status == "draft" || request.resource.data.status == "submitted");
@@ -159,6 +174,7 @@ service cloud.firestore {
                         (isOwner() && resource.data.status == "draft") ||
                         isSubmittingDocuments() ||
                         isUpdatingSubmittedDocuments() ||
+                        isRequestingReschedule() ||
                         (isInternal() && isInternalStatusUpdate()) ||
                         (isInternal() && isUpdatingCvCache())
                       );
@@ -197,8 +213,16 @@ service cloud.firestore {
         }
         function isInternalStatusUpdate() {
             let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
-            let allowedKeys = ['status', 'updatedAt', 'personalityTestAssignedAt', 'cvVerified', 'ijazahVerified', 'timeline', 'interviews'];
+            let allowedKeys = ['status', 'updatedAt', 'personalityTestAssignedAt', 'cvVerified', 'ijazahVerified', 'timeline', 'interviews', 'allPanelistIds'];
             return isInternal() && changedKeys.hasOnly(allowedKeys);
+        }
+        function isRequestingReschedule() {
+          let isOwner = request.auth.uid == resource.data.candidateUid;
+          let isInterviewStage = resource.data.status == 'interview';
+          let allowedKeys = ['interviews', 'timeline', 'updatedAt'];
+          let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
+          let onlyAllowedFieldsChanged = changedKeys.hasOnly(allowedKeys);
+          return isOwner && isInterviewStage && onlyAllowedFieldsChanged;
         }
     }
 
