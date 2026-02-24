@@ -157,7 +157,6 @@ export function JobExplorerClient() {
                          />
                         <h3 className="text-xl font-semibold text-foreground">{t('emptyState.title')}</h3>
                         <p className="mt-2 mb-6">{t('emptyState.subtitle')}</p>
-                        <Button>{t('emptyState.cta')}</Button>
                     </div>
                 )}
             </div>

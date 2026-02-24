@@ -28,8 +28,7 @@
       },
       "emptyState": {
         "title": "Belum Ada Lowongan yang Sesuai",
-        "subtitle": "Coba sesuaikan kata kunci atau filter Anda, atau bergabunglah dengan talent pool kami untuk mendapatkan pemberitahuan lowongan baru.",
-        "cta": "Join Talent Pool"
+        "subtitle": "Coba sesuaikan kata kunci atau filter Anda."
       }
     },
     "ValueProps": {

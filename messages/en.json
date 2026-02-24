@@ -28,8 +28,7 @@
       },
       "emptyState": {
         "title": "No Matching Vacancies Found",
-        "subtitle": "Try adjusting your keywords or filters, or join our talent pool to get notified about new vacancies.",
-        "cta": "Join Talent Pool"
+        "subtitle": "Try adjusting your keywords or filters."
       }
     },
     "ValueProps": {
