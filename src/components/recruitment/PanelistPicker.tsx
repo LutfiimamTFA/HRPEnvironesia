@@ -44,7 +44,6 @@ export function PanelistPicker({
   placeholder = 'Pilih panelis...',
 }: PanelistPickerProps) {
   const [open, setOpen] = React.useState(false);
-  const [query, setQuery] = React.useState('');
 
   const brandMap = React.useMemo(() => {
     if (!allBrands) return new Map<string, string>();
@@ -68,16 +67,6 @@ export function PanelistPicker({
     }))
   }, [allUsers, brandMap]);
 
-
-  const filteredUsers = React.useMemo(() => {
-    if (!query) return userOptions;
-    const lowercasedQuery = query.toLowerCase();
-    return userOptions.filter(user =>
-      user.fullName.toLowerCase().includes(lowercasedQuery) ||
-      user.email.toLowerCase().includes(lowercasedQuery) ||
-      (user.brandDisplay && user.brandDisplay.toLowerCase().includes(lowercasedQuery))
-    );
-  }, [query, userOptions]);
 
   const handleToggle = (user: UserProfile) => {
     const newOption = { value: user.uid, label: `${user.fullName} (${user.email})` };
@@ -144,23 +133,25 @@ export function PanelistPicker({
           <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" portalled={false}>
         <Command>
           <CommandInput 
             placeholder="Cari nama, email, atau brand..."
-            value={query}
-            onValueChange={setQuery}
           />
           <CommandList>
             <ScrollArea className="h-64">
                 <CommandEmpty>Tidak ada pengguna ditemukan.</CommandEmpty>
                 <CommandGroup>
-                {filteredUsers.map((user) => {
+                {userOptions.map((user) => {
                     const isSelected = selected.some(s => s.value === user.uid);
                     return (
                         <CommandItem
                             key={user.uid}
+                            value={`${user.fullName} ${user.email} ${user.brandDisplay}`}
+                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                             onSelect={() => handleToggle(user)}
+                            className="cursor-pointer"
+                            disabled={!user.isActive}
                         >
                             <Check
                                 className={cn(
