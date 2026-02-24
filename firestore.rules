@@ -245,19 +245,19 @@ service cloud.firestore {
 
     match /assessment_templates/{templateId} {
       allow read: if isSignedIn();
-      allow write: if isInternal() && getUserData().role in ['super_admin', 'hrd'];
+      allow write: if isInternal() && getUserData().role in ['super-admin', 'hrd'];
     }
 
     match /assessments/{assessmentId} {
       allow get: if isSignedIn() && (resource.data.isActive == true || isInternal());
       allow list: if isSignedIn();
-      allow write: if isInternal() && getUserData().role in ['super_admin', 'hrd'];
+      allow write: if isInternal() && getUserData().role in ['super-admin', 'hrd'];
     }
     
     match /assessment_questions/{questionId} {
       allow list: if isSignedIn(); // Must be relatively open for where-in queries. Client logic is the main guard.
       allow get: if isSignedIn();
-      allow write: if isInternal() && getUserData().role in ['super_admin', 'hrd'];
+      allow write: if isInternal() && getUserData().role in ['super-admin', 'hrd'];
     }
     
     match /assessment_sessions/{sessionId} {
