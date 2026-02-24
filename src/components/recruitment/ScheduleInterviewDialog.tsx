@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { useFirestore } from '@/firebase';
 import type { UserProfile, JobApplication, Brand } from '@/lib/types';
 import { useAuth } from '@/providers/auth-provider';
-import { PanelistPicker } from './PanelistPicker';
+import { PanelistPickerSimple } from './PanelistPickerSimple';
 import { GoogleDatePicker } from '../ui/google-date-picker';
 
 export const scheduleSchema = z.object({
@@ -40,6 +40,7 @@ interface ScheduleInterviewDialogProps {
 
 export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initialData, candidateName, recruiter, allUsers, allBrands }: ScheduleInterviewDialogProps) {
   const [isSaving, setIsSaving] = useState(false);
+  const [dialogContent, setDialogContent] = useState<HTMLElement | null>(null);
 
   const form = useForm<ScheduleInterviewData>({
     resolver: zodResolver(scheduleSchema),
@@ -73,7 +74,7 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent ref={setDialogContent} className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
@@ -93,13 +94,14 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
                           value={field.value}
                           onChange={field.onChange}
                           mode="general"
+                          container={dialogContent}
                         />
                       </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
-             <FormField control={form.control} name="duration" render={({ field }) => (<FormItem><FormLabel>Durasi (menit)</FormLabel><Select onValueChange={(v) => field.onChange(parseInt(v))} value={String(field.value)}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent><SelectItem value="15">15</SelectItem><SelectItem value="30">30</SelectItem><SelectItem value="45">45</SelectItem><SelectItem value="60">60</SelectItem><SelectItem value="90">90</SelectItem></SelectContent></Select><FormMessage /></FormItem>)} />
+             <FormField control={form.control} name="duration" render={({ field }) => (<FormItem><FormLabel>Durasi (menit)</FormLabel><Select onValueChange={(v) => field.onChange(parseInt(v))} value={String(field.value)}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent container={dialogContent}><SelectItem value="15">15</SelectItem><SelectItem value="30">30</SelectItem><SelectItem value="45">45</SelectItem><SelectItem value="60">60</SelectItem><SelectItem value="90">90</SelectItem></SelectContent></Select><FormMessage /></FormItem>)} />
             <FormField
               control={form.control}
               name="meetingLink"
@@ -117,11 +119,18 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
                 render={({ field }) => (
                 <FormItem>
                     <FormLabel>Panelis Wawancara</FormLabel>
-                    <PanelistPicker
+                    <PanelistPickerSimple
                         allUsers={allUsers}
                         allBrands={allBrands}
-                        selected={field.value}
-                        onChange={field.onChange}
+                        selectedIds={field.value?.map(p => p.value) || []}
+                        onChange={(ids) => {
+                            const selectedUsers = allUsers.filter(u => ids.includes(u.uid));
+                            const newSelectedOptions = selectedUsers.map(u => ({
+                                value: u.uid,
+                                label: `${u.fullName} (${u.email})`
+                            }));
+                            field.onChange(newSelectedOptions);
+                        }}
                     />
                     <FormMessage />
                 </FormItem>
