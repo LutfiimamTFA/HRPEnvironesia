@@ -37,7 +37,7 @@ service cloud.firestore {
     }
 
     /**
-     * WARNING: NOT SAFE FOR LIST QUERIES unless the query is small/infrequent.
+     * WARNING: NOT SAFE FOR LIST QUERIES.
      * Checks if the user is a 'super_admin' via a performant existence check.
      */
     function isSuperAdmin() {
@@ -45,7 +45,7 @@ service cloud.firestore {
     }
     
     /**
-     * WARNING: NOT SAFE FOR LIST QUERIES unless the query is small/infrequent.
+     * WARNING: NOT SAFE FOR LIST QUERIES.
      * Checks if the user's role is 'hrd' by reading their user document.
      * This is more robust against data inconsistencies than using a separate roles collection.
      */
@@ -97,7 +97,7 @@ service cloud.firestore {
       allow get: if isOwner(userId) || isInternal();
       allow update: if isOwner(userId) || isSuperAdmin();
       allow list: if isSuperAdmin() || isHrd();
-      allow create: if isSuperAdmin() && hasValidCreateData(userId);
+      allow create: if (isOwner(userId) && request.resource.data.role == 'kandidat' && hasValidCreateData(userId)) || isSuperAdmin();
       allow delete: if isSuperAdmin();
 
       match /saved_jobs/{jobId} {

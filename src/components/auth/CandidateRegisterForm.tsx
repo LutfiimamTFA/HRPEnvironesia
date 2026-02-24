@@ -69,6 +69,7 @@ export function CandidateRegisterForm() {
         uid: user.uid,
         email: values.email,
         fullName: values.fullName,
+        nameLower: values.fullName.toLowerCase(),
         role: 'kandidat',
         isActive: true,
         createdAt: serverTimestamp(),
