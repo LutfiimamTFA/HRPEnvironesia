@@ -31,17 +31,17 @@ export function PanelistPicker({ job, selected, onChange, className }: PanelistP
   const [search, setSearch] = React.useState('');
   const firestore = useFirestore();
 
-  // Query for suggested users based on job division/department
-  const suggestedUsersQuery = useMemoFirebase(() => {
-    if (!job?.division) return null;
+  // Query for initial users to show when search is empty
+  const initialUsersQuery = useMemoFirebase(() => {
+    if (search) return null;
     return query(
         collection(firestore, 'users'), 
-        where('department', '==', job.division),
         where('isActive', '==', true),
-        limit(5)
+        where('role', 'in', ['super-admin', 'hrd', 'manager', 'karyawan']),
+        limit(20)
     );
-  }, [firestore, job]);
-  const { data: suggestedUsers } = useCollection<UserProfile>(suggestedUsersQuery);
+  }, [firestore, search]);
+  const { data: initialUsers } = useCollection<UserProfile>(initialUsersQuery);
 
   // Query for users based on search term
   const searchUsersQuery = useMemoFirebase(() => {
@@ -66,8 +66,8 @@ export function PanelistPicker({ job, selected, onChange, className }: PanelistP
     }
   };
 
-  const allSuggestedUsers = (suggestedUsers || []).filter(u => !selected.some(s => s.value === u.uid));
-  const allSearchedUsers = (searchedUsers || []).filter(u => !selected.some(s => s.value === u.uid) && !allSuggestedUsers.some(s => s.uid === u.uid));
+  const usersToShow = search ? (searchedUsers || []) : (initialUsers || []);
+  const availableUsers = usersToShow.filter(u => !selected.some(s => s.value === u.uid));
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -107,9 +107,9 @@ export function PanelistPicker({ job, selected, onChange, className }: PanelistP
           <CommandList>
             <CommandEmpty>Tidak ada pengguna ditemukan.</CommandEmpty>
             
-            {allSuggestedUsers.length > 0 && search.length < 2 && (
-              <CommandGroup heading="Disarankan">
-                {allSuggestedUsers.map(user => (
+            {availableUsers.length > 0 && (
+              <CommandGroup heading={search ? "Hasil Pencarian" : "Daftar Pengguna"}>
+                {availableUsers.map(user => (
                   <CommandItem key={user.uid} onSelect={() => handleSelect(user)}>
                     <Check className={cn('mr-2 h-4 w-4', selected.some(s => s.value === user.uid) ? 'opacity-100' : 'opacity-0')} />
                     {user.fullName} <span className="text-xs text-muted-foreground ml-2">{`(${user.email})`}</span>
@@ -117,18 +117,6 @@ export function PanelistPicker({ job, selected, onChange, className }: PanelistP
                 ))}
               </CommandGroup>
             )}
-
-            {search.length > 1 && allSearchedUsers.length > 0 && (
-                 <CommandGroup heading="Hasil Pencarian">
-                    {allSearchedUsers.map(user => (
-                        <CommandItem key={user.uid} onSelect={() => handleSelect(user)}>
-                           <Check className={cn('mr-2 h-4 w-4', selected.some(s => s.value === user.uid) ? 'opacity-100' : 'opacity-0')} />
-                           {user.fullName} <span className="text-xs text-muted-foreground ml-2">{`(${user.email})`}</span>
-                        </CommandItem>
-                    ))}
-                </CommandGroup>
-            )}
-
           </CommandList>
         </Command>
       </PopoverContent>
