@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
@@ -13,15 +13,16 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Trash2 } from 'lucide-react';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { format } from 'date-fns';
 import { AssessmentStatusBadge } from '@/components/dashboard/AssessmentStatusBadge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 function SubmissionsTableSkeleton() {
   return (
     <div className="space-y-4">
-      <Skeleton className="h-10 w-[240px]" />
+      <Skeleton className="h-10 w-full" />
       <div className="rounded-md border">
         <Table>
           <TableHeader>
@@ -49,6 +50,8 @@ export default function AssessmentSubmissionsPage() {
   const params = useParams();
   const router = useRouter();
   const assessmentId = params.assessmentId as string;
+  const [jobFilter, setJobFilter] = useState('all');
+  const [brandFilter, setBrandFilter] = useState('all');
 
   const menuConfig = useMemo(() => {
     if (userProfile?.role === 'super-admin') return MENU_CONFIG['super-admin'];
@@ -66,16 +69,39 @@ export default function AssessmentSubmissionsPage() {
     [firestore, assessmentId]
   );
   const { data: sessions, isLoading: isLoadingSessions, error } = useCollection<AssessmentSession>(sessionsQuery);
+  
+  const { uniqueJobs, uniqueBrands } = useMemo(() => {
+    if (!sessions) return { uniqueJobs: [], uniqueBrands: [] };
+    const jobSet = new Set<string>();
+    const brandSet = new Set<string>();
+    sessions.forEach(session => {
+        if(session.jobPosition) jobSet.add(session.jobPosition);
+        if(session.brandName) brandSet.add(session.brandName);
+    });
+    return { uniqueJobs: Array.from(jobSet).sort(), uniqueBrands: Array.from(brandSet).sort() };
+  }, [sessions]);
 
-  const sortedSessions = useMemo(() => {
+  const filteredAndSortedSessions = useMemo(() => {
     if (!sessions) return [];
-    return [...sessions].sort((a, b) => {
+    
+    const filtered = sessions.filter(session => {
+        const jobMatch = jobFilter === 'all' || session.jobPosition === jobFilter;
+        const brandMatch = brandFilter === 'all' || session.brandName === brandFilter;
+        return jobMatch && brandMatch;
+    });
+
+    return [...filtered].sort((a, b) => {
       const timeA = a.completedAt?.toMillis() || a.updatedAt.toMillis();
       const timeB = b.completedAt?.toMillis() || b.updatedAt.toMillis();
       return timeB - timeA;
     });
-  }, [sessions]);
-  
+  }, [sessions, jobFilter, brandFilter]);
+
+  const handleResetFilters = () => {
+    setJobFilter('all');
+    setBrandFilter('all');
+  };
+
   const isLoading = isLoadingSessions || isLoadingAssessment;
 
   if (!hasAccess || isLoading) {
@@ -109,11 +135,39 @@ export default function AssessmentSubmissionsPage() {
         menuConfig={menuConfig}
     >
       <div className="space-y-4">
-        <div className="flex items-start justify-between">
+        <div className="flex items-center justify-between">
             <Button variant="outline" size="sm" onClick={() => router.push('/admin/hrd/assessments')}>
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to Assessment Tools
             </Button>
+            <div className="flex items-center gap-2">
+                <Select value={jobFilter} onValueChange={setJobFilter}>
+                    <SelectTrigger className="w-full sm:w-[180px]">
+                        <SelectValue placeholder="All Jobs" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All Jobs</SelectItem>
+                        {uniqueJobs.map(job => (
+                            <SelectItem key={job} value={job}>{job}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+                <Select value={brandFilter} onValueChange={setBrandFilter}>
+                    <SelectTrigger className="w-full sm:w-[180px]">
+                        <SelectValue placeholder="All Brands" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All Brands</SelectItem>
+                        {uniqueBrands.map(brand => (
+                            <SelectItem key={brand} value={brand}>{brand}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+                 <Button variant="ghost" size="icon" onClick={handleResetFilters}>
+                    <Trash2 className="h-4 w-4" />
+                    <span className="sr-only">Reset Filters</span>
+                </Button>
+            </div>
         </div>
         
         <div className="rounded-lg border">
@@ -129,8 +183,8 @@ export default function AssessmentSubmissionsPage() {
                     </TableRow>
                 </TableHeader>
                 <TableBody>
-                {sortedSessions && sortedSessions.length > 0 ? (
-                    sortedSessions.map(session => (
+                {filteredAndSortedSessions && filteredAndSortedSessions.length > 0 ? (
+                    filteredAndSortedSessions.map(session => (
                     <TableRow key={session.id}>
                         <TableCell className="font-medium">
                           {session.candidateName ?? session.candidateEmail ?? session.candidateUid}
@@ -158,7 +212,7 @@ export default function AssessmentSubmissionsPage() {
                 ) : (
                     <TableRow>
                     <TableCell colSpan={6} className="h-24 text-center">
-                        No submissions for this assessment yet.
+                        No submissions match the current filters.
                     </TableCell>
                     </TableRow>
                 )}
