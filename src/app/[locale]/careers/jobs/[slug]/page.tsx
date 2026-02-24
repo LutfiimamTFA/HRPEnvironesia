@@ -219,16 +219,23 @@ export default function JobDetailPage() {
 
             <main className="bg-secondary/50">
                 <div className="container mx-auto max-w-6xl px-4 py-8 md:py-12">
-                    <div className="relative mb-8 w-full overflow-hidden rounded-2xl shadow-lg aspect-video">
+                    <div className="relative mb-8 w-full overflow-hidden rounded-2xl shadow-lg aspect-video bg-muted">
+                        <Image
+                            src={job.coverImageUrl || 'https://picsum.photos/seed/default-hero/1200/600'}
+                            alt=""
+                            fill
+                            className="object-cover scale-110 blur-lg opacity-50"
+                            data-ai-hint="abstract office background"
+                        />
+                        <div className="absolute inset-0 bg-black/20" />
                         <Image
                             src={job.coverImageUrl || 'https://picsum.photos/seed/default-hero/1200/600'}
                             alt={`${job.position} cover image`}
                             fill
-                            className="object-cover"
+                            className="object-contain"
                             priority
                             data-ai-hint="office building team"
                         />
-                         <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
                     </div>
                     
                     <div className="grid grid-cols-1 gap-x-12 gap-y-8 lg:grid-cols-3">
