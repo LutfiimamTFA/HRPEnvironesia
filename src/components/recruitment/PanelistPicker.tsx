@@ -145,29 +145,24 @@ export function PanelistPicker({
                       <CommandItem
                         key={user.uid}
                         value={`${user.fullName} ${user.email} ${user.brandDisplay}`}
-                        asChild
+                        onSelect={() => handleToggle(user)}
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                        }}
+                        className="cursor-pointer"
                         disabled={!user.isActive}
                       >
-                        <button
-                            type="button"
-                            className="w-full text-left cursor-pointer flex items-center p-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                            onMouseDown={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                            }}
-                            onClick={() => handleToggle(user)}
-                        >
-                            <Checkbox
-                                className="mr-2"
-                                checked={isSelected}
-                                aria-hidden="true"
-                                tabIndex={-1}
-                            />
-                            <div className="flex flex-col">
-                                <span className="text-sm">{user.fullName}</span>
-                                <span className="text-xs text-muted-foreground">{user.email} - {user.brandDisplay}</span>
-                            </div>
-                        </button>
+                        <Checkbox
+                            className="mr-2"
+                            checked={isSelected}
+                            aria-hidden="true"
+                            tabIndex={-1}
+                        />
+                        <div className="flex flex-col">
+                            <span className="text-sm">{user.fullName}</span>
+                            <span className="text-xs text-muted-foreground">{user.email} - {user.brandDisplay}</span>
+                        </div>
                       </CommandItem>
                     );
                     })}
