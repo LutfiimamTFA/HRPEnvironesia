@@ -50,9 +50,9 @@ function JobDetailSkeleton() {
 const OtherJobCard = ({ job }: { job: Job }) => (
     <Link href={`/careers/jobs/${job.slug}`} className="block transition-shadow hover:shadow-md rounded-lg">
         <Card className="flex items-center gap-4 p-3 h-full transition-colors hover:bg-muted/50">
-            <div className="relative h-16 w-24 flex-shrink-0">
+            <div className="relative h-16 w-16 flex-shrink-0">
                 <Image 
-                    src={job.coverImageUrl || 'https://picsum.photos/seed/job-fallback/200/140'}
+                    src={job.coverImageUrl || 'https://picsum.photos/seed/job-fallback/200/200'}
                     alt={job.position}
                     fill
                     className="rounded-md object-cover"
@@ -62,8 +62,12 @@ const OtherJobCard = ({ job }: { job: Job }) => (
             <div className="flex-grow overflow-hidden">
                 <p className="font-semibold leading-tight truncate">{job.position}</p>
                 <p className="text-sm text-muted-foreground truncate">{job.brandName}</p>
+                <div className="mt-2 flex items-center gap-x-4 gap-y-1 text-xs text-muted-foreground flex-wrap">
+                    <span className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" /> {job.location}</span>
+                    <span className="flex items-center gap-1.5 capitalize"><Briefcase className="h-3.5 w-3.5" /> {job.statusJob}</span>
+                </div>
             </div>
-            <ChevronRight className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
+            <ChevronRight className="h-5 w-5 flex-shrink-0 text-muted-foreground ml-auto" />
         </Card>
     </Link>
 );
@@ -215,15 +219,7 @@ export default function JobDetailPage() {
 
             <main className="bg-secondary/50">
                 <div className="container mx-auto max-w-6xl px-4 py-8 md:py-12">
-                    <div className="relative mb-8 h-[320px] w-full overflow-hidden rounded-2xl shadow-lg md:h-[420px]">
-                        <Image
-                            src={job.coverImageUrl || 'https://picsum.photos/seed/default-hero/1200/600'}
-                            alt=""
-                            fill
-                            className="absolute inset-0 object-cover scale-110 blur-2xl opacity-60"
-                            data-ai-hint="abstract office background"
-                            />
-                         <div className="absolute inset-0 bg-gradient-to-r from-black/45 via-black/10 to-transparent" />
+                    <div className="relative mb-8 w-full overflow-hidden rounded-2xl shadow-lg aspect-video">
                         <Image
                             src={job.coverImageUrl || 'https://picsum.photos/seed/default-hero/1200/600'}
                             alt={`${job.position} cover image`}
@@ -232,6 +228,7 @@ export default function JobDetailPage() {
                             priority
                             data-ai-hint="office building team"
                         />
+                         <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
                     </div>
                     
                     <div className="grid grid-cols-1 gap-x-12 gap-y-8 lg:grid-cols-3">
