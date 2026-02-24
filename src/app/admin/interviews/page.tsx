@@ -80,10 +80,12 @@ function InterviewCard({ interview, allUsers, allBrands, currentUser, onMutate }
                             </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                            <DropdownMenuItem onSelect={() => setIsManagePanelistsOpen(true)}>
-                                <Users className="mr-2 h-4 w-4" />
-                                <span>Kelola Panelis</span>
-                            </DropdownMenuItem>
+                            {['super-admin', 'hrd'].includes(currentUser.role) && (
+                                <DropdownMenuItem onSelect={() => setIsManagePanelistsOpen(true)}>
+                                    <Users className="mr-2 h-4 w-4" />
+                                    <span>Kelola Panelis</span>
+                                </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem asChild>
                                 <Link href={`/admin/interviews/${interview.application.id}`}>
                                     <Briefcase className="mr-2 h-4 w-4" />

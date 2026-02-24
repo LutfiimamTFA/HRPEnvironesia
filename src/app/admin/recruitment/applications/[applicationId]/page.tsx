@@ -244,9 +244,11 @@ function InterviewManagement({ application, onUpdate, allUsers, allBrands }: { a
                                 <p className="text-sm text-muted-foreground">Pewawancara: {(iv.panelistNames || iv.interviewerNames || []).join(', ')}</p>
                             </div>
                             <div className="flex items-center gap-2">
-                                <Button variant="outline" size="sm" onClick={() => handleOpenPanelistDialog(iv)}>
-                                    Kelola Panelis
-                                </Button>
+                                {userProfile && ['super-admin', 'hrd'].includes(userProfile.role) && (
+                                    <Button variant="outline" size="sm" onClick={() => handleOpenPanelistDialog(iv)}>
+                                        Kelola Panelis
+                                    </Button>
+                                )}
                                 <Button variant="ghost" size="sm" onClick={() => handleOpenScheduleDialog(iv)}>
                                     <Edit className="h-4 w-4 mr-2" /> Edit
                                 </Button>
