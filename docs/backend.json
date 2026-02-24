@@ -697,22 +697,6 @@
         }
       },
       {
-        "path": "/roles_hrd/{userId}",
-        "definition": {
-          "entityName": "roles_hrd",
-          "schema": {
-            "$ref": "#/backend/entities/User"
-          },
-          "description": "Indicates hrd role via document existence. The content of the document is not relevant.",
-          "params": [
-            {
-              "name": "userId",
-              "description": "The Firebase Auth UID of the hrd user."
-            }
-          ]
-        }
-      },
-      {
         "path": "/brands/{brandId}",
         "definition": {
           "entityName": "Brand",

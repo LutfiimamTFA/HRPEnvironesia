@@ -37,7 +37,7 @@ service cloud.firestore {
     }
 
     /**
-     * WARNING: NOT SAFE FOR LIST QUERIES.
+     * WARNING: NOT SAFE FOR LIST QUERIES unless the query is small/infrequent.
      * Checks if the user is a 'super_admin' via a performant existence check.
      */
     function isSuperAdmin() {
@@ -45,11 +45,12 @@ service cloud.firestore {
     }
     
     /**
-     * WARNING: NOT SAFE FOR LIST QUERIES.
-     * Checks if the user is an 'hrd' via a performant existence check.
+     * WARNING: NOT SAFE FOR LIST QUERIES unless the query is small/infrequent.
+     * Checks if the user's role is 'hrd' by reading their user document.
+     * This is more robust against data inconsistencies than using a separate roles collection.
      */
     function isHrd() {
-      return isSignedIn() && exists(/databases/$(database)/documents/roles_hrd/$(request.auth.uid));
+      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'hrd';
     }
 
     /**
