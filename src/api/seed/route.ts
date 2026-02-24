@@ -3,12 +3,23 @@ import admin from '@/lib/firebase/admin';
 import { UserRole } from '@/lib/types';
 import { Timestamp } from 'firebase-admin/firestore';
 
-const seedUsers: { email: string; password: string; fullName: string; role: UserRole }[] = [
-  { email: 'super_admin@gmail.com', password: '12345678', fullName: 'Super Admin User', role: 'super-admin' },
-  { email: 'hrd@gmail.com', password: '12345678', fullName: 'HRD User', role: 'hrd' },
-  { email: 'manager@gmail.com', password: '12345678', fullName: 'Manager User', role: 'manager' },
+const seedUsers: { 
+  email: string; 
+  password: string; 
+  fullName: string; 
+  role: UserRole, 
+  department?: string, 
+  jobTitle?: string,
+  skills?: string[]
+}[] = [
+  { email: 'super_admin@gmail.com', password: '12345678', fullName: 'Super Admin', role: 'super-admin' },
+  { email: 'hrd@gmail.com', password: '12345678', fullName: 'HRD Person', role: 'hrd', department: 'Human Resources', jobTitle: 'HRD Staff' },
+  { email: 'manager@gmail.com', password: '12345678', fullName: 'Engineering Manager', role: 'manager', department: 'Technology', jobTitle: 'Manager' },
   { email: 'kandidat@gmail.com', password: '12345678', fullName: 'Kandidat User', role: 'kandidat' },
-  { email: 'karyawan@gmail.com', password: '12345678', fullName: 'Karyawan User', role: 'karyawan' },
+  { email: 'karyawan@gmail.com', password: '12345678', fullName: 'Employee User', role: 'karyawan', department: 'Creative', jobTitle: 'Videographer', skills: ['video editing', 'capcut'] },
+  { email: 'editor@gmail.com', password: '12345678', fullName: 'Lead Editor', role: 'karyawan', department: 'Creative', jobTitle: 'Editor', skills: ['copywriting', 'seo', 'editing'] },
+  { email: 'datascientist@gmail.com', password: '12345678', fullName: 'Data Scientist', role: 'karyawan', department: 'Data', jobTitle: 'Data Scientist', skills: ['python', 'sql', 'machine learning'] },
+
 ];
 
 async function seedAssessment(db: admin.firestore.Firestore) {
@@ -164,8 +175,12 @@ export async function POST(req: NextRequest) {
         uid: userRecord.uid,
         email: userData.email,
         fullName: userData.fullName,
+        nameLower: userData.fullName.toLowerCase(),
         role: userData.role,
         isActive: true,
+        department: userData.department || null,
+        jobTitle: userData.jobTitle || null,
+        skills: userData.skills || [],
       };
 
       if (status === 'created') {

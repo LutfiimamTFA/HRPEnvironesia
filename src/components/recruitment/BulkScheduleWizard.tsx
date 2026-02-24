@@ -24,7 +24,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { format } from 'date-fns';
 import { useFirestore, updateDocumentNonBlocking, useCollection, useMemoFirebase } from '@/firebase';
 import { doc, writeBatch, serverTimestamp, Timestamp, query, collection, where } from 'firebase/firestore';
-import { MultiSelect } from '../ui/multi-select';
+import { PanelistPicker } from './PanelistPicker';
 
 // --- Step 1: Candidate List Item ---
 
@@ -77,17 +77,6 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
   const [orderedCandidates, setOrderedCandidates] = useState<JobApplication[]>([]);
   const { toast } = useToast();
   const firestore = useFirestore();
-
-  const internalUsersQuery = useMemoFirebase(
-    () => query(collection(firestore, 'users'), where('role', 'in', ['hrd', 'super-admin', 'manager', 'karyawan'])),
-    [firestore]
-  );
-  const { data: internalUsers } = useCollection<UserProfile>(internalUsersQuery);
-
-  const panelistOptions = useMemo(() => {
-    if (!internalUsers) return [];
-    return internalUsers.map(u => ({ value: u.uid, label: `${u.fullName} (${u.email})` }));
-  }, [internalUsers]);
 
   useEffect(() => {
     if (isOpen) {
@@ -233,12 +222,11 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
                     render={({ field }) => (
                         <FormItem>
                         <FormLabel>Panelis Wawancara</FormLabel>
-                        <MultiSelect
-                                options={panelistOptions}
-                                selected={field.value}
-                                onChange={field.onChange}
-                                placeholder="Pilih panelis..."
-                            />
+                        <PanelistPicker
+                            job={candidates[0]} // Use first candidate's job for suggestions
+                            selected={field.value}
+                            onChange={field.onChange}
+                        />
                         <FormMessage />
                         </FormItem>
                     )}

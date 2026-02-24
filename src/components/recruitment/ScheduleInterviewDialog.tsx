@@ -11,11 +11,10 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Loader2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, query, where } from 'firebase/firestore';
-import type { UserProfile } from '@/lib/types';
-import { MultiSelect } from '@/components/ui/multi-select';
+import { useFirestore } from '@/firebase';
+import type { UserProfile, JobApplication } from '@/lib/types';
 import { useAuth } from '@/providers/auth-provider';
+import { PanelistPicker } from './PanelistPicker';
 
 export const scheduleSchema = z.object({
   dateTime: z.coerce.date({ required_error: 'Tanggal dan waktu harus diisi.' }),
@@ -32,24 +31,12 @@ interface ScheduleInterviewDialogProps {
   onOpenChange: (open: boolean) => void;
   onConfirm: (data: ScheduleInterviewData) => Promise<boolean>;
   initialData?: Partial<ScheduleInterviewData>;
-  candidateName?: string;
+  application?: JobApplication;
   recruiter: UserProfile;
 }
 
-export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initialData, candidateName, recruiter }: ScheduleInterviewDialogProps) {
+export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initialData, application, recruiter }: ScheduleInterviewDialogProps) {
   const [isSaving, setIsSaving] = useState(false);
-  const firestore = useFirestore();
-
-  const internalUsersQuery = useMemoFirebase(
-    () => query(collection(firestore, 'users'), where('role', 'in', ['hrd', 'super-admin', 'manager', 'karyawan'])),
-    [firestore]
-  );
-  const { data: internalUsers } = useCollection<UserProfile>(internalUsersQuery);
-
-  const panelistOptions = useMemo(() => {
-    if (!internalUsers) return [];
-    return internalUsers.map(u => ({ value: u.uid, label: `${u.fullName} (${u.email})` }));
-  }, [internalUsers]);
 
   const form = useForm<ScheduleInterviewData>({
     resolver: zodResolver(scheduleSchema),
@@ -78,8 +65,8 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
   };
   
   const title = initialData 
-    ? `Edit Wawancara untuk ${candidateName}`
-    : `Jadwalkan Wawancara untuk ${candidateName}`;
+    ? `Edit Wawancara untuk ${application?.candidateName}`
+    : `Jadwalkan Wawancara untuk ${application?.candidateName}`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -121,22 +108,23 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
                 </FormItem>
               )}
             />
-            <FormField
-              control={form.control}
-              name="panelists"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Panelis Wawancara</FormLabel>
-                   <MultiSelect
-                        options={panelistOptions}
-                        selected={field.value}
-                        onChange={field.onChange}
-                        placeholder="Pilih panelis..."
-                    />
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {application && (
+                <FormField
+                    control={form.control}
+                    name="panelists"
+                    render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>Panelis Wawancara</FormLabel>
+                        <PanelistPicker
+                            job={application} // The job object is embedded in the application object
+                            selected={field.value}
+                            onChange={field.onChange}
+                        />
+                        <FormMessage />
+                    </FormItem>
+                    )}
+                />
+            )}
              <FormField
               control={form.control}
               name="notes"

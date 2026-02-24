@@ -12,8 +12,12 @@ export type UserProfile = {
   uid: string;
   email: string;
   fullName: string;
+  nameLower?: string; // For searching
   role: UserRole;
   isActive: boolean;
+  department?: string;
+  jobTitle?: string;
+  skills?: string[];
   createdAt: Timestamp | { seconds: number; nanoseconds: number };
   brandId?: string | string[];
   isProfileComplete?: boolean;
@@ -52,6 +56,7 @@ export type Job = {
   updatedAt: Timestamp;
   createdBy: string;
   updatedBy: string;
+  tags?: string[]; // Added for panelist suggestions
 };
 
 export const ORDERED_RECRUITMENT_STAGES = ['submitted', 'screening', 'tes_kepribadian', 'verification', 'document_submission', 'interview', 'hired', 'rejected'] as const;

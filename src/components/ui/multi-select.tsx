@@ -94,6 +94,7 @@ function MultiSelect({
                     } else {
                       onChange([...selected, option]);
                     }
+                    setOpen(false);
                   }}
                 >
                   <Check
