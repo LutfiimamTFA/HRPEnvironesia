@@ -3,7 +3,6 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 import { X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -42,10 +41,7 @@ export function PanelistPickerSimple({
       } else if (typeof user.brandId === 'string' && user.brandId) {
         brandDisplay = brandMap.get(user.brandId) || brandDisplay;
       }
-      return {
-        ...user,
-        brandDisplay,
-      };
+      return { ...user, brandDisplay };
     });
   }, [allUsers, brandMap]);
 
@@ -62,7 +58,6 @@ export function PanelistPickerSimple({
     return selectedIds.map(id => usersWithDetails.find(user => user.uid === id)).filter(Boolean) as (typeof usersWithDetails[0])[];
   }, [selectedIds, usersWithDetails]);
 
-
   const handleToggle = (userId: string) => {
     const newSelectedIds = selectedIds.includes(userId)
       ? selectedIds.filter(id => id !== userId)
@@ -70,45 +65,55 @@ export function PanelistPickerSimple({
     onChange(newSelectedIds);
   };
 
+  const handleRowClick = (e: React.MouseEvent, userId: string, isActive: boolean) => {
+    e.stopPropagation();
+    if (isActive) {
+        handleToggle(userId);
+    }
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
   return (
     <div className={cn('space-y-3 rounded-md border p-3', className)}>
-      {/* Selected Chips */}
-      <div className="flex flex-wrap gap-2">
-        {selectedUsers.length > 0 ? selectedUsers.map(user => (
-          <Badge key={user.uid} variant="secondary">
-            {user.fullName}
-            <button
-              type="button"
-              aria-label={`Remove ${user.fullName}`}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => handleToggle(user.uid)}
-              className="ml-1 rounded-full outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
-            >
-              <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
-            </button>
-          </Badge>
-        )) : <p className="text-xs text-muted-foreground">Pilih satu atau lebih panelis.</p>}
+      <div className="flex flex-wrap gap-1">
+        {selectedUsers.length > 0 ? (
+            <>
+                {selectedUsers.slice(0, 3).map(user => (
+                  <Badge key={user.uid} variant="secondary" className="gap-1">
+                    {user.fullName}
+                    <button type="button" aria-label={`Remove ${user.fullName}`} onMouseDown={handleMouseDown} onClick={() => handleToggle(user.uid)}>
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+                {selectedUsers.length > 3 && (
+                    <Badge variant="secondary">+{selectedUsers.length - 3} lainnya</Badge>
+                )}
+            </>
+        ) : <p className="text-xs text-muted-foreground px-2">Pilih satu atau lebih panelis.</p>}
       </div>
 
-      {/* Search Input */}
       <Input
         placeholder="Cari nama atau email..."
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
       />
 
-      {/* User List */}
       <ScrollArea className="h-48">
         <div className="space-y-1 pr-2">
-          {filteredUsers.map(user => {
+          {filteredUsers.slice(0, 50).map(user => {
             const isSelected = selectedIds.includes(user.uid);
             return (
               <div
                 key={user.uid}
                 role="button"
                 tabIndex={0}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => user.isActive && handleToggle(user.uid)}
+                onMouseDown={handleMouseDown}
+                onClick={(e) => handleRowClick(e, user.uid, !!user.isActive)}
                 onKeyDown={(e) => {
                     if (user.isActive && (e.key === ' ' || e.key === 'Enter')) {
                         e.preventDefault();
@@ -125,6 +130,7 @@ export function PanelistPickerSimple({
                   checked={isSelected}
                   aria-label={`Select ${user.fullName}`}
                   className="pointer-events-none"
+                  disabled={!user.isActive}
                 />
                  <Avatar className="h-8 w-8">
                     <AvatarImage src={user.photoUrl} alt={user.fullName} />
