@@ -89,12 +89,19 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
   const { data: internalUsers } = useCollection<UserProfile>(internalUsersQuery);
   const { data: brands } = useCollection<Brand>(useMemoFirebase(() => collection(firestore, 'brands'), [firestore]));
 
+  const [panelistIds, setPanelistIds] = useState<string[]>([]);
+
   useEffect(() => {
     if (isOpen) {
       setOrderedCandidates(candidates.sort((a,b) => (a.submittedAt?.toMillis() || 0) - (b.submittedAt?.toMillis() || 0)));
       setStep(1);
+      if (recruiter && panelistIds.length === 0) {
+        setPanelistIds([recruiter.uid]);
+      }
+    } else {
+        setPanelistIds([]);
     }
-  }, [isOpen, candidates]);
+  }, [isOpen, candidates, recruiter]);
   
   const scheduleForm = useForm<ScheduleConfigValues>({
     resolver: zodResolver(scheduleConfigSchema),
@@ -141,10 +148,10 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
     }
     
     const batch = writeBatch(firestore);
-    const { panelistIds, meetingLink } = scheduleForm.getValues();
     
     const selectedPanelists = (internalUsers || []).filter(u => panelistIds.includes(u.uid));
     const panelistNames = selectedPanelists.map(p => p.fullName);
+    const { meetingLink } = scheduleForm.getValues();
 
 
     generatedSlots.forEach(slot => {
@@ -220,7 +227,7 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
         return (
           <Form {...scheduleForm}>
             <form className="space-y-4">
-                <FormField control={scheduleForm.control} name="startDate" render={({ field }) => ( <FormItem className="flex flex-col"><FormLabel>Tanggal Mulai</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>)} />
+                <FormField control={scheduleForm.control} name="startDate" render={({ field }) => ( <FormItem className="flex flex-col"><FormLabel>Tanggal Mulai</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} portalled={false} /></FormControl><FormMessage /></FormItem>)} />
                 <div className="grid grid-cols-2 gap-4">
                     <FormField control={scheduleForm.control} name="startTime" render={({ field }) => ( <FormItem><FormLabel>Waktu Mulai</FormLabel><FormControl><Input type="time" {...field} /></FormControl><FormMessage /></FormItem>)} />
                     <FormField control={scheduleForm.control} name="workdayEndTime" render={({ field }) => ( <FormItem><FormLabel>Batas Jam Kerja</FormLabel><FormControl><Input type="time" {...field} /></FormControl><FormMessage /></FormItem>)} />
@@ -229,21 +236,11 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
                     <FormField control={scheduleForm.control} name="slotDuration" render={({ field }) => (<FormItem><FormLabel>Durasi per Slot (menit)</FormLabel><Select onValueChange={(v) => field.onChange(parseInt(v))} value={String(field.value)}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent><SelectItem value="15">15</SelectItem><SelectItem value="20">20</SelectItem><SelectItem value="30">30</SelectItem><SelectItem value="45">45</SelectItem><SelectItem value="60">60</SelectItem></SelectContent></Select><FormMessage /></FormItem>)} />
                     <FormField control={scheduleForm.control} name="buffer" render={({ field }) => (<FormItem><FormLabel>Jeda antar Slot (menit)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
                 </div>
-                 <FormField
-                    control={scheduleForm.control}
-                    name="panelistIds"
-                    render={({ field }) => (
-                        <FormItem>
-                            <FormLabel>Panelis Wawancara</FormLabel>
-                            <PanelistPickerSimple
-                                allUsers={internalUsers || []}
-                                allBrands={brands || []}
-                                selectedIds={field.value}
-                                onChange={field.onChange}
-                            />
-                            <FormMessage />
-                        </FormItem>
-                    )}
+                 <PanelistPickerSimple
+                    allUsers={internalUsers || []}
+                    allBrands={brands || []}
+                    selectedIds={panelistIds}
+                    onChange={setPanelistIds}
                 />
                  <FormField control={scheduleForm.control} name="meetingLink" render={({ field }) => ( <FormItem><FormLabel>Link Meeting</FormLabel><FormControl><Input placeholder="https://zoom.us/j/..." {...field} /></FormControl><FormMessage /></FormItem>)} />
             </form>
