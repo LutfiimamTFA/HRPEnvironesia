@@ -20,7 +20,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import type { UserProfile, Brand } from '@/lib/types';
 import { ScrollArea } from '../ui/scroll-area';
-import { Checkbox } from '../ui/checkbox';
 
 export type PanelistOption = {
   value: string;
@@ -45,7 +44,7 @@ export function PanelistPicker({
   placeholder = 'Pilih panelis...',
 }: PanelistPickerProps) {
   const [open, setOpen] = React.useState(false);
-
+  
   const brandMap = React.useMemo(() => {
     if (!allBrands) return new Map<string, string>();
     return new Map(allBrands.map(brand => [brand.id!, brand.name]));
@@ -67,7 +66,7 @@ export function PanelistPicker({
   }, [allUsers, brandMap]);
 
   const handleToggle = (user: (typeof userOptions)[0]) => {
-    const option = { value: user.uid, label: `${user.fullName} (${user.email})` };
+    const option: PanelistOption = { value: user.uid, label: `${user.fullName} (${user.email})` };
     const isSelected = selected.some(s => s.value === option.value);
 
     if (isSelected) {
@@ -76,7 +75,7 @@ export function PanelistPicker({
       onChange([...selected, option]);
     }
   };
-
+  
   const handleUnselect = (value: string) => {
     onChange(selected.filter((s) => s.value !== value));
   };
@@ -102,9 +101,9 @@ export function PanelistPicker({
                   <span
                     role="button"
                     tabIndex={0}
-                    aria-label={`Remove ${item.label}`}
+                    aria-label={`Hapus ${item.label}`}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
+                      if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
                         e.stopPropagation();
                         handleUnselect(item.value);
@@ -142,23 +141,28 @@ export function PanelistPicker({
                 {userOptions.map((user) => {
                     const isSelected = selected.some(s => s.value === user.uid);
                     return (
-                        <CommandItem
-                            key={user.uid}
-                            value={`${user.fullName} ${user.email} ${user.brandDisplay}`}
-                            onSelect={() => handleToggle(user)}
-                            onMouseDown={(e) => { e.preventDefault(); }}
-                            className="cursor-pointer"
-                            disabled={!user.isActive}
-                        >
-                            <Checkbox
-                                className="mr-2"
-                                checked={isSelected}
-                            />
-                            <div className="flex flex-col">
-                                <span className="text-sm">{user.fullName}</span>
-                                <span className="text-xs text-muted-foreground">{user.email} - {user.brandDisplay}</span>
-                            </div>
-                        </CommandItem>
+                      <CommandItem
+                        key={user.uid}
+                        value={`${user.fullName} ${user.email} ${user.brandDisplay}`}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onSelect={() => handleToggle(user)}
+                        className="cursor-pointer"
+                        disabled={!user.isActive}
+                      >
+                        <Check
+                            className={cn(
+                            'mr-2 h-4 w-4',
+                            isSelected ? 'opacity-100' : 'opacity-0'
+                            )}
+                        />
+                        <div className="flex flex-col">
+                            <span className="text-sm">{user.fullName}</span>
+                            <span className="text-xs text-muted-foreground">{user.email} - {user.brandDisplay}</span>
+                        </div>
+                      </CommandItem>
                     );
                     })}
                 </CommandGroup>
