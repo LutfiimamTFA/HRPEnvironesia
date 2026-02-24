@@ -108,7 +108,7 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
   
   useEffect(() => {
     if (isOpen) {
-      setOrderedCandidates(candidates.sort((a,b) => (a.submittedAt?.toMillis() || 0) - (b.submittedAt?.toMillis() || 0)));
+      setOrderedCandidates([...candidates].sort((a,b) => (a.submittedAt?.toMillis() || 0) - (b.submittedAt?.toMillis() || 0)));
       setStep(1);
     }
   }, [isOpen, candidates]);
