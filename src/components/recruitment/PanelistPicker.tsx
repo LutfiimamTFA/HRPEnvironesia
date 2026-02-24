@@ -145,22 +145,29 @@ export function PanelistPicker({
                       <CommandItem
                         key={user.uid}
                         value={`${user.fullName} ${user.email} ${user.brandDisplay}`}
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                        }}
-                        onSelect={() => handleToggle(user)}
-                        className="cursor-pointer"
+                        asChild
                         disabled={!user.isActive}
                       >
-                        <Checkbox
-                            className="mr-2"
-                            checked={isSelected}
-                        />
-                        <div className="flex flex-col">
-                            <span className="text-sm">{user.fullName}</span>
-                            <span className="text-xs text-muted-foreground">{user.email} - {user.brandDisplay}</span>
-                        </div>
+                        <button
+                            type="button"
+                            className="w-full text-left cursor-pointer flex items-center p-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                            onMouseDown={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                            }}
+                            onClick={() => handleToggle(user)}
+                        >
+                            <Checkbox
+                                className="mr-2"
+                                checked={isSelected}
+                                aria-hidden="true"
+                                tabIndex={-1}
+                            />
+                            <div className="flex flex-col">
+                                <span className="text-sm">{user.fullName}</span>
+                                <span className="text-xs text-muted-foreground">{user.email} - {user.brandDisplay}</span>
+                            </div>
+                        </button>
                       </CommandItem>
                     );
                     })}
