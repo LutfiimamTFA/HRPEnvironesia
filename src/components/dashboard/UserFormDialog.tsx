@@ -35,7 +35,7 @@ import { useToast } from '@/hooks/use-toast';
 import { UserProfile, ROLES, UserRole, Brand } from '@/lib/types';
 import { Loader2 } from 'lucide-react';
 import { doc, collection } from 'firebase/firestore';
-import { useFirestore, updateDocumentNonBlocking, useCollection, useMemoFirebase } from '@/firebase';
+import { useFirestore, updateDocumentNonBlocking, useCollection, useMemoFirebase, setDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase';
 import { Checkbox } from '../ui/checkbox';
 import { ScrollArea } from '../ui/scroll-area';
 
@@ -139,6 +139,8 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
     try {
       if (mode === 'edit' && user) {
         const userDocRef = doc(firestore, 'users', user.uid);
+        const adminRoleDocRef = doc(firestore, 'roles_admin', user.uid);
+        const hrdRoleDocRef = doc(firestore, 'roles_hrd', user.uid);
         const editValues = finalValues as z.infer<typeof editSchema>;
         
         const updateData: any = {
@@ -152,10 +154,25 @@ export function UserFormDialog({ user, open, onOpenChange, seedSecret }: UserFor
           updateData.brandId = null;
         }
 
+        // Update main user document first
         await updateDocumentNonBlocking(userDocRef, updateData);
+
+        // Then, sync the role collections
+        if (editValues.role === 'hrd') {
+          await setDocumentNonBlocking(hrdRoleDocRef, { role: 'hrd' }, {});
+        } else {
+          await deleteDocumentNonBlocking(hrdRoleDocRef).catch(() => {}); // Ignore if not found
+        }
+        
+        if (editValues.role === 'super-admin') {
+          await setDocumentNonBlocking(adminRoleDocRef, { role: 'super-admin' }, {});
+        } else {
+          await deleteDocumentNonBlocking(adminRoleDocRef).catch(() => {}); // Ignore if not found
+        }
 
         toast({ title: 'User Updated', description: `${editValues.fullName}'s profile has been updated.` });
         onOpenChange(false);
+
       } else {
         const createValues = finalValues as z.infer<typeof createSchema>;
         

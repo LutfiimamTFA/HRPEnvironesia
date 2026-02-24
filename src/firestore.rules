@@ -37,16 +37,16 @@ service cloud.firestore {
     }
 
     /**
-     * WARNING: NOT SAFE FOR LIST QUERIES.
      * Checks if the user is a 'super_admin' via a performant existence check.
+     * This is safe for list queries when checking against the requesting user's UID.
      */
     function isSuperAdmin() {
       return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
     }
     
     /**
-     * WARNING: NOT SAFE FOR LIST QUERIES.
-     * Checks if the user is an 'hrd' via a performant existence check.
+     * Checks if the user's role is 'hrd' via a performant existence check.
+     * This is safe for list queries when checking against the requesting user's UID.
      */
     function isHrd() {
       return isSignedIn() && exists(/databases/$(database)/documents/roles_hrd/$(request.auth.uid));
@@ -96,7 +96,7 @@ service cloud.firestore {
       allow get: if isOwner(userId) || isInternal();
       allow update: if isOwner(userId) || isSuperAdmin();
       allow list: if isSuperAdmin() || isHrd();
-      allow create: if isSuperAdmin() && hasValidCreateData(userId);
+      allow create: if (isOwner(userId) && request.resource.data.role == 'kandidat' && hasValidCreateData(userId)) || isSuperAdmin();
       allow delete: if isSuperAdmin();
 
       match /saved_jobs/{jobId} {
@@ -240,24 +240,24 @@ service cloud.firestore {
 
     match /assessment_config/{configId} {
       allow get: if isSignedIn();
-      allow write: if isInternal() && getUserData().role in ['super_admin', 'hrd'];
+      allow write: if isInternal() && getUserData().role in ['super-admin', 'hrd'];
     }
 
     match /assessment_templates/{templateId} {
       allow read: if isSignedIn();
-      allow write: if isInternal() && getUserData().role in ['super_admin', 'hrd'];
+      allow write: if isInternal() && getUserData().role in ['super-admin', 'hrd'];
     }
 
     match /assessments/{assessmentId} {
       allow get: if isSignedIn() && (resource.data.isActive == true || isInternal());
       allow list: if isSignedIn();
-      allow write: if isInternal() && getUserData().role in ['super_admin', 'hrd'];
+      allow write: if isInternal() && getUserData().role in ['super-admin', 'hrd'];
     }
     
     match /assessment_questions/{questionId} {
       allow list: if isSignedIn(); // Must be relatively open for where-in queries. Client logic is the main guard.
       allow get: if isSignedIn();
-      allow write: if isInternal() && getUserData().role in ['super_admin', 'hrd'];
+      allow write: if isInternal() && getUserData().role in ['super-admin', 'hrd'];
     }
     
     match /assessment_sessions/{sessionId} {
