@@ -24,7 +24,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { format } from 'date-fns';
 import { useFirestore, updateDocumentNonBlocking, useCollection, useMemoFirebase } from '@/firebase';
 import { doc, writeBatch, serverTimestamp, Timestamp, query, collection, where } from 'firebase/firestore';
-import { PanelistPicker } from './PanelistPicker';
+import { PanelistPickerSimple } from './PanelistPickerSimple';
 
 // --- Step 1: Candidate List Item ---
 
@@ -56,7 +56,7 @@ const scheduleConfigSchema = z.object({
   slotDuration: z.coerce.number().int().min(5, 'Durasi minimal 5 menit.'),
   buffer: z.coerce.number().int().min(0, 'Buffer tidak boleh negatif.'),
   workdayEndTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, "Format waktu harus HH:MM."),
-  panelists: z.array(z.object({ value: z.string(), label: z.string() })).min(1, 'Minimal satu panelis harus dipilih.'),
+  panelistIds: z.array(z.string()).min(1, 'Minimal satu panelis harus dipilih.'),
   meetingLink: z.string().url({ message: "URL meeting tidak valid." }),
 });
 
@@ -104,7 +104,7 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
       slotDuration: 30,
       buffer: 10,
       workdayEndTime: '17:00',
-      panelists: recruiter ? [{ value: recruiter.uid, label: `${recruiter.fullName} (${recruiter.email})` }] : [],
+      panelistIds: recruiter ? [recruiter.uid] : [],
       meetingLink: '',
     },
   });
@@ -141,9 +141,11 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
     }
     
     const batch = writeBatch(firestore);
-    const { panelists, meetingLink } = scheduleForm.getValues();
-    const panelistIds = panelists.map(p => p.value);
-    const panelistNames = panelists.map(p => p.label);
+    const { panelistIds, meetingLink } = scheduleForm.getValues();
+    
+    const selectedPanelists = (internalUsers || []).filter(u => panelistIds.includes(u.uid));
+    const panelistNames = selectedPanelists.map(p => p.fullName);
+
 
     generatedSlots.forEach(slot => {
         const appRef = doc(firestore, 'applications', slot.candidate.id!);
@@ -229,17 +231,17 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
                 </div>
                  <FormField
                     control={scheduleForm.control}
-                    name="panelists"
+                    name="panelistIds"
                     render={({ field }) => (
                         <FormItem>
-                        <FormLabel>Panelis Wawancara</FormLabel>
-                        <PanelistPicker
-                            allUsers={internalUsers || []}
-                            allBrands={brands || []}
-                            selected={field.value}
-                            onChange={field.onChange}
-                        />
-                        <FormMessage />
+                            <FormLabel>Panelis Wawancara</FormLabel>
+                            <PanelistPickerSimple
+                                allUsers={internalUsers || []}
+                                allBrands={brands || []}
+                                selectedIds={field.value}
+                                onChange={field.onChange}
+                            />
+                            <FormMessage />
                         </FormItem>
                     )}
                 />
