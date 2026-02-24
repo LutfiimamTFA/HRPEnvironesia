@@ -70,24 +70,37 @@ export default function AssessmentSubmissionsPage() {
   );
   const { data: sessions, isLoading: isLoadingSessions, error } = useCollection<AssessmentSession>(sessionsQuery);
   
-  const { uniqueJobs, uniqueBrands } = useMemo(() => {
-    if (!sessions) return { uniqueJobs: [], uniqueBrands: [] };
-    const jobSet = new Set<string>();
+  const { uniqueJobs, uniqueBrands, jobsForFilter } = useMemo(() => {
+    if (!sessions) return { uniqueJobs: [], uniqueBrands: [], jobsForFilter: [] };
+    
     const brandSet = new Set<string>();
     sessions.forEach(session => {
-        if(session.jobPosition) jobSet.add(session.jobPosition);
         if(session.brandName) brandSet.add(session.brandName);
     });
-    return { uniqueJobs: Array.from(jobSet).sort(), uniqueBrands: Array.from(brandSet).sort() };
-  }, [sessions]);
+    
+    const relevantJobs = brandFilter === 'all' 
+        ? sessions 
+        : sessions.filter(s => s.brandName === brandFilter);
+        
+    const jobSet = new Set<string>();
+    relevantJobs.forEach(session => {
+        if(session.jobPosition) jobSet.add(session.jobPosition);
+    });
+
+    return { 
+        uniqueJobs: Array.from(jobSet).sort(), 
+        uniqueBrands: Array.from(brandSet).sort(),
+        jobsForFilter: Array.from(jobSet).sort(),
+    };
+  }, [sessions, brandFilter]);
 
   const filteredAndSortedSessions = useMemo(() => {
     if (!sessions) return [];
     
     const filtered = sessions.filter(session => {
-        const jobMatch = jobFilter === 'all' || session.jobPosition === jobFilter;
         const brandMatch = brandFilter === 'all' || session.brandName === brandFilter;
-        return jobMatch && brandMatch;
+        const jobMatch = jobFilter === 'all' || session.jobPosition === jobFilter;
+        return brandMatch && jobMatch;
     });
 
     return [...filtered].sort((a, b) => {
@@ -98,8 +111,8 @@ export default function AssessmentSubmissionsPage() {
   }, [sessions, jobFilter, brandFilter]);
 
   const handleResetFilters = () => {
-    setJobFilter('all');
     setBrandFilter('all');
+    setJobFilter('all');
   };
 
   const isLoading = isLoadingSessions || isLoadingAssessment;
@@ -141,18 +154,7 @@ export default function AssessmentSubmissionsPage() {
               Back to Assessment Tools
             </Button>
             <div className="flex items-center gap-2">
-                <Select value={jobFilter} onValueChange={setJobFilter}>
-                    <SelectTrigger className="w-full sm:w-[180px]">
-                        <SelectValue placeholder="All Jobs" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">All Jobs</SelectItem>
-                        {uniqueJobs.map(job => (
-                            <SelectItem key={job} value={job}>{job}</SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
-                <Select value={brandFilter} onValueChange={setBrandFilter}>
+                <Select value={brandFilter} onValueChange={(value) => { setBrandFilter(value); setJobFilter('all'); }}>
                     <SelectTrigger className="w-full sm:w-[180px]">
                         <SelectValue placeholder="All Brands" />
                     </SelectTrigger>
@@ -160,6 +162,17 @@ export default function AssessmentSubmissionsPage() {
                         <SelectItem value="all">All Brands</SelectItem>
                         {uniqueBrands.map(brand => (
                             <SelectItem key={brand} value={brand}>{brand}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+                 <Select value={jobFilter} onValueChange={setJobFilter} disabled={brandFilter === 'all'}>
+                    <SelectTrigger className="w-full sm:w-[180px]">
+                        <SelectValue placeholder="All Jobs" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All Jobs</SelectItem>
+                        {jobsForFilter.map(job => (
+                            <SelectItem key={job} value={job}>{job}</SelectItem>
                         ))}
                     </SelectContent>
                 </Select>
