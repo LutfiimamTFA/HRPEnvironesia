@@ -75,6 +75,7 @@ interface BulkScheduleWizardProps {
 export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter, onSuccess }: BulkScheduleWizardProps) {
   const [step, setStep] = useState(1);
   const [orderedCandidates, setOrderedCandidates] = useState<JobApplication[]>([]);
+  const [dialogContent, setDialogContent] = useState<HTMLDivElement | null>(null);
   const { toast } = useToast();
   const firestore = useFirestore();
 
@@ -227,13 +228,13 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
         return (
           <Form {...scheduleForm}>
             <form className="space-y-4">
-                <FormField control={scheduleForm.control} name="startDate" render={({ field }) => ( <FormItem className="flex flex-col"><FormLabel>Tanggal Mulai</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} portalled={false} /></FormControl><FormMessage /></FormItem>)} />
+                <FormField control={scheduleForm.control} name="startDate" render={({ field }) => ( <FormItem className="flex flex-col"><FormLabel>Tanggal Mulai</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} container={dialogContent} /></FormControl><FormMessage /></FormItem>)} />
                 <div className="grid grid-cols-2 gap-4">
                     <FormField control={scheduleForm.control} name="startTime" render={({ field }) => ( <FormItem><FormLabel>Waktu Mulai</FormLabel><FormControl><Input type="time" {...field} /></FormControl><FormMessage /></FormItem>)} />
                     <FormField control={scheduleForm.control} name="workdayEndTime" render={({ field }) => ( <FormItem><FormLabel>Batas Jam Kerja</FormLabel><FormControl><Input type="time" {...field} /></FormControl><FormMessage /></FormItem>)} />
                 </div>
                  <div className="grid grid-cols-2 gap-4">
-                    <FormField control={scheduleForm.control} name="slotDuration" render={({ field }) => (<FormItem><FormLabel>Durasi per Slot (menit)</FormLabel><Select onValueChange={(v) => field.onChange(parseInt(v))} value={String(field.value)}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent portalled={false}><SelectItem value="15">15</SelectItem><SelectItem value="20">20</SelectItem><SelectItem value="30">30</SelectItem><SelectItem value="45">45</SelectItem><SelectItem value="60">60</SelectItem></SelectContent></Select><FormMessage /></FormItem>)} />
+                    <FormField control={scheduleForm.control} name="slotDuration" render={({ field }) => (<FormItem><FormLabel>Durasi per Slot (menit)</FormLabel><Select onValueChange={(v) => field.onChange(parseInt(v))} value={String(field.value)}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent container={dialogContent}><SelectItem value="15">15</SelectItem><SelectItem value="20">20</SelectItem><SelectItem value="30">30</SelectItem><SelectItem value="45">45</SelectItem><SelectItem value="60">60</SelectItem><SelectItem value="90">90</SelectItem></SelectContent></Select><FormMessage /></FormItem>)} />
                     <FormField control={scheduleForm.control} name="buffer" render={({ field }) => (<FormItem><FormLabel>Jeda antar Slot (menit)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
                 </div>
                  <PanelistPickerSimple
@@ -282,7 +283,7 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl h-[90vh] flex flex-col">
+      <DialogContent ref={setDialogContent} className="max-w-2xl h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Jadwalkan Wawancara Massal ({step}/3)</DialogTitle>
           <DialogDescription>
