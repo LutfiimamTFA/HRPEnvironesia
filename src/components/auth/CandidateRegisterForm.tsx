@@ -22,6 +22,7 @@ import {
 import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { UserProfile } from '@/lib/types';
 import { Checkbox } from '@/components/ui/checkbox';
+import { useRouter } from '@/navigation';
 
 const formSchema = z.object({
     fullName: z.string().min(2, { message: 'Nama lengkap (sesuai KTP) harus diisi.' }),
@@ -47,6 +48,7 @@ export function CandidateRegisterForm() {
   const { toast } = useToast();
   const auth = useAuth();
   const firestore = useFirestore();
+  const router = useRouter();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -77,8 +79,13 @@ export function CandidateRegisterForm() {
       
       await setDocumentNonBlocking(doc(firestore, 'users', user.uid), newProfile, {});
       
-      toast({ title: 'Pendaftaran Berhasil', description: 'Akun Anda telah dibuat.' });
-      // Redirect will be handled by the page's useEffect after auth state changes.
+      // Sign the user out immediately after creating the profile
+      await auth.signOut();
+
+      toast({ title: 'Pendaftaran Berhasil', description: 'Silakan login dengan akun Anda yang baru dibuat.' });
+      
+      // Manually redirect to the login page
+      router.push('/careers/login');
 
     } catch (error: any) {
       console.error(error);
