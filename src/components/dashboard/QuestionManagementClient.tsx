@@ -9,7 +9,7 @@ import { MoreHorizontal, Pencil, PlusCircle, Trash2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
 import { QuestionFormDialog } from './QuestionFormDialog';
 import { DeleteConfirmationDialog } from './DeleteConfirmationDialog';
@@ -40,6 +40,7 @@ export function QuestionManagementClient({ assessment, template }: QuestionManag
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [selectedQuestion, setSelectedQuestion] = useState<AssessmentQuestion | null>(null);
   const [filter, setFilter] = useState('all'); // 'all', 'active', 'inactive'
+  const [creationType, setCreationType] = useState<'likert' | 'forced-choice'>('likert');
 
   const questionsQuery = useMemoFirebase(
     () => query(collection(firestore, 'assessment_questions'), where('assessmentId', '==', assessment.id!)),
@@ -66,8 +67,9 @@ export function QuestionManagementClient({ assessment, template }: QuestionManag
     });
   }, [filteredQuestions]);
 
-  const handleCreate = () => {
+  const handleCreate = (type: 'likert' | 'forced-choice') => {
     setSelectedQuestion(null);
+    setCreationType(type);
     setIsFormOpen(true);
   };
 
@@ -111,16 +113,25 @@ export function QuestionManagementClient({ assessment, template }: QuestionManag
             <TabsTrigger value="inactive">Inactive</TabsTrigger>
           </TabsList>
         </Tabs>
-         <Button onClick={handleCreate}>
-            <PlusCircle className="mr-2 h-4 w-4" />
-            Add Question
-          </Button>
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button>
+                    <PlusCircle className="mr-2 h-4 w-4" />
+                    Add Question
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+                <DropdownMenuLabel>Choose Question Type</DropdownMenuLabel>
+                <DropdownMenuItem onSelect={() => handleCreate('likert')}>Likert Scale Question</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => handleCreate('forced-choice')}>Forced-Choice Question</DropdownMenuItem>
+            </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       <div className="rounded-lg border">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-16">#</TableHead>
+              <TableHead className="w-16">No.</TableHead>
               <TableHead>Content</TableHead>
               {!isForcedChoiceTemplate && <TableHead>Engine</TableHead>}
               {!isForcedChoiceTemplate && <TableHead>Dimension</TableHead>}
@@ -178,6 +189,7 @@ export function QuestionManagementClient({ assessment, template }: QuestionManag
         question={selectedQuestion}
         assessment={assessment}
         template={template}
+        creationType={creationType}
       />
       
       <DeleteConfirmationDialog

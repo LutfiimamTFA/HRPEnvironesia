@@ -43,46 +43,38 @@ interface QuestionFormDialogProps {
   question: AssessmentQuestion | null;
   assessment: Assessment;
   template: AssessmentTemplate;
+  creationType: 'likert' | 'forced-choice';
 }
 
-export function QuestionFormDialog({ open, onOpenChange, question, assessment, template }: QuestionFormDialogProps) {
+export function QuestionFormDialog({ open, onOpenChange, question, assessment, template, creationType }: QuestionFormDialogProps) {
   const firestore = useFirestore();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const mode = question ? 'Edit' : 'Create';
-  const isForcedChoice = template.format === 'forced-choice';
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: {
-        type: template.format,
-        ...(isForcedChoice ? {
-            forcedChoices: [
-                { text: '', dimension: ''},
-                { text: '', dimension: ''},
-                { text: '', dimension: ''},
-                { text: '', dimension: ''},
-            ]
-        } : {
-            text: '', dimension: undefined, weight: 1, reverse: false
-        })
-    },
+    // Default values are set in the useEffect to handle dynamic form types
   });
 
-  const { fields } = useFieldArray({
+  const formType = form.watch('type');
+  const isForcedChoice = formType === 'forced-choice';
+  
+  const { fields, append, remove } = useFieldArray({
     control: form.control,
-    name: isForcedChoice ? 'forcedChoices' : 'text', // Dummy name if not used
+    name: "forcedChoices" as any, // Cast to any to handle discriminated union
   });
 
   useEffect(() => {
     if (open) {
-      if (question) {
-        if (question.type === 'forced-choice') {
+      if (question) { // Edit mode
+        const qType = question.type || 'likert';
+        if (qType === 'forced-choice') {
             form.reset({
                 type: 'forced-choice',
-                forcedChoices: question.forcedChoices?.map(fc => ({ text: fc.text, dimension: `${fc.engineKey}|${fc.dimensionKey}` })) || [],
+                forcedChoices: question.forcedChoices?.map(fc => ({ text: fc.text, dimension: `${fc.engineKey}|${fc.dimensionKey}` })) || Array(4).fill({ text: '', dimension: ''}),
             });
-        } else {
+        } else { // Likert
             form.reset({
                 type: 'likert',
                 text: question.text || '',
@@ -91,10 +83,10 @@ export function QuestionFormDialog({ open, onOpenChange, question, assessment, t
                 reverse: question.reverse || false,
             });
         }
-      } else {
+      } else { // Create mode
         form.reset({
-          type: template.format,
-          ...(isForcedChoice ? {
+          type: creationType,
+          ...(creationType === 'forced-choice' ? {
               forcedChoices: Array(4).fill({ text: '', dimension: ''}),
           } : {
               text: '', dimension: undefined, weight: 1, reverse: false,
@@ -102,7 +94,7 @@ export function QuestionFormDialog({ open, onOpenChange, question, assessment, t
         });
       }
     }
-  }, [open, question, form, template.format, isForcedChoice]);
+  }, [open, question, form, creationType]);
 
   const onSubmit = async (values: FormValues) => {
     setLoading(true);
@@ -151,7 +143,7 @@ export function QuestionFormDialog({ open, onOpenChange, question, assessment, t
       <DialogContent className={cn("max-h-[95vh] flex flex-col", isForcedChoice ? "sm:max-w-2xl" : "sm:max-w-xl")}>
         <DialogHeader>
           <DialogTitle>{mode} Question</DialogTitle>
-          <DialogDescription>Fill in the details for the assessment question ({template.format}).</DialogDescription>
+          <DialogDescription>Fill in the details for the assessment question ({formType}).</DialogDescription>
         </DialogHeader>
         <div className="flex-grow overflow-y-auto pr-2 -mr-6 pl-1">
             <Form {...form}>
@@ -206,12 +198,12 @@ export function QuestionFormDialog({ open, onOpenChange, question, assessment, t
                     </>
                 ) : (
                     <>
-                        <FormField control={form.control} name="text" render={({ field }) => (<FormItem><FormLabel>Question Text</FormLabel><FormControl><Textarea placeholder="e.g., Saya suka mencoba hal-hal baru..." {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                        <FormField control={form.control} name="text" render={({ field }) => (<FormItem><FormLabel>Question Text</FormLabel><FormControl><Textarea placeholder="e.g., Saya suka mencoba hal-hal baru..." {...field} value={(field as any).value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                         <FormField control={form.control} name="weight" render={({ field }) => (<FormItem><FormLabel>Weight</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
                         <FormField control={form.control} name="dimension" render={({ field }) => (
                         <FormItem>
                             <FormLabel>Dimension</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value}>
+                            <Select onValueChange={field.onChange} value={(field as any).value}>
                             <FormControl><SelectTrigger><SelectValue placeholder="Select a dimension" /></SelectTrigger></FormControl>
                             <SelectContent>
                                 {template.dimensions.disc && (
@@ -231,7 +223,7 @@ export function QuestionFormDialog({ open, onOpenChange, question, assessment, t
                             <FormMessage />
                         </FormItem>
                         )} />
-                        <FormField control={form.control} name="reverse" render={({ field }) => (<FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Reverse Scored</FormLabel></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>)} />
+                        <FormField control={form.control} name="reverse" render={({ field }) => (<FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Reverse Scored</FormLabel></div><FormControl><Switch checked={(field as any).value} onCheckedChange={field.onChange} /></FormControl></FormItem>)} />
                     </>
                 )}
             </form>
