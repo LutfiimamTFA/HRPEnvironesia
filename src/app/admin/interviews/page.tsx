@@ -1,10 +1,10 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
-import type { JobApplication, ApplicationInterview } from '@/lib/types';
+import type { JobApplication, ApplicationInterview, UserProfile, Brand } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { MENU_CONFIG } from '@/lib/menu-config';
@@ -16,6 +16,7 @@ import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
+import { ManagePanelistsDialog } from '@/components/recruitment/ManagePanelistsDialog';
 
 // Interface to hold processed interview data for display
 interface EnrichedInterview extends ApplicationInterview {
@@ -23,56 +24,76 @@ interface EnrichedInterview extends ApplicationInterview {
 }
 
 // Reusable Interview Card Component
-function InterviewCard({ interview }: { interview: EnrichedInterview }) {
+function InterviewCard({ interview, allUsers, allBrands, currentUser, onMutate }: { interview: EnrichedInterview; allUsers: UserProfile[]; allBrands: Brand[]; currentUser: UserProfile; onMutate: () => void }) {
     const isUpcoming = interview.startAt.toDate() > new Date();
+    const [isManagePanelistsOpen, setIsManagePanelistsOpen] = useState(false);
+
+    const currentInterviewInApp = interview.application.interviews?.find(iv => iv.interviewId === interview.interviewId);
 
     return (
-        <Card className="flex flex-col">
-            <CardHeader>
-                <div className="flex justify-between items-start gap-4">
-                    <div>
-                        <CardTitle className="text-lg">{interview.application.candidateName}</CardTitle>
-                        <CardDescription>{interview.application.jobPosition}</CardDescription>
+        <>
+            <Card className="flex flex-col">
+                <CardHeader>
+                    <div className="flex justify-between items-start gap-4">
+                        <div>
+                            <CardTitle className="text-lg">{interview.application.candidateName}</CardTitle>
+                            <CardDescription>{interview.application.jobPosition}</CardDescription>
+                        </div>
+                        {isUpcoming ? (
+                            <Badge>Akan Datang</Badge>
+                        ) : (
+                            <Badge variant="secondary">Telah Lewat</Badge>
+                        )}
                     </div>
-                    {isUpcoming ? (
-                        <Badge>Akan Datang</Badge>
-                    ) : (
-                        <Badge variant="secondary">Telah Lewat</Badge>
-                    )}
-                </div>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm flex-grow">
-                <div className="flex items-start gap-3">
-                    <Calendar className="h-5 w-5 mt-0.5 text-primary" />
-                    <div>
-                        <p className="font-semibold">{format(interview.startAt.toDate(), 'eeee, dd MMMM yyyy', { locale: id })}</p>
-                        <p>{format(interview.startAt.toDate(), 'HH:mm')} - {format(interview.endAt.toDate(), 'HH:mm')} WIB</p>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm flex-grow">
+                    <div className="flex items-start gap-3">
+                        <Calendar className="h-5 w-5 mt-0.5 text-primary" />
+                        <div>
+                            <p className="font-semibold">{format(interview.startAt.toDate(), 'eeee, dd MMMM yyyy', { locale: id })}</p>
+                            <p>{format(interview.startAt.toDate(), 'HH:mm')} - {format(interview.endAt.toDate(), 'HH:mm')} WIB</p>
+                        </div>
                     </div>
-                </div>
-                 <div className="flex items-start gap-3">
-                    <Users className="h-5 w-5 mt-0.5 text-primary" />
-                    <div>
-                        <p className="font-semibold">Pewawancara</p>
-                        <p>{(interview.panelistNames || interview.interviewerNames || []).join(', ')}</p>
+                    <div className="flex items-start gap-3">
+                        <Users className="h-5 w-5 mt-0.5 text-primary" />
+                        <div>
+                            <p className="font-semibold">Pewawancara</p>
+                            <p>{(interview.panelistNames || interview.interviewerNames || []).join(', ')}</p>
+                        </div>
                     </div>
-                </div>
-            </CardContent>
-            <CardFooter className="flex justify-end gap-2 border-t pt-4">
-                <Button asChild variant="outline" size="sm">
-                    <Link href={`/admin/interviews/${interview.application.id}`}>
-                        Buka Interview Kit
-                    </Link>
-                </Button>
-                {isUpcoming && (
-                    <Button asChild size="sm">
-                        <a href={interview.meetingLink} target="_blank" rel="noopener noreferrer">
-                            <LinkIcon className="mr-2 h-4 w-4" />
-                            Buka Link Wawancara
-                        </a>
+                </CardContent>
+                <CardFooter className="flex-col sm:flex-row justify-end items-center gap-2 pt-4 border-t">
+                     <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={() => setIsManagePanelistsOpen(true)}>
+                        Kelola Panelis
                     </Button>
-                )}
-            </CardFooter>
-        </Card>
+                    <Button asChild variant="outline" size="sm" className="w-full sm:w-auto">
+                        <Link href={`/admin/interviews/${interview.application.id}`}>
+                            Buka Interview Kit
+                        </Link>
+                    </Button>
+                    {isUpcoming && (
+                        <Button asChild size="sm" className="w-full sm:w-auto">
+                            <a href={interview.meetingLink} target="_blank" rel="noopener noreferrer">
+                                <LinkIcon className="mr-2 h-4 w-4" />
+                                Buka Link Wawancara
+                            </a>
+                        </Button>
+                    )}
+                </CardFooter>
+            </Card>
+            {currentInterviewInApp && currentUser && (
+                 <ManagePanelistsDialog
+                    open={isManagePanelistsOpen}
+                    onOpenChange={setIsManagePanelistsOpen}
+                    application={interview.application}
+                    interview={currentInterviewInApp}
+                    currentUser={currentUser}
+                    allUsers={allUsers}
+                    allBrands={allBrands}
+                    onSuccess={onMutate}
+                />
+            )}
+        </>
     );
 }
 
@@ -115,7 +136,9 @@ export default function MyInterviewsPage() {
         );
     }, [userProfile, firestore]);
 
-    const { data: applications, isLoading: appsLoading } = useCollection<JobApplication>(interviewsQuery);
+    const { data: applications, isLoading: appsLoading, mutate } = useCollection<JobApplication>(interviewsQuery);
+    const { data: internalUsers, isLoading: isLoadingUsers } = useCollection<UserProfile>(useMemoFirebase(() => query(collection(firestore, 'users'), where('role', 'in', ['hrd', 'manager', 'karyawan', 'super-admin']), where('isActive', '==', true)), [firestore]));
+    const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(useMemoFirebase(() => collection(firestore, 'brands'), [firestore]));
 
     const allInterviews = useMemo(() => {
         if (!applications || !userProfile) return [];
@@ -154,7 +177,7 @@ export default function MyInterviewsPage() {
         return MENU_CONFIG[userProfile.role] || [];
     }, [userProfile]);
 
-    const isLoading = authLoading || appsLoading;
+    const isLoading = authLoading || appsLoading || isLoadingUsers || isLoadingBrands;
 
     if (!hasAccess || isLoading) {
         return (
@@ -177,7 +200,14 @@ export default function MyInterviewsPage() {
                 {allInterviews.length > 0 ? (
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {allInterviews.map((interview, index) => (
-                           <InterviewCard key={`${interview.application.id}-${interview.interviewId || index}`} interview={interview} />
+                           <InterviewCard 
+                                key={`${interview.application.id}-${interview.interviewId || index}`} 
+                                interview={interview} 
+                                allUsers={internalUsers || []}
+                                allBrands={brands || []}
+                                currentUser={userProfile!}
+                                onMutate={mutate}
+                           />
                         ))}
                     </div>
                 ) : (
