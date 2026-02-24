@@ -129,14 +129,14 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
   // Sync panelistIds state with form state
   useEffect(() => {
     scheduleForm.setValue('panelistIds', panelistIds);
-  }, [panelistIds, scheduleForm]);
+  }, [panelistIds, scheduleForm.setValue]);
 
   const generatedSlots = useMemo(() => {
     if (step < 3) return [];
     const config = scheduleForm.getValues();
     if (!config.startDate) return [];
     return generateTimeSlots(orderedCandidates, config);
-  }, [step, orderedCandidates, scheduleForm]);
+  }, [step, orderedCandidates]);
 
   const [continueToNextDay, setContinueToNextDay] = useState(true);
 
@@ -327,3 +327,4 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
     </Dialog>
   );
 }
+    
