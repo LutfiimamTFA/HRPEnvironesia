@@ -5,8 +5,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { useAuth, useFirestore } from '@/firebase';
+import { doc, serverTimestamp } from 'firebase/firestore';
+import { useAuth, useFirestore, setDocumentNonBlocking } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -75,7 +75,7 @@ export function CandidateRegisterForm() {
         createdAt: serverTimestamp(),
       };
       
-      await setDoc(doc(firestore, 'users', user.uid), newProfile);
+      await setDocumentNonBlocking(doc(firestore, 'users', user.uid), newProfile, {});
       
       toast({ title: 'Pendaftaran Berhasil', description: 'Akun Anda telah dibuat.' });
       // Redirect will be handled by the page's useEffect after auth state changes.

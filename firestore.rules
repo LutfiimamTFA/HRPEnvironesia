@@ -45,12 +45,11 @@ service cloud.firestore {
     }
     
     /**
-     * WARNING: NOT SAFE FOR LIST QUERIES.
-     * Checks if the user's role is 'hrd' by reading their user document.
-     * This is more robust against data inconsistencies than using a separate roles collection.
+     * Checks if the user's role is 'hrd' via a performant existence check.
+     * This is safe for list queries.
      */
     function isHrd() {
-      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'hrd';
+      return isSignedIn() && exists(/databases/$(database)/documents/roles_hrd/$(request.auth.uid));
     }
 
     /**
@@ -241,7 +240,7 @@ service cloud.firestore {
 
     match /assessment_config/{configId} {
       allow get: if isSignedIn();
-      allow write: if isInternal() && getUserData().role in ['super_admin', 'hrd'];
+      allow write: if isInternal() && getUserData().role in ['super-admin', 'hrd'];
     }
 
     match /assessment_templates/{templateId} {

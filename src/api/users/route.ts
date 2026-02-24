@@ -73,7 +73,10 @@ export async function POST(req: NextRequest) {
     if (role === 'super-admin') {
       await db.collection('roles_admin').doc(userRecord.uid).set({ role: 'super-admin' });
     }
-    
+    if (role === 'hrd') {
+        await db.collection('roles_hrd').doc(userRecord.uid).set({ role: 'hrd' });
+    }
+
     return NextResponse.json({ message: 'User created successfully.', uid: userRecord.uid }, { status: 201 });
 
   } catch (error: any) {

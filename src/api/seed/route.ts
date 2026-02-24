@@ -3,23 +3,12 @@ import admin from '@/lib/firebase/admin';
 import { UserRole } from '@/lib/types';
 import { Timestamp } from 'firebase-admin/firestore';
 
-const seedUsers: { 
-  email: string; 
-  password: string; 
-  fullName: string; 
-  role: UserRole, 
-  department?: string, 
-  jobTitle?: string,
-  skills?: string[]
-}[] = [
+const seedUsers: { email: string; password: string; fullName: string; role: UserRole }[] = [
   { email: 'super_admin@gmail.com', password: '12345678', fullName: 'Super Admin', role: 'super-admin' },
-  { email: 'hrd@gmail.com', password: '12345678', fullName: 'HRD Person', role: 'hrd', department: 'Human Resources', jobTitle: 'HRD Staff' },
-  { email: 'manager@gmail.com', password: '12345678', fullName: 'Engineering Manager', role: 'manager', department: 'Technology', jobTitle: 'Manager' },
-  { email: 'kandidat@gmail.com', password: '12345678', fullName: 'Kandidat User', role: 'kandidat' },
-  { email: 'karyawan@gmail.com', password: '12345678', fullName: 'Employee User', role: 'karyawan', department: 'Creative', jobTitle: 'Videographer', skills: ['video editing', 'capcut'] },
-  { email: 'editor@gmail.com', password: '12345678', fullName: 'Lead Editor', role: 'karyawan', department: 'Creative', jobTitle: 'Editor', skills: ['copywriting', 'seo', 'editing'] },
-  { email: 'datascientist@gmail.com', password: '12345678', fullName: 'Data Scientist', role: 'karyawan', department: 'Data', jobTitle: 'Data Scientist', skills: ['python', 'sql', 'machine learning'] },
-
+  { email: 'hrd@gmail.com', password: '12345678', fullName: 'HRD', role: 'hrd' },
+  { email: 'manager@gmail.com', password: '12345678', fullName: 'Manager', role: 'manager' },
+  { email: 'kandidat@gmail.com', password: '12345678', fullName: 'Kandidat', role: 'kandidat' },
+  { email: 'karyawan@gmail.com', password: '12345678', fullName: 'Karyawan', role: 'karyawan' },
 ];
 
 async function seedAssessment(db: admin.firestore.Firestore) {
@@ -175,12 +164,8 @@ export async function POST(req: NextRequest) {
         uid: userRecord.uid,
         email: userData.email,
         fullName: userData.fullName,
-        nameLower: userData.fullName.toLowerCase(),
         role: userData.role,
         isActive: true,
-        department: userData.department || null,
-        jobTitle: userData.jobTitle || null,
-        skills: userData.skills || [],
       };
 
       if (status === 'created') {
@@ -192,12 +177,17 @@ export async function POST(req: NextRequest) {
         await db.collection('users').doc(userRecord.uid).set(userProfile, { merge: true });
       }
 
-      // Handle the roles_admin collection for admin
+      // Handle the roles_admin and roles_hrd collections
       if (userData.role === 'super-admin') {
         await db.collection('roles_admin').doc(userRecord.uid).set({ role: 'super-admin' });
       } else {
-        // In case a user's role was demoted, ensure they are not in roles_admin
-        await db.collection('roles_admin').doc(userRecord.uid).delete().catch(() => {}); // Ignore error if doc doesn't exist
+        await db.collection('roles_admin').doc(userRecord.uid).delete().catch(() => {});
+      }
+
+      if (userData.role === 'hrd') {
+        await db.collection('roles_hrd').doc(userRecord.uid).set({ role: 'hrd' });
+      } else {
+        await db.collection('roles_hrd').doc(userRecord.uid).delete().catch(() => {});
       }
       
       results.push({ email: userData.email, status, uid: userRecord.uid });
