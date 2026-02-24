@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -90,18 +90,29 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
   const { data: brands } = useCollection<Brand>(useMemoFirebase(() => collection(firestore, 'brands'), [firestore]));
 
   const [panelistIds, setPanelistIds] = useState<string[]>([]);
+  const didInitPanelistsRef = useRef(false);
+  const [dialogContent, setDialogContent] = React.useState<HTMLElement | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       setOrderedCandidates(candidates.sort((a,b) => (a.submittedAt?.toMillis() || 0) - (b.submittedAt?.toMillis() || 0)));
       setStep(1);
-      if (recruiter && panelistIds.length === 0) {
-        setPanelistIds([recruiter.uid]);
-      }
-    } else {
-        setPanelistIds([]);
     }
-  }, [isOpen, candidates, recruiter]);
+  }, [isOpen, candidates]);
+  
+  useEffect(() => {
+    if (!isOpen) {
+      didInitPanelistsRef.current = false;
+      setPanelistIds([]); // Reset on close
+      return;
+    }
+    if (didInitPanelistsRef.current) return;
+
+    if (panelistIds.length === 0 && recruiter?.uid) {
+      setPanelistIds([recruiter.uid]);
+    }
+    didInitPanelistsRef.current = true;
+  }, [isOpen, recruiter?.uid]);
   
   const scheduleForm = useForm<ScheduleConfigValues>({
     resolver: zodResolver(scheduleConfigSchema),
@@ -111,10 +122,15 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
       slotDuration: 30,
       buffer: 10,
       workdayEndTime: '17:00',
-      panelistIds: recruiter ? [recruiter.uid] : [],
+      panelistIds: [], // Will be populated by effect
       meetingLink: '',
     },
   });
+
+  // Sync panelistIds state with form state
+  useEffect(() => {
+    scheduleForm.setValue('panelistIds', panelistIds);
+  }, [panelistIds, scheduleForm]);
 
   const generatedSlots = useMemo(() => {
     const config = scheduleForm.getValues();
@@ -227,7 +243,7 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
         return (
           <Form {...scheduleForm}>
             <form className="space-y-4">
-                <FormField control={scheduleForm.control} name="startDate" render={({ field }) => ( <FormItem className="flex flex-col"><FormLabel>Tanggal Mulai</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} portalled={false} /></FormControl><FormMessage /></FormItem>)} />
+                <FormField control={scheduleForm.control} name="startDate" render={({ field }) => ( <FormItem className="flex flex-col"><FormLabel>Tanggal Mulai</FormLabel><FormControl><GoogleDatePicker portalled={false} value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>)} />
                 <div className="grid grid-cols-2 gap-4">
                     <FormField control={scheduleForm.control} name="startTime" render={({ field }) => ( <FormItem><FormLabel>Waktu Mulai</FormLabel><FormControl><Input type="time" {...field} /></FormControl><FormMessage /></FormItem>)} />
                     <FormField control={scheduleForm.control} name="workdayEndTime" render={({ field }) => ( <FormItem><FormLabel>Batas Jam Kerja</FormLabel><FormControl><Input type="time" {...field} /></FormControl><FormMessage /></FormItem>)} />
@@ -282,7 +298,7 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl h-[90vh] flex flex-col">
+      <DialogContent ref={setDialogContent} className="max-w-2xl h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Jadwalkan Wawancara Massal ({step}/3)</DialogTitle>
           <DialogDescription>
@@ -311,3 +327,5 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
     </Dialog>
   );
 }
+
+    
