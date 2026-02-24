@@ -104,7 +104,7 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
     }
     didInitPanelistsRef.current = true;
 
-  }, [isOpen, recruiter?.uid, panelistIds.length]);
+  }, [isOpen, recruiter?.uid]);
   
   useEffect(() => {
     if (isOpen) {
@@ -132,10 +132,11 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
   }, [panelistIds, scheduleForm]);
 
   const generatedSlots = useMemo(() => {
+    if (step < 3) return [];
     const config = scheduleForm.getValues();
-    if (step < 3 || !config.startDate) return [];
+    if (!config.startDate) return [];
     return generateTimeSlots(orderedCandidates, config);
-  }, [step, orderedCandidates, scheduleForm.watch()]);
+  }, [step, orderedCandidates, scheduleForm]);
 
   const [continueToNextDay, setContinueToNextDay] = useState(true);
 
