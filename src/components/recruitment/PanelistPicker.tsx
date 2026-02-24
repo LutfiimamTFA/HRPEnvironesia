@@ -147,14 +147,13 @@ export function PanelistPicker({
                         value={`${user.fullName} ${user.email} ${user.brandDisplay}`}
                         onSelect={() => handleToggle(user)}
                         onMouseDown={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
+                           e.preventDefault();
                         }}
                         className="cursor-pointer"
                         disabled={!user.isActive}
                       >
                         <Checkbox
-                            className="mr-2"
+                            className="mr-2 pointer-events-none"
                             checked={isSelected}
                             aria-hidden="true"
                             tabIndex={-1}
