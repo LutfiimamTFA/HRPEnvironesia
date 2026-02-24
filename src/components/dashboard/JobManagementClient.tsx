@@ -83,6 +83,7 @@ export function JobManagementClient() {
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [brandFilter, setBrandFilter] = useState('all');
+  const [jobFilter, setJobFilter] = useState('all');
 
 
   const jobsRef = useMemoFirebase(() => collection(firestore, 'jobs'), [firestore]);
@@ -106,13 +107,24 @@ export function JobManagementClient() {
     if (!users) return new Map<string, string>();
     return new Map(users.map(user => [user.uid, user.fullName]));
   }, [users]);
+  
+  const jobsForFilter = useMemo(() => {
+    if (!jobs || brandFilter === 'all') {
+      return [];
+    }
+    return jobs.filter(job => job.brandId === brandFilter);
+  }, [jobs, brandFilter]);
 
   const jobsWithDetails = useMemo(() => {
     if (!jobs) return [];
 
     let filteredJobs = jobs;
     if (brandFilter !== 'all') {
-        filteredJobs = jobs.filter(job => job.brandId === brandFilter);
+        filteredJobs = filteredJobs.filter(job => job.brandId === brandFilter);
+    }
+
+    if (jobFilter !== 'all') {
+        filteredJobs = filteredJobs.filter(job => job.id === jobFilter);
     }
 
     return filteredJobs.map(job => ({
@@ -124,7 +136,7 @@ export function JobManagementClient() {
       const timeB = b.updatedAt?.toMillis ? b.updatedAt.toMillis() : Date.now();
       return timeB - timeA;
     });
-  }, [jobs, brandMap, userMap, brandFilter]);
+  }, [jobs, brandMap, userMap, brandFilter, jobFilter]);
 
 
   const handleCreate = () => {
@@ -202,17 +214,36 @@ export function JobManagementClient() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-         <Select value={brandFilter} onValueChange={setBrandFilter} disabled={isLoadingBrands}>
-            <SelectTrigger className="w-[240px]">
-                <SelectValue placeholder="Filter by brand..." />
-            </SelectTrigger>
-            <SelectContent>
-                <SelectItem value="all">All Brands</SelectItem>
-                {brands?.map(brand => (
-                    <SelectItem key={brand.id} value={brand.id!}>{brand.name}</SelectItem>
-                ))}
-            </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+            <Select value={brandFilter} onValueChange={(value) => {
+                setBrandFilter(value);
+                setJobFilter('all');
+            }} disabled={isLoadingBrands}>
+                <SelectTrigger className="w-[240px]">
+                    <SelectValue placeholder="Filter by brand..." />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Brands</SelectItem>
+                    {brands?.map(brand => (
+                        <SelectItem key={brand.id} value={brand.id!}>{brand.name}</SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
+
+            {brandFilter !== 'all' && (
+                <Select value={jobFilter} onValueChange={setJobFilter} disabled={jobsForFilter.length === 0}>
+                    <SelectTrigger className="w-[240px]">
+                        <SelectValue placeholder="Filter by job..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All Jobs for this Brand</SelectItem>
+                        {jobsForFilter.map(job => (
+                            <SelectItem key={job.id} value={job.id!}>{job.position}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+            )}
+        </div>
         <Button onClick={handleCreate}>
           <PlusCircle className="mr-2 h-4 w-4" />
           Create Job
@@ -309,7 +340,7 @@ export function JobManagementClient() {
             ) : (
               <TableRow>
                 <TableCell colSpan={9} className="h-24 text-center">
-                  No jobs found. Create one to get started.
+                  No jobs found for the selected filters.
                 </TableCell>
               </TableRow>
             )}
