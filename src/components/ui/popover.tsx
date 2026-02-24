@@ -15,9 +15,8 @@ const PopoverContent = React.forwardRef<
   React.ElementRef<typeof PopoverPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Content> & {
     portalled?: boolean;
-    container?: HTMLElement | null;
   }
->(({ className, align = "center", sideOffset = 4, portalled = true, container, ...props }, ref) => {
+>(({ className, align = "center", sideOffset = 4, portalled = true, ...props }, ref) => {
   const Content = (
     <PopoverPrimitive.Content
       ref={ref}
@@ -32,7 +31,7 @@ const PopoverContent = React.forwardRef<
   );
 
   return portalled ? (
-    <PopoverPrimitive.Portal container={container}>
+    <PopoverPrimitive.Portal>
       {Content}
     </PopoverPrimitive.Portal>
   ) : (
