@@ -78,6 +78,16 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
   const { toast } = useToast();
   const firestore = useFirestore();
 
+  const internalUsersQuery = useMemoFirebase(() =>
+    query(
+      collection(firestore, 'users'),
+      where('role', 'in', ['hrd', 'manager', 'karyawan', 'super-admin']),
+      where('isActive', '==', true)
+    ),
+    [firestore]
+  );
+  const { data: internalUsers } = useCollection<UserProfile>(internalUsersQuery);
+
   useEffect(() => {
     if (isOpen) {
       setOrderedCandidates(candidates.sort((a,b) => (a.submittedAt?.toMillis() || 0) - (b.submittedAt?.toMillis() || 0)));
@@ -223,7 +233,7 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
                         <FormItem>
                         <FormLabel>Panelis Wawancara</FormLabel>
                         <PanelistPicker
-                            job={candidates[0]} // Use first candidate's job for suggestions
+                            allUsers={internalUsers || []}
                             selected={field.value}
                             onChange={field.onChange}
                         />
