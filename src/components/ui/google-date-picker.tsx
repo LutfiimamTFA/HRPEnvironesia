@@ -32,7 +32,7 @@ export type GoogleDatePickerProps = {
   maxYear?: number;
   disabled?: boolean;
   className?: string;
-  container?: HTMLElement | null;
+  portalled?: boolean;
 };
 
 export function GoogleDatePicker({
@@ -44,7 +44,7 @@ export function GoogleDatePicker({
   maxYear: maxYearProp,
   disabled,
   className,
-  container,
+  portalled = true,
 }: GoogleDatePickerProps) {
   const [open, setOpen] = React.useState(false);
   const [view, setView] = React.useState<View>('day');
@@ -216,7 +216,7 @@ export function GoogleDatePicker({
           {value ? format(value, 'PPP', { locale: id }) : <span>{placeholder}</span>}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto rounded-xl border bg-popover shadow-lg p-0" align="start" container={container || undefined}>
+      <PopoverContent className="w-auto rounded-xl border bg-popover shadow-lg p-0" align="start" portalled={portalled}>
         <div className="p-3">
             {view === 'day' && renderDayView()}
             {view === 'month' && renderMonthView()}
