@@ -43,6 +43,14 @@ service cloud.firestore {
     function isSuperAdmin() {
       return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
     }
+    
+    /**
+     * WARNING: NOT SAFE FOR LIST QUERIES.
+     * Checks if the user is an 'hrd' via a performant existence check.
+     */
+    function isHrd() {
+      return isSignedIn() && exists(/databases/$(database)/documents/roles_hrd/$(request.auth.uid));
+    }
 
     /**
      * WARNING: NOT SAFE FOR LIST QUERIES.
@@ -87,7 +95,7 @@ service cloud.firestore {
     match /users/{userId} {
       allow get: if isOwner(userId) || isInternal();
       allow update: if isOwner(userId) || isSuperAdmin();
-      allow list: if getUserData().role == 'super-admin' || getUserData().role == 'hrd';
+      allow list: if isSuperAdmin() || isHrd();
       allow create: if isSuperAdmin() && hasValidCreateData(userId);
       allow delete: if isSuperAdmin();
 
@@ -111,6 +119,14 @@ service cloud.firestore {
      * - This is a private lookup table. No client access is allowed.
      */
     match /roles_admin/{userId} {
+      allow read, write: if false;
+    }
+    
+    /**
+     * /roles_hrd/{userId}
+     * - This is a private lookup table. No client access is allowed.
+     */
+    match /roles_hrd/{userId} {
       allow read, write: if false;
     }
     

@@ -152,7 +152,17 @@ export default function MyInterviewsPage() {
     }, [userProfile, firestore]);
 
     const { data: applications, isLoading: appsLoading, mutate } = useCollection<JobApplication>(interviewsQuery);
-    const { data: internalUsers, isLoading: isLoadingUsers } = useCollection<UserProfile>(useMemoFirebase(() => query(collection(firestore, 'users'), where('role', 'in', ['hrd', 'manager', 'karyawan', 'super-admin']), where('isActive', '==', true)), [firestore]));
+    
+    const internalUsersQuery = useMemoFirebase(() => {
+        if (!userProfile || !['super-admin', 'hrd'].includes(userProfile.role)) return null;
+        return query(
+            collection(firestore, 'users'),
+            where('role', 'in', ['hrd', 'manager', 'karyawan', 'super-admin']),
+            where('isActive', '==', true)
+        );
+    }, [firestore, userProfile]);
+
+    const { data: internalUsers, isLoading: isLoadingUsers } = useCollection<UserProfile>(internalUsersQuery);
     const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(useMemoFirebase(() => collection(firestore, 'brands'), [firestore]));
 
     const allInterviews = useMemo(() => {

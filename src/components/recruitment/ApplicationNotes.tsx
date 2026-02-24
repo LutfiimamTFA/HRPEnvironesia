@@ -66,7 +66,7 @@ export function ApplicationNotes({ application, onNoteAdded }: ApplicationNotesP
                     <MessageSquare className="h-5 w-5" />
                     Catatan Internal
                 </CardTitle>
-                <CardDescription>Catatan ini hanya dapat dilihat oleh tim HRD.</CardDescription>
+                <CardDescription>Catatan ini hanya dapat dilihat oleh tim HRD dan panelis wawancara.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
                 <div className="space-y-2">
