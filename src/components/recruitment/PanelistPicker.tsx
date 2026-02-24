@@ -44,42 +44,39 @@ export function PanelistPicker({
   placeholder = 'Pilih panelis...',
 }: PanelistPickerProps) {
   const [open, setOpen] = React.useState(false);
-  
+
   const brandMap = React.useMemo(() => {
     if (!allBrands) return new Map<string, string>();
     return new Map(allBrands.map(brand => [brand.id!, brand.name]));
   }, [allBrands]);
 
-  const getBrandDisplay = (user: UserProfile) => {
-    if (user.role === 'hrd' && Array.isArray(user.brandId)) {
-        return user.brandId.map(id => brandMap.get(id)).filter(Boolean).join(', ') || 'All Brands';
-    }
-    if (typeof user.brandId === 'string' && user.brandId) {
-        return brandMap.get(user.brandId);
-    }
-    return user.department || user.jobTitle || user.role;
-  }
-
   const userOptions = React.useMemo(() => {
-    return allUsers.filter(u => u.isActive).map(user => ({
-      ...user,
-      brandDisplay: getBrandDisplay(user)
-    }))
+    return allUsers.map(user => {
+      let brandDisplay = user.department || user.jobTitle || user.role;
+      if (user.role === 'hrd' && Array.isArray(user.brandId)) {
+        brandDisplay = user.brandId.map(id => brandMap.get(id)).filter(Boolean).join(', ') || 'All Brands';
+      } else if (typeof user.brandId === 'string' && user.brandId) {
+        brandDisplay = brandMap.get(user.brandId) || brandDisplay;
+      }
+      return {
+        ...user,
+        brandDisplay,
+      };
+    });
   }, [allUsers, brandMap]);
-
-
+  
   const handleToggle = (user: UserProfile) => {
-    const newOption = { value: user.uid, label: `${user.fullName} (${user.email})` };
-    const isSelected = selected.some(s => s.value === newOption.value);
+    const option = { value: user.uid, label: `${user.fullName} (${user.email})` };
+    const isSelected = selected.some(s => s.value === option.value);
     if (isSelected) {
-      onChange(selected.filter((s) => s.value !== newOption.value));
+      onChange(selected.filter((s) => s.value !== option.value));
     } else {
-      onChange([...selected, newOption]);
+      onChange([...selected, option]);
     }
   };
   
-  const handleUnselect = (itemValue: string) => {
-    onChange(selected.filter((s) => s.value !== itemValue));
+  const handleUnselect = (value: string) => {
+    onChange(selected.filter((s) => s.value !== value));
   };
 
 
@@ -98,7 +95,7 @@ export function PanelistPicker({
                 <Badge
                   variant="secondary"
                   key={item.value}
-                  className="mr-1 flex items-center"
+                  className="mr-1"
                 >
                   {item.label.split('(')[0].trim()}
                    <span
@@ -150,7 +147,7 @@ export function PanelistPicker({
                             key={user.uid}
                             value={`${user.fullName} ${user.email} ${user.brandDisplay}`}
                             onSelect={() => handleToggle(user)}
-                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                            onMouseDown={(e) => { e.preventDefault(); }}
                             className="cursor-pointer"
                             disabled={!user.isActive}
                         >
