@@ -11,12 +11,14 @@ import { MENU_CONFIG } from '@/lib/menu-config';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Calendar, Link as LinkIcon, Video, Users } from 'lucide-react';
+import { Calendar, Link as LinkIcon, Video, Users, MoreHorizontal, Briefcase } from 'lucide-react';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { ManagePanelistsDialog } from '@/components/recruitment/ManagePanelistsDialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+
 
 // Interface to hold processed interview data for display
 interface EnrichedInterview extends ApplicationInterview {
@@ -62,23 +64,34 @@ function InterviewCard({ interview, allUsers, allBrands, currentUser, onMutate }
                         </div>
                     </div>
                 </CardContent>
-                <CardFooter className="flex-col sm:flex-row justify-end items-center gap-2 pt-4 border-t">
-                     <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={() => setIsManagePanelistsOpen(true)}>
-                        Kelola Panelis
-                    </Button>
-                    <Button asChild variant="outline" size="sm" className="w-full sm:w-auto">
-                        <Link href={`/admin/interviews/${interview.application.id}`}>
-                            Buka Interview Kit
-                        </Link>
-                    </Button>
+                <CardFooter className="flex flex-row justify-end items-center gap-2 pt-4 border-t">
                     {isUpcoming && (
-                        <Button asChild size="sm" className="w-full sm:w-auto">
+                        <Button asChild size="sm" className="flex-grow sm:flex-grow-0">
                             <a href={interview.meetingLink} target="_blank" rel="noopener noreferrer">
                                 <LinkIcon className="mr-2 h-4 w-4" />
-                                Buka Link Wawancara
+                                Buka Link
                             </a>
                         </Button>
                     )}
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-9 w-9">
+                                <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                            <DropdownMenuItem onSelect={() => setIsManagePanelistsOpen(true)}>
+                                <Users className="mr-2 h-4 w-4" />
+                                <span>Kelola Panelis</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                                <Link href={`/admin/interviews/${interview.application.id}`}>
+                                    <Briefcase className="mr-2 h-4 w-4" />
+                                    <span>Buka Interview Kit</span>
+                                </Link>
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                 </CardFooter>
             </Card>
             {currentInterviewInApp && currentUser && (
