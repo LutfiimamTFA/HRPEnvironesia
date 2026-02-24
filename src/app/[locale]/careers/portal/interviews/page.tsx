@@ -26,9 +26,9 @@ function InterviewCard({ interview, onMutate }: { interview: EnrichedInterview, 
     
     const rescheduleStatus = interview.rescheduleRequest?.status;
 
-    // Show reschedule button ONLY if the interview is in the future AND its status is 'scheduled'.
-    // If a request is denied, HRD will set the status back to 'scheduled', making the button reappear.
-    const showRescheduleButton = isUpcoming && interview.status === 'scheduled';
+    // Show reschedule button ONLY if it's upcoming, scheduled, AND has NO prior reschedule request history.
+    // This prevents re-requesting after a denial or approval.
+    const showRescheduleButton = isUpcoming && interview.status === 'scheduled' && !interview.rescheduleRequest;
     
     return (
         <>
@@ -62,7 +62,7 @@ function InterviewCard({ interview, onMutate }: { interview: EnrichedInterview, 
                             <Users className="h-5 w-5 mt-0.5 text-primary" />
                             <div>
                                 <p className="font-semibold">Pewawancara</p>
-                                <p>{interview.interviewerNames.join(', ')}</p>
+                                <p>{(interview.panelistNames || interview.interviewerNames || []).join(', ')}</p>
                             </div>
                         </div>
                     </div>

@@ -87,8 +87,8 @@ export function RescheduleRequestDialog({ open, onOpenChange, application, inter
                 startAt: oldInterviewData.startAt,
                 endAt: oldInterviewData.endAt,
                 meetingLink: oldInterviewData.meetingLink ?? '',
-                interviewerIds: oldInterviewData.interviewerIds ?? [],
-                interviewerNames: oldInterviewData.interviewerNames ?? [],
+                panelistIds: oldInterviewData.panelistIds ?? [],
+                panelistNames: oldInterviewData.panelistNames ?? [],
                 status: 'reschedule_requested',
                 rescheduleRequest: rescheduleRequestData,
             };
@@ -97,8 +97,8 @@ export function RescheduleRequestDialog({ open, onOpenChange, application, inter
             if (oldInterviewData.notes) {
                 newInterviewData.notes = oldInterviewData.notes;
             }
-            if (oldInterviewData.leadInterviewerId) {
-                newInterviewData.leadInterviewerId = oldInterviewData.leadInterviewerId;
+            if (oldInterviewData.leadPanelistId) {
+                newInterviewData.leadPanelistId = oldInterviewData.leadPanelistId;
             }
              if (oldInterviewData.rescheduleReason) { // handle legacy field
                 newInterviewData.rescheduleReason = oldInterviewData.rescheduleReason;
@@ -151,7 +151,7 @@ export function RescheduleRequestDialog({ open, onOpenChange, application, inter
         <DialogHeader>
           <DialogTitle>Minta Jadwal Ulang Wawancara</DialogTitle>
           <DialogDescription>
-            Jelaskan alasan Anda dan usulkan 2-3 opsi waktu pengganti.
+            Jelaskan alasan Anda dan usulkan 1-3 opsi waktu pengganti untuk memberi fleksibilitas pada tim HRD dalam menyetujui permintaan Anda.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
