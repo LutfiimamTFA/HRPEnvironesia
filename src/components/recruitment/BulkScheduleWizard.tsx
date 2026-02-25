@@ -24,6 +24,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { format } from 'date-fns';
 import { useFirestore, updateDocumentNonBlocking, useCollection, useMemoFirebase } from '@/firebase';
 import { doc, writeBatch, serverTimestamp, Timestamp, query, collection, where } from 'firebase/firestore';
+import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 
 // --- Step 1: Candidate List Item ---
 
@@ -55,7 +56,15 @@ const scheduleConfigSchema = z.object({
   slotDuration: z.coerce.number().int().min(5, 'Durasi minimal 5 menit.'),
   buffer: z.coerce.number().int().min(0, 'Buffer tidak boleh negatif.'),
   workdayEndTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, "Format waktu harus HH:MM."),
-  meetingLink: z.string().url({ message: "URL meeting tidak valid." }),
+  meetingLink: z.preprocess(
+    (v) => {
+        if (typeof v !== "string") return v;
+        const s = v.trim();
+        if (!s || s.includes("...")) return ""; // Treat empty or placeholder as empty
+        return s;
+    },
+    z.string().url({ message: "URL meeting tidak valid." }).optional().or(z.literal(''))
+  ),
 });
 
 type ScheduleConfigValues = z.infer<typeof scheduleConfigSchema>;
@@ -121,6 +130,42 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
     return generateTimeSlots(orderedCandidates, config);
   }, [step, orderedCandidates, scheduleForm]);
 
+    const watchedConfig = scheduleForm.watch(['startDate', 'startTime', 'slotDuration', 'buffer', 'workdayEndTime']);
+    const scheduleMetrics = React.useMemo(() => {
+        const [startDate, startTime, slotDuration, buffer, workdayEndTime] = watchedConfig;
+        
+        if (!startTime || !workdayEndTime || !slotDuration || !startDate) {
+            return null;
+        }
+
+        try {
+            const totalCandidates = orderedCandidates.length;
+            if (totalCandidates === 0) return null;
+
+            const start = new Date(`1970-01-01T${startTime}`);
+            const end = new Date(`1970-01-01T${workdayEndTime}`);
+            const totalMinutesInWorkday = (end.getTime() - start.getTime()) / 60000;
+            const singleSlotTime = slotDuration + buffer;
+            
+            if (singleSlotTime <= 0 || totalMinutesInWorkday <= 0) {
+                return { slotsPerDay: 0, totalDays: 'N/A', estimatedCompletion: null };
+            }
+
+            const slotsPerDay = Math.floor(totalMinutesInWorkday / singleSlotTime);
+            const totalDays = slotsPerDay > 0 ? Math.ceil(totalCandidates / slotsPerDay) : 'N/A';
+
+            const allSlots = generateTimeSlots(orderedCandidates, { startDate, startTime, slotDuration, buffer, workdayEndTime });
+            const lastSlot = allSlots[allSlots.length - 1];
+            
+            return {
+                slotsPerDay,
+                totalDays,
+                estimatedCompletion: lastSlot ? lastSlot.endAt : null,
+            };
+        } catch (e) {
+            return { slotsPerDay: 0, totalDays: 'N/A', estimatedCompletion: null };
+        }
+    }, [watchedConfig, orderedCandidates]);
 
   const totalSlotsNeeded = orderedCandidates.length;
   const slotsGeneratedCount = generatedSlots.length;
@@ -161,7 +206,7 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
             endAt: Timestamp.fromDate(slot.endAt),
             panelistIds: panelistIds,
             panelistNames: panelistNames,
-            meetingLink: meetingLink,
+            meetingLink: meetingLink ?? '',
             status: 'scheduled',
         };
 
@@ -235,7 +280,20 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
                     <FormField control={scheduleForm.control} name="slotDuration" render={({ field }) => (<FormItem><FormLabel>Durasi per Slot (menit)</FormLabel><Select onValueChange={(v) => field.onChange(parseInt(v))} value={String(field.value)}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent portalled={false}><SelectItem value="15">15</SelectItem><SelectItem value="20">20</SelectItem><SelectItem value="30">30</SelectItem><SelectItem value="45">45</SelectItem><SelectItem value="60">60</SelectItem><SelectItem value="90">90</SelectItem></SelectContent></Select><FormMessage /></FormItem>)} />
                     <FormField control={scheduleForm.control} name="buffer" render={({ field }) => (<FormItem><FormLabel>Jeda antar Slot (menit)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
                 </div>
-                 <FormField control={scheduleForm.control} name="meetingLink" render={({ field }) => ( <FormItem><FormLabel>Link Meeting</FormLabel><FormControl><Input placeholder="https://zoom.us/j/..." {...field} /></FormControl><FormMessage /></FormItem>)} />
+                 <FormField control={scheduleForm.control} name="meetingLink" render={({ field }) => ( <FormItem><FormLabel>Link Meeting untuk Job ini</FormLabel><FormControl><Input placeholder="https://zoom.us/j/..." {...field} /></FormControl><FormMessage /></FormItem>)} />
+                 {scheduleMetrics && (
+                    <Card className="bg-muted/50">
+                        <CardHeader className="py-3">
+                            <CardTitle className="text-base">Estimasi Jadwal</CardTitle>
+                        </CardHeader>
+                        <CardContent className="text-sm space-y-1 pb-3">
+                            <div className="flex justify-between"><span>Total Kandidat:</span> <strong>{orderedCandidates.length}</strong></div>
+                            <div className="flex justify-between"><span>Slot tersedia per hari:</span> <strong>{scheduleMetrics.slotsPerDay}</strong></div>
+                            <div className="flex justify-between"><span>Estimasi jumlah hari:</span> <strong>{scheduleMetrics.totalDays}</strong></div>
+                            <div className="flex justify-between"><span>Perkiraan selesai:</span> <strong>{scheduleMetrics.estimatedCompletion ? format(scheduleMetrics.estimatedCompletion, 'dd MMM yyyy, HH:mm') : '-'}</strong></div>
+                        </CardContent>
+                    </Card>
+                )}
             </form>
           </Form>
         );
@@ -304,5 +362,3 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
     </Dialog>
   );
 }
-
-    
