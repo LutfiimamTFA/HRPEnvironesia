@@ -23,7 +23,7 @@ const experienceSchema = z.object({
   id: z.string(),
   company: z.string().min(1, "Nama perusahaan harus diisi"),
   position: z.string().min(1, "Posisi harus diisi"),
-  jobType: z.enum(JOB_TYPES, { required_error: "Tipe pekerjaan harus dipilih" }),
+  jobType: z.enum(JOB_TYPES, { invalid_type_error: "Tipe pekerjaan harus dipilih" }),
   startDate: z.string().min(4, "Tahun mulai harus diisi"),
   endDate: z.string().optional(),
   isCurrent: z.boolean().default(false),

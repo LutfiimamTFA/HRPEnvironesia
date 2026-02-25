@@ -37,7 +37,7 @@ const personalDataSchema = z.object({
     email: z.string().email({ message: "Email tidak valid." }),
     phone: z.string().min(10, { message: "Nomor telepon tidak valid." }),
     eKtpNumber: z.string().length(16, { message: "Nomor e-KTP harus 16 digit." }),
-    gender: z.enum(['Laki-laki', 'Perempuan'], { required_error: "Jenis kelamin harus dipilih." }),
+    gender: z.enum(['Laki-laki', 'Perempuan'], { invalid_type_error: "Jenis kelamin harus dipilih." }),
     birthPlace: z.string().min(2, { message: "Tempat lahir harus diisi." }),
     birthDate: z.date({ required_error: "Tanggal lahir harus diisi."}),
     addressKtp: addressObjectSchema,
@@ -45,7 +45,7 @@ const personalDataSchema = z.object({
     addressDomicile: addressObjectSchema.deepPartial().optional(), // Make fields optional for conditional validation
     hasNpwp: z.boolean().default(false),
     npwpNumber: z.string().optional().or(z.literal('')),
-    willingToWfo: z.boolean({required_error: "Pilihan ini harus diisi."}),
+    willingToWfo: z.boolean({invalid_type_error: "Pilihan ini harus diisi."}),
     linkedinUrl: z.string().url().optional().or(z.literal('')),
     websiteUrl: z.string().url().optional().or(z.literal('')),
 }).superRefine((data, ctx) => {
@@ -102,6 +102,7 @@ export function PersonalDataForm({ initialData, onSaveSuccess }: PersonalDataFor
             birthDate: initialData.birthDate instanceof Timestamp ? initialData.birthDate.toDate() : undefined,
             addressKtp: getAddressObject(initialData.addressKtp),
             addressDomicile: getAddressObject(initialData.addressDomicile),
+            willingToWfo: initialData.willingToWfo ?? undefined,
         },
     });
 

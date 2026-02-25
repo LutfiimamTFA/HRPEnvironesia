@@ -23,7 +23,7 @@ const EDUCATION_LEVELS = ['SMA/SMK', 'D3', 'S1', 'S2', 'S3'] as const;
 const educationSchema = z.object({
   id: z.string(),
   institution: z.string().min(1, "Nama institusi harus diisi"),
-  level: z.enum(EDUCATION_LEVELS, { required_error: "Jenjang pendidikan harus diisi" }),
+  level: z.enum(EDUCATION_LEVELS, { invalid_type_error: "Jenjang pendidikan harus diisi" }),
   fieldOfStudy: z.string().optional(),
   gpa: z.string().optional(),
   startDate: z.string().min(4, "Tahun mulai harus diisi"),
