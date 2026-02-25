@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
@@ -225,21 +224,20 @@ function TakeAssessmentPage() {
   
   const isLoading = authLoading || sessionLoading || assessmentLoading || templateLoading || questionsLoading;
 
-  const handleAnswerChange = async (questionId: string, value: string | { most: string, least: string }) => {
+  const handleAnswerChange = (questionId: string, value: string | { most: string, least: string }) => {
     const numericValue = typeof value === 'string' ? parseInt(value, 10) : value;
     const newAnswers = { ...answers, [questionId]: numericValue };
     setAnswers(newAnswers);
-
-    // Autosave non-blockingly
-    try {
-      await updateDocumentNonBlocking(sessionRef, { answers: newAnswers });
-    } catch (error) {
-      console.error("Autosave failed:", error);
-      toast({ variant: 'destructive', title: 'Gagal menyimpan sementara', description: 'Jawaban Anda mungkin tidak tersimpan. Periksa koneksi Anda.' });
-    }
+    // Firestore update is removed from here
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
+    // Non-blocking save on navigation
+    updateDocumentNonBlocking(sessionRef, { answers: answers }).catch(error => {
+        console.error("Autosave on next failed:", error);
+        toast({ variant: 'destructive', title: 'Gagal menyimpan jawaban sementara', description: 'Periksa koneksi Anda.' });
+    });
+
     if (currentQuestionIndex < questionsForCurrentPart.length - 1) {
       setCurrentQuestionIndex(prev => prev + 1);
     }
@@ -271,6 +269,9 @@ function TakeAssessmentPage() {
   const handleFinish = async () => {
     setIsFinishing(true);
     try {
+        // Save the final answer state before submitting
+        await updateDocumentNonBlocking(sessionRef, { answers: answers });
+        
         const res = await fetch('/api/assessment/submit', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
