@@ -41,7 +41,7 @@ const personalDataSchema = z.object({
     birthPlace: z.string().min(2, { message: "Tempat lahir harus diisi." }),
     birthDate: z.coerce.date({ required_error: 'Tanggal lahir harus diisi.'}),
     addressKtp: addressObjectSchema,
-    isDomicileSameAsKtp: z.boolean().default(false),
+    isDomicileSameAsKtp: z.boolean().default(true),
     addressDomicile: addressObjectSchema.deepPartial().optional(), // Make fields optional for conditional validation
     hasNpwp: z.boolean().default(false),
     npwpNumber: z.string().optional().or(z.literal('')),
@@ -123,7 +123,7 @@ export function PersonalDataForm({ initialData, onSaveSuccess }: PersonalDataFor
             birthPlace: initialData.birthPlace || '',
             birthDate: initialData.birthDate instanceof Timestamp ? initialData.birthDate.toDate() : undefined,
             addressKtp: getAddressObject(initialData.addressKtp),
-            isDomicileSameAsKtp: initialData.isDomicileSameAsKtp || false,
+            isDomicileSameAsKtp: initialData.isDomicileSameAsKtp ?? true,
             addressDomicile: getAddressObject(initialData.addressDomicile),
             hasNpwp: initialData.hasNpwp || false,
             npwpNumber: initialData.npwpNumber || '',
