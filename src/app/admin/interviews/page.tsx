@@ -11,14 +11,16 @@ import { MENU_CONFIG } from '@/lib/menu-config';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Calendar, Link as LinkIcon, Video, Users, MoreHorizontal, Briefcase } from 'lucide-react';
+import { Calendar, Link as LinkIcon, Video, Users, MoreHorizontal, Briefcase, Search } from 'lucide-react';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { ManagePanelistsDialog } from '@/components/recruitment/ManagePanelistsDialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 
 // Interface to hold processed interview data for display
 interface EnrichedInterview extends ApplicationInterview {
@@ -27,7 +29,11 @@ interface EnrichedInterview extends ApplicationInterview {
 
 // Reusable Interview Card Component
 function InterviewCard({ interview, allUsers, allBrands, currentUser, onMutate }: { interview: EnrichedInterview; allUsers: UserProfile[]; allBrands: Brand[]; currentUser: UserProfile; onMutate: () => void }) {
-    const isUpcoming = interview.startAt.toDate() > new Date();
+    const now = new Date();
+    const isOngoing = interview.startAt.toDate() <= now && interview.endAt.toDate() >= now;
+    const isUpcoming = interview.startAt.toDate() > now;
+    const showLinkButton = isUpcoming || isOngoing;
+
     const [isManagePanelistsOpen, setIsManagePanelistsOpen] = useState(false);
 
     const currentInterviewInApp = interview.application.interviews?.find(iv => iv.interviewId === interview.interviewId);
@@ -41,7 +47,7 @@ function InterviewCard({ interview, allUsers, allBrands, currentUser, onMutate }
                             <CardTitle className="text-lg">{interview.application.candidateName}</CardTitle>
                             <CardDescription>{interview.application.jobPosition}</CardDescription>
                         </div>
-                        {isUpcoming ? (
+                        {isUpcoming || isOngoing ? (
                             <Badge>Akan Datang</Badge>
                         ) : (
                             <Badge variant="secondary">Telah Lewat</Badge>
@@ -65,7 +71,7 @@ function InterviewCard({ interview, allUsers, allBrands, currentUser, onMutate }
                     </div>
                 </CardContent>
                 <CardFooter className="flex flex-row justify-end items-center gap-2 pt-4 border-t">
-                    {isUpcoming && (
+                    {showLinkButton && (
                         <Button asChild size="sm" className="flex-grow sm:flex-grow-0">
                             <a href={interview.meetingLink} target="_blank" rel="noopener noreferrer">
                                 <LinkIcon className="mr-2 h-4 w-4" />
@@ -135,16 +141,18 @@ export default function MyInterviewsPage() {
     const { userProfile, loading: authLoading } = useAuth();
     const firestore = useFirestore();
 
+    const [activeTab, setActiveTab] = useState('upcoming');
+    const [brandFilter, setBrandFilter] = useState('all');
+    const [searchFilter, setSearchFilter] = useState('');
+
     const interviewsQuery = useMemoFirebase(() => {
         if (!userProfile) return null;
-        // HRD and Super Admins see all interviews with status 'interview'
         if (['super-admin', 'hrd'].includes(userProfile.role)) {
             return query(
                 collection(firestore, 'applications'),
                 where('status', '==', 'interview')
             );
         }
-        // Others only see interviews they are a panelist for
         return query(
             collection(firestore, 'applications'),
             where('allPanelistIds', 'array-contains', userProfile.uid)
@@ -182,21 +190,59 @@ export default function MyInterviewsPage() {
                 });
             }
         });
-        
-        // Sort interviews: upcoming first, then past ones most recent first
-        return interviews.sort((a, b) => {
-            const aTime = a.startAt.toDate().getTime();
-            const bTime = b.startAt.toDate().getTime();
-            const now = new Date().getTime();
-            const aIsUpcoming = aTime >= now;
-            const bIsUpcoming = bTime >= now;
-            if (aIsUpcoming && !bIsUpcoming) return -1;
-            if (!aIsUpcoming && bIsUpcoming) return 1;
-            if (aIsUpcoming) return aTime - bTime; // Upcoming ascending
-            return bTime - aTime; // Past descending
-        });
+        return interviews;
     }, [applications, userProfile]);
 
+    const filteredInterviews = useMemo(() => {
+        if (!allInterviews) return [];
+        const lowercasedSearch = searchFilter.toLowerCase();
+        return allInterviews.filter(interview => {
+            const brandMatch = brandFilter === 'all' || interview.application.brandId === brandFilter;
+            const searchMatch = searchFilter.trim() === '' || 
+                interview.application.candidateName.toLowerCase().includes(lowercasedSearch) ||
+                interview.application.jobPosition.toLowerCase().includes(lowercasedSearch);
+            return brandMatch && searchMatch;
+        });
+    }, [allInterviews, brandFilter, searchFilter]);
+
+    const categorizedInterviews = useMemo(() => {
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+        const upcoming: EnrichedInterview[] = [];
+        const today: EnrichedInterview[] = [];
+        const history: EnrichedInterview[] = [];
+
+        filteredInterviews.forEach(interview => {
+            const startTime = interview.startAt.toDate();
+            // Upcoming should not include today
+            if (startTime > endOfToday) {
+                upcoming.push(interview);
+            }
+            // Today includes interviews happening now
+            if (startTime >= startOfToday && startTime <= endOfToday) {
+                today.push(interview);
+            }
+            // History is anything before start of today
+            if (startTime < startOfToday) {
+                history.push(interview);
+            }
+        });
+        
+        history.sort((a,b) => b.startAt.toDate().getTime() - a.startAt.toDate().getTime());
+        upcoming.sort((a,b) => a.startAt.toDate().getTime() - b.startAt.toDate().getTime());
+        today.sort((a,b) => a.startAt.toDate().getTime() - b.startAt.toDate().getTime());
+
+        return { upcoming, today, history };
+    }, [filteredInterviews]);
+
+    const interviewsToDisplay = activeTab === 'upcoming' 
+        ? categorizedInterviews.upcoming 
+        : activeTab === 'today' 
+        ? categorizedInterviews.today 
+        : categorizedInterviews.history;
+    
     const menuConfig = useMemo(() => {
         if (!userProfile) return [];
         return MENU_CONFIG[userProfile.role] || [];
@@ -222,34 +268,69 @@ export default function MyInterviewsPage() {
                     </p>
                 </div>
 
-                {allInterviews.length > 0 ? (
-                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {allInterviews.map((interview, index) => (
-                           <InterviewCard 
-                                key={`${interview.application.id}-${interview.interviewId || index}`} 
-                                interview={interview} 
-                                allUsers={internalUsers || []}
-                                allBrands={brands || []}
-                                currentUser={userProfile!}
-                                onMutate={mutate}
-                           />
-                        ))}
-                    </div>
-                ) : (
-                    <Card className="h-64 flex flex-col items-center justify-center text-center">
-                        <CardHeader>
-                            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-                                <Video className="h-6 w-6 text-muted-foreground" />
+                 <Tabs value={activeTab} onValueChange={setActiveTab}>
+                    <div className="flex flex-wrap items-center justify-between gap-4 pb-4">
+                        <TabsList>
+                            <TabsTrigger value="upcoming">Akan Datang ({categorizedInterviews.upcoming.length})</TabsTrigger>
+                            <TabsTrigger value="today">Hari Ini ({categorizedInterviews.today.length})</TabsTrigger>
+                            <TabsTrigger value="history">Riwayat ({categorizedInterviews.history.length})</TabsTrigger>
+                        </TabsList>
+                        
+                        <div className="flex flex-wrap items-center gap-2">
+                             <div className="relative">
+                                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                                <Input 
+                                    placeholder="Cari kandidat/posisi..."
+                                    value={searchFilter}
+                                    onChange={e => setSearchFilter(e.target.value)}
+                                    className="w-full sm:w-[200px] pl-8"
+                                />
                             </div>
-                            <CardTitle className="mt-4">Belum Ada Jadwal Wawancara</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <p className="text-muted-foreground">
-                                Jadwal wawancara Anda akan muncul di sini setelah diatur oleh tim HRD.
-                            </p>
-                        </CardContent>
-                    </Card>
-                )}
+                            <Select value={brandFilter} onValueChange={setBrandFilter}>
+                                <SelectTrigger className="w-full sm:w-[180px]">
+                                    <SelectValue placeholder="Semua Brand" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">Semua Brand</SelectItem>
+                                    {brands?.map(brand => (
+                                        <SelectItem key={brand.id} value={brand.id!}>{brand.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+                    
+                    <TabsContent value={activeTab} className="mt-0">
+                         {interviewsToDisplay.length > 0 ? (
+                            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {interviewsToDisplay.map((interview, index) => (
+                                   <InterviewCard 
+                                        key={`${interview.application.id}-${interview.interviewId || index}`} 
+                                        interview={interview} 
+                                        allUsers={internalUsers || []}
+                                        allBrands={brands || []}
+                                        currentUser={userProfile!}
+                                        onMutate={mutate}
+                                   />
+                                ))}
+                            </div>
+                        ) : (
+                            <Card className="h-64 flex flex-col items-center justify-center text-center">
+                                <CardHeader>
+                                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                                        <Video className="h-6 w-6 text-muted-foreground" />
+                                    </div>
+                                    <CardTitle className="mt-4">Belum Ada Jadwal Wawancara</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <p className="text-muted-foreground">
+                                        Tidak ada jadwal wawancara untuk kategori dan filter ini.
+                                    </p>
+                                </CardContent>
+                            </Card>
+                        )}
+                    </TabsContent>
+                </Tabs>
             </div>
         </DashboardLayout>
     );
