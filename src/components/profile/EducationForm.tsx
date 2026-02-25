@@ -23,7 +23,7 @@ const EDUCATION_LEVELS = ['SMA/SMK', 'D3', 'S1', 'S2', 'S3'] as const;
 const educationSchema = z.object({
   id: z.string(),
   institution: z.string().min(1, "Nama institusi harus diisi"),
-  level: z.enum(EDUCATION_LEVELS).nullable().refine(v => v !== null, { message: "Jenjang pendidikan harus diisi" }),
+  level: z.enum(EDUCATION_LEVELS, { required_error: "Jenjang pendidikan harus diisi" }),
   fieldOfStudy: z.string().optional(),
   gpa: z.string().optional(),
   startDate: z.string().min(4, "Tahun mulai harus diisi"),
@@ -112,7 +112,7 @@ export function EducationForm({ initialData, onSaveSuccess, onBack }: EducationF
                                     <FormField control={form.control} name={`education.${index}.institution`} render={({ field }) => (<FormItem><FormLabel>Nama Institusi <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} placeholder="Contoh: Universitas Gadjah Mada" value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <FormField control={form.control} name={`education.${index}.level`} render={({ field }) => (<FormItem><FormLabel>Jenjang <span className="text-destructive">*</span></FormLabel><Select onValueChange={field.onChange} value={field.value ?? ''}><FormControl><SelectTrigger><SelectValue placeholder="Pilih jenjang" /></SelectTrigger></FormControl><SelectContent>{EDUCATION_LEVELS.map(level => (<SelectItem key={level} value={level}>{level}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)} />
+                                        <FormField control={form.control} name={`education.${index}.level`} render={({ field }) => (<FormItem><FormLabel>Jenjang <span className="text-destructive">*</span></FormLabel><Select onValueChange={field.onChange} value={field.value ?? undefined}><FormControl><SelectTrigger><SelectValue placeholder="Pilih jenjang" /></SelectTrigger></FormControl><SelectContent>{EDUCATION_LEVELS.map(level => (<SelectItem key={level} value={level}>{level}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)} />
                                         <FormField control={form.control} name={`education.${index}.fieldOfStudy`} render={({ field }) => (<FormItem><FormLabel>Jurusan (Opsional)</FormLabel><FormControl><Input {...field} value={field.value ?? ''} placeholder="Contoh: Akuntansi" /></FormControl><FormMessage /></FormItem>)} />
                                     </div>
                                     <FormField control={form.control} name={`education.${index}.gpa`} render={({ field }) => (<FormItem><FormLabel>IPK / Nilai (Opsional)</FormLabel><FormControl><Input {...field} value={field.value ?? ''} placeholder="Contoh: 3.85" /></FormControl><FormMessage /></FormItem>)} />
@@ -129,7 +129,7 @@ export function EducationForm({ initialData, onSaveSuccess, onBack }: EducationF
                         <Button
                             type="button"
                             variant="outline"
-                            onClick={() => append({ id: crypto.randomUUID(), institution: '', level: null, fieldOfStudy: '', gpa: '', startDate: '', endDate: '', isCurrent: false })}
+                            onClick={() => append({ id: crypto.randomUUID(), institution: '', level: undefined, fieldOfStudy: '', gpa: '', startDate: '', endDate: '', isCurrent: false })}
                         >
                             <PlusCircle className="mr-2 h-4 w-4" /> Tambah Pendidikan
                         </Button>
