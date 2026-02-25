@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, serverTimestamp } from 'firebase/firestore';
+import { doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { useAuth, useFirestore, setDocumentNonBlocking } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -67,17 +67,34 @@ export function CandidateRegisterForm() {
     try {
       const { user } = await createUserWithEmailAndPassword(auth, values.email, values.password);
 
-      const newProfile: Omit<UserProfile, 'createdAt'> & { createdAt: any } = {
+      const userDocRef = doc(firestore, 'users', user.uid);
+      const profileDocRef = doc(firestore, 'profiles', user.uid);
+      const batch = writeBatch(firestore);
+      const now = serverTimestamp();
+
+      const userProfileData: Omit<UserProfile, 'createdAt'> & { createdAt: any } = {
         uid: user.uid,
         email: values.email,
         fullName: values.fullName,
         nameLower: values.fullName.toLowerCase(),
         role: 'kandidat',
         isActive: true,
-        createdAt: serverTimestamp(),
+        isProfileComplete: false, // Explicitly set to false on creation
+        createdAt: now,
       };
+      batch.set(userDocRef, userProfileData);
+
+      const profileData = {
+          fullName: values.fullName,
+          email: values.email,
+          profileStatus: 'draft',
+          profileStep: 1,
+          createdAt: now,
+          updatedAt: now,
+      };
+      batch.set(profileDocRef, profileData);
       
-      await setDocumentNonBlocking(doc(firestore, 'users', user.uid), newProfile, {});
+      await batch.commit();
       
       // Sign the user out immediately after creating the profile
       await auth.signOut();

@@ -1,12 +1,10 @@
-// This file path is for the new non-locale structure.
-// The content is taken from the original [locale] equivalent.
 'use client';
 
 import { Suspense, useEffect, useState } from 'react';
 import { useAuth } from "@/providers/auth-provider";
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDoc, useFirestore, useMemoFirebase, setDocumentNonBlocking } from '@/firebase';
-import { doc } from 'firebase/firestore';
+import { doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import type { Profile } from '@/lib/types';
 import { PersonalDataForm } from '@/components/profile/PersonalDataForm';
 import { EducationForm } from '@/components/profile/EducationForm';
@@ -45,6 +43,34 @@ function ProfileWizardContent() {
     }, [firestore, firebaseUser]);
 
     const { data: profile, isLoading: isProfileLoading, mutate: refreshProfile } = useDoc<Profile>(profileDocRef);
+
+    // Safety net: If profile doesn't exist for a logged-in user, create it.
+    useEffect(() => {
+        const createMissingProfile = async () => {
+            if (!isProfileLoading && !profile && firebaseUser && firestore && authProfile) {
+                console.warn("Profile document not found for this user, creating a new one as a fallback.");
+                const profileDocRef = doc(firestore, 'profiles', firebaseUser.uid);
+                const defaultProfileData = {
+                    fullName: authProfile.fullName,
+                    email: authProfile.email,
+                    profileStatus: 'draft',
+                    profileStep: 1,
+                    updatedAt: serverTimestamp(),
+                    createdAt: serverTimestamp(),
+                };
+                try {
+                    await setDocumentNonBlocking(profileDocRef, defaultProfileData, { merge: true });
+                    toast({ title: "Profil Dibuat", description: "Memulai profil baru untuk Anda." });
+                    refreshProfile();
+                } catch (e: any) {
+                    console.error("Failed to lazy-create profile:", e);
+                    toast({ variant: "destructive", title: "Gagal membuat profil", description: e.message });
+                }
+            }
+        };
+        createMissingProfile();
+    }, [isProfileLoading, profile, firebaseUser, firestore, authProfile, refreshProfile, toast]);
+
 
     const isLoading = authLoading || isProfileLoading;
     const urlStep = parseInt(searchParams.get('step') || '1', 10);
@@ -112,8 +138,12 @@ function ProfileWizardContent() {
 
         setIsEditing(true);
         const profileDocRef = doc(firestore, 'profiles', firebaseUser.uid);
+        const userDocRef = doc(firestore, 'users', firebaseUser.uid);
         try {
-            await setDocumentNonBlocking(profileDocRef, { profileStatus: 'draft' }, { merge: true });
+             const batch = writeBatch(firestore);
+             batch.update(profileDocRef, { profileStatus: 'draft' });
+             batch.update(userDocRef, { isProfileComplete: false });
+             await batch.commit();
             setOptimisticProfileStep(1);
             router.push(`${pathname}?step=1`);
         } catch (error: any) {
@@ -155,7 +185,7 @@ function ProfileWizardContent() {
                             Edit Profil
                         </Button>
                         <Button className="w-full" asChild>
-                            <Link href="/careers/portal/jobs">Cari Lowongan</Link>
+                            <a href="/careers/portal/jobs">Cari Lowongan</a>
                         </Button>
                     </div>
                 </CardContent>
@@ -216,7 +246,7 @@ function ProfileWizardContent() {
                     initialData={{
                         selfDescription: initialProfileData.selfDescription,
                         salaryExpectation: initialProfileData.salaryExpectation,
-                        motivation: initialProfileData.motivation,
+                        motivation: initialData.motivation,
                     }}
                     onFinish={handleFinish}
                     onBack={handleBack}

@@ -9,7 +9,7 @@ import {
   signInWithPopup,
   GoogleAuthProvider,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { useAuth, useFirestore } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -58,6 +58,7 @@ export function CandidateLoginForm() {
 
   const handleAuthSuccess = async (user: any) => {
     const userDocRef = doc(firestore, 'users', user.uid);
+    const profileDocRef = doc(firestore, 'profiles', user.uid);
     const userDocSnap = await getDoc(userDocRef);
 
     if (userDocSnap.exists()) {
@@ -72,19 +73,47 @@ export function CandidateLoginForm() {
         router.push('/admin/login');
         return;
       }
+       // Safety check: if user exists but profile doesn't, create it
+      const profileDocSnap = await getDoc(profileDocRef);
+      if (!profileDocSnap.exists()) {
+        const defaultProfileData = {
+            fullName: user.displayName || userProfile.fullName,
+            email: user.email!,
+            profileStatus: 'draft',
+            profileStep: 1,
+            updatedAt: serverTimestamp(),
+            createdAt: serverTimestamp(),
+        };
+        await setDoc(profileDocRef, defaultProfileData);
+      }
     } else {
-      // New user (likely from Google Sign-In), create their profile
-      const newProfile: Omit<UserProfile, 'createdAt'> & { createdAt: any } = {
+      // New user (likely from Google Sign-In), create their user and profile docs
+      const batch = writeBatch(firestore);
+
+      const newUserProfile: Omit<UserProfile, 'createdAt'> & { createdAt: any } = {
         uid: user.uid,
         email: user.email!,
         fullName: user.displayName || 'Kandidat Baru',
         role: 'kandidat',
         isActive: true,
+        isProfileComplete: false,
         createdAt: serverTimestamp(),
       };
-      await setDoc(userDocRef, newProfile);
+      batch.set(userDocRef, newUserProfile);
+
+      const defaultProfileData = {
+          fullName: user.displayName || 'Kandidat Baru',
+          email: user.email!,
+          profileStatus: 'draft',
+          profileStep: 1,
+          updatedAt: serverTimestamp(),
+          createdAt: serverTimestamp(),
+      };
+      batch.set(profileDocRef, defaultProfileData);
+
+      await batch.commit();
     }
-    // On successful candidate login/creation, layout will redirect to /careers/me
+    // On successful candidate login/creation, layout will redirect to /careers/portal
     toast({ title: 'Success', description: 'Logged in successfully.' });
   };
 

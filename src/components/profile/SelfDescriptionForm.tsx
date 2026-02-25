@@ -11,8 +11,8 @@ import { Loader2 } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import { useState } from 'react';
 import { useAuth } from '@/providers/auth-provider';
-import { useFirestore, setDocumentNonBlocking } from '@/firebase';
-import { doc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { useFirestore } from '@/firebase';
+import { doc, serverTimestamp, Timestamp, writeBatch } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Checkbox } from '../ui/checkbox';
 
@@ -61,15 +61,24 @@ export function SelfDescriptionForm({ initialData, onFinish, onBack }: SelfDescr
         setIsSaving(true);
         try {
             const { declaration, ...rest } = values;
-            const payload = {
+            
+            const batch = writeBatch(firestore);
+            const now = serverTimestamp();
+
+            const profileDocRef = doc(firestore, 'profiles', firebaseUser.uid);
+            const profilePayload = {
                 ...rest,
                 profileStatus: 'completed',
                 profileStep: 6,
-                updatedAt: serverTimestamp() as Timestamp,
-                completedAt: serverTimestamp() as Timestamp,
+                updatedAt: now,
+                completedAt: now,
             };
-            const profileDocRef = doc(firestore, 'profiles', firebaseUser.uid);
-            await setDocumentNonBlocking(profileDocRef, payload, { merge: true });
+            batch.update(profileDocRef, profilePayload);
+
+            const userDocRef = doc(firestore, 'users', firebaseUser.uid);
+            batch.update(userDocRef, { isProfileComplete: true });
+
+            await batch.commit();
             
             toast({ title: 'Profil Selesai!', description: 'Profil Anda telah berhasil disimpan dan dilengkapi.' });
             onFinish();
