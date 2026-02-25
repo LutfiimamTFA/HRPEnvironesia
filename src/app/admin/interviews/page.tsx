@@ -33,7 +33,9 @@ function InterviewCard({ interview, allUsers, allBrands, currentUser, onMutate }
     const now = new Date();
     const isOngoing = interview.startAt.toDate() <= now && interview.endAt.toDate() >= now;
     const isUpcoming = interview.startAt.toDate() > now;
-    const showLinkButton = isUpcoming || isOngoing;
+    
+    const showLinkButton = (isUpcoming || isOngoing) && interview.meetingPublished;
+    const showWaitingButton = (isUpcoming || isOngoing) && !interview.meetingPublished;
 
     const [isManagePanelistsOpen, setIsManagePanelistsOpen] = useState(false);
 
@@ -74,6 +76,11 @@ function InterviewCard({ interview, allUsers, allBrands, currentUser, onMutate }
                     </div>
                 </CardContent>
                 <CardFooter className="flex flex-row justify-end items-center gap-2 pt-4 border-t">
+                    {showWaitingButton && (
+                       <Button variant="outline" size="sm" disabled className="flex-grow sm:flex-grow-0">
+                           Menunggu link dari HRD
+                       </Button>
+                    )}
                     {showLinkButton && (
                         <Button asChild size="sm" className="flex-grow sm:flex-grow-0">
                             <a href={interview.meetingLink} target="_blank" rel="noopener noreferrer">

@@ -102,6 +102,9 @@ export type ApplicationInterview = {
     status: 'scheduled' | 'completed' | 'canceled' | 'reschedule_requested';
     notes?: string;
     rescheduleRequest?: RescheduleRequest;
+    meetingPublished?: boolean;
+    meetingPublishedAt?: Timestamp;
+    meetingPublishedBy?: string;
     // Legacy support
     interviewerIds?: string[];
     interviewerNames?: string[];

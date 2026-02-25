@@ -9,7 +9,7 @@ import type { JobApplication, Profile, Job, ApplicationTimelineEvent, Applicatio
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Mail, Phone, XCircle, Calendar, Users, RefreshCw, X, MessageSquare, AlertTriangle, Edit } from 'lucide-react';
+import { Mail, Phone, XCircle, Calendar, Users, RefreshCw, X, MessageSquare, AlertTriangle, Edit, ShieldCheck } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { ProfileView } from '@/components/recruitment/ProfileView';
@@ -52,6 +52,33 @@ function InterviewManagement({ application, onUpdate, allUsers, allBrands }: { a
   const handleOpenPanelistDialog = (interview: ApplicationInterview) => {
     setActiveInterview(interview);
     setManagePanelistsOpen(true);
+  };
+  
+  const handlePublishLink = async (interviewToPublish: ApplicationInterview) => {
+      if (!application || !userProfile) return;
+      setIsSubmitting(true);
+
+      const newInterviews = (application.interviews || []).map(iv => {
+          if (iv.interviewId === interviewToPublish.interviewId) {
+              return {
+                  ...iv,
+                  meetingPublished: true,
+                  meetingPublishedAt: Timestamp.now(),
+                  meetingPublishedBy: userProfile.uid,
+              };
+          }
+          return iv;
+      });
+
+      try {
+          await updateDoc(doc(firestore, 'applications', application.id!), { interviews: newInterviews });
+          toast({ title: 'Link Published', description: 'Panelis sekarang dapat melihat link meeting.' });
+          onUpdate();
+      } catch (e: any) {
+          toast({ variant: 'destructive', title: 'Gagal Mempublish Link', description: e.message });
+      } finally {
+          setIsSubmitting(false);
+      }
   };
 
   const handleConfirmSchedule = async (data: ScheduleInterviewData) => {
@@ -118,6 +145,7 @@ function InterviewManagement({ application, onUpdate, allUsers, allBrands }: { a
                 status: 'scheduled',
                 meetingLink: data.meetingLink,
                 notes: data.notes,
+                meetingPublished: false,
             };
             newInterviews.push(newInterview);
             
@@ -245,9 +273,16 @@ function InterviewManagement({ application, onUpdate, allUsers, allBrands }: { a
                             </div>
                             <div className="flex items-center gap-2">
                                 {userProfile && ['super-admin', 'hrd'].includes(userProfile.role) && (
-                                    <Button variant="outline" size="sm" onClick={() => handleOpenPanelistDialog(iv)}>
-                                        Kelola Panelis
-                                    </Button>
+                                    <>
+                                        {!iv.meetingPublished && (
+                                            <Button variant="secondary" size="sm" onClick={() => handlePublishLink(iv)} disabled={isSubmitting}>
+                                                <ShieldCheck className="mr-2 h-4 w-4" /> Publish Link
+                                            </Button>
+                                        )}
+                                        <Button variant="outline" size="sm" onClick={() => handleOpenPanelistDialog(iv)}>
+                                            Kelola Panelis
+                                        </Button>
+                                    </>
                                 )}
                                 <Button variant="ghost" size="sm" onClick={() => handleOpenScheduleDialog(iv)}>
                                     <Edit className="h-4 w-4 mr-2" /> Edit
