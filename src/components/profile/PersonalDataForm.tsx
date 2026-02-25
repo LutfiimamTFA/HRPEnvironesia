@@ -14,7 +14,7 @@ import { Timestamp, serverTimestamp } from 'firebase/firestore';
 import { GoogleDatePicker } from '../ui/google-date-picker';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { Checkbox } from '../ui/checkbox';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/providers/auth-provider';
 import { useFirestore, setDocumentNonBlocking } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
@@ -135,6 +135,13 @@ export function PersonalDataForm({ initialData, onSaveSuccess }: PersonalDataFor
 
     const isDomicileSameAsKtp = form.watch('isDomicileSameAsKtp');
     const hasNpwp = form.watch('hasNpwp');
+    const addressKtp = form.watch('addressKtp');
+
+    useEffect(() => {
+        if (isDomicileSameAsKtp) {
+            form.setValue("addressDomicile", addressKtp, { shouldValidate: true });
+        }
+    }, [isDomicileSameAsKtp, addressKtp, form]);
 
     const onInvalid = (errors: FieldErrors<FormValues>) => {
         const firstErrorKey = Object.keys(errors)[0] as keyof FormValues | undefined;
