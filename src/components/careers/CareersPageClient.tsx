@@ -166,10 +166,10 @@ const t = {
 
 // --- Header Component ---
 const Header = () => {
-    const [scrolled, setScrolled] = useState(false);
-    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const [scrolled, setScrolled] = React.useState(false);
+    const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
 
-    useEffect(() => {
+    React.useEffect(() => {
         const handleScroll = () => {
             setScrolled(window.scrollY > 10);
         };
@@ -295,8 +295,8 @@ const HeroSection = () => {
 
 // --- Job Explorer Section ---
 const JobExplorerSection = () => {
-    const [isClient, setIsClient] = useState(false);
-    useEffect(() => {
+    const [isClient, setIsClient] = React.useState(false);
+    React.useEffect(() => {
         setIsClient(true);
     }, []);
     

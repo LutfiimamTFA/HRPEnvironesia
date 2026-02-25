@@ -167,7 +167,7 @@ export function JobExplorerClient() {
                             className="mb-6 opacity-70"
                          />
                         <h3 className="text-xl font-semibold text-foreground">{texts.emptyState.title}</h3>
-                        <p className="mt-2 mb-6">{texts.emptyState.subtitle}</p>
+                        <p className="mt-2">{texts.emptyState.subtitle}</p>
                     </div>
                 )}
             </div>

@@ -1,5 +1,3 @@
-// This file path is for the new non-locale structure.
-// The content is taken from the original [locale] equivalent.
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
