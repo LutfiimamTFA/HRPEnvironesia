@@ -17,9 +17,9 @@ import { useToast } from '@/hooks/use-toast';
 import { Checkbox } from '../ui/checkbox';
 
 const formSchema = z.object({
-  selfDescription: z.string().optional(),
-  salaryExpectation: z.string().optional(),
-  motivation: z.string().optional(),
+  selfDescription: z.string().min(20, { message: "Deskripsi diri harus diisi, minimal 20 karakter." }),
+  salaryExpectation: z.string().min(1, { message: "Ekspektasi gaji harus diisi." }),
+  motivation: z.string().min(20, { message: "Motivasi dan alasan harus diisi, minimal 20 karakter." }),
   declaration: z.literal(true, {
     errorMap: () => ({ message: "Anda harus menyetujui pernyataan ini untuk menyelesaikan profil." }),
   }),
@@ -98,9 +98,9 @@ export function SelfDescriptionForm({ initialData, onFinish, onBack }: SelfDescr
             <CardContent>
                 <Form {...form}>
                     <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8">
-                        <FormField control={form.control} name="selfDescription" render={({ field }) => (<FormItem><FormLabel>Profil Singkat (Opsional)</FormLabel><FormControl><Textarea {...field} value={field.value ?? ''} placeholder="Ceritakan secara singkat tentang karakter/kepribadian, sikap kerja, keunggulan, dan kekurangan diri Anda." rows={6} /></FormControl><FormMessage /></FormItem>)} />
-                        <FormField control={form.control} name="salaryExpectation" render={({ field }) => (<FormItem><FormLabel>Ekspektasi Gaji (Opsional)</FormLabel><FormControl><Input {...field} value={field.value ?? ''} placeholder="Contoh: 5 - 7 Juta atau UMR" /></FormControl><FormMessage /></FormItem>)} />
-                        <FormField control={form.control} name="motivation" render={({ field }) => (<FormItem><FormLabel>Motivasi & Alasan (Opsional)</FormLabel><FormControl><Textarea {...field} value={field.value ?? ''} placeholder="Jelaskan motivasi dan alasan yang mendasari Anda untuk bekerja pada bidang/posisi yang Anda pilih." rows={6} /></FormControl><FormMessage /></FormItem>)} />
+                        <FormField control={form.control} name="selfDescription" render={({ field }) => (<FormItem><FormLabel>Profil Singkat <span className="text-destructive">*</span></FormLabel><FormControl><Textarea {...field} value={field.value ?? ''} placeholder="Ceritakan secara singkat tentang karakter/kepribadian, sikap kerja, keunggulan, dan kekurangan diri Anda." rows={6} /></FormControl><FormMessage /></FormItem>)} />
+                        <FormField control={form.control} name="salaryExpectation" render={({ field }) => (<FormItem><FormLabel>Ekspektasi Gaji <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} placeholder="Contoh: 5 - 7 Juta atau UMR" /></FormControl><FormMessage /></FormItem>)} />
+                        <FormField control={form.control} name="motivation" render={({ field }) => (<FormItem><FormLabel>Motivasi & Alasan <span className="text-destructive">*</span></FormLabel><FormControl><Textarea {...field} value={field.value ?? ''} placeholder="Jelaskan motivasi dan alasan yang mendasari Anda untuk bekerja pada bidang/posisi yang Anda pilih." rows={6} /></FormControl><FormMessage /></FormItem>)} />
                         
                         <FormField
                             control={form.control}
