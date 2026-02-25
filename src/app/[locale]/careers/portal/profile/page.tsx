@@ -11,8 +11,7 @@ import { EducationForm } from '@/components/profile/EducationForm';
 import { WorkExperienceForm } from '@/components/profile/WorkExperienceForm';
 import { SkillsForm } from '@/components/profile/SkillsForm';
 import { SelfDescriptionForm } from '@/components/profile/SelfDescriptionForm';
-import { useRouter } from '@/navigation';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams, usePathname } from '@/navigation';
 import { ProfileStepper } from '@/components/profile/ProfileStepper';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -34,6 +33,7 @@ function ProfileWizardContent() {
     const firestore = useFirestore();
     const router = useRouter();
     const searchParams = useSearchParams();
+    const pathname = usePathname();
     const { toast } = useToast();
     const [isEditing, setIsEditing] = useState(false);
 
@@ -64,12 +64,12 @@ function ProfileWizardContent() {
         const targetStep = urlStep > profileStepEffective ? profileStepEffective : urlStep;
         
         if (targetStep !== urlStep && profile?.profileStatus !== 'completed') {
-            router.replace(`/careers/portal/profile?step=${targetStep}`);
+            router.replace(`${pathname}?step=${targetStep}`);
         }
         
         setEffectiveStep(profile?.profileStatus === 'completed' ? urlStep : targetStep);
 
-    }, [urlStep, profile, isLoading, router, searchParams, optimisticProfileStep]);
+    }, [urlStep, profile, isLoading, router, searchParams, optimisticProfileStep, pathname]);
 
 
     const handleSaveSuccess = () => {
@@ -78,16 +78,16 @@ function ProfileWizardContent() {
         const nextStep = effectiveStep + 1;
         setOptimisticProfileStep(nextStep);
         if (nextStep <= steps.length) {
-            router.push(`/careers/portal/profile?step=${nextStep}`);
+            router.push(`${pathname}?step=${nextStep}`);
         } else {
-             router.push('/careers/portal/profile');
+             router.push(pathname);
         }
     };
 
     const handleBack = () => {
         const prevStep = effectiveStep - 1;
         if (prevStep >= 1) {
-            router.push(`/careers/portal/profile?step=${prevStep}`);
+            router.push(`${pathname}?step=${prevStep}`);
         }
     };
     
@@ -95,7 +95,7 @@ function ProfileWizardContent() {
         refreshProfile();
         refreshUserProfile();
         setOptimisticProfileStep(steps.length + 1);
-        router.push('/careers/portal/profile');
+        router.push(pathname);
     }
 
     const handleEdit = async () => {
@@ -113,7 +113,7 @@ function ProfileWizardContent() {
         try {
             await setDocumentNonBlocking(profileDocRef, { profileStatus: 'draft' }, { merge: true });
             setOptimisticProfileStep(1);
-            router.push('/careers/portal/profile?step=1');
+            router.push(`${pathname}?step=1`);
         } catch (error: any) {
             toast({
                 variant: 'destructive',
