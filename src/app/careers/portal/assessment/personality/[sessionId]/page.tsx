@@ -1,13 +1,14 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
 import { collection, doc, query, where, getDocs } from 'firebase/firestore';
 import type { Assessment, AssessmentQuestion, AssessmentSession, AssessmentTemplate, ForcedChoice } from '@/lib/types';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -23,19 +24,22 @@ function AssessmentGuide({
   buttonText,
   onConfirm,
   isConfirming,
+  description,
 }: {
   title: string;
   children: React.ReactNode;
   buttonText: string;
   onConfirm: () => void;
   isConfirming: boolean;
+  description?: string;
 }) {
   return (
     <Card className="max-w-3xl mx-auto">
       <CardHeader>
         <CardTitle className="text-2xl">{title}</CardTitle>
+        {description && <CardDescription>{description}</CardDescription>}
       </CardHeader>
-      <CardContent className="prose prose-sm max-w-none dark:prose-invert space-y-4">
+      <CardContent>
         {children}
       </CardContent>
       <CardFooter>
@@ -367,25 +371,33 @@ function TakeAssessmentPage() {
     return (
       <AssessmentGuide
         title="Panduan Mengerjakan Tes Kepribadian"
+        description="Harap baca panduan ini dengan saksama sebelum memulai."
         buttonText="Saya Mengerti, Mulai Bagian 1"
         onConfirm={handleConfirmPart1}
         isConfirming={isConfirmingGuide}
       >
-        <ul>
-          <li>Tes ini terdiri dari 2 bagian.</li>
-          <li>Jawablah dengan jujur, pilih yang paling menggambarkan diri Anda saat ini.</li>
-          <li>Tidak ada jawaban benar atau salah.</li>
-          <li>Jangan terlalu lama berpikir; jawablah secara spontan.</li>
-          <li>Pastikan koneksi internet Anda stabil.</li>
-          <li><b>Aturan Pilihan:</b>
-            <ul className="list-disc pl-5">
-              <li>Jika formatnya "Setuju / Tidak Setuju": pilih salah satu tingkat persetujuan Anda.</li>
-              <li>Jika formatnya "Paling menggambarkan / Paling tidak menggambarkan": Anda <b>WAJIB</b> memilih satu pernyataan yang paling sesuai (V) dan satu pernyataan yang paling tidak sesuai (X).</li>
-            </ul>
-          </li>
-          <li>Anda dapat melanjutkan ke soal berikutnya setelah menjawab.</li>
-          <li>Progres Anda akan tersimpan setiap kali Anda menekan tombol "Lanjut".</li>
-        </ul>
+        <div className="not-prose space-y-4">
+          <Card className="bg-muted/50">
+            <CardHeader className="p-4">
+              <CardTitle className="text-base">Tujuan Tes</CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 pt-0 text-sm">
+              <p>Tes ini dirancang untuk membantu kami memahami preferensi dan gaya kerja Anda. Jawablah dengan jujur sesuai dengan diri Anda saat ini. Tidak ada jawaban yang benar atau salah.</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-muted/50">
+            <CardHeader className="p-4">
+              <CardTitle className="text-base">Aturan Pengerjaan</CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 pt-0 text-sm">
+                <ul className="list-disc space-y-2 pl-5">
+                    <li>Tes terdiri dari 2 bagian dengan format soal yang berbeda.</li>
+                    <li>Jangan terlalu lama berpikir pada satu soal, jawaban spontan seringkali yang terbaik.</li>
+                    <li>Pastikan koneksi internet Anda stabil. Progres Anda akan tersimpan setiap kali menekan tombol "Lanjut".</li>
+                </ul>
+            </CardContent>
+          </Card>
+        </div>
       </AssessmentGuide>
     );
   }
@@ -394,16 +406,24 @@ function TakeAssessmentPage() {
     return (
       <AssessmentGuide
         title="Panduan Mengerjakan Bagian 2"
+        description="Anda akan mengerjakan soal dengan format Forced-Choice."
         buttonText="Saya Mengerti, Lanjutkan"
         onConfirm={handleConfirmPart2}
         isConfirming={isConfirmingGuide}
       >
-        <ul>
-            <li>Di bagian ini, Anda akan disajikan 4 pernyataan dalam satu kelompok.</li>
-            <li>Pilih satu pernyataan yang <b>PALING SESUAI</b> dengan diri Anda (tombol 'V').</li>
-            <li>Pilih satu pernyataan yang <b>PALING TIDAK SESUAI</b> dengan diri Anda (tombol 'X').</li>
-            <li>Anda harus memilih satu 'V' dan satu 'X' untuk setiap kelompok pernyataan agar dapat melanjutkan.</li>
-        </ul>
+        <div className="not-prose space-y-4">
+            <Card className="bg-muted/50">
+                <CardHeader className="p-4"><CardTitle className="text-base">Cara Menjawab</CardTitle></CardHeader>
+                <CardContent className="p-4 pt-0 text-sm">
+                    <ul className="list-disc space-y-2 pl-5">
+                        <li>Anda akan disajikan 4 pernyataan dalam satu kelompok.</li>
+                        <li>Pilih <b>satu</b> pernyataan yang <b>PALING SESUAI</b> dengan diri Anda dengan menekan tombol <Button size="xs" className="w-6 h-6 p-0 bg-green-600 hover:bg-green-700 pointer-events-none">V</Button>.</li>
+                        <li>Pilih <b>satu</b> pernyataan yang <b>PALING TIDAK SESUAI</b> dengan diri Anda dengan menekan tombol <Button size="xs" variant="destructive" className="w-6 h-6 p-0 pointer-events-none">X</Button>.</li>
+                        <li>Anda harus memilih tepat satu 'V' dan satu 'X' di setiap kelompok untuk dapat melanjutkan.</li>
+                    </ul>
+                </CardContent>
+            </Card>
+        </div>
       </AssessmentGuide>
     );
   }
