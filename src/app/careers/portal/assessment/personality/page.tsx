@@ -115,6 +115,8 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
                         selectedQuestionIds: newSelectedQuestionIds,
                         answers: {}, // Reset answers
                         currentTestPart: 'likert', // Start from the beginning
+                        part1GuideAck: false,
+                        part2GuideAck: false,
                         status: 'draft',
                         updatedAt: serverTimestamp()
                     }, { merge: true });
@@ -144,6 +146,8 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
                 jobPosition: application.jobPosition,
                 brandName: application.brandName,
                 status: 'draft',
+                part1GuideAck: false,
+                part2GuideAck: false,
                 currentTestPart: 'likert',
                 selectedQuestionIds: {
                     likert: shuffle(likertIds).slice(0, likertCount),
@@ -251,6 +255,8 @@ function StartGeneralTest() {
                 candidateName: userProfile.fullName,
                 candidateEmail: userProfile.email,
                 status: 'draft',
+                part1GuideAck: false,
+                part2GuideAck: false,
                 currentTestPart: 'likert',
                 selectedQuestionIds: {
                     likert: shuffle(likertIds).slice(0, likertCount),

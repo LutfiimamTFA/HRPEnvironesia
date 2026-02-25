@@ -415,6 +415,8 @@ export type AssessmentSession = {
   brandName?: string;
   status: 'draft' | 'submitted';
   currentTestPart?: 'likert' | 'forced-choice';
+  part1GuideAck?: boolean;
+  part2GuideAck?: boolean;
   selectedQuestionIds?: {
     likert: string[];
     forcedChoice: string[];

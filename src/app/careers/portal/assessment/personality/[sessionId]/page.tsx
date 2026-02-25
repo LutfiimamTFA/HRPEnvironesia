@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
 import { collection, doc, query, where, getDocs } from 'firebase/firestore';
 import type { Assessment, AssessmentQuestion, AssessmentSession, AssessmentTemplate, ForcedChoice } from '@/lib/types';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -15,6 +15,39 @@ import { ArrowLeft, Loader2, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+
+// --- Guide Component ---
+function AssessmentGuide({
+  title,
+  children,
+  buttonText,
+  onConfirm,
+  isConfirming,
+}: {
+  title: string;
+  children: React.ReactNode;
+  buttonText: string;
+  onConfirm: () => void;
+  isConfirming: boolean;
+}) {
+  return (
+    <Card className="max-w-3xl mx-auto">
+      <CardHeader>
+        <CardTitle className="text-2xl">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="prose prose-sm max-w-none dark:prose-invert space-y-4">
+        {children}
+      </CardContent>
+      <CardFooter>
+        <Button onClick={onConfirm} disabled={isConfirming} size="lg" className="w-full sm:w-auto ml-auto">
+          {isConfirming && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {buttonText}
+        </Button>
+      </CardFooter>
+    </Card>
+  );
+}
+
 
 // Helper function to chunk an array into smaller arrays of a specified size.
 const chunkArray = <T,>(arr: T[], size: number): T[][] =>
@@ -113,6 +146,9 @@ function TakeAssessmentPage() {
   const [questionsError, setQuestionsError] = useState<string | null>(null);
 
   const [currentPart, setCurrentPart] = useState<'likert' | 'forced-choice' | null>(null);
+  const [guideState, setGuideState] = useState<'loading' | 'part1' | 'part2' | 'assessment'>('loading');
+  const [isConfirmingGuide, setIsConfirmingGuide] = useState(false);
+  
   const reversedLikertOptions = useMemo(() => [...likertOptions].reverse(), []);
   
   // 1. Fetch session
@@ -216,6 +252,44 @@ function TakeAssessmentPage() {
     }
   }, [session, sortedQuestions]);
 
+    useEffect(() => {
+        if (sessionLoading || questionsLoading) {
+            setGuideState('loading');
+            return;
+        }
+        if (!session?.part1GuideAck) {
+            setGuideState('part1');
+        } else if (currentPart === 'forced-choice' && !session.part2GuideAck) {
+            setGuideState('part2');
+        } else {
+            setGuideState('assessment');
+        }
+    }, [session, sessionLoading, questionsLoading, currentPart]);
+
+    const handleConfirmPart1 = async () => {
+        setIsConfirmingGuide(true);
+        try {
+            await updateDocumentNonBlocking(sessionRef, { part1GuideAck: true });
+            setGuideState('assessment');
+        } catch (e) {
+            toast({ variant: 'destructive', title: 'Error', description: 'Gagal melanjutkan, silakan coba lagi.' });
+        } finally {
+            setIsConfirmingGuide(false);
+        }
+    };
+    
+    const handleConfirmPart2 = async () => {
+        setIsConfirmingGuide(true);
+        try {
+            await updateDocumentNonBlocking(sessionRef, { part2GuideAck: true });
+            setGuideState('assessment');
+        } catch (e) {
+            toast({ variant: 'destructive', title: 'Error', description: 'Gagal melanjutkan, silakan coba lagi.' });
+        } finally {
+            setIsConfirmingGuide(false);
+        }
+    };
+
   const questionsForCurrentPart = useMemo(() => {
       if (!sortedQuestions.length || !currentPart) return [];
       const partQuestions = sortedQuestions.filter(q => q.type === currentPart);
@@ -228,16 +302,12 @@ function TakeAssessmentPage() {
     const numericValue = typeof value === 'string' ? parseInt(value, 10) : value;
     const newAnswers = { ...answers, [questionId]: numericValue };
     setAnswers(newAnswers);
-    // Firestore update is removed from here
   };
 
   const handleNext = async () => {
-    // Non-blocking save on navigation
     updateDocumentNonBlocking(sessionRef, { answers: answers }).catch(error => {
         console.error("Autosave on next failed:", error);
-        toast({ variant: 'destructive', title: 'Gagal menyimpan jawaban sementara', description: 'Periksa koneksi Anda.' });
     });
-
     if (currentQuestionIndex < questionsForCurrentPart.length - 1) {
       setCurrentQuestionIndex(prev => prev + 1);
     }
@@ -269,7 +339,6 @@ function TakeAssessmentPage() {
   const handleFinish = async () => {
     setIsFinishing(true);
     try {
-        // Save the final answer state before submitting
         await updateDocumentNonBlocking(sessionRef, { answers: answers });
         
         const res = await fetch('/api/assessment/submit', {
@@ -292,8 +361,53 @@ function TakeAssessmentPage() {
     }
   };
   
-  if (isLoading) return <AssessmentSkeleton />;
+  if (isLoading || guideState === 'loading') return <AssessmentSkeleton />;
   
+   if (guideState === 'part1') {
+    return (
+      <AssessmentGuide
+        title="Panduan Mengerjakan Tes Kepribadian"
+        buttonText="Saya Mengerti, Mulai Bagian 1"
+        onConfirm={handleConfirmPart1}
+        isConfirming={isConfirmingGuide}
+      >
+        <ul>
+          <li>Tes ini terdiri dari 2 bagian.</li>
+          <li>Jawablah dengan jujur, pilih yang paling menggambarkan diri Anda saat ini.</li>
+          <li>Tidak ada jawaban benar atau salah.</li>
+          <li>Jangan terlalu lama berpikir; jawablah secara spontan.</li>
+          <li>Pastikan koneksi internet Anda stabil.</li>
+          <li><b>Aturan Pilihan:</b>
+            <ul className="list-disc pl-5">
+              <li>Jika formatnya "Setuju / Tidak Setuju": pilih salah satu tingkat persetujuan Anda.</li>
+              <li>Jika formatnya "Paling menggambarkan / Paling tidak menggambarkan": Anda <b>WAJIB</b> memilih satu pernyataan yang paling sesuai (V) dan satu pernyataan yang paling tidak sesuai (X).</li>
+            </ul>
+          </li>
+          <li>Anda dapat melanjutkan ke soal berikutnya setelah menjawab.</li>
+          <li>Progres Anda akan tersimpan setiap kali Anda menekan tombol "Lanjut".</li>
+        </ul>
+      </AssessmentGuide>
+    );
+  }
+
+  if (guideState === 'part2') {
+    return (
+      <AssessmentGuide
+        title="Panduan Mengerjakan Bagian 2"
+        buttonText="Saya Mengerti, Lanjutkan"
+        onConfirm={handleConfirmPart2}
+        isConfirming={isConfirmingGuide}
+      >
+        <ul>
+            <li>Di bagian ini, Anda akan disajikan 4 pernyataan dalam satu kelompok.</li>
+            <li>Pilih satu pernyataan yang <b>PALING SESUAI</b> dengan diri Anda (tombol 'V').</li>
+            <li>Pilih satu pernyataan yang <b>PALING TIDAK SESUAI</b> dengan diri Anda (tombol 'X').</li>
+            <li>Anda harus memilih satu 'V' dan satu 'X' untuk setiap kelompok pernyataan agar dapat melanjutkan.</li>
+        </ul>
+      </AssessmentGuide>
+    );
+  }
+
   if (questionsError) {
      return (
       <Card className="max-w-2xl mx-auto">
