@@ -23,7 +23,7 @@ const experienceSchema = z.object({
   id: z.string(),
   company: z.string().min(1, "Nama perusahaan harus diisi"),
   position: z.string().min(1, "Posisi harus diisi"),
-  jobType: z.enum(JOB_TYPES, { invalid_type_error: "Tipe pekerjaan harus dipilih" }),
+  jobType: z.enum(JOB_TYPES).nullable().refine(v => v !== null, { message: "Tipe pekerjaan harus dipilih" }),
   startDate: z.string().min(4, "Tahun mulai harus diisi"),
   endDate: z.string().optional(),
   isCurrent: z.boolean().default(false),
@@ -112,7 +112,7 @@ export function WorkExperienceForm({ initialData, onSaveSuccess, onBack }: WorkE
                                     <FormField control={form.control} name={`experience.${index}.jobType`} render={({ field }) => (
                                         <FormItem>
                                             <FormLabel>Tipe Pekerjaan <span className="text-destructive">*</span></FormLabel>
-                                            <Select onValueChange={field.onChange} value={field.value}>
+                                            <Select onValueChange={field.onChange} value={field.value ?? ''}>
                                                 <FormControl><SelectTrigger><SelectValue placeholder="Pilih tipe pekerjaan" /></SelectTrigger></FormControl>
                                                 <SelectContent>
                                                     {JOB_TYPES.map(type => (
@@ -143,7 +143,7 @@ export function WorkExperienceForm({ initialData, onSaveSuccess, onBack }: WorkE
                             ))}
                         </div>
                         
-                        <Button type="button" variant="outline" onClick={() => append({ id: crypto.randomUUID(), company: '', position: '', jobType: undefined, startDate: '', endDate: '', isCurrent: false, description: '', reasonForLeaving: '' })}>
+                        <Button type="button" variant="outline" onClick={() => append({ id: crypto.randomUUID(), company: '', position: '', jobType: null, startDate: '', endDate: '', isCurrent: false, description: '', reasonForLeaving: '' })}>
                             <PlusCircle className="mr-2 h-4 w-4" /> Tambah Pengalaman
                         </Button>
                         

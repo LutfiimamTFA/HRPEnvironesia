@@ -37,15 +37,15 @@ const personalDataSchema = z.object({
     email: z.string().email({ message: "Email tidak valid." }),
     phone: z.string().min(10, { message: "Nomor telepon tidak valid." }),
     eKtpNumber: z.string().length(16, { message: "Nomor e-KTP harus 16 digit." }),
-    gender: z.enum(['Laki-laki', 'Perempuan'], { invalid_type_error: "Jenis kelamin harus dipilih." }),
+    gender: z.enum(['Laki-laki', 'Perempuan'], { required_error: "Jenis kelamin harus dipilih." }),
     birthPlace: z.string().min(2, { message: "Tempat lahir harus diisi." }),
-    birthDate: z.date({ required_error: "Tanggal lahir harus diisi."}),
+    birthDate: z.date().nullable().refine(v => v !== null, { message: 'Tanggal lahir harus diisi.'}),
     addressKtp: addressObjectSchema,
     isDomicileSameAsKtp: z.boolean().default(false),
     addressDomicile: addressObjectSchema.deepPartial().optional(), // Make fields optional for conditional validation
     hasNpwp: z.boolean().default(false),
     npwpNumber: z.string().optional().or(z.literal('')),
-    willingToWfo: z.boolean({invalid_type_error: "Pilihan ini harus diisi."}),
+    willingToWfo: z.boolean().nullable().refine(v => v !== null, { message: 'Pilihan ini harus diisi.' }),
     linkedinUrl: z.string().url().optional().or(z.literal('')),
     websiteUrl: z.string().url().optional().or(z.literal('')),
 }).superRefine((data, ctx) => {
@@ -99,10 +99,10 @@ export function PersonalDataForm({ initialData, onSaveSuccess }: PersonalDataFor
         resolver: zodResolver(personalDataSchema),
         defaultValues: {
             ...initialData,
-            birthDate: initialData.birthDate instanceof Timestamp ? initialData.birthDate.toDate() : undefined,
+            birthDate: initialData.birthDate instanceof Timestamp ? initialData.birthDate.toDate() : null,
             addressKtp: getAddressObject(initialData.addressKtp),
             addressDomicile: getAddressObject(initialData.addressDomicile),
-            willingToWfo: initialData.willingToWfo ?? undefined,
+            willingToWfo: initialData.willingToWfo ?? null,
         },
     });
 
@@ -118,7 +118,7 @@ export function PersonalDataForm({ initialData, onSaveSuccess }: PersonalDataFor
         try {
             const dataToSave: Partial<Profile> = {
                 ...values,
-                birthDate: Timestamp.fromDate(values.birthDate),
+                birthDate: Timestamp.fromDate(values.birthDate!),
                 addressDomicile: values.isDomicileSameAsKtp ? values.addressKtp : (values.addressDomicile as Address),
                 profileStatus: 'draft',
                 profileStep: 2,
@@ -200,7 +200,7 @@ export function PersonalDataForm({ initialData, onSaveSuccess }: PersonalDataFor
                             <h3 className="text-xl font-semibold tracking-tight border-b pb-2">Informasi Tambahan</h3>
                             <FormField control={form.control} name="hasNpwp" render={({ field }) => (<FormItem className="flex flex-row items-center space-x-3 space-y-0"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><div className="space-y-1 leading-none"><FormLabel>Saya memiliki NPWP</FormLabel></div></FormItem>)} />
                             {hasNpwp && (<FormField control={form.control} name="npwpNumber" render={({ field }) => (<FormItem><FormLabel>Nomor NPWP <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} placeholder="Masukkan nomor NPWP Anda" /></FormControl><FormMessage /></FormItem>)} />)}
-                            <FormField control={form.control} name="willingToWfo" render={({ field }) => (<FormItem className="space-y-3"><FormLabel>Apakah Anda bersedia Work From Office (WFO)? <span className="text-destructive">*</span></FormLabel><FormControl><RadioGroup onValueChange={(value) => field.onChange(value === 'ya')} value={field.value === undefined ? '' : field.value ? 'ya' : 'tidak'} className="flex flex-col space-y-1"><FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="ya" /></FormControl><FormLabel className="font-normal">Ya</FormLabel></FormItem><FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="tidak" /></FormControl><FormLabel className="font-normal">Tidak</FormLabel></FormItem></RadioGroup></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="willingToWfo" render={({ field }) => (<FormItem className="space-y-3"><FormLabel>Apakah Anda bersedia Work From Office (WFO)? <span className="text-destructive">*</span></FormLabel><FormControl><RadioGroup onValueChange={(value) => field.onChange(value === 'ya')} value={field.value === null ? '' : (field.value ? 'ya' : 'tidak')} className="flex flex-col space-y-1"><FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="ya" /></FormControl><FormLabel className="font-normal">Ya</FormLabel></FormItem><FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="tidak" /></FormControl><FormLabel className="font-normal">Tidak</FormLabel></FormItem></RadioGroup></FormControl><FormMessage /></FormItem>)} />
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <FormField control={form.control} name="linkedinUrl" render={({ field }) => (<FormItem><FormLabel>Profil LinkedIn (Opsional)</FormLabel><FormControl><Input {...field} value={field.value ?? ''} placeholder="https://linkedin.com/in/..." /></FormControl><FormMessage /></FormItem>)} />
                                 <FormField control={form.control} name="websiteUrl" render={({ field }) => (<FormItem><FormLabel>Situs Web/Portofolio (Opsional)</FormLabel><FormControl><Input {...field} value={field.value ?? ''} placeholder="https://github.com/..." /></FormControl><FormMessage /></FormItem>)} />
