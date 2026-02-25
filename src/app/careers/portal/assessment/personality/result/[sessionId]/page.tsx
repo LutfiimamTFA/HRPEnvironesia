@@ -1,7 +1,9 @@
-
+// This file path is for the new non-locale structure.
+// The content is taken from the original [locale] equivalent.
 'use client';
 
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useDoc, useFirestore, useMemoFirebase } from '@/firebase';
 import { doc } from 'firebase/firestore';
 import type { AssessmentSession } from '@/lib/types';
@@ -9,7 +11,6 @@ import { Loader2, CheckCircle, ArrowRight, Atom } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import Link from 'next/link';
 import { Separator } from '@/components/ui/separator';
 
 function ResultSkeleton() {
@@ -147,5 +148,3 @@ export default function AssessmentResultPage() {
         </div>
     )
 }
-
-    

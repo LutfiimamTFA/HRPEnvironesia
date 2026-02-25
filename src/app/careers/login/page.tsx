@@ -1,10 +1,12 @@
+// This file path is for the new non-locale structure.
+// The content is taken from the original [locale] equivalent.
 'use client';
 
 import { CandidateLoginForm } from '@/components/auth/CandidateLoginForm';
 import { useAuth } from '@/providers/auth-provider';
 import { Loader2 } from 'lucide-react';
-import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, Link } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { useEffect, Suspense } from 'react';
 
 function CandidateLoginContent() {
@@ -16,7 +18,7 @@ function CandidateLoginContent() {
   useEffect(() => {
     if (!loading && userProfile && userProfile.role === 'kandidat') {
       if (redirect) {
-        router.replace(redirect);
+        router.replace(redirect as any);
       } else {
         router.replace('/careers/portal');
       }
@@ -49,6 +51,14 @@ function CandidateLoginContent() {
               className="font-medium text-primary underline-offset-4 hover:underline"
             >
               Daftar di sini
+            </Link>
+          </p>
+          <p className="mt-4">
+            <Link
+              href="/careers"
+              className="text-sm text-muted-foreground underline-offset-4 hover:text-primary"
+            >
+              &larr; Kembali ke Halaman Karir
             </Link>
           </p>
         </div>

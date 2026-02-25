@@ -1,10 +1,11 @@
+// This file path is for the new non-locale structure.
+// The content is taken from the original [locale] equivalent.
 'use client';
 
 import { CandidateRegisterForm } from '@/components/auth/CandidateRegisterForm';
 import { useAuth } from '@/providers/auth-provider';
 import { Loader2 } from 'lucide-react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, Link } from 'next/navigation';
 import { useEffect } from 'react';
 
 export default function CandidateRegisterPage() {
@@ -43,6 +44,14 @@ export default function CandidateRegisterPage() {
               className="font-medium text-primary underline-offset-4 hover:underline"
             >
               Login di sini
+            </Link>
+          </p>
+          <p className="mt-4">
+            <Link
+              href="/careers"
+              className="text-sm text-muted-foreground underline-offset-4 hover:text-primary"
+            >
+              &larr; Kembali ke Halaman Karir
             </Link>
           </p>
         </div>

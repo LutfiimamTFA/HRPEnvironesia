@@ -1,7 +1,9 @@
+// This file path is for the new non-locale structure.
+// The content is taken from the original [locale] equivalent.
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase, setDocumentNonBlocking } from '@/firebase';
 import { collection, query, where, limit, doc, getDoc, getDocs, serverTimestamp } from 'firebase/firestore';
@@ -15,8 +17,8 @@ import { useToast } from '@/hooks/use-toast';
 
 function JobApplySkeleton() {
     return (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="md:col-span-2">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+            <div className="lg:col-span-2">
                 <Card>
                     <CardHeader>
                         <Skeleton className="h-8 w-3/4" />
@@ -27,9 +29,17 @@ function JobApplySkeleton() {
                     </CardContent>
                 </Card>
             </div>
-            <div className="space-y-4">
-                <Skeleton className="h-48 w-full" />
-            </div>
+            <Card className="sticky top-20">
+                <CardHeader>
+                    <Skeleton className="h-6 w-3/4" />
+                    <Skeleton className="h-4 w-1/2" />
+                </CardHeader>
+                <CardContent className="space-y-3">
+                    <Skeleton className="h-5 w-full" />
+                    <Skeleton className="h-5 w-full" />
+                    <Skeleton className="h-5 w-full" />
+                </CardContent>
+            </Card>
         </div>
     );
 }

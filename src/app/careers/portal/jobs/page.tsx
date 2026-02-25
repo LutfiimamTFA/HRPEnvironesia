@@ -1,20 +1,24 @@
+// This file path is for the new non-locale structure.
+// The content is taken from the original [locale] equivalent.
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { ArrowRight, Briefcase, MapPin, Search, Trash2, Bookmark, Building } from 'lucide-react';
-import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, query, where } from 'firebase/firestore';
-import type { Job, Brand } from '@/lib/types';
+import { ArrowRight, Briefcase, MapPin, Search, Trash2, Bookmark, Building, Check } from 'lucide-react';
+import { useCollection, useFirestore, useMemoFirebase, setDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase';
+import { collection, query, where, doc, serverTimestamp, getDocs } from 'firebase/firestore';
+import type { Job, Brand, SavedJob } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useAuth } from '@/providers/auth-provider';
+import { useToast } from '@/hooks/use-toast';
 
-const JobCard = ({ job }: { job: Job }) => (
+const JobCard = ({ job, isSaved, onToggleSave }: { job: Job, isSaved: boolean, onToggleSave: (job: Job, isSaved: boolean) => void }) => (
     <Card className="transition-shadow duration-300 hover:shadow-lg w-full">
         <div className="p-6 flex flex-col sm:flex-row items-start gap-6">
             <div className="flex-grow">
@@ -45,9 +49,9 @@ const JobCard = ({ job }: { job: Job }) => (
                         <ArrowRight className="ml-2 h-4 w-4" />
                     </Link>
                 </Button>
-                <Button variant="outline" className="w-full justify-center sm:w-40">
-                    <Bookmark className="mr-2 h-4 w-4" />
-                    Simpan
+                <Button variant="outline" className="w-full justify-center sm:w-40" onClick={() => onToggleSave(job, isSaved)}>
+                    {isSaved ? <Check className="mr-2 h-4 w-4" /> : <Bookmark className="mr-2 h-4 w-4" />}
+                    {isSaved ? 'Tersimpan' : 'Simpan'}
                 </Button>
             </div>
         </div>
@@ -75,32 +79,67 @@ const JobCardSkeleton = () => (
 )
 
 export default function CandidateJobsPage() {
+  const { userProfile } = useAuth();
+  const { toast } = useToast();
   const firestore = useFirestore();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [companyFilter, setCompanyFilter] = useState('');
 
   const publishedJobsQuery = useMemoFirebase(
-    () => {
-      if (!firestore) return null;
-      return query(
-        collection(firestore, 'jobs'), 
-        where('publishStatus', '==', 'published')
-      )
-    }, 
+    () => query(collection(firestore, 'jobs'), where('publishStatus', '==', 'published')), 
     [firestore]
   );
+  const { data: jobs, isLoading: isLoadingJobs } = useCollection<Job>(publishedJobsQuery);
 
-  const { data: jobs, isLoading } = useCollection<Job>(publishedJobsQuery);
-
-  const brandsQuery = useMemoFirebase(
-    () => {
-      if (!firestore) return null;
-      return query(collection(firestore, 'brands'))
-    },
-    [firestore]
-  );
+  const brandsQuery = useMemoFirebase(() => query(collection(firestore, 'brands')), [firestore]);
   const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(brandsQuery);
+
+  const savedJobsQuery = useMemoFirebase(() => {
+    if (!userProfile) return null;
+    return collection(firestore, 'users', userProfile.uid, 'saved_jobs');
+  }, [userProfile, firestore]);
+  const { data: savedJobs, isLoading: isLoadingSavedJobs } = useCollection<SavedJob>(savedJobsQuery);
+  const savedJobIds = useMemo(() => new Set(savedJobs?.map(j => j.jobId) || []), [savedJobs]);
+
+  const [savedJobsDetails, setSavedJobsDetails] = useState<Job[]>([]);
+  const [isLoadingSavedDetails, setIsLoadingSavedDetails] = useState(false);
+  const savedJobIdsForQuery = useMemo(() => savedJobs?.map(j => j.jobId) || [], [savedJobs]);
+
+  const isLoading = isLoadingJobs || isLoadingBrands || isLoadingSavedJobs;
+
+  useEffect(() => {
+    const fetchSavedJobDetails = async () => {
+        if (savedJobIdsForQuery.length === 0) {
+            setSavedJobsDetails([]);
+            return;
+        }
+        setIsLoadingSavedDetails(true);
+        const chunks = [];
+        for (let i = 0; i < savedJobIdsForQuery.length; i += 30) {
+            chunks.push(savedJobIdsForQuery.slice(i, i + 30));
+        }
+
+        try {
+            const promises = chunks.map(chunk =>
+                getDocs(query(collection(firestore, 'jobs'), where('__name__', 'in', chunk)))
+            );
+            const snapshots = await Promise.all(promises);
+            const jobsData = snapshots.flatMap(snap => snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Job)));
+            setSavedJobsDetails(jobsData);
+        } catch (error) {
+            console.error("Error fetching saved job details:", error);
+            toast({ variant: 'destructive', title: 'Gagal memuat lowongan tersimpan.' });
+        } finally {
+            setIsLoadingSavedDetails(false);
+        }
+    };
+
+    if (!isLoadingSavedJobs) {
+        fetchSavedJobDetails();
+    }
+  }, [savedJobIdsForQuery, firestore, isLoadingSavedJobs, toast]);
+
 
   const sortedJobs = useMemo(() => {
     if (!jobs) return [];
@@ -123,6 +162,39 @@ export default function CandidateJobsPage() {
   const handleResetFilters = () => {
     setSearchTerm('');
     setCompanyFilter('');
+  };
+  
+  const handleToggleSave = async (job: Job, isCurrentlySaved: boolean) => {
+    if (!userProfile) {
+        toast({ variant: 'destructive', title: 'Anda harus login' });
+        return;
+    }
+
+    const savedJobRef = doc(firestore, 'users', userProfile.uid, 'saved_jobs', job.id!);
+
+    if (isCurrentlySaved) {
+        try {
+            await deleteDocumentNonBlocking(savedJobRef);
+            toast({ title: 'Lowongan Dihapus', description: `"${job.position}" telah dihapus dari daftar tersimpan.` });
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: 'Gagal menghapus', description: error.message });
+        }
+    } else {
+        const savedJobData: Omit<SavedJob, 'id'> = {
+            userId: userProfile.uid,
+            jobId: job.id!,
+            jobPosition: job.position,
+            jobSlug: job.slug,
+            brandName: job.brandName || '',
+            savedAt: serverTimestamp() as any,
+        };
+        try {
+            await setDocumentNonBlocking(savedJobRef, savedJobData, { merge: false });
+            toast({ title: 'Lowongan Disimpan', description: `"${job.position}" telah ditambahkan ke daftar tersimpan.` });
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: 'Gagal menyimpan', description: error.message });
+        }
+    }
   };
 
 
@@ -190,7 +262,7 @@ export default function CandidateJobsPage() {
                                 <JobCardSkeleton />
                             </>
                         ) : filteredJobs && filteredJobs.length > 0 ? (
-                            filteredJobs.map(job => <JobCard key={job.id} job={job} />)
+                            filteredJobs.map(job => <JobCard key={job.id} job={job} isSaved={savedJobIds.has(job.id!)} onToggleSave={handleToggleSave} />)
                         ) : (
                             <div className="py-12 text-center text-muted-foreground">
                                 <p>Tidak ada lowongan yang sesuai dengan kriteria Anda.</p>
@@ -199,8 +271,21 @@ export default function CandidateJobsPage() {
                     </div>
                 </TabsContent>
                  <TabsContent value="saved" className="mt-6">
-                     <div className="py-12 text-center text-muted-foreground">
-                        <p>Anda belum menyimpan lowongan apa pun.</p>
+                    <div className="space-y-4">
+                        {isLoadingSavedDetails ? (
+                            <>
+                                <JobCardSkeleton />
+                                <JobCardSkeleton />
+                            </>
+                        ) : savedJobsDetails.length > 0 ? (
+                            savedJobsDetails.map(job => (
+                                <JobCard key={job.id} job={job} isSaved={true} onToggleSave={handleToggleSave} />
+                            ))
+                        ) : (
+                            <div className="py-12 text-center text-muted-foreground">
+                                <p>Anda belum menyimpan lowongan apa pun.</p>
+                            </div>
+                        )}
                     </div>
                 </TabsContent>
             </Tabs>

@@ -1,7 +1,6 @@
 import { redirect } from 'next/navigation';
 
 export default function Home() {
-  // Redirect to the default locale's careers page.
-  // This is a server-side redirect, safe for build time.
-  redirect('/id/careers');
+  // Redirect to the careers page, which is the main entry point now.
+  redirect('/careers');
 }

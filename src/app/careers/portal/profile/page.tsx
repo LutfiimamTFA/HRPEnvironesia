@@ -1,3 +1,5 @@
+// This file path is for the new non-locale structure.
+// The content is taken from the original [locale] equivalent.
 'use client';
 
 import { Suspense, useEffect, useState } from 'react';
@@ -11,7 +13,7 @@ import { EducationForm } from '@/components/profile/EducationForm';
 import { WorkExperienceForm } from '@/components/profile/WorkExperienceForm';
 import { SkillsForm } from '@/components/profile/SkillsForm';
 import { SelfDescriptionForm } from '@/components/profile/SelfDescriptionForm';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { ProfileStepper } from '@/components/profile/ProfileStepper';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -32,6 +34,7 @@ function ProfileWizardContent() {
     const { userProfile: authProfile, firebaseUser, loading: authLoading, refreshUserProfile } = useAuth();
     const firestore = useFirestore();
     const router = useRouter();
+    const pathname = usePathname();
     const searchParams = useSearchParams();
     const { toast } = useToast();
     const [isEditing, setIsEditing] = useState(false);
@@ -47,50 +50,54 @@ function ProfileWizardContent() {
     const urlStep = parseInt(searchParams.get('step') || '1', 10);
 
     const [effectiveStep, setEffectiveStep] = useState(1);
+    const [optimisticProfileStep, setOptimisticProfileStep] = useState(1);
 
     useEffect(() => {
         if (isLoading) return;
 
         const profileStep = profile?.profileStep || 1;
+        const profileStepEffective = Math.max(profileStep, optimisticProfileStep);
         
         if (profile?.profileStatus === 'completed' && !searchParams.has('step')) {
             setEffectiveStep(steps.length + 1); // A step beyond the last to show completion screen
             return;
         }
 
-        const targetStep = urlStep > profileStep ? profileStep : urlStep;
+        const targetStep = urlStep > profileStepEffective ? profileStepEffective : urlStep;
         
         if (targetStep !== urlStep && profile?.profileStatus !== 'completed') {
-            router.replace(`/careers/portal/profile?step=${targetStep}`);
+            router.replace(`${pathname}?step=${targetStep}`);
         }
         
         setEffectiveStep(profile?.profileStatus === 'completed' ? urlStep : targetStep);
 
-    }, [urlStep, profile, isLoading, router, searchParams]);
+    }, [urlStep, profile, isLoading, router, searchParams, optimisticProfileStep, pathname]);
 
 
     const handleSaveSuccess = () => {
         refreshProfile(); // Refetch profile to get the latest step
         refreshUserProfile(); // Refetch user data in auth context
         const nextStep = effectiveStep + 1;
+        setOptimisticProfileStep(nextStep);
         if (nextStep <= steps.length) {
-            router.push(`/careers/portal/profile?step=${nextStep}`);
+            router.push(`${pathname}?step=${nextStep}`);
         } else {
-             router.push('/careers/portal/profile');
+             router.push(pathname);
         }
     };
 
     const handleBack = () => {
         const prevStep = effectiveStep - 1;
         if (prevStep >= 1) {
-            router.push(`/careers/portal/profile?step=${prevStep}`);
+            router.push(`${pathname}?step=${prevStep}`);
         }
     };
     
     const handleFinish = () => {
         refreshProfile();
         refreshUserProfile();
-        router.push('/careers/portal/profile');
+        setOptimisticProfileStep(steps.length + 1);
+        router.push(pathname);
     }
 
     const handleEdit = async () => {
@@ -107,7 +114,8 @@ function ProfileWizardContent() {
         const profileDocRef = doc(firestore, 'profiles', firebaseUser.uid);
         try {
             await setDocumentNonBlocking(profileDocRef, { profileStatus: 'draft' }, { merge: true });
-            router.push('/careers/portal/profile?step=1');
+            setOptimisticProfileStep(1);
+            router.push(`${pathname}?step=1`);
         } catch (error: any) {
             toast({
                 variant: 'destructive',
@@ -146,8 +154,8 @@ function ProfileWizardContent() {
                             {isEditing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Edit className="mr-2 h-4 w-4" />}
                             Edit Profil
                         </Button>
-                        <Button className="w-full" onClick={() => router.push('/careers/portal/jobs')}>
-                            Cari Lowongan
+                        <Button className="w-full" asChild>
+                            <Link href="/careers/portal/jobs">Cari Lowongan</Link>
                         </Button>
                     </div>
                 </CardContent>

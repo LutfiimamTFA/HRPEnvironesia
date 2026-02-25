@@ -1,12 +1,13 @@
+// This file path is for the new non-locale structure.
+// The content is taken from the original [locale] equivalent.
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter, usePathname } from 'next/navigation';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, query, where, limit } from 'firebase/firestore';
 import type { Job } from '@/lib/types';
 import Image from 'next/image';
-import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -17,6 +18,7 @@ import { ROLES_INTERNAL } from '@/lib/types';
 import { Separator } from '@/components/ui/separator';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/hooks/use-toast';
+import Link from 'next/link';
 
 function JobDetailSkeleton() {
     return (
@@ -49,9 +51,9 @@ function JobDetailSkeleton() {
 const OtherJobCard = ({ job }: { job: Job }) => (
     <Link href={`/careers/jobs/${job.slug}`} className="block transition-shadow hover:shadow-md rounded-lg">
         <Card className="flex items-center gap-4 p-3 h-full transition-colors hover:bg-muted/50">
-            <div className="relative h-16 w-24 flex-shrink-0">
+            <div className="relative h-16 w-16 flex-shrink-0">
                 <Image 
-                    src={job.coverImageUrl || 'https://picsum.photos/seed/job-fallback/200/140'}
+                    src={job.coverImageUrl || 'https://picsum.photos/seed/job-fallback/200/200'}
                     alt={job.position}
                     fill
                     className="rounded-md object-cover"
@@ -61,8 +63,12 @@ const OtherJobCard = ({ job }: { job: Job }) => (
             <div className="flex-grow overflow-hidden">
                 <p className="font-semibold leading-tight truncate">{job.position}</p>
                 <p className="text-sm text-muted-foreground truncate">{job.brandName}</p>
+                <div className="mt-2 flex items-center gap-x-4 gap-y-1 text-xs text-muted-foreground flex-wrap">
+                    <span className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" /> {job.location}</span>
+                    <span className="flex items-center gap-1.5 capitalize"><Briefcase className="h-3.5 w-3.5" /> {job.statusJob}</span>
+                </div>
             </div>
-            <ChevronRight className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
+            <ChevronRight className="h-5 w-5 flex-shrink-0 text-muted-foreground ml-auto" />
         </Card>
     </Link>
 );
@@ -108,31 +114,39 @@ export default function JobDetailPage() {
     const jobQuery = useMemoFirebase(() => {
         if (!slug) return null;
         const jobsCollection = collection(firestore, 'jobs');
-        
-        let q = query(jobsCollection, where('slug', '==', slug), limit(1));
-
-        if (!isInternalUser) {
-            q = query(q, where('publishStatus', '==', 'published'));
-        }
-        
-        return q;
-    }, [firestore, slug, isInternalUser]);
+        return query(jobsCollection, where('slug', '==', slug), limit(1));
+    }, [firestore, slug]);
 
 
     const { data: jobs, isLoading: isLoadingJob } = useCollection<Job>(jobQuery);
-    const job = jobs?.[0];
+    
+    const job = useMemo(() => {
+        if (!jobs || jobs.length === 0) {
+            return undefined;
+        }
+        const j = jobs[0];
+        if (isInternalUser || j.publishStatus === 'published') {
+            return j;
+        }
+        return undefined;
+    }, [jobs, isInternalUser]);
     
     const otherJobsQuery = useMemoFirebase(() => {
         if (!firestore || !job) return null;
         return query(
             collection(firestore, 'jobs'),
             where('publishStatus', '==', 'published'),
-            where('slug', '!=', job.slug),
-            limit(3)
+            limit(4) // Fetch one more than needed
         );
     }, [firestore, job]);
 
-    const { data: otherJobs } = useCollection<Job>(otherJobsQuery);
+    const { data: otherJobsData } = useCollection<Job>(otherJobsQuery);
+
+    const otherJobs = useMemo(() => {
+        if (!job || !otherJobsData) return [];
+        // Filter out the current job and take the first 3
+        return otherJobsData.filter(j => j.id !== job.id).slice(0, 3);
+    }, [job, otherJobsData]);
 
     const isLoading = authLoading || isLoadingJob;
 
@@ -206,20 +220,20 @@ export default function JobDetailPage() {
 
             <main className="bg-secondary/50">
                 <div className="container mx-auto max-w-6xl px-4 py-8 md:py-12">
-                    <div className="relative mb-8 h-[320px] w-full overflow-hidden rounded-2xl shadow-lg md:h-[420px]">
+                    <div className="relative mb-8 w-full overflow-hidden rounded-2xl shadow-lg aspect-video bg-muted">
                         <Image
                             src={job.coverImageUrl || 'https://picsum.photos/seed/default-hero/1200/600'}
                             alt=""
                             fill
-                            className="absolute inset-0 object-cover scale-110 blur-2xl opacity-60"
+                            className="object-cover scale-110 blur-lg opacity-50"
                             data-ai-hint="abstract office background"
-                            />
-                         <div className="absolute inset-0 bg-gradient-to-r from-black/45 via-black/10 to-transparent" />
+                        />
+                        <div className="absolute inset-0 bg-black/20" />
                         <Image
                             src={job.coverImageUrl || 'https://picsum.photos/seed/default-hero/1200/600'}
                             alt={`${job.position} cover image`}
                             fill
-                            className="object-cover"
+                            className="object-contain"
                             priority
                             data-ai-hint="office building team"
                         />

@@ -1,3 +1,5 @@
+// This file path is for the new non-locale structure.
+// The content is taken from the original [locale] equivalent.
 'use client';
 
 import { useAuth } from '@/providers/auth-provider';
@@ -29,7 +31,8 @@ export default function CandidateApplyLayout({
     
     if (ROLES_INTERNAL.includes(userProfile.role)) {
       // Logged in, but is an internal user. Redirect to admin portal.
-      router.replace('/admin');
+      // This path is outside the i18n segment, so we need to use window.location for a full redirect.
+      window.location.href = '/admin';
     }
 
   }, [userProfile, loading, router, pathname]);

@@ -1,3 +1,5 @@
+// This file path is for the new non-locale structure.
+// The content is taken from the original [locale] equivalent.
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
@@ -5,52 +7,59 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
-import type { JobApplication } from '@/lib/types';
+import type { JobApplication, JobApplicationStatus } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from "@/components/ui/button";
-import Link from "next/link";
-import { ArrowRight, Check, Briefcase, Building, FileSignature, FileUp, ClipboardCheck, Users, Award, XCircle, BrainCircuit, FileText } from "lucide-react";
+import Link from 'next/link';
+import { ArrowRight, Check, Briefcase, Building, FileSignature, FileUp, ClipboardCheck, Users, Award, XCircle, BrainCircuit, FileText, Search, Calendar, Link as LinkIcon } from "lucide-react";
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
+import { ORDERED_RECRUITMENT_STAGES } from '@/lib/types';
+import { statusDisplayLabels } from '@/components/recruitment/ApplicationStatusBadge';
 
-
-const allStatuses: JobApplication['status'][] = ['draft', 'submitted', 'tes_kepribadian', 'document_submission', 'verification', 'interview', 'hired', 'rejected'];
 const visibleSteps = [
-  { status: 'draft', label: 'Draf', icon: FileSignature },
   { status: 'submitted', label: 'Terkirim', icon: FileUp },
-  { status: 'tes_kepribadian', label: 'Tes Kepribadian', icon: BrainCircuit },
-  { status: 'document_submission', label: 'Pengumpulan Dokumen', icon: FileText },
-  { status: 'verification', label: 'Verifikasi', icon: ClipboardCheck },
+  { status: 'screening', label: 'Screening', icon: Search },
+  { status: 'tes_kepribadian', label: 'Tes', icon: BrainCircuit },
+  { status: 'document_submission', label: 'Dokumen', icon: FileText },
   { status: 'interview', label: 'Wawancara', icon: Users },
   { status: 'hired', label: 'Diterima', icon: Award },
 ];
 
 
-const statusLabels: Record<JobApplication['status'], string> = {
-  draft: 'Draf',
-  submitted: 'Lamaran Terkirim',
-  tes_kepribadian: 'Tahap Tes Kepribadian',
-  verification: 'Verifikasi HRD',
-  document_submission: 'Pengumpulan Dokumen',
-  interview: 'Tahap Wawancara',
-  rejected: 'Tidak Lolos',
-  hired: 'Diterima',
-};
-
 function ApplicationCard({ application }: { application: JobApplication }) {
   const [now, setNow] = useState(new Date());
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(new Date());
-    }, 60000); // Update every minute to check expiry
+    const timer = setInterval(() => setNow(new Date()), 60000); 
     return () => clearInterval(timer);
   }, []);
+
+  const scheduledInterview = useMemo(() => {
+    if (!application.interviews || application.interviews.length === 0) return null;
+    const now = new Date().getTime();
+    const scheduledInterviews = application.interviews.filter(i => i.status === 'scheduled');
+    if (scheduledInterviews.length === 0) return null;
+    
+    const upcoming = scheduledInterviews
+      .filter(i => i.startAt.toDate().getTime() >= now)
+      .sort((a, b) => a.startAt.toDate().getTime() - b.startAt.toDate().getTime());
+      
+    if (upcoming.length > 0) return upcoming[0];
+
+    const past = scheduledInterviews
+      .filter(i => i.startAt.toDate().getTime() < now)
+      .sort((a, b) => b.startAt.toDate().getTime() - a.startAt.toDate().getTime());
+
+    if (past.length > 0) return past[0];
+    
+    return null;
+  }, [application.interviews]);
   
-  const currentStatusIndex = allStatuses.indexOf(application.status);
+  const currentStatusIndex = ORDERED_RECRUITMENT_STAGES.indexOf(application.status);
   const isRejected = application.status === 'rejected';
   const isHired = application.status === 'hired';
 
@@ -61,10 +70,12 @@ function ApplicationCard({ application }: { application: JobApplication }) {
   
   const canContinue = application.status === 'draft';
   const canTakeTest = application.status === 'tes_kepribadian' && !isTestExpired;
+  const canSubmitDocuments = application.status === 'document_submission';
+  const isInterviewStage = application.status === 'interview';
   
   const timelineSteps = useMemo(() => {
     if (isRejected) {
-      const lastVisibleStepIndex = allStatuses.indexOf(application.status) -1;
+      const lastVisibleStepIndex = ORDERED_RECRUITMENT_STAGES.indexOf(application.status) -1;
       const stepsToShow = visibleSteps.filter((_, index) => index <= lastVisibleStepIndex);
       return [...stepsToShow, { status: 'rejected', label: 'Tidak Lolos', icon: XCircle }];
     }
@@ -82,7 +93,7 @@ function ApplicationCard({ application }: { application: JobApplication }) {
                 </CardDescription>
             </div>
              <Badge variant={isRejected ? 'destructive' : isHired ? 'default' : 'secondary'} className={cn("w-fit", isHired && "bg-emerald-600 hover:bg-emerald-600")}>
-                {statusLabels[application.status]}
+                {statusDisplayLabels[application.status]}
             </Badge>
         </div>
       </CardHeader>
@@ -90,11 +101,10 @@ function ApplicationCard({ application }: { application: JobApplication }) {
         <Separator />
         <div className="w-full overflow-x-auto pb-4">
             <div className={cn("flex items-center", isRejected ? "min-w-[800px]" : "min-w-[700px]")}>
-            {timelineSteps.map((step, index) => {
-              const stepStatusIndex = allStatuses.indexOf(step.status as JobApplication['status']);
+            {timelineSteps.map((step) => {
+              const stepStatusIndex = ORDERED_RECRUITMENT_STAGES.indexOf(step.status as JobApplicationStatus);
               const isCurrentRejectedStep = isRejected && step.status === 'rejected';
 
-              // A step is completed if its index is less than the current status index.
               const isCompleted = !isRejected && currentStatusIndex > stepStatusIndex;
               const isActive = !isRejected && currentStatusIndex === stepStatusIndex;
 
@@ -124,12 +134,10 @@ function ApplicationCard({ application }: { application: JobApplication }) {
                     )}>
                       {step.label}
                     </p>
-                    {isCompleted && !['draft', 'submitted'].includes(step.status) && (
-                      <p className="text-xs font-semibold text-green-600 mt-1">Lolos</p>
-                    )}
+                     {isCompleted && <p className="text-xs text-green-600 font-semibold mt-0.5">Lolos</p>}
                   </div>
 
-                  {index < timelineSteps.length - 1 && (
+                  {step.status !== 'hired' && step.status !== 'rejected' && (
                     <div className={cn(
                       "flex-1 h-1 transition-colors duration-300 -mx-1",
                       isCompleted ? 'bg-primary' : 'bg-border'
@@ -151,7 +159,7 @@ function ApplicationCard({ application }: { application: JobApplication }) {
         )}
 
       </CardContent>
-      <CardFooter className="bg-muted/50 p-4 border-t flex justify-between items-center min-h-[76px]">
+      <CardFooter className="bg-muted/50 p-4 border-t flex flex-col sm:flex-row justify-between items-start sm:items-center min-h-[76px] gap-4">
         <div className="flex-1">
           {application.status === 'tes_kepribadian' && deadline ? (
             isTestExpired ? (
@@ -166,24 +174,44 @@ function ApplicationCard({ application }: { application: JobApplication }) {
             <p className="text-sm text-muted-foreground">
               Batas Lamaran: {application.jobApplyDeadline ? format(application.jobApplyDeadline.toDate(), 'dd MMM yyyy') : '-'}
             </p>
+          ) : isInterviewStage && scheduledInterview ? (
+            <div>
+                <p className="text-xs text-muted-foreground font-semibold flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" /> JADWAL WAWANCARA</p>
+                <p className="text-sm font-semibold">{format(scheduledInterview.startAt.toDate(), 'eeee, dd MMM yyyy', { locale: id })}</p>
+                <p className="text-sm font-semibold">{format(scheduledInterview.startAt.toDate(), 'HH:mm', { locale: id })} - {format(scheduledInterview.endAt.toDate(), 'HH:mm', { locale: id })} WIB</p>
+            </div>
           ) : (
             <div></div> // Placeholder for alignment
           )}
         </div>
         
-        <div className="flex-shrink-0">
+        <div className="flex-shrink-0 w-full sm:w-auto">
           {canContinue && !jobIsExpired && (
-            <Button asChild size="sm">
+            <Button asChild size="sm" className="w-full">
               <Link href={`/careers/jobs/${application.jobSlug}/apply`}>
                 Lanjutkan Draf <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
           )}
           {canTakeTest && (
-            <Button asChild size="sm">
+            <Button asChild size="sm" className="w-full">
               <Link href={`/careers/portal/assessment/personality?applicationId=${application.id}`}>
                 Kerjakan Tes <BrainCircuit className="ml-2 h-4 w-4" />
               </Link>
+            </Button>
+          )}
+           {canSubmitDocuments && (
+            <Button asChild size="sm" className="w-full">
+              <Link href={`/careers/portal/documents`}>
+                Unggah Dokumen <FileText className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+          )}
+          {isInterviewStage && scheduledInterview && (
+             <Button asChild size="sm" className="w-full">
+                <a href={scheduledInterview.meetingLink} target="_blank" rel="noopener noreferrer">
+                    <LinkIcon className="mr-2 h-4 w-4" /> Buka Link Wawancara
+                </a>
             </Button>
           )}
           {canContinue && jobIsExpired && (
