@@ -112,7 +112,7 @@ export function EducationForm({ initialData, onSaveSuccess, onBack }: EducationF
                                     <FormField control={form.control} name={`education.${index}.institution`} render={({ field }) => (<FormItem><FormLabel>Nama Institusi <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} placeholder="Contoh: Universitas Gadjah Mada" value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <FormField control={form.control} name={`education.${index}.level`} render={({ field }) => (<FormItem><FormLabel>Jenjang <span className="text-destructive">*</span></FormLabel><Select onValueChange={field.onChange} value={field.value ?? undefined}><FormControl><SelectTrigger><SelectValue placeholder="Pilih jenjang" /></SelectTrigger></FormControl><SelectContent>{EDUCATION_LEVELS.map(level => (<SelectItem key={level} value={level}>{level}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)} />
+                                        <FormField control={form.control} name={`education.${index}.level`} render={({ field }) => (<FormItem><FormLabel>Jenjang <span className="text-destructive">*</span></FormLabel><Select onValueChange={field.onChange} value={field.value || ''}><FormControl><SelectTrigger><SelectValue placeholder="Pilih jenjang" /></SelectTrigger></FormControl><SelectContent>{EDUCATION_LEVELS.map(level => (<SelectItem key={level} value={level}>{level}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)} />
                                         <FormField control={form.control} name={`education.${index}.fieldOfStudy`} render={({ field }) => (<FormItem><FormLabel>Jurusan (Opsional)</FormLabel><FormControl><Input {...field} value={field.value ?? ''} placeholder="Contoh: Akuntansi" /></FormControl><FormMessage /></FormItem>)} />
                                     </div>
                                     <FormField control={form.control} name={`education.${index}.gpa`} render={({ field }) => (<FormItem><FormLabel>IPK / Nilai (Opsional)</FormLabel><FormControl><Input {...field} value={field.value ?? ''} placeholder="Contoh: 3.85" /></FormControl><FormMessage /></FormItem>)} />
@@ -120,7 +120,7 @@ export function EducationForm({ initialData, onSaveSuccess, onBack }: EducationF
                                         <FormField control={form.control} name={`education.${index}.startDate`} render={({ field }) => (<FormItem><FormLabel>Tahun Mulai <span className="text-destructive">*</span></FormLabel><FormControl><Input type="number" {...field} placeholder="YYYY" value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                                         <FormField control={form.control} name={`education.${index}.endDate`} render={({ field }) => (<FormItem><FormLabel>Tahun Selesai <span className="text-destructive">*</span></FormLabel><FormControl><Input type="number" {...field} value={field.value ?? ''} placeholder="YYYY" disabled={form.watch(`education.${index}.isCurrent`)} /></FormControl><FormMessage /></FormItem>)} />
                                     </div>
-                                    <FormField control={form.control} name={`education.${index}.isCurrent`} render={({ field }) => (<FormItem className="flex flex-row items-start space-x-3 space-y-0"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><div className="space-y-1 leading-none"><FormLabel>Saat ini sedang menempuh</FormLabel></div></FormItem>)} />
+                                    <FormField control={form.control} name={`education.${index}.isCurrent`} render={({ field }) => (<FormItem className="flex flex-row items-start space-x-3 space-y-0"><FormControl><Checkbox checked={!!field.value} onCheckedChange={field.onChange} /></FormControl><div className="space-y-1 leading-none"><FormLabel>Saat ini sedang menempuh</FormLabel></div></FormItem>)} />
                                     {index < fields.length - 1 && <Separator className="!mt-6" />}
                                 </div>
                             ))}
@@ -129,7 +129,7 @@ export function EducationForm({ initialData, onSaveSuccess, onBack }: EducationF
                         <Button
                             type="button"
                             variant="outline"
-                            onClick={() => append({ id: crypto.randomUUID(), institution: '', level: undefined, fieldOfStudy: '', gpa: '', startDate: '', endDate: '', isCurrent: false })}
+                            onClick={() => append({ id: crypto.randomUUID(), institution: '', level: 'S1', fieldOfStudy: '', gpa: '', startDate: '', endDate: '', isCurrent: false })}
                         >
                             <PlusCircle className="mr-2 h-4 w-4" /> Tambah Pendidikan
                         </Button>

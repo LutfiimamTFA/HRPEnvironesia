@@ -98,11 +98,22 @@ export function PersonalDataForm({ initialData, onSaveSuccess }: PersonalDataFor
     const form = useForm<FormValues>({
         resolver: zodResolver(personalDataSchema),
         defaultValues: {
-            ...initialData,
+            fullName: initialData.fullName || '',
+            nickname: initialData.nickname || '',
+            email: initialData.email || '',
+            phone: initialData.phone || '',
+            eKtpNumber: initialData.eKtpNumber || '',
+            gender: initialData.gender,
+            birthPlace: initialData.birthPlace || '',
             birthDate: initialData.birthDate instanceof Timestamp ? initialData.birthDate.toDate() : undefined,
             addressKtp: getAddressObject(initialData.addressKtp),
+            isDomicileSameAsKtp: initialData.isDomicileSameAsKtp || false,
             addressDomicile: getAddressObject(initialData.addressDomicile),
-            willingToWfo: initialData.willingToWfo ?? undefined,
+            hasNpwp: initialData.hasNpwp || false,
+            npwpNumber: initialData.npwpNumber || '',
+            willingToWfo: initialData.willingToWfo,
+            linkedinUrl: initialData.linkedinUrl || '',
+            websiteUrl: initialData.websiteUrl || '',
         },
     });
 
@@ -161,7 +172,7 @@ export function PersonalDataForm({ initialData, onSaveSuccess }: PersonalDataFor
                             </div>
                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <FormField control={form.control} name="birthPlace" render={({ field }) => (<FormItem><FormLabel>Tempat Lahir <span className="text-destructive">*</span></FormLabel><FormControl><Input placeholder="Kota lahir" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
-                                <FormField control={form.control} name="birthDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>Tanggal Lahir <span className="text-destructive">*</span></FormLabel><FormControl><GoogleDatePicker mode="dob" value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>)} />
+                                <FormField control={form.control} name="birthDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>Tanggal Lahir <span className="text-destructive">*</span></FormLabel><FormControl><GoogleDatePicker mode="dob" value={field.value || null} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>)} />
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <FormField control={form.control} name="eKtpNumber" render={({ field }) => (<FormItem><FormLabel>Nomor e-KTP <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} maxLength={16} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
@@ -181,7 +192,7 @@ export function PersonalDataForm({ initialData, onSaveSuccess }: PersonalDataFor
                                     <FormField control={form.control} name="addressKtp.postalCode" render={({ field }) => (<FormItem><FormLabel>Kode Pos <span className="text-destructive">*</span></FormLabel><FormControl><Input placeholder="55281" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                                 </div>
                             </div>
-                            <FormField control={form.control} name="isDomicileSameAsKtp" render={({ field }) => (<FormItem className="flex flex-row items-center space-x-3 space-y-0"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><div className="space-y-1 leading-none"><FormLabel>Alamat domisili sama dengan alamat KTP</FormLabel></div></FormItem>)} />
+                            <FormField control={form.control} name="isDomicileSameAsKtp" render={({ field }) => (<FormItem className="flex flex-row items-center space-x-3 space-y-0"><FormControl><Checkbox checked={!!field.value} onCheckedChange={field.onChange} /></FormControl><div className="space-y-1 leading-none"><FormLabel>Alamat domisili sama dengan alamat KTP</FormLabel></div></FormItem>)} />
                             {!isDomicileSameAsKtp && (
                                 <div className="space-y-4">
                                     <FormLabel>Alamat Domisili <span className="text-destructive">*</span></FormLabel>
@@ -198,9 +209,9 @@ export function PersonalDataForm({ initialData, onSaveSuccess }: PersonalDataFor
                         </div>
                         <div className="space-y-6">
                             <h3 className="text-xl font-semibold tracking-tight border-b pb-2">Informasi Tambahan</h3>
-                            <FormField control={form.control} name="hasNpwp" render={({ field }) => (<FormItem className="flex flex-row items-center space-x-3 space-y-0"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><div className="space-y-1 leading-none"><FormLabel>Saya memiliki NPWP</FormLabel></div></FormItem>)} />
+                            <FormField control={form.control} name="hasNpwp" render={({ field }) => (<FormItem className="flex flex-row items-center space-x-3 space-y-0"><FormControl><Checkbox checked={!!field.value} onCheckedChange={field.onChange} /></FormControl><div className="space-y-1 leading-none"><FormLabel>Saya memiliki NPWP</FormLabel></div></FormItem>)} />
                             {hasNpwp && (<FormField control={form.control} name="npwpNumber" render={({ field }) => (<FormItem><FormLabel>Nomor NPWP <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} placeholder="Masukkan nomor NPWP Anda" /></FormControl><FormMessage /></FormItem>)} />)}
-                            <FormField control={form.control} name="willingToWfo" render={({ field }) => (<FormItem className="space-y-3"><FormLabel>Apakah Anda bersedia Work From Office (WFO)? <span className="text-destructive">*</span></FormLabel><FormControl><RadioGroup onValueChange={(value) => field.onChange(value === 'ya')} value={field.value === undefined ? '' : (field.value ? 'ya' : 'tidak')} className="flex flex-col space-y-1"><FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="ya" /></FormControl><FormLabel className="font-normal">Ya</FormLabel></FormItem><FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="tidak" /></FormControl><FormLabel className="font-normal">Tidak</FormLabel></FormItem></RadioGroup></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="willingToWfo" render={({ field }) => (<FormItem className="space-y-3"><FormLabel>Apakah Anda bersedia Work From Office (WFO)? <span className="text-destructive">*</span></FormLabel><FormControl><RadioGroup onValueChange={(value) => field.onChange(value === 'ya')} value={field.value ? 'ya' : (field.value === false ? 'tidak' : '')} className="flex flex-col space-y-1"><FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="ya" /></FormControl><FormLabel className="font-normal">Ya</FormLabel></FormItem><FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="tidak" /></FormControl><FormLabel className="font-normal">Tidak</FormLabel></FormItem></RadioGroup></FormControl><FormMessage /></FormItem>)} />
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <FormField control={form.control} name="linkedinUrl" render={({ field }) => (<FormItem><FormLabel>Profil LinkedIn (Opsional)</FormLabel><FormControl><Input {...field} value={field.value ?? ''} placeholder="https://linkedin.com/in/..." /></FormControl><FormMessage /></FormItem>)} />
                                 <FormField control={form.control} name="websiteUrl" render={({ field }) => (<FormItem><FormLabel>Situs Web/Portofolio (Opsional)</FormLabel><FormControl><Input {...field} value={field.value ?? ''} placeholder="https://github.com/..." /></FormControl><FormMessage /></FormItem>)} />

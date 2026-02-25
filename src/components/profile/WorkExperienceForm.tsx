@@ -112,7 +112,7 @@ export function WorkExperienceForm({ initialData, onSaveSuccess, onBack }: WorkE
                                     <FormField control={form.control} name={`experience.${index}.jobType`} render={({ field }) => (
                                         <FormItem>
                                             <FormLabel>Tipe Pekerjaan <span className="text-destructive">*</span></FormLabel>
-                                            <Select onValueChange={field.onChange} value={field.value ?? undefined}>
+                                            <Select onValueChange={field.onChange} value={field.value || ''}>
                                                 <FormControl><SelectTrigger><SelectValue placeholder="Pilih tipe pekerjaan" /></SelectTrigger></FormControl>
                                                 <SelectContent>
                                                     {JOB_TYPES.map(type => (
@@ -127,7 +127,7 @@ export function WorkExperienceForm({ initialData, onSaveSuccess, onBack }: WorkE
                                         <FormField control={form.control} name={`experience.${index}.startDate`} render={({ field }) => (<FormItem><FormLabel>Tahun Mulai <span className="text-destructive">*</span></FormLabel><FormControl><Input type="number" {...field} placeholder="YYYY" value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                                         <FormField control={form.control} name={`experience.${index}.endDate`} render={({ field }) => (<FormItem><FormLabel>Tahun Selesai <span className="text-destructive">*</span></FormLabel><FormControl><Input type="number" {...field} value={field.value ?? ''} placeholder="YYYY" disabled={form.watch(`experience.${index}.isCurrent`)} /></FormControl><FormMessage /></FormItem>)} />
                                     </div>
-                                    <FormField control={form.control} name={`experience.${index}.isCurrent`} render={({ field }) => (<FormItem className="flex flex-row items-start space-x-3 space-y-0"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><div className="space-y-1 leading-none"><FormLabel>Saat ini masih bekerja di sini</FormLabel></div></FormItem>)} />
+                                    <FormField control={form.control} name={`experience.${index}.isCurrent`} render={({ field }) => (<FormItem className="flex flex-row items-start space-x-3 space-y-0"><FormControl><Checkbox checked={!!field.value} onCheckedChange={field.onChange} /></FormControl><div className="space-y-1 leading-none"><FormLabel>Saat ini masih bekerja di sini</FormLabel></div></FormItem>)} />
                                     <FormField control={form.control} name={`experience.${index}.description`} render={({ field }) => (<FormItem><FormLabel>Peran dan Tanggung Jawab (Opsional)</FormLabel><FormControl><Textarea {...field} value={field.value ?? ''} placeholder="Jelaskan tanggung jawab Anda..." /></FormControl><FormMessage /></FormItem>)} />
                                     {!form.watch(`experience.${index}.isCurrent`) && (
                                         <FormField control={form.control} name={`experience.${index}.reasonForLeaving`} render={({ field }) => (
@@ -143,7 +143,7 @@ export function WorkExperienceForm({ initialData, onSaveSuccess, onBack }: WorkE
                             ))}
                         </div>
                         
-                        <Button type="button" variant="outline" onClick={() => append({ id: crypto.randomUUID(), company: '', position: '', jobType: undefined, startDate: '', endDate: '', isCurrent: false, description: '', reasonForLeaving: '' })}>
+                        <Button type="button" variant="outline" onClick={() => append({ id: crypto.randomUUID(), company: '', position: '', jobType: 'pkwt', startDate: '', endDate: '', isCurrent: false, description: '', reasonForLeaving: '' })}>
                             <PlusCircle className="mr-2 h-4 w-4" /> Tambah Pengalaman
                         </Button>
                         
