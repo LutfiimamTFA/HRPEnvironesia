@@ -45,7 +45,7 @@ const personalDataSchema = z.object({
     addressDomicile: addressObjectSchema.deepPartial().optional(), // Make fields optional for conditional validation
     hasNpwp: z.boolean().default(false),
     npwpNumber: z.string().optional().or(z.literal('')),
-    willingToWfo: z.boolean({ required_error: 'Pilihan ini harus diisi.' }),
+    willingToWfo: z.enum(['ya', 'tidak'], { required_error: 'Pilihan ini harus diisi.' }),
     linkedinUrl: z.string().url().optional().or(z.literal('')),
     websiteUrl: z.string().url().optional().or(z.literal('')),
 }).superRefine((data, ctx) => {
@@ -111,7 +111,7 @@ export function PersonalDataForm({ initialData, onSaveSuccess }: PersonalDataFor
             addressDomicile: getAddressObject(initialData.addressDomicile),
             hasNpwp: initialData.hasNpwp || false,
             npwpNumber: initialData.npwpNumber || '',
-            willingToWfo: initialData.willingToWfo,
+            willingToWfo: initialData.willingToWfo === true ? 'ya' : initialData.willingToWfo === false ? 'tidak' : undefined,
             linkedinUrl: initialData.linkedinUrl || '',
             websiteUrl: initialData.websiteUrl || '',
         },
@@ -127,8 +127,10 @@ export function PersonalDataForm({ initialData, onSaveSuccess }: PersonalDataFor
         }
         setIsSaving(true);
         try {
+            const { willingToWfo, ...restOfValues } = values;
             const dataToSave: Partial<Profile> = {
-                ...values,
+                ...restOfValues,
+                willingToWfo: willingToWfo === 'ya',
                 birthDate: Timestamp.fromDate(values.birthDate!),
                 addressDomicile: values.isDomicileSameAsKtp ? values.addressKtp : (values.addressDomicile as Address),
                 profileStatus: 'draft',
@@ -211,7 +213,36 @@ export function PersonalDataForm({ initialData, onSaveSuccess }: PersonalDataFor
                             <h3 className="text-xl font-semibold tracking-tight border-b pb-2">Informasi Tambahan</h3>
                             <FormField control={form.control} name="hasNpwp" render={({ field }) => (<FormItem className="flex flex-row items-center space-x-3 space-y-0"><FormControl><Checkbox checked={!!field.value} onCheckedChange={field.onChange} /></FormControl><div className="space-y-1 leading-none"><FormLabel>Saya memiliki NPWP</FormLabel></div></FormItem>)} />
                             {hasNpwp && (<FormField control={form.control} name="npwpNumber" render={({ field }) => (<FormItem><FormLabel>Nomor NPWP <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} placeholder="Masukkan nomor NPWP Anda" /></FormControl><FormMessage /></FormItem>)} />)}
-                            <FormField control={form.control} name="willingToWfo" render={({ field }) => (<FormItem className="space-y-3"><FormLabel>Apakah Anda bersedia Work From Office (WFO)? <span className="text-destructive">*</span></FormLabel><FormControl><RadioGroup onValueChange={(value) => field.onChange(value === 'ya')} value={field.value ? 'ya' : (field.value === false ? 'tidak' : '')} className="flex flex-col space-y-1"><FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="ya" /></FormControl><FormLabel className="font-normal">Ya</FormLabel></FormItem><FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="tidak" /></FormControl><FormLabel className="font-normal">Tidak</FormLabel></FormItem></RadioGroup></FormControl><FormMessage /></FormItem>)} />
+                            <FormField
+                                control={form.control}
+                                name="willingToWfo"
+                                render={({ field }) => (
+                                <FormItem className="space-y-3">
+                                    <FormLabel>Apakah Anda bersedia Work From Office (WFO)? <span className="text-destructive">*</span></FormLabel>
+                                    <FormControl>
+                                    <RadioGroup
+                                        onValueChange={field.onChange}
+                                        value={field.value}
+                                        className="flex flex-col space-y-1"
+                                    >
+                                        <FormItem className="flex items-center space-x-3 space-y-0">
+                                        <FormControl>
+                                            <RadioGroupItem value="ya" />
+                                        </FormControl>
+                                        <FormLabel className="font-normal">Ya</FormLabel>
+                                        </FormItem>
+                                        <FormItem className="flex items-center space-x-3 space-y-0">
+                                        <FormControl>
+                                            <RadioGroupItem value="tidak" />
+                                        </FormControl>
+                                        <FormLabel className="font-normal">Tidak</FormLabel>
+                                        </FormItem>
+                                    </RadioGroup>
+                                    </FormControl>
+                                    <FormMessage />
+                                </FormItem>
+                                )}
+                            />
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <FormField control={form.control} name="linkedinUrl" render={({ field }) => (<FormItem><FormLabel>Profil LinkedIn (Opsional)</FormLabel><FormControl><Input {...field} value={field.value ?? ''} placeholder="https://linkedin.com/in/..." /></FormControl><FormMessage /></FormItem>)} />
                                 <FormField control={form.control} name="websiteUrl" render={({ field }) => (<FormItem><FormLabel>Situs Web/Portofolio (Opsional)</FormLabel><FormControl><Input {...field} value={field.value ?? ''} placeholder="https://github.com/..." /></FormControl><FormMessage /></FormItem>)} />
