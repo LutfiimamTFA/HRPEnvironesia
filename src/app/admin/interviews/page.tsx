@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useMemo, useState } from 'react';
@@ -44,8 +45,10 @@ function InterviewCard({ interview, allUsers, allBrands, currentUser, onMutate }
                 <CardHeader>
                     <div className="flex justify-between items-start gap-4">
                         <div>
-                            <CardTitle className="text-lg">{interview.application.candidateName}</CardTitle>
-                            <CardDescription>{interview.application.jobPosition}</CardDescription>
+                            <CardTitle className="text-lg">{interview.application.jobPosition}</CardTitle>
+                            <CardDescription>
+                                {interview.application.candidateName} • {interview.application.brandName}
+                            </CardDescription>
                         </div>
                         {isUpcoming || isOngoing ? (
                             <Badge>Akan Datang</Badge>
