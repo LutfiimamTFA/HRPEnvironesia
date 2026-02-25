@@ -11,8 +11,7 @@ import { EducationForm } from '@/components/profile/EducationForm';
 import { WorkExperienceForm } from '@/components/profile/WorkExperienceForm';
 import { SkillsForm } from '@/components/profile/SkillsForm';
 import { SelfDescriptionForm } from '@/components/profile/SelfDescriptionForm';
-import { useRouter, usePathname } from '@/navigation';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { ProfileStepper } from '@/components/profile/ProfileStepper';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -33,8 +32,8 @@ function ProfileWizardContent() {
     const { userProfile: authProfile, firebaseUser, loading: authLoading, refreshUserProfile } = useAuth();
     const firestore = useFirestore();
     const router = useRouter();
-    const searchParams = useSearchParams();
     const pathname = usePathname();
+    const searchParams = useSearchParams();
     const { toast } = useToast();
     const [isEditing, setIsEditing] = useState(false);
 
@@ -153,7 +152,7 @@ function ProfileWizardContent() {
                             {isEditing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Edit className="mr-2 h-4 w-4" />}
                             Edit Profil
                         </Button>
-                        <Button className="w-full" onClick={() => router.push('/careers/portal/jobs')}>
+                        <Button className="w-full" onClick={() => router.push(pathname.replace('/profile', '/jobs'))}>
                             Cari Lowongan
                         </Button>
                     </div>
