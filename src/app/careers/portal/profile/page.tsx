@@ -246,7 +246,7 @@ function ProfileWizardContent() {
                     initialData={{
                         selfDescription: initialProfileData.selfDescription,
                         salaryExpectation: initialProfileData.salaryExpectation,
-                        motivation: initialData.motivation,
+                        motivation: initialProfileData.motivation,
                     }}
                     onFinish={handleFinish}
                     onBack={handleBack}
