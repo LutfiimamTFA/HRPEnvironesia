@@ -211,6 +211,7 @@ export async function POST(req: NextRequest) {
     // --- 7. Update Session Document ---
     await sessionRef.update({
         status: 'submitted',
+        hrdDecision: 'pending',
         scores,
         normalized,
         result: resultPayload,
@@ -227,8 +228,8 @@ export async function POST(req: NextRequest) {
       // Check if application is in the personality test stage
       if (appDoc.exists && appDoc.data()?.status === 'tes_kepribadian') {
         await appRef.update({
-          status: 'document_submission',
-          updatedAt: Timestamp.now(),
+          status: 'verification',
+          updatedAt: serverTimestamp(),
         });
       }
     }

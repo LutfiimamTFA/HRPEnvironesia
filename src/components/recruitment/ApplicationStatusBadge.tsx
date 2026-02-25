@@ -1,3 +1,4 @@
+
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { JobApplicationStatus } from "@/lib/types";
@@ -8,7 +9,7 @@ export const statusDisplayLabels: Record<JobApplicationStatus, string> = {
     submitted: 'Lamaran Diterima',
     screening: 'Screening',
     tes_kepribadian: 'Tes Kepribadian',
-    verification: 'Verifikasi Dokumen',
+    verification: 'Verifikasi HRD',
     document_submission: 'Dokumen',
     interview: 'Wawancara',
     hired: 'Diterima Kerja',
