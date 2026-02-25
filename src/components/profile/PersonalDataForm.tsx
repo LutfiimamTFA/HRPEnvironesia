@@ -1,6 +1,6 @@
 'use client';
 
-import { useForm } from 'react-hook-form';
+import { useForm, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -46,8 +46,24 @@ const personalDataSchema = z.object({
     hasNpwp: z.boolean().default(false),
     npwpNumber: z.string().optional().or(z.literal('')),
     willingToWfo: z.enum(['ya', 'tidak'], { required_error: 'Pilihan ini harus diisi.' }),
-    linkedinUrl: z.string().url().optional().or(z.literal('')),
-    websiteUrl: z.string().url().optional().or(z.literal('')),
+    linkedinUrl: z.preprocess(
+      (v) => {
+        if (typeof v !== "string") return v;
+        const s = v.trim();
+        if (!s || s.includes("...")) return "";
+        return s;
+      },
+      z.string().url({ message: "URL LinkedIn tidak valid." }).optional().or(z.literal(""))
+    ),
+    websiteUrl: z.preprocess(
+      (v) => {
+        if (typeof v !== "string") return v;
+        const s = v.trim();
+        if (!s || s.includes("...")) return "";
+        return s;
+      },
+      z.string().url({ message: "URL Website/Portfolio tidak valid." }).optional().or(z.literal(""))
+    ),
 }).superRefine((data, ctx) => {
     if (!data.isDomicileSameAsKtp) {
         const domicileResult = addressObjectSchema.safeParse(data.addressDomicile);
@@ -120,6 +136,19 @@ export function PersonalDataForm({ initialData, onSaveSuccess }: PersonalDataFor
     const isDomicileSameAsKtp = form.watch('isDomicileSameAsKtp');
     const hasNpwp = form.watch('hasNpwp');
 
+    const onInvalid = (errors: FieldErrors<FormValues>) => {
+        const firstErrorKey = Object.keys(errors)[0] as keyof FormValues | undefined;
+        if (firstErrorKey) {
+            const readableFieldName = firstErrorKey.replace(/([A-Z])/g, ' $1').replace(/\./g, ' -> ').replace(/^./, str => str.toUpperCase());
+            toast({
+                variant: 'destructive',
+                title: 'Validasi Gagal',
+                description: `Harap periksa kembali isian Anda. Kolom "${readableFieldName}" sepertinya belum valid.`,
+            });
+            form.setFocus(firstErrorKey as any);
+        }
+    };
+
     const handleSubmit = async (values: FormValues) => {
         if (!firebaseUser) {
             toast({ variant: 'destructive', title: 'Error', description: 'You must be logged in to save your profile.' });
@@ -144,7 +173,7 @@ export function PersonalDataForm({ initialData, onSaveSuccess }: PersonalDataFor
             toast({ title: 'Data Pribadi Disimpan', description: 'Melanjutkan ke langkah berikutnya...' });
             onSaveSuccess();
         } catch (error: any) {
-            toast({ variant: 'destructive', title: 'Gagal Menyimpan', description: error.message });
+            toast({ variant: 'destructive', title: "Gagal Menyimpan", description: error.message });
         } finally {
             setIsSaving(false);
         }
@@ -161,7 +190,7 @@ export function PersonalDataForm({ initialData, onSaveSuccess }: PersonalDataFor
             </CardHeader>
             <CardContent>
                 <Form {...form}>
-                    <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8">
+                    <form onSubmit={form.handleSubmit(handleSubmit, onInvalid)} className="space-y-8">
                         <div className="space-y-6">
                             <h3 className="text-xl font-semibold tracking-tight border-b pb-2">Data Diri</h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
