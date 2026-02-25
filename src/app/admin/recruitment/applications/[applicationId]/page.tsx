@@ -54,31 +54,43 @@ function InterviewManagement({ application, onUpdate, allUsers, allBrands }: { a
     setManagePanelistsOpen(true);
   };
   
-  const handlePublishLink = async (interviewToPublish: ApplicationInterview) => {
-      if (!application || !userProfile) return;
-      setIsSubmitting(true);
+  const handleTogglePublish = async (interviewToToggle: ApplicationInterview) => {
+    if (!application || !userProfile) return;
 
-      const newInterviews = (application.interviews || []).map(iv => {
-          if (iv.interviewId === interviewToPublish.interviewId) {
-              return {
-                  ...iv,
-                  meetingPublished: true,
-                  meetingPublishedAt: Timestamp.now(),
-                  meetingPublishedBy: userProfile.uid,
-              };
-          }
-          return iv;
-      });
+    const isCurrentlyPublished = !!interviewToToggle.meetingPublished;
 
-      try {
-          await updateDoc(doc(firestore, 'applications', application.id!), { interviews: newInterviews });
-          toast({ title: 'Link Published', description: 'Panelis sekarang dapat melihat link meeting.' });
-          onUpdate();
-      } catch (e: any) {
-          toast({ variant: 'destructive', title: 'Gagal Mempublish Link', description: e.message });
-      } finally {
-          setIsSubmitting(false);
-      }
+    // Prevent publishing if the link is missing
+    if (!isCurrentlyPublished && !interviewToToggle.meetingLink) {
+        toast({ variant: 'destructive', title: 'Link Kosong', description: 'Tambahkan link meeting sebelum mempublikasikannya.' });
+        return;
+    }
+    
+    setIsSubmitting(true);
+
+    const newInterviews = (application.interviews || []).map(iv => {
+        if (iv.interviewId === interviewToToggle.interviewId) {
+            return {
+                ...iv,
+                meetingPublished: !isCurrentlyPublished,
+                meetingPublishedAt: !isCurrentlyPublished ? Timestamp.now() : null,
+                meetingPublishedBy: !isCurrentlyPublished ? userProfile.uid : null,
+            };
+        }
+        return iv;
+    });
+
+    try {
+        await updateDoc(doc(firestore, 'applications', application.id!), { interviews: newInterviews });
+        toast({ 
+            title: isCurrentlyPublished ? 'Link Ditarik Kembali' : 'Link Dipublish',
+            description: isCurrentlyPublished ? 'Panelis tidak dapat lagi melihat link meeting.' : 'Panelis sekarang dapat melihat link meeting.' 
+        });
+        onUpdate();
+    } catch (e: any) {
+        toast({ variant: 'destructive', title: 'Gagal Memperbarui Status', description: e.message });
+    } finally {
+        setIsSubmitting(false);
+    }
   };
 
   const handleConfirmSchedule = async (data: ScheduleInterviewData) => {
@@ -90,9 +102,6 @@ function InterviewManagement({ application, onUpdate, allUsers, allBrands }: { a
     const newTimeline = [...(application.timeline || [])];
     
     try {
-        const panelistIds = data.panelists.map(p => p.value);
-        const panelistNames = data.panelists.map(p => p.label);
-
         if (activeInterview && !activeInterview.rescheduleRequest) { // Pure Edit
             const index = newInterviews.findIndex(iv => iv.interviewId === activeInterview.interviewId);
             if (index !== -1) {
@@ -100,8 +109,6 @@ function InterviewManagement({ application, onUpdate, allUsers, allBrands }: { a
                     ...newInterviews[index],
                     startAt: Timestamp.fromDate(data.dateTime),
                     endAt: Timestamp.fromDate(add(data.dateTime, { minutes: data.duration })),
-                    panelistIds: panelistIds,
-                    panelistNames: panelistNames,
                     meetingLink: data.meetingLink,
                     notes: data.notes,
                 };
@@ -112,14 +119,7 @@ function InterviewManagement({ application, onUpdate, allUsers, allBrands }: { a
                     meta: { note: `Jadwal wawancara diperbarui oleh HRD.` },
                 });
 
-                const allPanelistIds = new Set<string>();
-                newInterviews.forEach(iv => {
-                    if (iv.status === 'scheduled') {
-                        iv.panelistIds.forEach(id => allPanelistIds.add(id));
-                    }
-                });
-
-                await updateDoc(doc(firestore, 'applications', application.id!), { interviews: newInterviews, timeline: newTimeline, allPanelistIds: Array.from(allPanelistIds) });
+                await updateDoc(doc(firestore, 'applications', application.id!), { interviews: newInterviews, timeline: newTimeline });
                 toast({ title: 'Wawancara Diperbarui' });
             } else {
                  throw new Error("Wawancara yang akan diedit tidak ditemukan.");
@@ -140,8 +140,8 @@ function InterviewManagement({ application, onUpdate, allUsers, allBrands }: { a
                 interviewId: crypto.randomUUID(),
                 startAt: Timestamp.fromDate(data.dateTime),
                 endAt: Timestamp.fromDate(add(data.dateTime, { minutes: data.duration })),
-                panelistIds: panelistIds,
-                panelistNames: panelistNames,
+                panelistIds: data.panelists.map(p => p.value),
+                panelistNames: data.panelists.map(p => p.label),
                 status: 'scheduled',
                 meetingLink: data.meetingLink,
                 notes: data.notes,
@@ -156,7 +156,7 @@ function InterviewManagement({ application, onUpdate, allUsers, allBrands }: { a
                 meta: { interviewDate: Timestamp.fromDate(data.dateTime) }
             });
             const allPanelistIds = new Set<string>(application.allPanelistIds || []);
-            panelistIds.forEach(id => allPanelistIds.add(id));
+            newInterview.panelistIds.forEach(id => allPanelistIds.add(id));
 
             await updateDoc(doc(firestore, 'applications', application.id!), { interviews: newInterviews, timeline: newTimeline, allPanelistIds: Array.from(allPanelistIds) });
             toast({ title: activeInterview ? 'Jadwal Baru Diajukan' : 'Wawancara Dijadwalkan' });
@@ -256,7 +256,9 @@ function InterviewManagement({ application, onUpdate, allUsers, allBrands }: { a
       <CardHeader>
         <div className="flex justify-between items-center">
             <CardTitle>Manajemen Wawancara</CardTitle>
-             <Button size="sm" onClick={() => handleOpenScheduleDialog()}>Jadwalkan Wawancara Baru</Button>
+            {(!application.interviews || application.interviews.filter(iv => iv.status !== 'canceled').length === 0) && (
+              <Button size="sm" onClick={() => handleOpenScheduleDialog()}>Jadwalkan Wawancara Baru</Button>
+            )}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -269,16 +271,24 @@ function InterviewManagement({ application, onUpdate, allUsers, allBrands }: { a
                         <div className="flex justify-between items-start">
                             <div>
                                 <p className="font-semibold">{format(iv.startAt.toDate(), 'eeee, dd MMM yyyy, HH:mm', { locale: idLocale })}</p>
-                                <p className="text-sm text-muted-foreground">Pewawancara: {(iv.panelistNames || iv.interviewerNames || []).join(', ')}</p>
+                                <p className="text-sm text-muted-foreground">Pewawancara: {(iv.panelistNames || []).join(', ')}</p>
                             </div>
                             <div className="flex items-center gap-2">
                                 {userProfile && ['super-admin', 'hrd'].includes(userProfile.role) && (
                                     <>
-                                        {!iv.meetingPublished && (
-                                            <Button variant="secondary" size="sm" onClick={() => handlePublishLink(iv)} disabled={isSubmitting}>
-                                                <ShieldCheck className="mr-2 h-4 w-4" /> Publish Link
-                                            </Button>
-                                        )}
+                                        <Button 
+                                            variant={iv.meetingPublished ? "outline" : "secondary"} 
+                                            size="sm" 
+                                            onClick={() => handleTogglePublish(iv)} 
+                                            disabled={isSubmitting || (!iv.meetingPublished && !iv.meetingLink)}
+                                            title={!iv.meetingPublished && !iv.meetingLink ? "Tambahkan link meeting untuk bisa publish" : ""}
+                                        >
+                                            {iv.meetingPublished ? (
+                                                <><X className="mr-2 h-4 w-4" /> Unpublish</>
+                                            ) : (
+                                                <><ShieldCheck className="mr-2 h-4 w-4" /> Publish</>
+                                            )}
+                                        </Button>
                                         <Button variant="outline" size="sm" onClick={() => handleOpenPanelistDialog(iv)}>
                                             Kelola Panelis
                                         </Button>

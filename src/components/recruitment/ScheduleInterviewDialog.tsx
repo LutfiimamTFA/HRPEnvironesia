@@ -11,18 +11,22 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Loader2, Save } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { useFirestore } from '@/firebase';
-import type { UserProfile, JobApplication, Brand } from '@/lib/types';
-import { useAuth } from '@/providers/auth-provider';
-import { PanelistPickerSimple } from './PanelistPickerSimple';
+import type { UserProfile, Brand } from '@/lib/types';
 import { GoogleDatePicker } from '../ui/google-date-picker';
 import { add, format } from 'date-fns';
 
 export const scheduleSchema = z.object({
   dateTime: z.coerce.date({ required_error: 'Tanggal dan waktu harus diisi.' }),
   duration: z.coerce.number().int().min(5, 'Durasi minimal 5 menit.').default(30),
-  meetingLink: z.string().url({ message: "URL meeting tidak valid." }).optional().or(z.literal('')),
-  panelists: z.array(z.object({ value: z.string(), label: z.string() })).min(1, 'Minimal satu panelis harus dipilih.'),
+  meetingLink: z.preprocess(
+    (v) => {
+        if (typeof v !== "string") return v;
+        const s = v.trim();
+        if (!s || s.includes("...")) return "";
+        return s;
+    },
+    z.string().url({ message: "URL meeting tidak valid." }).optional().or(z.literal(''))
+  ),
   notes: z.string().optional(),
 });
 
@@ -35,11 +39,9 @@ interface ScheduleInterviewDialogProps {
   initialData?: Partial<ScheduleInterviewData>;
   candidateName: string;
   recruiter: UserProfile;
-  allUsers: UserProfile[];
-  allBrands: Brand[];
 }
 
-export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initialData, candidateName, recruiter, allUsers, allBrands }: ScheduleInterviewDialogProps) {
+export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initialData, candidateName, recruiter }: ScheduleInterviewDialogProps) {
   const [isSaving, setIsSaving] = useState(false);
   
   const form = useForm<ScheduleInterviewData>({
@@ -60,12 +62,10 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
 
   useEffect(() => {
     if (open) {
-      const defaultPanelists = recruiter ? [{ value: recruiter.uid, label: `${recruiter.fullName} (${recruiter.email})` }] : [];
       form.reset({
         dateTime: initialData?.dateTime,
         duration: initialData?.duration || 30,
         meetingLink: initialData?.meetingLink || '',
-        panelists: initialData?.panelists || defaultPanelists,
         notes: initialData?.notes || '',
       });
     }
@@ -73,6 +73,7 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
 
   const handleSubmit = async (values: ScheduleInterviewData) => {
     setIsSaving(true);
+    // onConfirm is expected to handle panelist data internally if needed
     const success = await onConfirm(values);
     setIsSaving(false);
     if (success) {
@@ -80,17 +81,15 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
     }
   };
   
-  const title = initialData 
-    ? `Edit Wawancara untuk ${candidateName}`
-    : `Jadwalkan Wawancara untuk ${candidateName}`;
+  const title = `Edit Wawancara untuk ${candidateName}`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] flex flex-col p-0 sm:max-w-lg">
+      <DialogContent className="max-h-[85vh] flex flex-col p-0 sm:max-w-lg">
         <DialogHeader className="p-6 pb-4 border-b">
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            Masukkan detail untuk jadwal wawancara kandidat.
+            Ubah detail untuk jadwal wawancara. Panelis dikelola secara terpisah.
           </DialogDescription>
         </DialogHeader>
         <div className="flex-grow overflow-y-auto px-6">
@@ -133,32 +132,6 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
                 )}
                 />
                 
-                {!initialData && (
-                     <FormField
-                        control={form.control}
-                        name="panelists"
-                        render={({ field }) => (
-                        <FormItem>
-                            <FormLabel>Panelis Wawancara</FormLabel>
-                            <PanelistPickerSimple
-                                allUsers={allUsers}
-                                allBrands={allBrands}
-                                selectedIds={field.value?.map(p => p.value) || []}
-                                onChange={(ids) => {
-                                    const selectedUsers = allUsers.filter(u => ids.includes(u.uid));
-                                    const newSelectedOptions = selectedUsers.map(u => ({
-                                        value: u.uid,
-                                        label: `${u.fullName} (${u.email})`
-                                    }));
-                                    field.onChange(newSelectedOptions);
-                                }}
-                            />
-                            <FormMessage />
-                        </FormItem>
-                        )}
-                    />
-                )}
-                
                 <FormField
                 control={form.control}
                 name="notes"
@@ -173,7 +146,7 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
             </form>
             </Form>
         </div>
-        <DialogFooter className="p-6 pt-4 border-t">
+        <DialogFooter className="p-6 pt-4 border-t sticky bottom-0 bg-background z-10">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Batal</Button>
           <Button type="submit" form="schedule-interview-form" disabled={isSaving}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
