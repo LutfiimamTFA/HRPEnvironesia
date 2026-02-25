@@ -9,18 +9,19 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Save } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { useFirestore } from '@/firebase';
 import type { UserProfile, JobApplication, Brand } from '@/lib/types';
 import { useAuth } from '@/providers/auth-provider';
 import { PanelistPickerSimple } from './PanelistPickerSimple';
 import { GoogleDatePicker } from '../ui/google-date-picker';
+import { add, format } from 'date-fns';
 
 export const scheduleSchema = z.object({
   dateTime: z.coerce.date({ required_error: 'Tanggal dan waktu harus diisi.' }),
   duration: z.coerce.number().int().min(5, 'Durasi minimal 5 menit.').default(30),
-  meetingLink: z.string().url({ message: "URL meeting tidak valid." }),
+  meetingLink: z.string().url({ message: "URL meeting tidak valid." }).optional().or(z.literal('')),
   panelists: z.array(z.object({ value: z.string(), label: z.string() })).min(1, 'Minimal satu panelis harus dipilih.'),
   notes: z.string().optional(),
 });
@@ -40,11 +41,22 @@ interface ScheduleInterviewDialogProps {
 
 export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initialData, candidateName, recruiter, allUsers, allBrands }: ScheduleInterviewDialogProps) {
   const [isSaving, setIsSaving] = useState(false);
-  const [dialogContent, setDialogContent] = useState<HTMLElement | null>(null);
-
+  
   const form = useForm<ScheduleInterviewData>({
     resolver: zodResolver(scheduleSchema),
   });
+  
+  const { watch } = form;
+  const startTime = watch('dateTime');
+  const duration = watch('duration');
+  
+  const endTime = useMemo(() => {
+    if (startTime && duration) {
+        return add(startTime, { minutes: duration });
+    }
+    return null;
+  }, [startTime, duration]);
+
 
   useEffect(() => {
     if (open) {
@@ -74,82 +86,94 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent ref={setDialogContent} className="sm:max-w-md">
-        <DialogHeader>
+      <DialogContent className="max-h-[90vh] flex flex-col p-0 sm:max-w-lg">
+        <DialogHeader className="p-6 pb-4 border-b">
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
             Masukkan detail untuk jadwal wawancara kandidat.
           </DialogDescription>
         </DialogHeader>
-        <Form {...form}>
-          <form id="schedule-interview-form" onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="dateTime"
-              render={({ field }) => (
-                <FormItem className="flex flex-col">
-                  <FormLabel>Tanggal & Waktu</FormLabel>
-                   <FormControl>
-                        <GoogleDatePicker
-                          value={field.value}
-                          onChange={field.onChange}
-                          mode="general"
-                          container={dialogContent}
-                        />
-                      </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-             <FormField control={form.control} name="duration" render={({ field }) => (<FormItem><FormLabel>Durasi (menit)</FormLabel><Select onValueChange={(v) => field.onChange(parseInt(v))} value={String(field.value)}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent container={dialogContent}><SelectItem value="15">15</SelectItem><SelectItem value="30">30</SelectItem><SelectItem value="45">45</SelectItem><SelectItem value="60">60</SelectItem><SelectItem value="90">90</SelectItem></SelectContent></Select><FormMessage /></FormItem>)} />
-            <FormField
-              control={form.control}
-              name="meetingLink"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Link Meeting (Zoom/Meet)</FormLabel>
-                  <FormControl><Input {...field} placeholder="https://zoom.us/j/..." /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
+        <div className="flex-grow overflow-y-auto px-6">
+            <Form {...form}>
+            <form id="schedule-interview-form" onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 py-4">
+                <FormField
                 control={form.control}
-                name="panelists"
+                name="dateTime"
                 render={({ field }) => (
-                <FormItem>
-                    <FormLabel>Panelis Wawancara</FormLabel>
-                    <PanelistPickerSimple
-                        allUsers={allUsers}
-                        allBrands={allBrands}
-                        selectedIds={field.value?.map(p => p.value) || []}
-                        onChange={(ids) => {
-                            const selectedUsers = allUsers.filter(u => ids.includes(u.uid));
-                            const newSelectedOptions = selectedUsers.map(u => ({
-                                value: u.uid,
-                                label: `${u.fullName} (${u.email})`
-                            }));
-                            field.onChange(newSelectedOptions);
-                        }}
-                    />
+                    <FormItem className="flex flex-col">
+                    <FormLabel>Tanggal & Waktu Mulai</FormLabel>
+                    <FormControl>
+                        <GoogleDatePicker
+                            value={field.value}
+                            onChange={field.onChange}
+                            mode="general"
+                        />
+                        </FormControl>
                     <FormMessage />
-                </FormItem>
+                    </FormItem>
                 )}
-            />
-             <FormField
-              control={form.control}
-              name="notes"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Catatan (Opsional)</FormLabel>
-                  <FormControl><Textarea {...field} value={field.value ?? ''} placeholder="Catatan tambahan untuk internal..." /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </form>
-        </Form>
-        <DialogFooter>
+                />
+                <FormField control={form.control} name="duration" render={({ field }) => (<FormItem><FormLabel>Durasi (menit)</FormLabel><Select onValueChange={(v) => field.onChange(parseInt(v))} value={String(field.value)}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent><SelectItem value="15">15</SelectItem><SelectItem value="30">30</SelectItem><SelectItem value="45">45</SelectItem><SelectItem value="60">60</SelectItem><SelectItem value="90">90</SelectItem></SelectContent></Select><FormMessage /></FormItem>)} />
+                
+                 {endTime && (
+                    <div className="text-sm text-muted-foreground p-2 bg-muted rounded-md">
+                        Selesai pada: <span className="font-semibold text-foreground">{format(endTime, 'dd MMM yyyy, HH:mm')} WIB</span>
+                    </div>
+                )}
+                
+                <FormField
+                control={form.control}
+                name="meetingLink"
+                render={({ field }) => (
+                    <FormItem>
+                    <FormLabel>Link Meeting (Opsional)</FormLabel>
+                    <FormControl><Input {...field} value={field.value ?? ''} placeholder="https://zoom.us/j/..." /></FormControl>
+                    <FormMessage />
+                    </FormItem>
+                )}
+                />
+                
+                {!initialData && (
+                     <FormField
+                        control={form.control}
+                        name="panelists"
+                        render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>Panelis Wawancara</FormLabel>
+                            <PanelistPickerSimple
+                                allUsers={allUsers}
+                                allBrands={allBrands}
+                                selectedIds={field.value?.map(p => p.value) || []}
+                                onChange={(ids) => {
+                                    const selectedUsers = allUsers.filter(u => ids.includes(u.uid));
+                                    const newSelectedOptions = selectedUsers.map(u => ({
+                                        value: u.uid,
+                                        label: `${u.fullName} (${u.email})`
+                                    }));
+                                    field.onChange(newSelectedOptions);
+                                }}
+                            />
+                            <FormMessage />
+                        </FormItem>
+                        )}
+                    />
+                )}
+                
+                <FormField
+                control={form.control}
+                name="notes"
+                render={({ field }) => (
+                    <FormItem>
+                    <FormLabel>Catatan (Opsional)</FormLabel>
+                    <FormControl><Textarea {...field} value={field.value ?? ''} placeholder="Catatan tambahan untuk internal..." /></FormControl>
+                    <FormMessage />
+                    </FormItem>
+                )}
+                />
+            </form>
+            </Form>
+        </div>
+        <DialogFooter className="p-6 pt-4 border-t">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Batal</Button>
           <Button type="submit" form="schedule-interview-form" disabled={isSaving}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
