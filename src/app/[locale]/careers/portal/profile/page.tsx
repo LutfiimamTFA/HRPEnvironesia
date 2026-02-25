@@ -48,18 +48,20 @@ function ProfileWizardContent() {
     const urlStep = parseInt(searchParams.get('step') || '1', 10);
 
     const [effectiveStep, setEffectiveStep] = useState(1);
+    const [optimisticProfileStep, setOptimisticProfileStep] = useState(1);
 
     useEffect(() => {
         if (isLoading) return;
 
         const profileStep = profile?.profileStep || 1;
+        const profileStepEffective = Math.max(profileStep, optimisticProfileStep);
         
         if (profile?.profileStatus === 'completed' && !searchParams.has('step')) {
             setEffectiveStep(steps.length + 1); // A step beyond the last to show completion screen
             return;
         }
 
-        const targetStep = urlStep > profileStep ? profileStep : urlStep;
+        const targetStep = urlStep > profileStepEffective ? profileStepEffective : urlStep;
         
         if (targetStep !== urlStep && profile?.profileStatus !== 'completed') {
             router.replace(`/careers/portal/profile?step=${targetStep}`);
@@ -67,13 +69,14 @@ function ProfileWizardContent() {
         
         setEffectiveStep(profile?.profileStatus === 'completed' ? urlStep : targetStep);
 
-    }, [urlStep, profile, isLoading, router, searchParams]);
+    }, [urlStep, profile, isLoading, router, searchParams, optimisticProfileStep]);
 
 
     const handleSaveSuccess = () => {
         refreshProfile(); // Refetch profile to get the latest step
         refreshUserProfile(); // Refetch user data in auth context
         const nextStep = effectiveStep + 1;
+        setOptimisticProfileStep(nextStep);
         if (nextStep <= steps.length) {
             router.push(`/careers/portal/profile?step=${nextStep}`);
         } else {
@@ -91,6 +94,7 @@ function ProfileWizardContent() {
     const handleFinish = () => {
         refreshProfile();
         refreshUserProfile();
+        setOptimisticProfileStep(steps.length + 1);
         router.push('/careers/portal/profile');
     }
 
@@ -108,6 +112,7 @@ function ProfileWizardContent() {
         const profileDocRef = doc(firestore, 'profiles', firebaseUser.uid);
         try {
             await setDocumentNonBlocking(profileDocRef, { profileStatus: 'draft' }, { merge: true });
+            setOptimisticProfileStep(1);
             router.push('/careers/portal/profile?step=1');
         } catch (error: any) {
             toast({
@@ -227,5 +232,3 @@ export default function ProfilePage() {
         </Suspense>
     )
 }
-
-    
