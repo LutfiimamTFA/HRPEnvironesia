@@ -131,7 +131,7 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
   }, [step, orderedCandidates, scheduleForm]);
 
     const watchedConfig = scheduleForm.watch(['startDate', 'startTime', 'slotDuration', 'buffer', 'workdayEndTime']);
-    const scheduleMetrics = React.useMemo(() => {
+    const scheduleMetrics = useMemo(() => {
         const [startDate, startTime, slotDuration, buffer, workdayEndTime] = watchedConfig;
         
         if (!startTime || !workdayEndTime || !slotDuration || !startDate) {
