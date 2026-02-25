@@ -103,8 +103,8 @@ export type ApplicationInterview = {
     notes?: string;
     rescheduleRequest?: RescheduleRequest;
     meetingPublished?: boolean;
-    meetingPublishedAt?: Timestamp;
-    meetingPublishedBy?: string;
+    meetingPublishedAt?: Timestamp | null;
+    meetingPublishedBy?: string | null;
     // Legacy support
     interviewerIds?: string[];
     interviewerNames?: string[];
