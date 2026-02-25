@@ -1,8 +1,6 @@
-// This file path is for the new non-locale structure.
-// The content is taken from the original [locale] equivalent.
 'use client';
 
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useDoc, useFirestore, useMemoFirebase } from '@/firebase';
 import { doc } from 'firebase/firestore';

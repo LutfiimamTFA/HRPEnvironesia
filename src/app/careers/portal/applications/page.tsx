@@ -1,5 +1,3 @@
-// This file path is for the new non-locale structure.
-// The content is taken from the original [locale] equivalent.
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
@@ -13,7 +11,7 @@ import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from "@/components/ui/button";
-import Link from 'next/link';
+import Link from "next/link";
 import { ArrowRight, Check, Briefcase, Building, FileSignature, FileUp, ClipboardCheck, Users, Award, XCircle, BrainCircuit, FileText, Search, Calendar, Link as LinkIcon } from "lucide-react";
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';

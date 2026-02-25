@@ -11,8 +11,7 @@ import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
 import type { Job } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useTranslations } from 'next-intl';
-import { Link } from '@/navigation';
+import Link from 'next/link';
 import imagePlaceholders from '@/lib/placeholder-images.json';
 
 const JobCard = ({ job }: { job: Job }) => (
@@ -82,8 +81,20 @@ export function JobExplorerSkeleton() {
     )
 }
 
+const texts = {
+    searchPlaceholder: "Cari posisi atau divisi...",
+    filters: {
+      fulltime: "Full-time",
+      internship: "Internship",
+      contract: "Contract"
+    },
+    emptyState: {
+      title: "Belum Ada Lowongan yang Sesuai",
+      subtitle: "Coba sesuaikan kata kunci atau filter Anda."
+    }
+};
+
 export function JobExplorerClient() {
-    const t = useTranslations('CareersLanding.JobExplorer');
     const firestore = useFirestore();
     const [searchTerm, setSearchTerm] = useState('');
     const [activeFilters, setActiveFilters] = useState<string[]>([]);
@@ -116,7 +127,7 @@ export function JobExplorerClient() {
                 <div className="relative mb-4">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                     <Input 
-                        placeholder={t('searchPlaceholder')}
+                        placeholder={texts.searchPlaceholder}
                         className="h-12 pl-12 text-base rounded-full"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
@@ -130,7 +141,7 @@ export function JobExplorerClient() {
                             onClick={() => toggleFilter(filter)}
                             className="capitalize rounded-full"
                         >
-                            {t(`filters.${filter}` as any)}
+                            {texts.filters[filter as keyof typeof texts.filters]}
                         </Button>
                     ))}
                 </div>
@@ -155,8 +166,8 @@ export function JobExplorerClient() {
                             data-ai-hint={imagePlaceholders.careers_empty_jobs.ai_hint}
                             className="mb-6 opacity-70"
                          />
-                        <h3 className="text-xl font-semibold text-foreground">{t('emptyState.title')}</h3>
-                        <p className="mt-2 mb-6">{t('emptyState.subtitle')}</p>
+                        <h3 className="text-xl font-semibold text-foreground">{texts.emptyState.title}</h3>
+                        <p className="mt-2 mb-6">{texts.emptyState.subtitle}</p>
                     </div>
                 )}
             </div>

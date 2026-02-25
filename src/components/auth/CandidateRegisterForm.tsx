@@ -21,8 +21,8 @@ import {
 } from '@/components/ui/form';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { UserProfile } from '@/lib/types';
-import { Checkbox } from '@/components/ui/checkbox';
-import { useRouter } from '@/navigation';
+import { Checkbox } from '../ui/checkbox';
+import { useRouter } from 'next/navigation';
 
 const formSchema = z.object({
     fullName: z.string().min(2, { message: 'Nama lengkap (sesuai KTP) harus diisi.' }),

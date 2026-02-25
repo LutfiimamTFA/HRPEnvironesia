@@ -8,9 +8,8 @@ import { ArrowRight, FileText, Leaf, Search, User, UserCheck, ShieldCheck, BarCh
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { useTranslations } from 'next-intl';
-import { Link, useRouter } from '@/navigation';
-import { LanguageSwitcher } from '@/components/i18n/LanguageSwitcher';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import imagePlaceholders from '@/lib/placeholder-images.json';
 import { JobExplorerSkeleton } from '@/components/careers/JobExplorer';
 import dynamic from 'next/dynamic';
@@ -25,9 +24,148 @@ const DynamicJobExplorerClient = dynamic(
 );
 
 
+const t = {
+  Header: {
+    jobs: "Lowongan",
+    process: "Proses",
+    faq: "FAQ",
+    companyProfile: "Profil Perusahaan",
+    signIn: "Masuk Kandidat",
+    signUp: "Daftar"
+  },
+  Hero: {
+    title: "Mari Buat Perubahan Bersama Kami",
+    subtitle: "Jadilah bagian dari tim inovatif yang berdedikasi untuk menciptakan solusi lingkungan berkelanjutan. Temukan karier berdampak Anda di Environesia.",
+    ctaPrimary: "Lihat Lowongan",
+    ctaSecondary: "Kirim Lamaran Cepat",
+    badgeProjects: "560+ Proyek",
+    badgeProvinces: "38 Provinsi",
+    badgeServices: "Lab & Konsultan"
+  },
+  JobExplorer: {
+    title: "Temukan Peluang Anda",
+    subtitle: "Kami mencari individu berbakat untuk bergabung dengan berbagai tim kami. Jelajahi posisi yang sesuai dengan keahlian Anda.",
+    searchPlaceholder: "Cari posisi atau divisi...",
+    filters: {
+      fulltime: "Full-time",
+      internship: "Internship",
+      contract: "Contract"
+    },
+    emptyState: {
+      title: "Belum Ada Lowongan yang Sesuai",
+      subtitle: "Coba sesuaikan kata kunci atau filter Anda."
+    }
+  },
+  ValueProps: {
+    title: "Mengapa Environesia?",
+    subtitle: "Kami lebih dari sekadar tempat kerja. Kami adalah komunitas yang berkomitmen untuk masa depan bumi.",
+    values: [
+      {
+        title: "Karier Berdampak",
+        description: "Bekerja pada proyek-proyek lingkungan nyata di seluruh Indonesia."
+      },
+      {
+        title: "Pertumbuhan Profesional",
+        description: "Kami berinvestasi pada pengembangan diri Anda melalui pelatihan dan sertifikasi."
+      },
+      {
+        title: "Kolaborasi Inovatif",
+        description: "Bergabunglah dengan tim ahli yang solid dan saling mendukung."
+      },
+      {
+        title: "Keseimbangan Hidup",
+        description: "Kami menghargai waktu pribadi Anda untuk menciptakan lingkungan kerja yang sehat."
+      }
+    ]
+  },
+  RecruitmentProcess: {
+    title: "Proses Rekrutmen Kami",
+    subtitle: "Kami merancang proses yang adil dan transparan untuk menemukan talenta terbaik.",
+    steps: [
+      {
+        title: "Daftar Online",
+        description: "Lengkapi profil dan kirimkan lamaran Anda melalui portal karir kami."
+      },
+      {
+        title: "Psikotes",
+        description: "Kerjakan tes psikologi untuk mengukur potensi dan kesesuaian Anda."
+      },
+      {
+        title: "Seleksi Administrasi",
+        description: "Tim rekrutmen akan meninjau kelengkapan profil dan hasil psikotes Anda."
+      },
+      {
+        title: "Wawancara",
+        description: "Bertemu dengan HR dan calon user untuk diskusi lebih mendalam."
+      },
+      {
+        title: "Tawaran Kerja",
+        description: "Kandidat terpilih akan menerima tawaran kerja resmi dari kami."
+      }
+    ]
+  },
+  OfficeSpotlight: {
+    title: "Basecamp Environesia",
+    subtitle: "Tempat ide-ide hebat lahir. Kantor pusat kami di Yogyakarta adalah pusat kolaborasi, inovasi, dan aksi nyata untuk lingkungan."
+  },
+  HowToApply: {
+    title: "Cara Mudah Melamar",
+    subtitle: "Ikuti langkah-langkah sederhana ini untuk memulai perjalanan karir Anda di Environesia.",
+    cta: "Daftar Akun Sekarang",
+    steps: [
+      {
+        title: "Buat Akun",
+        description: "Daftarkan diri Anda dengan email dan buat kata sandi."
+      },
+      {
+        title: "Cari Lowongan",
+        description: "Jelajahi berbagai posisi yang tersedia dan temukan yang cocok."
+      },
+      {
+        title: "Kirim Lamaran",
+        description: "Unggah CV terbaru Anda dan kirimkan lamaran dengan mudah."
+      },
+      {
+        title: "Pantau Proses",
+        description: "Lacak status lamaran Anda langsung dari dasbor kandidat."
+      }
+    ]
+  },
+  FAQ: {
+    title: "Pertanyaan Umum (FAQ)",
+    subtitle: "Jawaban atas pertanyaan umum seputar proses lamaran kerja di Environesia.",
+    contactCta: "Hubungi HR",
+    questions: [
+      {
+        q: "Apa saja yang harus saya siapkan sebelum melamar?",
+        a: "Pastikan Anda telah menyiapkan CV (Curriculum Vitae) terbaru dalam format PDF, surat lamaran (opsional), dan portofolio jika posisi yang dilamar memerlukannya."
+      },
+      {
+        q: "Berapa lama proses rekrutmen biasanya berlangsung?",
+        a: "Proses rekrutmen kami biasanya memakan waktu 2-4 minggu dari penutupan lowongan, namun bisa bervariasi. Kami akan memberikan informasi terbaru melalui email."
+      },
+      {
+        q: "Apakah saya bisa melamar lebih dari satu posisi?",
+        a: "Ya, Anda dapat melamar hingga 3 posisi yang berbeda secara bersamaan. Namun, kami sarankan fokus pada posisi yang paling sesuai kualifikasi Anda."
+      },
+      {
+        q: "Siapa yang bisa saya hubungi jika ada pertanyaan?",
+        a: "Jika Anda memiliki pertanyaan, jangan ragu untuk menghubungi tim rekrutmen kami melalui email di careers@environesia.co.id."
+      }
+    ]
+  },
+  Footer: {
+    tagline: "Membangun karier, menjaga bumi.",
+    navigation: "Navigasi",
+    company: "Perusahaan",
+    internalAccess: "Akses Internal",
+    copyright: "© {year} Environesia. All Rights Reserved."
+  }
+};
+
+
 // --- Header Component ---
 const Header = () => {
-    const t = useTranslations('CareersLanding.Header');
     const [scrolled, setScrolled] = useState(false);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -40,10 +178,10 @@ const Header = () => {
     }, []);
 
     const menuItems = [
-        { href: '#lowongan', label: t('jobs') },
-        { href: '#proses', label: t('process') },
-        { href: '#faq', label: t('faq') },
-        { href: 'https://environesia.co.id/', label: t('companyProfile'), external: true },
+        { href: '#lowongan', label: t.Header.jobs },
+        { href: '#proses', label: t.Header.process },
+        { href: '#faq', label: t.Header.faq },
+        { href: 'https://environesia.co.id/', label: t.Header.companyProfile, external: true },
     ];
 
     return (
@@ -63,17 +201,15 @@ const Header = () => {
                     </nav>
                     <div className="hidden items-center gap-2 md:flex">
                         <ThemeToggle />
-                        <LanguageSwitcher />
                         <Button variant="secondary" asChild>
-                            <Link href="/careers/login">{t('signIn')}</Link>
+                            <Link href="/careers/login">{t.Header.signIn}</Link>
                         </Button>
                         <Button asChild>
-                            <Link href="/careers/register">{t('signUp')}</Link>
+                            <Link href="/careers/register">{t.Header.signUp}</Link>
                         </Button>
                     </div>
                     <div className="flex items-center gap-2 md:hidden">
                         <ThemeToggle />
-                        <LanguageSwitcher />
                         <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
                             <SheetTrigger asChild>
                                 <Button variant="ghost" size="icon">
@@ -97,10 +233,10 @@ const Header = () => {
                                     </nav>
                                     <div className="mt-auto p-4 space-y-2 border-t">
                                         <Button variant="secondary" asChild className="w-full">
-                                            <Link href="/careers/login">{t('signIn')}</Link>
+                                            <Link href="/careers/login">{t.Header.signIn}</Link>
                                         </Button>
                                         <Button asChild className="w-full">
-                                            <Link href="/careers/register">{t('signUp')}</Link>
+                                            <Link href="/careers/register">{t.Header.signUp}</Link>
                                         </Button>
                                     </div>
                                 </div>
@@ -116,7 +252,6 @@ const Header = () => {
 
 // --- Hero Section ---
 const HeroSection = () => {
-    const t = useTranslations('CareersLanding.Hero');
     return (
         <section id="hero" className="relative w-full overflow-hidden bg-background">
             <div className="absolute inset-0">
@@ -134,23 +269,23 @@ const HeroSection = () => {
             <div className="relative z-10 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
                 <div className="flex min-h-[70vh] flex-col items-center justify-center pb-20 pt-32 text-center lg:min-h-dvh">
                     <h1 className="text-4xl font-extrabold tracking-tight text-foreground md:text-6xl lg:text-7xl">
-                        {t('title')}
+                        {t.Hero.title}
                     </h1>
                     <p className="mt-6 max-w-2xl text-lg text-muted-foreground">
-                        {t('subtitle')}
+                        {t.Hero.subtitle}
                     </p>
                     <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4 w-full max-w-xs sm:max-w-none">
                       <Button size="lg" className="h-12 px-8 text-base w-full sm:w-auto" asChild>
-                        <a href="#lowongan">{t('ctaPrimary')}</a>
+                        <a href="#lowongan">{t.Hero.ctaPrimary}</a>
                       </Button>
                       <Button size="lg" variant="secondary" className="h-12 px-8 text-base w-full sm:w-auto" asChild>
-                        <Link href="/careers/login">{t('ctaSecondary')}</Link>
+                        <Link href="/careers/login">{t.Hero.ctaSecondary}</Link>
                       </Button>
                     </div>
                      <div className="mt-16 flex flex-wrap items-center justify-center gap-x-8 gap-y-4 text-sm text-muted-foreground">
-                        <span className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-primary"/> {t('badgeProjects')}</span>
-                        <span className="flex items-center gap-2"><Globe className="h-4 w-4 text-primary"/> {t('badgeProvinces')}</span>
-                        <span className="flex items-center gap-2"><BarChart className="h-4 w-4 text-primary"/> {t('badgeServices')}</span>
+                        <span className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-primary"/> {t.Hero.badgeProjects}</span>
+                        <span className="flex items-center gap-2"><Globe className="h-4 w-4 text-primary"/> {t.Hero.badgeProvinces}</span>
+                        <span className="flex items-center gap-2"><BarChart className="h-4 w-4 text-primary"/> {t.Hero.badgeServices}</span>
                     </div>
                 </div>
             </div>
@@ -160,7 +295,6 @@ const HeroSection = () => {
 
 // --- Job Explorer Section ---
 const JobExplorerSection = () => {
-    const t = useTranslations('CareersLanding.JobExplorer');
     const [isClient, setIsClient] = useState(false);
     useEffect(() => {
         setIsClient(true);
@@ -170,8 +304,8 @@ const JobExplorerSection = () => {
         <section id="lowongan" className="w-full scroll-mt-20 py-16 lg:py-24">
             <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
                 <div className="mx-auto max-w-2xl text-center">
-                    <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{t('title')}</h2>
-                    <p className="mt-4 text-lg text-muted-foreground">{t('subtitle')}</p>
+                    <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{t.JobExplorer.title}</h2>
+                    <p className="mt-4 text-lg text-muted-foreground">{t.JobExplorer.subtitle}</p>
                 </div>
                 {isClient ? <DynamicJobExplorerClient /> : <JobExplorerSkeleton />}
             </div>
@@ -181,15 +315,14 @@ const JobExplorerSection = () => {
 
 // --- Value Props Section ---
 const ValuePropsSection = () => {
-    const t = useTranslations('CareersLanding.ValueProps');
-    const values = t.raw('values' as any) as {title: string; description: string}[];
+    const values = t.ValueProps.values;
     const icons = [Globe, BarChart, Users, ShieldCheck];
     return (
         <section className="w-full py-16 lg:py-24 bg-card">
             <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
                 <div className="mx-auto max-w-2xl text-center">
-                    <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{t('title')}</h2>
-                    <p className="mt-4 text-lg text-muted-foreground">{t('subtitle')}</p>
+                    <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{t.ValueProps.title}</h2>
+                    <p className="mt-4 text-lg text-muted-foreground">{t.ValueProps.subtitle}</p>
                 </div>
                 <div className="mt-16 grid gap-8 md:grid-cols-2 lg:grid-cols-4">
                     {values.map((v, i) => (
@@ -209,15 +342,14 @@ const ValuePropsSection = () => {
 
 // --- Recruitment Process Section ---
 const RecruitmentProcessSection = () => {
-    const t = useTranslations('CareersLanding.RecruitmentProcess');
-    const steps = t.raw('steps' as any) as {title: string; description: string}[];
+    const steps = t.RecruitmentProcess.steps;
 
     return (
         <section id="proses" className="w-full scroll-mt-14 py-16 lg:py-24">
             <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
                 <div className="mx-auto max-w-xl text-center">
-                    <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{t('title')}</h2>
-                    <p className="mt-4 text-lg text-muted-foreground">{t('subtitle')}</p>
+                    <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{t.RecruitmentProcess.title}</h2>
+                    <p className="mt-4 text-lg text-muted-foreground">{t.RecruitmentProcess.subtitle}</p>
                 </div>
                 <div className="relative mt-16 max-w-2xl mx-auto">
                     <div className="absolute left-6 top-0 h-full w-0.5 bg-border/40 md:left-1/2 md:-translate-x-1/2" />
@@ -243,7 +375,6 @@ const RecruitmentProcessSection = () => {
 
 // --- Office Spotlight Section ---
 const OfficeSpotlightSection = () => {
-    const t = useTranslations('CareersLanding.OfficeSpotlight');
     return (
     <section className="w-full py-16 lg:py-24 bg-card">
         <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -257,8 +388,8 @@ const OfficeSpotlightSection = () => {
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
                 <div className="relative z-10 p-8 md:p-12 text-white">
-                    <h2 className="text-3xl md:text-4xl font-bold">{t('title')}</h2>
-                    <p className="mt-2 max-w-lg text-white/80">{t('subtitle')}</p>
+                    <h2 className="text-3xl md:text-4xl font-bold">{t.OfficeSpotlight.title}</h2>
+                    <p className="mt-2 max-w-lg text-white/80">{t.OfficeSpotlight.subtitle}</p>
                 </div>
             </Card>
         </div>
@@ -268,15 +399,14 @@ const OfficeSpotlightSection = () => {
 
 // --- How To Apply Section ---
 const HowToApplySection = () => {
-    const t = useTranslations('CareersLanding.HowToApply');
-    const steps = t.raw('steps' as any) as {title: string; description: string}[];
+    const steps = t.HowToApply.steps;
     const icons = [User, Search, FileText, UserCheck];
     return (
         <section className="w-full py-16 lg:py-24">
             <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
                 <div className="mx-auto max-w-xl text-center">
-                    <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{t('title')}</h2>
-                    <p className="mt-4 text-lg text-muted-foreground">{t('subtitle')}</p>
+                    <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{t.HowToApply.title}</h2>
+                    <p className="mt-4 text-lg text-muted-foreground">{t.HowToApply.subtitle}</p>
                 </div>
                 <div className="mt-16 grid gap-8 md:grid-cols-2 lg:grid-cols-4">
                     {steps.map((step, i) => (
@@ -291,7 +421,7 @@ const HowToApplySection = () => {
                 </div>
                  <div className="mt-16 text-center">
                     <Button size="lg" asChild>
-                        <Link href="/careers/register">{t('cta')} <ArrowRight className="ml-2 h-4 w-4" /></Link>
+                        <Link href="/careers/register">{t.HowToApply.cta} <ArrowRight className="ml-2 h-4 w-4" /></Link>
                     </Button>
                 </div>
             </div>
@@ -301,14 +431,13 @@ const HowToApplySection = () => {
 
 // --- FAQ Section ---
 const FaqSection = () => {
-    const t = useTranslations('CareersLanding.FAQ');
-    const questions = t.raw('questions' as any) as {q: string; a: string}[];
+    const questions = t.FAQ.questions;
     return (
     <section id="faq" className="w-full scroll-mt-14 py-16 lg:py-24 bg-card">
         <div className="mx-auto w-full max-w-4xl px-4 sm:px-6 lg:px-8">
             <div className="mx-auto max-w-xl text-center">
-                <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{t('title')}</h2>
-                <p className="mt-4 text-lg text-muted-foreground">{t('subtitle')}</p>
+                <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{t.FAQ.title}</h2>
+                <p className="mt-4 text-lg text-muted-foreground">{t.FAQ.subtitle}</p>
             </div>
             <Accordion type="single" collapsible className="mt-12 w-full space-y-4">
                 {questions.map((item, i) => (
@@ -325,7 +454,6 @@ const FaqSection = () => {
 
 // --- Footer Component ---
 const Footer = () => {
-    const t = useTranslations('CareersLanding.Footer');
     return (
     <footer className="border-t">
         <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -335,29 +463,29 @@ const Footer = () => {
                         <Leaf className="h-6 w-6 text-primary" />
                         <span className="text-lg font-bold">Environesia Karir</span>
                     </div>
-                    <p className="mt-2 text-sm text-muted-foreground">{t('tagline')}</p>
+                    <p className="mt-2 text-sm text-muted-foreground">{t.Footer.tagline}</p>
                 </div>
                 <div className="grid grid-cols-2 gap-8 md:col-span-2">
                     <div>
-                        <h4 className="font-semibold">{t('navigation')}</h4>
+                        <h4 className="font-semibold">{t.Footer.navigation}</h4>
                         <ul className="mt-4 space-y-2 text-sm">
-                            <li><a href="#lowongan" className="text-muted-foreground hover:text-primary">{useTranslations('CareersLanding.Header')('jobs')}</a></li>
-                            <li><a href="#proses" className="text-muted-foreground hover:text-primary">{useTranslations('CareersLanding.Header')('process')}</a></li>
-                            <li><a href="#faq" className="text-muted-foreground hover:text-primary">{useTranslations('CareersLanding.Header')('faq')}</a></li>
+                            <li><a href="#lowongan" className="text-muted-foreground hover:text-primary">{t.Header.jobs}</a></li>
+                            <li><a href="#proses" className="text-muted-foreground hover:text-primary">{t.Header.process}</a></li>
+                            <li><a href="#faq" className="text-muted-foreground hover:text-primary">{t.Header.faq}</a></li>
                         </ul>
                     </div>
                      <div>
-                        <h4 className="font-semibold">{t('company')}</h4>
+                        <h4 className="font-semibold">{t.Footer.company}</h4>
                         <ul className="mt-4 space-y-2 text-sm">
-                             <li><a href="https://environesia.co.id/" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary">{useTranslations('CareersLanding.Header')('companyProfile')}</a></li>
-                             <li><Link href="/admin/login" className="text-muted-foreground hover:text-primary">{t('internalAccess')}</Link></li>
+                             <li><a href="https://environesia.co.id/" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary">{t.Header.companyProfile}</a></li>
+                             <li><a href="/admin/login" className="text-muted-foreground hover:text-primary">{t.Footer.internalAccess}</a></li>
                         </ul>
                     </div>
                 </div>
             </div>
             <div className="py-6 border-t">
                 <p className="text-sm text-center text-muted-foreground">
-                    {t('copyright', {year: new Date().getFullYear()})}
+                    {t.Footer.copyright.replace('{year}', new Date().getFullYear().toString())}
                 </p>
             </div>
         </div>

@@ -3,10 +3,10 @@
 import type { ReactNode } from 'react';
 import React, { useMemo } from 'react';
 import Link from 'next/link';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useAuth as useFirebaseAuth, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { doc } from 'firebase/firestore';
-import { useRouter, usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { LogOut, ArrowLeft, Leaf } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';

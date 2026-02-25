@@ -1,11 +1,10 @@
-// This file path is for the new non-locale structure.
-// The content is taken from the original [locale] equivalent.
 'use client';
 
 import { CandidateLoginForm } from '@/components/auth/CandidateLoginForm';
 import { useAuth } from '@/providers/auth-provider';
 import { Loader2 } from 'lucide-react';
-import { useRouter, Link } from 'next/navigation';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, Suspense } from 'react';
 
