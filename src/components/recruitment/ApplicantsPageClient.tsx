@@ -44,6 +44,39 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allUsers,
   const firestore = useFirestore();
   const { toast } = useToast();
 
+  const fallbackLink = useMemo(() => {
+    if (job?.interviewTemplate?.meetingLink) return null;
+    for (const app of applications) {
+        if (app.interviews && app.interviews.length > 0) {
+            for (const iv of app.interviews) {
+                if (iv.meetingLink) {
+                    return iv.meetingLink;
+                }
+            }
+        }
+    }
+    return null;
+  }, [job, applications]);
+
+  const handleUseAsDefault = async () => {
+    if (!job || !fallbackLink) return;
+    try {
+        const jobRef = doc(firestore, 'jobs', job.id!);
+        await setDocumentNonBlocking(jobRef, {
+            interviewTemplate: {
+                ...job.interviewTemplate,
+                meetingLink: fallbackLink,
+            },
+            'updatedAt': serverTimestamp(),
+        }, { merge: true });
+        toast({ title: "Template Updated", description: "The detected meeting link has been set as the default." });
+        onJobUpdate();
+    } catch (e: any) {
+        toast({ variant: 'destructive', title: "Save Failed", description: e.message });
+    }
+  };
+
+
   const filteredApplications = useMemo(() => {
     if (stageFilter === 'all') return applications;
     return applications.filter(app => app.status === stageFilter);
@@ -170,12 +203,26 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allUsers,
             </CardHeader>
             <CardContent>
                 <p className="text-sm text-muted-foreground">Default Link:</p>
-                <p className="text-sm font-mono break-all">{job.interviewTemplate?.meetingLink || 'Not set'}</p>
+                {job.interviewTemplate?.meetingLink ? (
+                  <p className="text-sm font-mono break-all">{job.interviewTemplate.meetingLink}</p>
+                ) : fallbackLink ? (
+                  <div className='flex items-center gap-2 mt-1'>
+                    <p className="text-sm font-mono break-all text-muted-foreground italic">{fallbackLink}</p>
+                    <Badge variant="outline">Detected</Badge>
+                  </div>
+                ) : (
+                  <p className="text-sm font-mono break-all">Not set</p>
+                )}
             </CardContent>
-            <CardFooter>
+            <CardFooter className="flex gap-2">
                 <Button variant="outline" onClick={() => setIsTemplateDialogOpen(true)}>
                     <Edit className="mr-2 h-4 w-4" /> Edit Template
                 </Button>
+                {fallbackLink && !job.interviewTemplate?.meetingLink && (
+                    <Button onClick={handleUseAsDefault}>
+                         Gunakan sebagai Default
+                    </Button>
+                )}
             </CardFooter>
         </Card>
       )}
@@ -293,7 +340,7 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allUsers,
             onSave={handleSaveTemplate} 
         />
       )}
-      {activeApplication && userProfile && (
+      {activeApplication && userProfile && job && (
         <ScheduleInterviewDialog
             open={isSingleScheduleOpen}
             onOpenChange={setIsSingleScheduleOpen}
@@ -305,6 +352,7 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allUsers,
             } : undefined}
             candidateName={activeApplication.candidateName}
             recruiter={userProfile}
+            job={job}
         />
       )}
     </div>

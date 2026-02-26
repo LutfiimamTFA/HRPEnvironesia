@@ -35,7 +35,7 @@ function ApplicationDetailSkeleton() {
   return <Skeleton className="h-[500px] w-full" />;
 }
 
-function InterviewManagement({ application, onUpdate, allUsers, allBrands }: { application: JobApplication; onUpdate: () => void; allUsers: UserProfile[], allBrands: Brand[] }) {
+function InterviewManagement({ application, onUpdate, allUsers, allBrands, job }: { application: JobApplication; onUpdate: () => void; allUsers: UserProfile[], allBrands: Brand[], job: Job }) {
   const [isScheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [isManagePanelistsOpen, setManagePanelistsOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -268,7 +268,9 @@ function InterviewManagement({ application, onUpdate, allUsers, allBrands }: { a
       <CardHeader>
         <div className="flex justify-between items-center">
             <CardTitle>Manajemen Wawancara</CardTitle>
-             <Button size="sm" onClick={() => handleOpenScheduleDialog()}>Jadwalkan Wawancara Baru</Button>
+            {(!application.interviews || application.interviews.filter(iv => iv.status !== 'canceled').length === 0) && (
+              <Button size="sm" onClick={() => handleOpenScheduleDialog()}>Jadwalkan Wawancara Baru</Button>
+            )}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -290,7 +292,7 @@ function InterviewManagement({ application, onUpdate, allUsers, allBrands }: { a
                                             variant={iv.meetingPublished ? "outline" : "secondary"} 
                                             size="sm" 
                                             onClick={() => handleTogglePublish(iv)} 
-                                            disabled={isSubmitting}
+                                            disabled={isSubmitting || (!iv.meetingPublished && !iv.meetingLink)}
                                             title={!iv.meetingPublished && !iv.meetingLink ? "Tambahkan link meeting untuk bisa publish" : ""}
                                         >
                                             {iv.meetingPublished ? (
@@ -356,6 +358,7 @@ function InterviewManagement({ application, onUpdate, allUsers, allBrands }: { a
         } : undefined}
         allUsers={allUsers}
         allBrands={allBrands}
+        job={job}
       />
       {activeInterview && userProfile && (
         <ManagePanelistsDialog
@@ -444,6 +447,9 @@ export default function ApplicationDetailPage() {
     
     if (newStage === 'tes_kepribadian' && !application.personalityTestAssignedAt) {
       updatePayload.personalityTestAssignedAt = serverTimestamp();
+    }
+    if (['hired', 'rejected'].includes(newStage)) {
+      updatePayload.decisionAt = serverTimestamp();
     }
 
     try {
@@ -557,7 +563,7 @@ export default function ApplicationDetailPage() {
           </Card>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
             <div className="lg:col-span-2 space-y-6">
-                <InterviewManagement application={application} onUpdate={mutateApplication} allUsers={internalUsers || []} allBrands={brands || []} />
+                <InterviewManagement job={job} application={application} onUpdate={mutateApplication} allUsers={internalUsers || []} allBrands={brands || []} />
                 <CandidateFitAnalysis profile={profile} job={job} application={application}/>
                 <ProfileView profile={profile} />
             </div>
