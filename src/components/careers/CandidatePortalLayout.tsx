@@ -105,7 +105,7 @@ export function CandidatePortalLayout({ children }: { children: ReactNode }) {
 
   const sessionsQuery = useMemoFirebase(() => {
     if (!userProfile?.uid) return null;
-    return query(collection(firestore, 'assessment_sessions'), where('candidateUid', '==', userProfile.uid), where('applicationId', '!=', null));
+    return query(collection(firestore, 'assessment_sessions'), where('candidateUid', '==', userProfile.uid));
   }, [userProfile?.uid, firestore]);
   const { data: sessions, isLoading: isLoadingSessions } = useCollection<AssessmentSession>(sessionsQuery);
 
@@ -139,8 +139,9 @@ export function CandidatePortalLayout({ children }: { children: ReactNode }) {
     
     // Determine assessment status
     if (sessions && sessions.length > 0) {
-        const submitted = sessions.find(s => s.status === 'submitted');
-        const draft = sessions.find(s => s.status === 'draft');
+        const appSessions = sessions.filter(s => s.applicationId); // Filter for sessions linked to an application
+        const submitted = appSessions.find(s => s.status === 'submitted');
+        const draft = appSessions.find(s => s.status === 'draft');
         if (submitted) defaultResult.assessmentStatus = 'Selesai';
         else if (draft) defaultResult.assessmentStatus = 'Proses';
     }
