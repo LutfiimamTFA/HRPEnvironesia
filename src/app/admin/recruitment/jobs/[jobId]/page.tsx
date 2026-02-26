@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useMemo } from 'react';
@@ -35,7 +36,7 @@ export default function RecruitmentApplicantsPage() {
   const jobId = params.jobId as string;
   
   const jobRef = useMemoFirebase(() => (jobId ? doc(firestore, 'jobs', jobId) : null), [firestore, jobId]);
-  const { data: job, isLoading: isLoadingJob } = useDoc<Job>(jobRef);
+  const { data: job, isLoading: isLoadingJob, mutate: mutateJob } = useDoc<Job>(jobRef);
 
   const applicationsQuery = useMemoFirebase(
     () => (jobId ? query(collection(firestore, 'applications'), where('jobId', '==', jobId)) : null),
@@ -91,7 +92,11 @@ export default function RecruitmentApplicantsPage() {
             </Button>
         </div>
         
-        <ApplicantsPageClient applications={applications || []} />
+        <ApplicantsPageClient 
+          applications={applications || []} 
+          job={job}
+          onJobUpdate={mutateJob}
+        />
       </div>
     </DashboardLayout>
   );

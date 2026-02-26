@@ -1,3 +1,4 @@
+
 'use client';
 
 import type { Timestamp } from 'firebase/firestore';
@@ -57,6 +58,9 @@ export type Job = {
   createdBy: string;
   updatedBy: string;
   tags?: string[]; // Added for panelist suggestions
+  interviewTemplate?: {
+    meetingLink?: string;
+  };
 };
 
 export const ORDERED_RECRUITMENT_STAGES = ['submitted', 'screening', 'tes_kepribadian', 'verification', 'document_submission', 'interview', 'hired', 'rejected'] as const;
