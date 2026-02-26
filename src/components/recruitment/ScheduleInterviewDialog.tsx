@@ -11,8 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Loader2, Save } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import type { UserProfile, Brand } from '@/lib/types';
-import { GoogleDatePicker } from '../ui/google-date-picker';
+import type { UserProfile, Job } from '@/lib/types';
 import { add, format } from 'date-fns';
 
 export const scheduleSchema = z.object({
@@ -100,15 +99,15 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
                 control={form.control}
                 name="dateTime"
                 render={({ field }) => (
-                    <FormItem className="flex flex-col">
+                    <FormItem>
                     <FormLabel>Tanggal & Waktu Mulai</FormLabel>
                     <FormControl>
-                        <GoogleDatePicker
-                            value={field.value}
-                            onChange={field.onChange}
-                            mode="general"
+                        <Input
+                            type="datetime-local"
+                            value={field.value ? format(new Date(field.value), "yyyy-MM-dd'T'HH:mm") : ''}
+                            onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : undefined)}
                         />
-                        </FormControl>
+                    </FormControl>
                     <FormMessage />
                     </FormItem>
                 )}
