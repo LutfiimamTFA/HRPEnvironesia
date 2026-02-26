@@ -73,7 +73,7 @@ export function ApplicationStatusStepper({ highestStatus, isProfileComplete, isL
                 case 'document_submission':
                     return { status: 'active', cta: <Button asChild size="sm"><Link href="/careers/portal/documents">Unggah Dokumen</Link></Button> };
                 case 'interview':
-                     return { status: 'waiting', reason: 'Menunggu jadwal wawancara dari HRD. Anda akan dihubungi melalui email.' };
+                     return { status: 'waiting', reason: 'Menunggu jadwal wawancara dari HRD. Jadwal akan muncul di halaman Jadwal Wawancara.' };
                 case 'hired':
                     return { status: 'completed', reason: 'Selamat! Anda telah diterima.' };
                 case 'verification':
