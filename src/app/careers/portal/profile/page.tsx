@@ -191,8 +191,8 @@ function ProfileWizardContent() {
             {effectiveStep === 5 && (
                  <SkillsForm
                     initialData={{
-                        skills: initialData.skills || [],
-                        certifications: initialData.certifications || [],
+                        skills: initialProfileData.skills || [],
+                        certifications: initialProfileData.certifications || [],
                     }}
                     onSaveSuccess={handleSaveSuccess}
                     onBack={handleBack}
@@ -201,9 +201,9 @@ function ProfileWizardContent() {
             {effectiveStep === 6 && (
                 <SelfDescriptionForm
                     initialData={{
-                        selfDescription: initialData.selfDescription,
-                        salaryExpectation: initialData.salaryExpectation,
-                        motivation: initialData.motivation,
+                        selfDescription: initialProfileData.selfDescription,
+                        salaryExpectation: initialProfileData.salaryExpectation,
+                        motivation: initialProfileData.motivation,
                     }}
                     onFinish={handleFinish}
                     onBack={handleBack}
