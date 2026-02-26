@@ -1,4 +1,3 @@
-
 'use client';
 
 import type { Timestamp } from 'firebase/firestore';
@@ -60,6 +59,13 @@ export type Job = {
   tags?: string[]; // Added for panelist suggestions
   interviewTemplate?: {
     meetingLink?: string;
+    meetingPublished?: boolean;
+    defaultPanelistIds?: string[];
+    defaultStartDate?: Timestamp;
+    workdayStartTime?: string; // "HH:mm"
+    workdayEndTime?: string; // "HH:mm"
+    slotDurationMinutes?: number;
+    breakMinutes?: number;
   };
 };
 
@@ -109,6 +115,9 @@ export type ApplicationInterview = {
     meetingPublished?: boolean;
     meetingPublishedAt?: Timestamp | null;
     meetingPublishedBy?: string | null;
+    rescheduleReason?: string; // Legacy field
+    interviewerIds?: string[]; // Legacy field
+    interviewerNames?: string[]; // Legacy field
 };
 
 export type InterviewChangeRequest = {

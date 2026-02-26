@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { GoogleDatePicker } from '@/components/ui/google-date-picker';
 import { useToast } from '@/hooks/use-toast';
 import { getInitials, cn, generateTimeSlots } from '@/lib/utils';
-import type { JobApplication, ApplicationInterview, UserProfile, ApplicationTimelineEvent, Brand } from '@/lib/types';
+import type { JobApplication, ApplicationInterview, UserProfile, ApplicationTimelineEvent, Brand, Job } from '@/lib/types';
 import { ArrowLeft, ArrowRight, Calendar, Clock, GripVertical, Loader2, Save, Users, AlertCircle, Link as LinkIcon, Briefcase } from 'lucide-react';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -76,25 +76,15 @@ interface BulkScheduleWizardProps {
   onOpenChange: (open: boolean) => void;
   candidates: JobApplication[];
   recruiter: UserProfile;
+  job: Job;
   onSuccess: () => void;
 }
 
-export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter, onSuccess }: BulkScheduleWizardProps) {
+export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter, job, onSuccess }: BulkScheduleWizardProps) {
   const [step, setStep] = useState(1);
   const [orderedCandidates, setOrderedCandidates] = useState<JobApplication[]>([]);
   const { toast } = useToast();
   const firestore = useFirestore();
-
-  const internalUsersQuery = useMemoFirebase(() =>
-    query(
-      collection(firestore, 'users'),
-      where('role', 'in', ['hrd', 'manager', 'karyawan', 'super-admin']),
-      where('isActive', '==', true)
-    ),
-    [firestore]
-  );
-  const { data: internalUsers } = useCollection<UserProfile>(internalUsersQuery);
-  const { data: brands } = useCollection<Brand>(useMemoFirebase(() => collection(firestore, 'brands'), [firestore]));
 
   const initRef = useRef(false);
   const candidatesKey = useMemo(() => candidates.map(c => c.id!).join('|'), [candidates]);
@@ -114,12 +104,12 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
   const scheduleForm = useForm<ScheduleConfigValues>({
     resolver: zodResolver(scheduleConfigSchema),
     defaultValues: {
-      startDate: new Date(),
-      startTime: '09:00',
-      slotDuration: 30,
-      buffer: 10,
-      workdayEndTime: '17:00',
-      meetingLink: '',
+      startDate: job.interviewTemplate?.defaultStartDate?.toDate() || new Date(),
+      startTime: job.interviewTemplate?.workdayStartTime || '09:00',
+      slotDuration: job.interviewTemplate?.slotDurationMinutes || 30,
+      buffer: job.interviewTemplate?.breakMinutes || 10,
+      workdayEndTime: job.interviewTemplate?.workdayEndTime || '17:00',
+      meetingLink: job.interviewTemplate?.meetingLink || '',
     },
   });
 
@@ -192,9 +182,7 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
     
     const batch = writeBatch(firestore);
     
-    const panelistIds = [recruiter.uid];
-    const panelistNames = [recruiter.fullName];
-
+    const panelistIds = job.interviewTemplate?.defaultPanelistIds || [recruiter.uid];
     const { meetingLink } = scheduleForm.getValues();
 
 
@@ -205,7 +193,7 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
             startAt: Timestamp.fromDate(slot.startAt),
             endAt: Timestamp.fromDate(slot.endAt),
             panelistIds: panelistIds,
-            panelistNames: panelistNames,
+            panelistNames: [], // This should be populated based on panelistIds
             meetingLink: meetingLink ?? '',
             status: 'scheduled',
         };
