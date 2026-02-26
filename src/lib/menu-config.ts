@@ -5,6 +5,7 @@ import {
     Contact, UserPlus, FolderKanban, CalendarOff, UserMinus, KanbanSquare, CheckSquare, BarChart, ClipboardCheck, Award, Search, FileText, FileUp, Video, BrainCircuit 
 } from 'lucide-react';
 import type { UserRole } from '@/lib/types';
+import { Badge } from '@/components/ui/badge';
 
 export type MenuItem = {
   href: string;
@@ -90,9 +91,9 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
     {
       title: "Proses Seleksi",
       items: [
-        { href: '/careers/portal/assessment/personality', label: 'Tes Kepribadian', icon: createElement(BrainCircuit) },
-        { href: '/careers/portal/documents', label: 'Pengumpulan Dokumen', icon: createElement(FileUp) },
-        { href: '/careers/portal/interviews', label: 'Jadwal Wawancara', icon: createElement(Calendar) },
+        { href: '/careers/portal/assessment/personality', label: 'Tes Kepribadian', icon: createElement(BrainCircuit), badge: createElement(Badge, { variant: "outline", className: "text-xs" }, "Belum") },
+        { href: '/careers/portal/documents', label: 'Pengumpulan Dokumen', icon: createElement(FileUp), badge: createElement(Badge, { variant: "outline", className: "text-xs" }, "0/2") },
+        { href: '/careers/portal/interviews', label: 'Jadwal Wawancara', icon: createElement(Calendar), badge: createElement(Badge, { variant: "default", className: "text-xs" }, "1") },
       ]
     },
     {

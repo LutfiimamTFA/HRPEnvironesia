@@ -23,10 +23,11 @@ import {
   SidebarTrigger,
   SidebarFooter,
 } from '@/components/ui/sidebar';
-import { ALL_MENU_ITEMS, ALL_UNIQUE_MENU_ITEMS } from '@/lib/menu-config';
-import type { NavigationSetting } from '@/lib/types';
+import { MENU_CONFIG } from '@/lib/menu-config';
+import type { NavigationSetting, UserRole } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from '../ui/ThemeToggle';
+import { Separator } from '../ui/separator';
 
 function UserNav() {
   const { userProfile } = useAuth();
@@ -40,7 +41,7 @@ function UserNav() {
   };
   
   const getInitials = (name: string = '') => {
-    return name.split(' ').map(n => n[0]).join('').toUpperCase();
+    return name.split(' ').map(n => n[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
   }
 
   if (!userProfile) return null;
@@ -91,21 +92,19 @@ export function CandidatePortalLayout({ children }: { children: ReactNode }) {
 
   const { data: navSettings, isLoading: isLoadingSettings } = useDoc<NavigationSetting>(settingsDocRef);
 
-  const menuItems = useMemo(() => {
-    const defaultItems = ALL_MENU_ITEMS.kandidat || [];
-
+  const menuConfig = useMemo(() => {
+    const roleConfig = MENU_CONFIG[userProfile?.role as UserRole] || [];
     if (isLoadingSettings) {
-      return defaultItems;
+      return roleConfig;
     }
-    
     if (navSettings) {
-      return ALL_UNIQUE_MENU_ITEMS.filter(item => 
-        ALL_MENU_ITEMS.kandidat.some(k => k.label === item.label) && navSettings.visibleMenuItems.includes(item.label)
-      );
+      return roleConfig.map(group => ({
+        ...group,
+        items: group.items.filter(item => navSettings.visibleMenuItems.includes(item.label))
+      })).filter(group => group.items.length > 0);
     }
-    
-    return defaultItems;
-  }, [navSettings, isLoadingSettings]);
+    return roleConfig;
+  }, [userProfile, navSettings, isLoadingSettings]);
   
   if (!userProfile) {
     return null; // Should be handled by the parent layout's guard
@@ -128,28 +127,36 @@ export function CandidatePortalLayout({ children }: { children: ReactNode }) {
            </div>
         </SidebarHeader>
         <SidebarContent className="p-2">
-          <SidebarMenu>
-            {menuItems.map((item) => {
-              const isActive = pathname === item.href;
-              return (
-              <SidebarMenuItem key={item.label}>
-                <SidebarMenuButton 
-                  asChild 
-                  tooltip={item.label}
-                  isActive={isActive}
-                  className={cn(
-                    "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[active=true]:bg-primary data-[active=true]:text-primary-foreground font-medium",
-                    "justify-start"
-                  )}
-                >
-                  <Link href={item.href}>
-                    {item.icon}
-                    <span className="group-data-[state=collapsed]:hidden">{item.label}</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            )})}
-          </SidebarMenu>
+          {menuConfig.map((group, groupIndex) => (
+            <React.Fragment key={group.title || groupIndex}>
+                <SidebarMenu>
+                    {group.title && <h2 className="px-2 py-1 text-xs font-semibold text-muted-foreground tracking-wider group-data-[state=collapsed]:hidden">{group.title}</h2>}
+                    {group.items.map(item => {
+                        const isActive = pathname === item.href || (item.href !== '/careers/portal' && pathname.startsWith(item.href));
+                        return (
+                            <SidebarMenuItem key={item.label}>
+                                <SidebarMenuButton 
+                                asChild 
+                                tooltip={item.label}
+                                isActive={isActive}
+                                className={cn(
+                                    "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[active=true]:bg-primary data-[active=true]:text-primary-foreground font-medium",
+                                    "justify-start"
+                                )}
+                                >
+                                <Link href={item.href}>
+                                    {item.icon}
+                                    <span className="group-data-[state=collapsed]:hidden">{item.label}</span>
+                                    {item.badge && <span className="ml-auto group-data-[state=collapsed]:hidden">{item.badge}</span>}
+                                </Link>
+                                </SidebarMenuButton>
+                            </SidebarMenuItem>
+                        )
+                    })}
+                </SidebarMenu>
+                {groupIndex < menuConfig.length - 1 && <Separator className="my-2 bg-sidebar-border group-data-[state=collapsed]:mx-auto group-data-[state=collapsed]:w-1/2" />}
+            </React.Fragment>
+          ))}
         </SidebarContent>
         <SidebarFooter className="mt-auto p-2">
             <SidebarMenu>
