@@ -44,32 +44,37 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allUsers,
   const firestore = useFirestore();
   const { toast } = useToast();
 
-  const fallbackLink = useMemo(() => {
-    if (job?.interviewTemplate?.meetingLink) return null;
-    for (const app of applications) {
-        if (app.interviews && app.interviews.length > 0) {
-            for (const iv of app.interviews) {
-                if (iv.meetingLink) {
-                    return iv.meetingLink;
-                }
-            }
-        }
-    }
-    return null;
+  const detectedTemplate = useMemo(() => {
+    if (!job || (job.interviewTemplate && job.interviewTemplate.slotDurationMinutes)) return null;
+
+    const firstInterviewWithData = applications
+      .flatMap(app => app.interviews || [])
+      .find(iv => iv.startAt && iv.endAt);
+
+    if (!firstInterviewWithData) return null;
+
+    const duration = differenceInMinutes(firstInterviewWithData.endAt.toDate(), firstInterviewWithData.startAt.toDate());
+
+    return {
+      meetingLink: firstInterviewWithData.meetingLink || '',
+      defaultStartDate: firstInterviewWithData.startAt,
+      workdayStartTime: format(firstInterviewWithData.startAt.toDate(), 'HH:mm'),
+      slotDurationMinutes: duration > 0 ? duration : 30,
+    };
   }, [job, applications]);
 
   const handleUseAsDefault = async () => {
-    if (!job || !fallbackLink) return;
+    if (!job || !detectedTemplate) return;
     try {
         const jobRef = doc(firestore, 'jobs', job.id!);
         await setDocumentNonBlocking(jobRef, {
             interviewTemplate: {
                 ...job.interviewTemplate,
-                meetingLink: fallbackLink,
+                ...detectedTemplate,
             },
             'updatedAt': serverTimestamp(),
         }, { merge: true });
-        toast({ title: "Template Updated", description: "The detected meeting link has been set as the default." });
+        toast({ title: "Template Updated", description: "The detected settings have been set as the default." });
         onJobUpdate();
     } catch (e: any) {
         toast({ variant: 'destructive', title: "Save Failed", description: e.message });
@@ -205,9 +210,9 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allUsers,
                 <p className="text-sm text-muted-foreground">Default Link:</p>
                 {job.interviewTemplate?.meetingLink ? (
                   <p className="text-sm font-mono break-all">{job.interviewTemplate.meetingLink}</p>
-                ) : fallbackLink ? (
+                ) : detectedTemplate?.meetingLink ? (
                   <div className='flex items-center gap-2 mt-1'>
-                    <p className="text-sm font-mono break-all text-muted-foreground italic">{fallbackLink}</p>
+                    <p className="text-sm font-mono break-all text-muted-foreground italic">{detectedTemplate.meetingLink}</p>
                     <Badge variant="outline">Detected</Badge>
                   </div>
                 ) : (
@@ -218,7 +223,7 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allUsers,
                 <Button variant="outline" onClick={() => setIsTemplateDialogOpen(true)}>
                     <Edit className="mr-2 h-4 w-4" /> Edit Template
                 </Button>
-                {fallbackLink && !job.interviewTemplate?.meetingLink && (
+                {detectedTemplate && !job.interviewTemplate?.meetingLink && (
                     <Button onClick={handleUseAsDefault}>
                          Gunakan sebagai Default
                     </Button>
@@ -336,7 +341,8 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allUsers,
         <EditInterviewTemplateDialog 
             open={isTemplateDialogOpen} 
             onOpenChange={setIsTemplateDialogOpen} 
-            job={job} 
+            job={job}
+            initialTemplateData={detectedTemplate || undefined}
             onSave={handleSaveTemplate} 
         />
       )}
@@ -353,6 +359,8 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allUsers,
             candidateName={activeApplication.candidateName}
             recruiter={userProfile}
             job={job}
+            allUsers={allUsers}
+            allBrands={allBrands}
         />
       )}
     </div>

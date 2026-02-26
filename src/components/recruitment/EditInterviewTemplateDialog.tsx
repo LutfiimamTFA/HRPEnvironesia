@@ -29,10 +29,11 @@ interface EditInterviewTemplateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   job: Job;
+  initialTemplateData?: Partial<Job['interviewTemplate']>;
   onSave: (templateData: Partial<Job['interviewTemplate']>) => void;
 }
 
-export function EditInterviewTemplateDialog({ open, onOpenChange, job, onSave }: EditInterviewTemplateDialogProps) {
+export function EditInterviewTemplateDialog({ open, onOpenChange, job, initialTemplateData, onSave }: EditInterviewTemplateDialogProps) {
   const [isSaving, setIsSaving] = useState(false);
   
   const form = useForm<FormValues>({
@@ -40,25 +41,18 @@ export function EditInterviewTemplateDialog({ open, onOpenChange, job, onSave }:
   });
 
   useEffect(() => {
-    if (open && job.interviewTemplate) {
+    if (open) {
+      const template = initialTemplateData || job.interviewTemplate;
       form.reset({
-        meetingLink: job.interviewTemplate.meetingLink || '',
-        slotDurationMinutes: job.interviewTemplate.slotDurationMinutes || 30,
-        breakMinutes: job.interviewTemplate.breakMinutes || 10,
-        workdayStartTime: job.interviewTemplate.workdayStartTime || '09:00',
-        workdayEndTime: job.interviewTemplate.workdayEndTime || '17:00',
-        defaultStartDate: job.interviewTemplate.defaultStartDate?.toDate(),
+        meetingLink: template?.meetingLink || '',
+        slotDurationMinutes: template?.slotDurationMinutes || 30,
+        breakMinutes: template?.breakMinutes || 10,
+        workdayStartTime: template?.workdayStartTime || '09:00',
+        workdayEndTime: template?.workdayEndTime || '17:00',
+        defaultStartDate: template?.defaultStartDate?.toDate(),
       });
-    } else if (open) {
-        form.reset({
-            meetingLink: '',
-            slotDurationMinutes: 30,
-            breakMinutes: 10,
-            workdayStartTime: '09:00',
-            workdayEndTime: '17:00',
-        });
     }
-  }, [open, job, form]);
+  }, [open, job, initialTemplateData, form]);
 
   const handleSubmit = (values: FormValues) => {
     setIsSaving(true);

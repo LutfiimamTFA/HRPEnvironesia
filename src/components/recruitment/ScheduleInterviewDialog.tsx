@@ -13,6 +13,7 @@ import { Loader2, Save } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import type { UserProfile, Job, Brand } from '@/lib/types';
 import { add, format } from 'date-fns';
+import { PanelistPickerSimple } from './PanelistPickerSimple';
 
 export const scheduleSchema = z.object({
   dateTime: z.coerce.date({ required_error: 'Tanggal dan waktu harus diisi.' }),
@@ -27,7 +28,7 @@ export const scheduleSchema = z.object({
     z.string().url({ message: "URL meeting tidak valid." }).optional().or(z.literal(''))
   ),
   notes: z.string().optional(),
-  panelists: z.array(z.object({ value: z.string(), label: z.string() })).optional(),
+  panelists: z.array(z.object({ value: z.string(), label: z.string() })).min(1, 'Minimal harus ada 1 panelis.'),
 });
 
 export type ScheduleInterviewData = z.infer<typeof scheduleSchema>;
@@ -71,7 +72,7 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
         duration: initialData?.duration || job?.interviewTemplate?.slotDurationMinutes || 30,
         meetingLink: initialData?.meetingLink || templateLink,
         notes: initialData?.notes || '',
-        panelists: initialData?.panelists || [],
+        panelists: initialData?.panelists || [{ value: recruiter.uid, label: recruiter.fullName }],
       });
     }
   }, [open, initialData, form, recruiter, job]);
@@ -89,17 +90,17 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col p-0">
-        <DialogHeader className="p-6 pb-4 border-b">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
+        <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            Ubah detail untuk jadwal wawancara. Panelis dikelola secara terpisah.
+            Ubah detail untuk jadwal wawancara.
           </DialogDescription>
         </DialogHeader>
         
-        <div className="flex-grow overflow-y-auto px-6">
+        <div className="flex-grow overflow-y-auto pr-2 -mr-6 pl-1">
             <Form {...form}>
-            <form id="schedule-interview-form" onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 py-4">
+            <form id="schedule-interview-form" onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 py-4 pr-4">
                 <FormField
                 control={form.control}
                 name="dateTime"
@@ -136,6 +137,23 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
                     </FormItem>
                 )}
                 />
+
+                <FormField
+                    control={form.control}
+                    name="panelists"
+                    render={({ field }) => (
+                        <FormItem>
+                        <FormLabel>Panelis</FormLabel>
+                        <PanelistPickerSimple 
+                            allUsers={allUsers}
+                            allBrands={allBrands}
+                            selectedIds={field.value?.map(p => p.value) || []}
+                            onChange={(ids) => field.onChange(ids.map(id => ({ value: id, label: allUsers.find(u => u.uid === id)?.fullName || ''})))}
+                        />
+                        <FormMessage />
+                        </FormItem>
+                    )}
+                />
                 
                 <FormField
                 control={form.control}
@@ -152,7 +170,7 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
             </Form>
         </div>
         
-        <DialogFooter className="p-6 pt-4 border-t">
+        <DialogFooter className="flex-shrink-0 pt-4 border-t">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Batal</Button>
           <Button type="submit" form="schedule-interview-form" disabled={isSaving}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
