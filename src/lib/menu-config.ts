@@ -2,7 +2,7 @@
 import { createElement, type ReactNode } from 'react';
 import { 
     LayoutDashboard, Users, Briefcase, User, Calendar, DollarSign, Settings, ShieldCheck, Database, History, 
-    Contact, UserPlus, FolderKanban, CalendarOff, UserMinus, KanbanSquare, CheckSquare, BarChart, ClipboardCheck, Award, Search, FileText, FileUp, Video 
+    Contact, UserPlus, FolderKanban, CalendarOff, UserMinus, KanbanSquare, CheckSquare, BarChart, ClipboardCheck, Award, Search, FileText, FileUp, Video, BrainCircuit 
 } from 'lucide-react';
 import type { UserRole } from '@/lib/types';
 
@@ -80,14 +80,26 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
   ],
   'kandidat': [
     {
-        items: [
-            { href: '/careers/portal', label: 'Dashboard', icon: createElement(LayoutDashboard) },
-            { href: '/careers/portal/jobs', label: 'Daftar Lowongan', icon: createElement(Briefcase) },
-            { href: '/careers/portal/applications', label: 'Lamaran Saya', icon: createElement(FileText) },
-            { href: '/careers/portal/interviews', label: 'Jadwal Wawancara', icon: createElement(Calendar) },
-            { href: '/careers/portal/documents', label: 'Pengumpulan Dokumen', icon: createElement(FileUp) },
-            { href: '/careers/portal/profile', label: 'Profil Saya', icon: createElement(User) },
-        ]
+      title: "Karir",
+      items: [
+        { href: '/careers/portal', label: 'Dashboard', icon: createElement(LayoutDashboard) },
+        { href: '/careers/portal/jobs', label: 'Daftar Lowongan', icon: createElement(Briefcase) },
+        { href: '/careers/portal/applications', label: 'Lamaran Saya', icon: createElement(FileText) },
+      ]
+    },
+    {
+      title: "Proses Seleksi",
+      items: [
+        { href: '/careers/portal/assessment/personality', label: 'Tes Kepribadian', icon: createElement(BrainCircuit) },
+        { href: '/careers/portal/documents', label: 'Pengumpulan Dokumen', icon: createElement(FileUp) },
+        { href: '/careers/portal/interviews', label: 'Jadwal Wawancara', icon: createElement(Calendar) },
+      ]
+    },
+    {
+      title: "Akun",
+      items: [
+        { href: '/careers/portal/profile', label: 'Profil Saya', icon: createElement(User) },
+      ]
     }
   ]
 };

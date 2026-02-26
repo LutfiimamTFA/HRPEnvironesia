@@ -105,10 +105,6 @@ export type ApplicationInterview = {
     meetingPublished?: boolean;
     meetingPublishedAt?: Timestamp | null;
     meetingPublishedBy?: string | null;
-    // Legacy support
-    interviewerIds?: string[];
-    interviewerNames?: string[];
-    rescheduleReason?: string;
 };
 
 export type InterviewChangeRequest = {
