@@ -365,6 +365,23 @@
       },
       "required": ["id", "organization", "position", "startDate"]
     },
+    "NikIndex": {
+      "title": "NIK Index",
+      "type": "object",
+      "description": "A private index to enforce NIK uniqueness across users. The document ID is the SHA-256 hash of the NIK.",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "The UID of the user associated with this NIK hash."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of when the index entry was created."
+        }
+      },
+      "required": ["uid", "createdAt"]
+    },
     "Profile": {
         "title": "Candidate Profile",
         "type": "object",
@@ -375,6 +392,10 @@
             "email": { "type": "string", "format": "email", "description": "Candidate's email." },
             "phone": { "type": "string", "description": "Candidate's phone number." },
             "eKtpNumber": { "type": "string", "description": "16-digit e-KTP number." },
+            "nikHash": {
+              "type": "string",
+              "description": "A server-side SHA-256 hash of the user's NIK, used for uniqueness checks."
+            },
             "gender": { "type": "string", "description": "Candidate's gender.", "enum": ["Laki-laki", "Perempuan"] },
             "birthPlace": { "type": "string", "description": "Candidate's place of birth." },
             "birthDate": { "type": "string", "format": "date-time", "description": "Candidate's date of birth." },
@@ -676,6 +697,22 @@
             {
               "name": "userId",
               "description": "The Firebase Auth UID of the user (candidate)."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/nik_index/{nikHash}",
+        "definition": {
+          "entityName": "NikIndex",
+          "schema": {
+            "$ref": "#/backend/entities/NikIndex"
+          },
+          "description": "Stores a mapping of a hashed NIK to a user UID to prevent duplicate registrations. This collection should only be accessible by server-side functions.",
+          "params": [
+            {
+              "name": "nikHash",
+              "description": "The SHA-256 hash of the user's NIK number."
             }
           ]
         }

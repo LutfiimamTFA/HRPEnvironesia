@@ -276,6 +276,7 @@ export type Profile = {
     email: string;
     phone: string;
     eKtpNumber: string;
+    nikHash?: string;
     gender: 'Laki-laki' | 'Perempuan';
     birthPlace: string;
     birthDate: Timestamp;
