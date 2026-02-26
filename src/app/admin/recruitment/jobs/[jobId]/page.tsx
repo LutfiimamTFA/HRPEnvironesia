@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useMemo } from 'react';
@@ -8,7 +7,7 @@ import { format } from 'date-fns';
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase, useDoc } from '@/firebase';
 import { collection, query, where, doc } from 'firebase/firestore';
-import type { Job, JobApplication } from '@/lib/types';
+import type { Job, JobApplication, UserProfile, Brand } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -44,6 +43,19 @@ export default function RecruitmentApplicantsPage() {
   );
   const { data: applications, isLoading: isLoadingApps, error } = useCollection<JobApplication>(applicationsQuery);
 
+  const internalUsersQuery = useMemoFirebase(() =>
+    query(
+      collection(firestore, 'users'),
+      where('role', 'in', ['hrd', 'manager', 'karyawan', 'super-admin']),
+      where('isActive', '==', true)
+    ),
+    [firestore]
+  );
+  const { data: internalUsers, isLoading: isLoadingUsers } = useCollection<UserProfile>(internalUsersQuery);
+
+  const brandsQuery = useMemoFirebase(() => collection(firestore, 'brands'), [firestore]);
+  const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(brandsQuery);
+
   const menuConfig = useMemo(() => {
     if (userProfile?.role === 'super-admin') return MENU_CONFIG['super-admin'];
     if (userProfile?.role === 'hrd') {
@@ -52,7 +64,7 @@ export default function RecruitmentApplicantsPage() {
     return [];
   }, [userProfile]);
   
-  const isLoading = isLoadingApps || isLoadingJob;
+  const isLoading = isLoadingApps || isLoadingJob || isLoadingUsers || isLoadingBrands;
 
   if (!hasAccess || isLoading) {
     return (
@@ -96,6 +108,8 @@ export default function RecruitmentApplicantsPage() {
           applications={applications || []} 
           job={job}
           onJobUpdate={mutateJob}
+          allUsers={internalUsers || []}
+          allBrands={brands || []}
         />
       </div>
     </DashboardLayout>
