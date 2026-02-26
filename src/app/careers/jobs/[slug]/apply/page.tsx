@@ -7,12 +7,13 @@ import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase, setDocumentNonBlocking } from '@/firebase';
 import { collection, query, where, limit, doc, getDoc, getDocs, serverTimestamp } from 'firebase/firestore';
-import type { Job, JobApplication } from '@/lib/types';
+import type { Job, JobApplication, JobApplicationStatus } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Building, Calendar, MapPin, Briefcase, Loader2 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, addMonths } from 'date-fns';
+import { id } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
 
 function JobApplySkeleton() {
@@ -72,23 +73,65 @@ export default function JobApplyPage() {
 
     setIsApplying(true);
 
-    // 1. Check profile completeness
-    if (!userProfile.isProfileComplete) {
-        toast({
-            variant: 'destructive',
-            title: 'Profil Belum Lengkap',
-            description: 'Silakan lengkapi Data Diri dan Pendidikan Anda sebelum melamar.',
-        });
-        router.push('/careers/portal/profile');
-        setIsApplying(false);
-        return;
-    }
-
-    const applicationId = `${job.id}_${userProfile.uid}`;
-    const applicationRef = doc(firestore, 'applications', applicationId);
-
     try {
-        // 2. Check for existing application
+        // --- PRE-APPLICATION CHECKS ---
+        const appsCollectionRef = collection(firestore, 'applications');
+        const q = query(appsCollectionRef, where('candidateUid', '==', userProfile.uid));
+        const userAppsSnap = await getDocs(q);
+        const userApplications = userAppsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as JobApplication));
+
+        // 1. Check for another active application
+        const ACTIVE_STATUSES: JobApplicationStatus[] = ['submitted', 'screening', 'tes_kepribadian', 'verification', 'document_submission', 'interview'];
+        const activeApp = userApplications.find(app => ACTIVE_STATUSES.includes(app.status));
+
+        if (activeApp) {
+            toast({
+                variant: 'destructive',
+                title: 'Lamaran Aktif Ditemukan',
+                description: `Anda tidak dapat melamar saat ini karena masih ada lamaran yang aktif untuk posisi "${activeApp.jobPosition}".`,
+            });
+            setIsApplying(false);
+            return;
+        }
+
+        // 2. Check for cooldown period
+        const FINAL_STATUSES: JobApplicationStatus[] = ['hired', 'rejected'];
+        const finalApps = userApplications.filter(app => FINAL_STATUSES.includes(app.status));
+
+        if (finalApps.length > 0) {
+            finalApps.sort((a, b) => (b.decisionAt?.toMillis() || b.updatedAt.toMillis()) - (a.decisionAt?.toMillis() || a.updatedAt.toMillis()));
+            const lastFinalApp = finalApps[0];
+            const decisionDate = lastFinalApp.decisionAt?.toDate() || lastFinalApp.updatedAt.toDate();
+            const cooldownEndDate = addMonths(decisionDate, 6);
+
+            if (new Date() < cooldownEndDate) {
+                toast({
+                    variant: 'destructive',
+                    title: 'Masa Tunggu Aktif',
+                    description: `Anda baru dapat melamar pekerjaan lagi setelah ${format(cooldownEndDate, 'dd MMMM yyyy', { locale: id })}.`,
+                });
+                setIsApplying(false);
+                return;
+            }
+        }
+        // --- END PRE-APPLICATION CHECKS ---
+
+        // 3. Check profile completeness
+        if (!userProfile.isProfileComplete) {
+            toast({
+                variant: 'destructive',
+                title: 'Profil Belum Lengkap',
+                description: 'Silakan lengkapi Data Diri dan Pendidikan Anda sebelum melamar.',
+            });
+            router.push('/careers/portal/profile');
+            setIsApplying(false);
+            return;
+        }
+
+        const applicationId = `${job.id}_${userProfile.uid}`;
+        const applicationRef = doc(firestore, 'applications', applicationId);
+
+        // 4. Check for existing application for THIS job
         const existingAppSnap = await getDoc(applicationRef);
         if (existingAppSnap.exists()) {
             toast({
@@ -101,11 +144,10 @@ export default function JobApplyPage() {
             return;
         }
 
-        // 3. Determine initial status
+        // 5. Construct and submit application data
         const initialStatus = 'submitted';
         const toastMessage = `Lamaran Anda untuk posisi ${job.position} telah berhasil dikirim.`;
 
-        // 4. Construct application data
         const applicationData: Omit<JobApplication, 'id'> = {
             candidateUid: userProfile.uid,
             candidateName: userProfile.fullName,
@@ -124,7 +166,6 @@ export default function JobApplyPage() {
             submittedAt: serverTimestamp() as any,
         };
 
-        // 5. Submit application
         await setDocumentNonBlocking(applicationRef, applicationData, { merge: false });
 
         toast({

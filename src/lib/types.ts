@@ -167,6 +167,7 @@ export type JobApplication = {
   createdAt: Timestamp;
   updatedAt: Timestamp;
   submittedAt?: Timestamp;
+  decisionAt?: Timestamp;
   cvUrl?: string;
   ijazahUrl?: string;
   cvFileName?: string;
