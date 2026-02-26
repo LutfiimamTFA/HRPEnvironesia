@@ -20,7 +20,7 @@ import { CandidatesKanban } from './CandidatesKanban';
 import { useToast } from '@/hooks/use-toast';
 import { ORDERED_RECRUITMENT_STAGES } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '../ui/card';
-import { updateDocumentNonBlocking, useFirestore } from '@/firebase';
+import { setDocumentNonBlocking, useFirestore } from '@/firebase';
 import { doc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import type { ScheduleInterviewData } from './ScheduleInterviewDialog';
 import { ScheduleInterviewDialog } from './ScheduleInterviewDialog';
@@ -99,13 +99,13 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allUsers,
     if (!job) return;
     try {
       const jobRef = doc(firestore, 'jobs', job.id!);
-      await updateDocumentNonBlocking(jobRef, {
+      await setDocumentNonBlocking(jobRef, {
         interviewTemplate: {
             ...job.interviewTemplate,
             ...templateData,
         },
         'updatedAt': serverTimestamp(),
-      });
+      }, { merge: true });
       toast({ title: "Template Saved", description: "The default interview template has been updated." });
       onJobUpdate();
       setIsTemplateDialogOpen(false);
@@ -148,9 +148,9 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allUsers,
     }
 
     try {
-        await updateDocumentNonBlocking(doc(firestore, 'applications', activeApplication.id!), {
+        await setDocumentNonBlocking(doc(firestore, 'applications', activeApplication.id!), {
             interviews: newInterviews
-        });
+        }, { merge: true });
         toast({ title: "Jadwal Diperbarui", description: `Jadwal untuk ${activeApplication.candidateName} telah disimpan.`});
         onJobUpdate();
         return true;
@@ -291,7 +291,6 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allUsers,
             onOpenChange={setIsTemplateDialogOpen} 
             job={job} 
             onSave={handleSaveTemplate} 
-            allUsers={allUsers}
         />
       )}
       {activeApplication && userProfile && (
