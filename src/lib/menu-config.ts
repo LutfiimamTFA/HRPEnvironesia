@@ -91,15 +91,10 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
     {
       title: "Proses Seleksi",
       items: [
+        { href: '/careers/portal/profile', label: 'Profil Pelamar', icon: createElement(User) },
         { href: '/careers/portal/assessment/personality', label: 'Tes Kepribadian', icon: createElement(BrainCircuit) },
         { href: '/careers/portal/documents', label: 'Pengumpulan Dokumen', icon: createElement(FileUp) },
         { href: '/careers/portal/interviews', label: 'Jadwal Wawancara', icon: createElement(Calendar) },
-      ]
-    },
-    {
-      title: "Akun",
-      items: [
-        { href: '/careers/portal/profile', label: 'Profil Saya', icon: createElement(User) },
       ]
     }
   ]
