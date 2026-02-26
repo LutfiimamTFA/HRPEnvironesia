@@ -85,13 +85,14 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] flex flex-col p-0 sm:max-w-lg">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col p-0">
         <DialogHeader className="p-6 pb-4 border-b">
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
             Ubah detail untuk jadwal wawancara. Panelis dikelola secara terpisah.
           </DialogDescription>
         </DialogHeader>
+        
         <div className="flex-grow overflow-y-auto px-6">
             <Form {...form}>
             <form id="schedule-interview-form" onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 py-4">
@@ -146,7 +147,8 @@ export function ScheduleInterviewDialog({ open, onOpenChange, onConfirm, initial
             </form>
             </Form>
         </div>
-        <DialogFooter className="p-6 pt-4 border-t sticky bottom-0 bg-background z-10">
+        
+        <DialogFooter className="p-6 pt-4 border-t">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Batal</Button>
           <Button type="submit" form="schedule-interview-form" disabled={isSaving}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
