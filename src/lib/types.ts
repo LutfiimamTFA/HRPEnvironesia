@@ -60,7 +60,6 @@ export type Job = {
   interviewTemplate?: {
     meetingLink?: string;
     meetingPublished?: boolean;
-    defaultPanelistIds?: string[];
     defaultStartDate?: Timestamp;
     workdayStartTime?: string; // "HH:mm"
     workdayEndTime?: string; // "HH:mm"

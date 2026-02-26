@@ -355,7 +355,9 @@ function InterviewManagement({ application, onUpdate, allUsers, allBrands }: { a
             meetingLink: activeInterview.meetingLink,
             panelists: activeInterview.panelistIds?.map((id, index) => ({ value: id, label: (activeInterview.panelistNames || [])[index] || id })) || [],
             notes: activeInterview.notes,
-        } : undefined}
+        } : {
+             panelists: [{ value: recruiter.uid, label: recruiter.fullName }],
+        }}
         allUsers={allUsers}
         allBrands={allBrands}
       />

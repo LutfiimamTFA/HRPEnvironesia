@@ -140,8 +140,8 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allUsers,
             interviewId: crypto.randomUUID(),
             startAt: Timestamp.fromDate(values.dateTime),
             endAt: Timestamp.fromDate(add(values.dateTime, { minutes: values.duration })),
-            panelistIds: job?.interviewTemplate?.defaultPanelistIds || [userProfile.uid],
-            panelistNames: allUsers.filter(u => (job?.interviewTemplate?.defaultPanelistIds || [userProfile.uid]).includes(u.uid)).map(u => u.fullName),
+            panelistIds: [userProfile.uid],
+            panelistNames: allUsers.filter(u => u.uid === userProfile.uid).map(u => u.fullName),
             meetingLink: values.meetingLink || job?.interviewTemplate?.meetingLink || '',
             status: 'scheduled',
         });
@@ -294,21 +294,18 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allUsers,
             allUsers={allUsers}
         />
       )}
-      {activeApplication && (
+      {activeApplication && userProfile && (
         <ScheduleInterviewDialog
             open={isSingleScheduleOpen}
             onOpenChange={setIsSingleScheduleOpen}
-            onConfirm={(data) => handleSaveSingleInterview(activeApplication, data)}
+            onConfirm={(data) => handleSaveSingleInterview(data)}
             initialData={getMostRelevantInterview(activeApplication) ? {
                 dateTime: getMostRelevantInterview(activeApplication)!.startAt.toDate(),
                 duration: differenceInMinutes(getMostRelevantInterview(activeApplication)!.endAt.toDate(), getMostRelevantInterview(activeApplication)!.startAt.toDate()),
                 meetingLink: getMostRelevantInterview(activeApplication)!.meetingLink,
-                notes: getMostRelevantInterview(activeApplication)!.notes,
             } : undefined}
             candidateName={activeApplication.candidateName}
-            recruiter={userProfile!}
-            allUsers={allUsers}
-            allBrands={allBrands}
+            recruiter={userProfile}
         />
       )}
     </div>

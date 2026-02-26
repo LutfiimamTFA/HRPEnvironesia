@@ -12,7 +12,6 @@ import { Loader2, Save } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import type { UserProfile, Job, Brand } from '@/lib/types';
 import { GoogleDatePicker } from '../ui/google-date-picker';
-import { PanelistPickerSimple } from './PanelistPickerSimple';
 import { Timestamp } from 'firebase/firestore';
 
 const templateSchema = z.object({
@@ -22,7 +21,6 @@ const templateSchema = z.object({
   workdayStartTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, "Format waktu harus HH:MM."),
   workdayEndTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, "Format waktu harus HH:MM."),
   defaultStartDate: z.date().optional(),
-  defaultPanelistIds: z.array(z.string()).optional(),
 });
 
 type FormValues = z.infer<typeof templateSchema>;
@@ -32,10 +30,9 @@ interface EditInterviewTemplateDialogProps {
   onOpenChange: (open: boolean) => void;
   job: Job;
   onSave: (templateData: Partial<Job['interviewTemplate']>) => void;
-  allUsers: UserProfile[];
 }
 
-export function EditInterviewTemplateDialog({ open, onOpenChange, job, onSave, allUsers }: EditInterviewTemplateDialogProps) {
+export function EditInterviewTemplateDialog({ open, onOpenChange, job, onSave }: EditInterviewTemplateDialogProps) {
   const [isSaving, setIsSaving] = useState(false);
   
   const form = useForm<FormValues>({
@@ -51,7 +48,6 @@ export function EditInterviewTemplateDialog({ open, onOpenChange, job, onSave, a
         workdayStartTime: job.interviewTemplate.workdayStartTime || '09:00',
         workdayEndTime: job.interviewTemplate.workdayEndTime || '17:00',
         defaultStartDate: job.interviewTemplate.defaultStartDate?.toDate(),
-        defaultPanelistIds: job.interviewTemplate.defaultPanelistIds || [],
       });
     } else if (open) {
         form.reset({
@@ -60,7 +56,6 @@ export function EditInterviewTemplateDialog({ open, onOpenChange, job, onSave, a
             breakMinutes: 10,
             workdayStartTime: '09:00',
             workdayEndTime: '17:00',
-            defaultPanelistIds: [],
         });
     }
   }, [open, job, form]);
@@ -99,22 +94,6 @@ export function EditInterviewTemplateDialog({ open, onOpenChange, job, onSave, a
                         <FormField control={form.control} name="slotDurationMinutes" render={({ field }) => (<FormItem><FormLabel>Slot Duration (minutes)</FormLabel><Select onValueChange={(v) => field.onChange(parseInt(v))} value={String(field.value)}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent portalled={false}><SelectItem value="15">15</SelectItem><SelectItem value="30">30</SelectItem><SelectItem value="45">45</SelectItem><SelectItem value="60">60</SelectItem><SelectItem value="90">90</SelectItem></SelectContent></Select><FormMessage /></FormItem>)} />
                         <FormField control={form.control} name="breakMinutes" render={({ field }) => (<FormItem><FormLabel>Break (minutes)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
                     </div>
-                    <FormField
-                        control={form.control}
-                        name="defaultPanelistIds"
-                        render={({ field }) => (
-                            <FormItem>
-                                <FormLabel>Default Panelists</FormLabel>
-                                <PanelistPickerSimple
-                                    allUsers={allUsers}
-                                    allBrands={[]} // Not needed for this simple picker
-                                    selectedIds={field.value || []}
-                                    onChange={field.onChange}
-                                />
-                                <FormMessage />
-                            </FormItem>
-                        )}
-                    />
                 </form>
             </Form>
         </div>

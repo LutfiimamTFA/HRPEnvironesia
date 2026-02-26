@@ -182,7 +182,7 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
     
     const batch = writeBatch(firestore);
     
-    const panelistIds = job.interviewTemplate?.defaultPanelistIds || [recruiter.uid];
+    const panelistIds = [recruiter.uid];
     const { meetingLink } = scheduleForm.getValues();
 
 
