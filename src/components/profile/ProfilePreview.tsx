@@ -1,5 +1,6 @@
 'use client';
 
+import * as React from 'react';
 import {
   Card,
   CardContent,
@@ -10,7 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Edit, User, Home, BookOpen, Briefcase, Sparkles, Building, Info as InfoIcon } from 'lucide-react';
+import { Edit, User, Home, BookOpen, Briefcase, Sparkles, Building, Info as InfoIcon, Eye, EyeOff } from 'lucide-react';
 import type {
   Profile,
   Address,
@@ -92,6 +93,7 @@ export function ProfilePreview({
 }) {
   const isProfileComplete = profile.profileStatus === 'completed';
   const nextStep = profile.profileStep || 1;
+  const [isNikVisible, setIsNikVisible] = React.useState(false);
 
   const handleCTAClick = () => {
     if (isProfileComplete) {
@@ -132,7 +134,22 @@ export function ProfilePreview({
         <CardContent>
             <dl>
                 <InfoRow label="Nama Panggilan" value={profile.nickname} />
-                <InfoRow label="Nomor e-KTP" value={maskNik(profile.eKtpNumber)} />
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 py-1">
+                    <dt className="text-sm font-medium text-muted-foreground">Nomor e-KTP</dt>
+                    <dd className="text-sm col-span-2 flex items-center gap-2">
+                        <span>{isNikVisible ? profile.eKtpNumber : maskNik(profile.eKtpNumber)}</span>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => setIsNikVisible(!isNikVisible)}
+                        >
+                            {isNikVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            <span className="sr-only">{isNikVisible ? 'Sembunyikan' : 'Tampilkan'} NIK</span>
+                        </Button>
+                    </dd>
+                </div>
                 <InfoRow label="Tempat, Tanggal Lahir" value={`${profile.birthPlace}, ${profile.birthDate ? format(profile.birthDate.toDate(), 'dd MMMM yyyy', {locale: idLocale}) : '-'}`} />
                 <InfoRow label="Jenis Kelamin" value={profile.gender} />
             </dl>
