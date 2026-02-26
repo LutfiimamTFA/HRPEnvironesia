@@ -170,11 +170,15 @@ export function CandidatePortalLayout({ children }: { children: ReactNode }) {
   }, [userProfile, navSettings, isLoadingSettings]);
 
   const getGatingInfo = (menuLabel: string) => {
-    if (!highestStatus) {
-        if (menuLabel === 'Tes Kepribadian' && !userProfile?.isProfileComplete) {
-            return { locked: true, reason: 'Lengkapi profil Anda untuk membuka tes.' };
+    if (!highestStatus) { // Case where user has account but never applied
+        const allowedBeforeFirstApp = ['Dashboard', 'Profil Pelamar', 'Daftar Lowongan', 'Lamaran Saya'];
+        if (allowedBeforeFirstApp.includes(menuLabel)) {
+            return { locked: false, reason: '' };
         }
-        return { locked: menuLabel !== 'Dashboard' && menuLabel !== 'Profil Saya', reason: 'Lamar pekerjaan pertama Anda untuk memulai.' };
+        if (menuLabel === 'Tes Kepribadian' && !userProfile?.isProfileComplete) {
+            return { locked: true, reason: 'Lengkapi profil Anda untuk membuka tes kepribadian.' };
+        }
+        return { locked: true, reason: 'Lamar pekerjaan pertama Anda untuk memulai tahap ini.' };
     }
 
     const highestStatusIndex = ORDERED_RECRUITMENT_STAGES.indexOf(highestStatus);
