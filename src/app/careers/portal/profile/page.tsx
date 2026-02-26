@@ -72,19 +72,15 @@ function ProfileWizardContent() {
 
     const isLoading = authLoading || isProfileLoading;
     const urlStep = parseInt(searchParams.get('step') || '0', 10);
+    const isPreviewMode = !!profile && urlStep === 0;
 
     const [effectiveStep, setEffectiveStep] = useState(1);
-    const [optimisticProfileStep, setOptimisticProfileStep] = useState(1);
-    
-    const isPreviewMode = !!profile && urlStep === 0;
 
     useEffect(() => {
         if (isLoading || isPreviewMode) return;
         
         const profileStep = profile?.profileStep || 1;
-        const profileStepEffective = Math.max(profileStep, optimisticProfileStep);
-
-        const targetStep = urlStep > profileStepEffective ? profileStepEffective : urlStep;
+        const targetStep = urlStep > profileStep ? profileStep : urlStep;
         
         if (targetStep !== urlStep) {
             router.replace(`${pathname}?step=${targetStep}`);
@@ -92,14 +88,13 @@ function ProfileWizardContent() {
         
         setEffectiveStep(targetStep || 1);
 
-    }, [urlStep, profile, isLoading, router, searchParams, optimisticProfileStep, pathname, isPreviewMode]);
+    }, [urlStep, profile, isLoading, router, pathname, isPreviewMode]);
 
 
     const handleSaveSuccess = () => {
         refreshProfile();
         refreshUserProfile();
         const nextStep = effectiveStep + 1;
-        setOptimisticProfileStep(nextStep);
         if (nextStep <= steps.length) {
             router.push(`${pathname}?step=${nextStep}`);
         } else {
@@ -117,7 +112,6 @@ function ProfileWizardContent() {
     const handleFinish = async () => {
         refreshProfile();
         refreshUserProfile();
-        setOptimisticProfileStep(steps.length + 1);
         router.push(pathname); // Go to preview
     }
     
@@ -197,8 +191,8 @@ function ProfileWizardContent() {
             {effectiveStep === 5 && (
                  <SkillsForm
                     initialData={{
-                        skills: initialProfileData.skills || [],
-                        certifications: initialProfileData.certifications || [],
+                        skills: initialData.skills || [],
+                        certifications: initialData.certifications || [],
                     }}
                     onSaveSuccess={handleSaveSuccess}
                     onBack={handleBack}
@@ -207,9 +201,9 @@ function ProfileWizardContent() {
             {effectiveStep === 6 && (
                 <SelfDescriptionForm
                     initialData={{
-                        selfDescription: initialProfileData.selfDescription,
-                        salaryExpectation: initialProfileData.salaryExpectation,
-                        motivation: initialProfileData.motivation,
+                        selfDescription: initialData.selfDescription,
+                        salaryExpectation: initialData.salaryExpectation,
+                        motivation: initialData.motivation,
                     }}
                     onFinish={handleFinish}
                     onBack={handleBack}

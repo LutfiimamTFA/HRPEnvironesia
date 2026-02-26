@@ -28,43 +28,15 @@ const maskNik = (nik?: string): string => {
   return '************' + nik.slice(-4);
 };
 
-const Section = ({
-  title,
-  step,
-  onEditRequest,
-  icon: Icon,
-  children,
-}: {
-  title: string;
-  step: number;
-  onEditRequest: (step: number) => void;
-  icon: React.ElementType;
-  children: React.ReactNode;
-}) => (
-  <Card>
-    <CardHeader className="flex flex-row items-center justify-between pb-2">
-      <CardTitle className="text-lg flex items-center gap-3">
-        <Icon className="h-5 w-5 text-primary" />
-        {title}
-      </CardTitle>
-      <Button variant="ghost" size="sm" onClick={() => onEditRequest(step)}>
-        <Edit className="mr-2 h-4 w-4" />
-        Edit
-      </Button>
-    </CardHeader>
-    <CardContent>{children}</CardContent>
-  </Card>
-);
-
 const InfoRow = ({ label, value }: { label: string; value?: string | number | null }) => (
-  <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 py-2 border-b">
+  <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 py-1">
     <dt className="text-sm font-medium text-muted-foreground">{label}</dt>
     <dd className="text-sm col-span-2">{value || '-'}</dd>
   </div>
 );
 
 const AddressView = ({ title, address }: { title: string; address?: Partial<Address> }) => {
-    if (!address) return null;
+    if (!address || !address.street) return <p className="text-sm text-muted-foreground">Belum diisi.</p>;
     return (
          <div>
             <h4 className="font-medium text-sm mb-1">{title}</h4>
@@ -78,7 +50,7 @@ const AddressView = ({ title, address }: { title: string; address?: Partial<Addr
 };
 
 const EducationView = ({ item }: { item: Education }) => (
-    <div className="text-sm border-t first:border-t-0 py-3">
+    <div className="text-sm">
         <p className="font-semibold">{item.institution}</p>
         <p>{item.level} - {item.fieldOfStudy}</p>
         <p className="text-muted-foreground text-xs">{item.startDate} - {item.isCurrent ? 'Sekarang' : item.endDate}</p>
@@ -87,7 +59,7 @@ const EducationView = ({ item }: { item: Education }) => (
 );
 
 const WorkExperienceView = ({ item }: { item: WorkExperience }) => (
-    <div className="text-sm border-t first:border-t-0 py-3">
+    <div className="text-sm">
         <p className="font-semibold">{item.position} <span className="font-normal text-muted-foreground">di {item.company}</span></p>
         <p className="capitalize text-xs">{item.jobType}</p>
         <p className="text-muted-foreground text-xs">{item.startDate} - {item.isCurrent ? 'Sekarang' : item.endDate}</p>
@@ -96,7 +68,7 @@ const WorkExperienceView = ({ item }: { item: WorkExperience }) => (
 );
 
 const OrgExperienceView = ({ item }: { item: OrganizationalExperience }) => (
-    <div className="text-sm border-t first:border-t-0 py-3">
+    <div className="text-sm">
         <p className="font-semibold">{item.position} <span className="font-normal text-muted-foreground">di {item.organization}</span></p>
         <p className="text-muted-foreground text-xs">{item.startDate} - {item.isCurrent ? 'Sekarang' : item.endDate}</p>
         {item.description && <p className="mt-2 text-xs">{item.description}</p>}
@@ -104,7 +76,7 @@ const OrgExperienceView = ({ item }: { item: OrganizationalExperience }) => (
 );
 
 const CertificationView = ({ item }: { item: Certification }) => (
-    <div className="text-sm border-t first:border-t-0 py-3">
+    <div className="text-sm">
         <p className="font-semibold">{item.name}</p>
         <p className="text-muted-foreground text-xs">Penerbit: {item.organization}</p>
         <p className="text-muted-foreground text-xs">Tanggal: {item.issueDate} {item.expirationDate ? ` - ${item.expirationDate}` : ''}</p>
@@ -118,6 +90,17 @@ export function ProfilePreview({
   profile: Profile;
   onEditRequest: (step: number) => void;
 }) {
+  const isProfileComplete = profile.profileStatus === 'completed';
+  const nextStep = profile.profileStep || 1;
+
+  const handleCTAClick = () => {
+    if (isProfileComplete) {
+      onEditRequest(1);
+    } else {
+      onEditRequest(nextStep);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Card>
@@ -129,57 +112,100 @@ export function ProfilePreview({
                 {profile.email} &bull; {profile.phone}
               </CardDescription>
             </div>
-            <Badge variant={profile.profileStatus === 'completed' ? 'default' : 'secondary'}>
-              {profile.profileStatus === 'completed' ? 'Lengkap' : 'Draf'}
-            </Badge>
+            <div className="flex items-center gap-4">
+                <Badge variant={isProfileComplete ? 'default' : 'secondary'}>
+                    {isProfileComplete ? 'Lengkap' : 'Draf'}
+                </Badge>
+                <Button onClick={handleCTAClick}>
+                    <Edit className="mr-2 h-4 w-4" />
+                    {isProfileComplete ? 'Perbarui Profil' : 'Lanjutkan Pengisian'}
+                </Button>
+            </div>
           </div>
         </CardHeader>
       </Card>
       
-      <Section title="Data Pribadi" step={1} onEditRequest={onEditRequest} icon={User}>
-        <dl>
-            <InfoRow label="Nama Panggilan" value={profile.nickname} />
-            <InfoRow label="Nomor e-KTP" value={maskNik(profile.eKtpNumber)} />
-            <InfoRow label="Tempat, Tanggal Lahir" value={`${profile.birthPlace}, ${profile.birthDate ? format(profile.birthDate.toDate(), 'dd MMMM yyyy', {locale: idLocale}) : '-'}`} />
-            <InfoRow label="Jenis Kelamin" value={profile.gender} />
-        </dl>
-      </Section>
-      
-       <Section title="Alamat" step={1} onEditRequest={onEditRequest} icon={Home}>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <Card>
+        <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-3"><User className="h-5 w-5 text-primary" />Data Pribadi</CardTitle>
+        </CardHeader>
+        <CardContent>
+            <dl>
+                <InfoRow label="Nama Panggilan" value={profile.nickname} />
+                <InfoRow label="Nomor e-KTP" value={maskNik(profile.eKtpNumber)} />
+                <InfoRow label="Tempat, Tanggal Lahir" value={`${profile.birthPlace}, ${profile.birthDate ? format(profile.birthDate.toDate(), 'dd MMMM yyyy', {locale: idLocale}) : '-'}`} />
+                <InfoRow label="Jenis Kelamin" value={profile.gender} />
+            </dl>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-3"><Home className="h-5 w-5 text-primary" />Alamat</CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <AddressView title="Alamat KTP" address={profile.addressKtp} />
             {profile.isDomicileSameAsKtp ? <p className="text-sm text-muted-foreground self-center">Alamat domisili sama dengan alamat KTP.</p> : <AddressView title="Alamat Domisili" address={profile.addressDomicile} />}
-        </div>
-      </Section>
+        </CardContent>
+      </Card>
 
       <div className="grid md:grid-cols-2 gap-6">
-        <Section title="Pendidikan" step={2} onEditRequest={onEditRequest} icon={BookOpen}>
-            {profile.education?.length > 0 ? profile.education.map((item) => <EducationView key={item.id} item={item} />) : <p className="text-sm text-muted-foreground">Belum ada data.</p>}
-        </Section>
-         <Section title="Pengalaman Kerja" step={3} onEditRequest={onEditRequest} icon={Briefcase}>
-            {profile.workExperience?.length > 0 ? profile.workExperience.map((item) => <WorkExperienceView key={item.id} item={item} />) : <p className="text-sm text-muted-foreground">Belum ada data.</p>}
-        </Section>
-         <Section title="Pengalaman Organisasi" step={4} onEditRequest={onEditRequest} icon={Building}>
-            {profile.organizationalExperience?.length > 0 ? profile.organizationalExperience.map((item) => <OrgExperienceView key={item.id} item={item} />) : <p className="text-sm text-muted-foreground">Belum ada data.</p>}
-        </Section>
-        <Section title="Keahlian & Sertifikasi" step={5} onEditRequest={onEditRequest} icon={Sparkles}>
-            <h4 className="font-semibold text-sm">Keahlian</h4>
-            <div className="flex flex-wrap gap-2">
-                {profile.skills?.length > 0 ? profile.skills.map(skill => <Badge key={skill} variant="secondary">{skill}</Badge>) : <p className="text-sm text-muted-foreground">Belum ada data.</p>}
-            </div>
-            <Separator className="my-4"/>
-             <h4 className="font-semibold text-sm">Sertifikasi</h4>
-            {profile.certifications?.length > 0 ? profile.certifications.map((item) => <CertificationView key={item.id} item={item} />) : <p className="text-sm text-muted-foreground">Belum ada data.</p>}
-        </Section>
+        <Card>
+            <CardHeader><CardTitle className="text-lg flex items-center gap-3"><BookOpen className="h-5 w-5 text-primary" />Pendidikan</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+                {profile.education?.length > 0 ? (
+                    <>
+                        <EducationView item={profile.education[0]} />
+                        {profile.education.length > 1 && <p className="text-xs text-muted-foreground pt-2">...dan {profile.education.length - 1} riwayat lainnya.</p>}
+                    </>
+                ) : <p className="text-sm text-muted-foreground">Belum diisi.</p>}
+            </CardContent>
+        </Card>
+        <Card>
+            <CardHeader><CardTitle className="text-lg flex items-center gap-3"><Briefcase className="h-5 w-5 text-primary" />Pengalaman Kerja</CardTitle></CardHeader>
+            <CardContent>
+                 {profile.workExperience?.length > 0 ? `${profile.workExperience.length} item pengalaman kerja` : <p className="text-sm text-muted-foreground">Belum diisi.</p>}
+            </CardContent>
+        </Card>
+        <Card>
+            <CardHeader><CardTitle className="text-lg flex items-center gap-3"><Building className="h-5 w-5 text-primary" />Pengalaman Organisasi</CardTitle></CardHeader>
+            <CardContent>
+                 {profile.organizationalExperience?.length > 0 ? `${profile.organizationalExperience.length} item pengalaman organisasi` : <p className="text-sm text-muted-foreground">Belum diisi.</p>}
+            </CardContent>
+        </Card>
+        <Card>
+            <CardHeader><CardTitle className="text-lg flex items-center gap-3"><Sparkles className="h-5 w-5 text-primary" />Keahlian & Sertifikasi</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+                 <div>
+                    <h4 className="font-semibold text-sm mb-2">Keahlian</h4>
+                    <div className="flex flex-wrap gap-2">
+                        {profile.skills?.length > 0 ? (
+                            <>
+                                {profile.skills.slice(0, 8).map(skill => <Badge key={skill} variant="secondary">{skill}</Badge>)}
+                                {profile.skills.length > 8 && <Badge variant="outline">+{profile.skills.length - 8}</Badge>}
+                            </>
+                        ) : <p className="text-sm text-muted-foreground">Belum diisi.</p>}
+                    </div>
+                </div>
+                 <Separator/>
+                 <div>
+                    <h4 className="font-semibold text-sm mb-2">Sertifikasi</h4>
+                     {profile.certifications?.length > 0 ? `${profile.certifications.length} sertifikasi` : <p className="text-sm text-muted-foreground">Belum diisi.</p>}
+                </div>
+            </CardContent>
+        </Card>
       </div>
 
-       <Section title="Tentang Saya" step={6} onEditRequest={onEditRequest} icon={InfoIcon}>
-        <dl>
-            <InfoRow label="Profil Singkat" value={profile.selfDescription} />
-            <InfoRow label="Ekspektasi Gaji" value={profile.salaryExpectation} />
-            <InfoRow label="Motivasi" value={profile.motivation} />
-        </dl>
-      </Section>
+       <Card>
+            <CardHeader><CardTitle className="text-lg flex items-center gap-3"><InfoIcon className="h-5 w-5 text-primary" />Tentang Saya</CardTitle></CardHeader>
+            <CardContent>
+                 <dl>
+                    <InfoRow label="Profil Singkat" value={profile.selfDescription} />
+                    <InfoRow label="Ekspektasi Gaji" value={profile.salaryExpectation} />
+                    <InfoRow label="Motivasi" value={profile.motivation} />
+                </dl>
+            </CardContent>
+       </Card>
     </div>
   );
 }
