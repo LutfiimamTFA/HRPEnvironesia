@@ -5,8 +5,8 @@ import React, { useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
-import { useAuth as useFirebaseAuth, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
+import { useAuth as useFirebaseAuth, useFirestore, useDoc, useMemoFirebase, useCollection } from '@/firebase';
+import { doc, collection, query, where } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { LogOut, ArrowLeft, Leaf } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -24,10 +24,14 @@ import {
   SidebarFooter,
 } from '@/components/ui/sidebar';
 import { MENU_CONFIG } from '@/lib/menu-config';
-import type { NavigationSetting, UserRole } from '@/lib/types';
+import type { NavigationSetting, UserRole, JobApplication, AssessmentSession, JobApplicationStatus } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from '../ui/ThemeToggle';
 import { Separator } from '../ui/separator';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Badge } from '@/components/ui/badge';
+import { ORDERED_RECRUITMENT_STAGES } from '@/lib/types';
+
 
 function UserNav() {
   const { userProfile } = useAuth();
@@ -91,7 +95,65 @@ export function CandidatePortalLayout({ children }: { children: ReactNode }) {
   );
 
   const { data: navSettings, isLoading: isLoadingSettings } = useDoc<NavigationSetting>(settingsDocRef);
+  
+  // --- Data Fetching for Badges & Gating ---
+  const applicationsQuery = useMemoFirebase(() => {
+    if (!userProfile?.uid) return null;
+    return query(collection(firestore, 'applications'), where('candidateUid', '==', userProfile.uid));
+  }, [userProfile?.uid, firestore]);
+  const { data: applications, isLoading: isLoadingApps } = useCollection<JobApplication>(applicationsQuery);
 
+  const sessionsQuery = useMemoFirebase(() => {
+    if (!userProfile?.uid) return null;
+    return query(collection(firestore, 'assessment_sessions'), where('candidateUid', '==', userProfile.uid), where('applicationId', '!=', null));
+  }, [userProfile?.uid, firestore]);
+  const { data: sessions, isLoading: isLoadingSessions } = useCollection<AssessmentSession>(sessionsQuery);
+
+  const {
+    highestStatus,
+    assessmentStatus,
+    upcomingInterviewCount,
+  } = useMemo(() => {
+    const defaultResult = {
+        highestStatus: null as JobApplicationStatus | null,
+        assessmentStatus: 'Belum',
+        upcomingInterviewCount: 0
+    };
+
+    if (!applications) return defaultResult;
+    
+    // Determine highest application status
+    const nonRejectedApps = applications.filter(app => app.status !== 'rejected');
+    let highestStageIndex = -1;
+    let highestStage: JobApplicationStatus | null = null;
+    if (nonRejectedApps.length > 0) {
+      nonRejectedApps.forEach(app => {
+        const currentIndex = ORDERED_RECRUITMENT_STAGES.indexOf(app.status);
+        if (currentIndex > highestStageIndex) {
+          highestStageIndex = currentIndex;
+          highestStage = app.status;
+        }
+      });
+    }
+    defaultResult.highestStatus = highestStage;
+    
+    // Determine assessment status
+    if (sessions && sessions.length > 0) {
+        const submitted = sessions.find(s => s.status === 'submitted');
+        const draft = sessions.find(s => s.status === 'draft');
+        if (submitted) defaultResult.assessmentStatus = 'Selesai';
+        else if (draft) defaultResult.assessmentStatus = 'Proses';
+    }
+
+    // Determine upcoming interview count
+    const upcomingInterviews = applications.flatMap(app => app.interviews || [])
+        .filter(iv => iv.status === 'scheduled' && iv.startAt.toDate() > new Date());
+    defaultResult.upcomingInterviewCount = upcomingInterviews.length;
+
+    return defaultResult;
+
+  }, [applications, sessions]);
+  
   const menuConfig = useMemo(() => {
     const roleConfig = MENU_CONFIG[userProfile?.role as UserRole] || [];
     if (isLoadingSettings) {
@@ -105,7 +167,34 @@ export function CandidatePortalLayout({ children }: { children: ReactNode }) {
     }
     return roleConfig;
   }, [userProfile, navSettings, isLoadingSettings]);
-  
+
+  const getGatingInfo = (menuLabel: string) => {
+    if (!highestStatus) {
+        if (menuLabel === 'Tes Kepribadian' && !userProfile?.isProfileComplete) {
+            return { locked: true, reason: 'Lengkapi profil Anda untuk membuka tes.' };
+        }
+        return { locked: menuLabel !== 'Dashboard' && menuLabel !== 'Profil Saya', reason: 'Lamar pekerjaan pertama Anda untuk memulai.' };
+    }
+
+    const highestStatusIndex = ORDERED_RECRUITMENT_STAGES.indexOf(highestStatus);
+
+    switch(menuLabel) {
+        case 'Pengumpulan Dokumen':
+            const docStageIndex = ORDERED_RECRUITMENT_STAGES.indexOf('document_submission');
+            return highestStatusIndex >= docStageIndex 
+                ? { locked: false, reason: '' }
+                : { locked: true, reason: 'Anda akan diundang untuk mengunggah dokumen setelah lolos tahap verifikasi.' };
+        case 'Jadwal Wawancara':
+            const interviewStageIndex = ORDERED_RECRUITMENT_STAGES.indexOf('interview');
+            return highestStatusIndex >= interviewStageIndex
+                ? { locked: false, reason: '' }
+                : { locked: true, reason: 'Jadwal akan muncul di sini setelah diatur oleh HRD.' };
+        default:
+            return { locked: false, reason: '' };
+    }
+  };
+
+
   if (!userProfile) {
     return null; // Should be handled by the parent layout's guard
   }
@@ -133,23 +222,45 @@ export function CandidatePortalLayout({ children }: { children: ReactNode }) {
                     {group.title && <h2 className="px-2 py-1 text-xs font-semibold text-muted-foreground tracking-wider group-data-[state=collapsed]:hidden">{group.title}</h2>}
                     {group.items.map(item => {
                         const isActive = pathname === item.href || (item.href !== '/careers/portal' && pathname.startsWith(item.href));
-                        return (
-                            <SidebarMenuItem key={item.label}>
-                                <SidebarMenuButton 
+                        const { locked, reason } = getGatingInfo(item.label);
+                        
+                        let badgeContent = null;
+                        if (item.label === 'Tes Kepribadian' && assessmentStatus) {
+                            badgeContent = <Badge variant={assessmentStatus === 'Selesai' ? 'default' : 'secondary'} className="text-xs">{assessmentStatus}</Badge>;
+                        } else if (item.label === 'Jadwal Wawancara' && upcomingInterviewCount > 0) {
+                            badgeContent = <Badge variant="default" className="text-xs">{upcomingInterviewCount}</Badge>;
+                        }
+                        
+                        const button = (
+                           <SidebarMenuButton 
                                 asChild 
                                 tooltip={item.label}
                                 isActive={isActive}
+                                disabled={locked}
                                 className={cn(
                                     "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[active=true]:bg-primary data-[active=true]:text-primary-foreground font-medium",
-                                    "justify-start"
+                                    "justify-start",
+                                    locked && "cursor-not-allowed opacity-60"
                                 )}
-                                >
-                                <Link href={item.href}>
+                            >
+                                <Link href={locked ? '#' : item.href}>
                                     {item.icon}
                                     <span className="group-data-[state=collapsed]:hidden">{item.label}</span>
-                                    {item.badge && <span className="ml-auto group-data-[state=collapsed]:hidden">{item.badge}</span>}
+                                    <div className="ml-auto group-data-[state=collapsed]:hidden">{badgeContent}</div>
                                 </Link>
-                                </SidebarMenuButton>
+                            </SidebarMenuButton>
+                        );
+
+                        return (
+                            <SidebarMenuItem key={item.label}>
+                                {locked ? (
+                                    <TooltipProvider>
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>{button}</TooltipTrigger>
+                                            <TooltipContent side="right"><p>{reason}</p></TooltipContent>
+                                        </Tooltip>
+                                    </TooltipProvider>
+                                ) : button}
                             </SidebarMenuItem>
                         )
                     })}
