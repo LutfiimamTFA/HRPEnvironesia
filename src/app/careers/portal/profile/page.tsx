@@ -13,11 +13,11 @@ import { SkillsForm } from '@/components/profile/SkillsForm';
 import { SelfDescriptionForm } from '@/components/profile/SelfDescriptionForm';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { ProfileStepper } from '@/components/profile/ProfileStepper';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { CheckCircle, Edit, Loader2 } from 'lucide-react';
 import { OrganizationalExperienceForm } from '@/components/profile/OrganizationalExperienceForm';
 import { useToast } from '@/hooks/use-toast';
+import { ProfilePreview } from '@/components/profile/ProfilePreview';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 
 const steps = [
     { id: 1, name: 'Data Pribadi' },
@@ -35,7 +35,6 @@ function ProfileWizardContent() {
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const { toast } = useToast();
-    const [isEditing, setIsEditing] = useState(false);
 
     const profileDocRef = useMemoFirebase(() => {
         if (!firestore || !firebaseUser) return null;
@@ -44,7 +43,6 @@ function ProfileWizardContent() {
 
     const { data: profile, isLoading: isProfileLoading, mutate: refreshProfile } = useDoc<Profile>(profileDocRef);
 
-    // Safety net: If profile doesn't exist for a logged-in user, create it.
     useEffect(() => {
         const createMissingProfile = async () => {
             if (!isProfileLoading && !profile && firebaseUser && firestore && authProfile) {
@@ -73,42 +71,39 @@ function ProfileWizardContent() {
 
 
     const isLoading = authLoading || isProfileLoading;
-    const urlStep = parseInt(searchParams.get('step') || '1', 10);
+    const urlStep = parseInt(searchParams.get('step') || '0', 10);
 
     const [effectiveStep, setEffectiveStep] = useState(1);
     const [optimisticProfileStep, setOptimisticProfileStep] = useState(1);
+    
+    const isPreviewMode = !!profile && urlStep === 0;
 
     useEffect(() => {
-        if (isLoading) return;
-
+        if (isLoading || isPreviewMode) return;
+        
         const profileStep = profile?.profileStep || 1;
         const profileStepEffective = Math.max(profileStep, optimisticProfileStep);
-        
-        if (profile?.profileStatus === 'completed' && !searchParams.has('step')) {
-            setEffectiveStep(steps.length + 1); // A step beyond the last to show completion screen
-            return;
-        }
 
         const targetStep = urlStep > profileStepEffective ? profileStepEffective : urlStep;
         
-        if (targetStep !== urlStep && profile?.profileStatus !== 'completed') {
+        if (targetStep !== urlStep) {
             router.replace(`${pathname}?step=${targetStep}`);
         }
         
-        setEffectiveStep(profile?.profileStatus === 'completed' ? urlStep : targetStep);
+        setEffectiveStep(targetStep || 1);
 
-    }, [urlStep, profile, isLoading, router, searchParams, optimisticProfileStep, pathname]);
+    }, [urlStep, profile, isLoading, router, searchParams, optimisticProfileStep, pathname, isPreviewMode]);
 
 
     const handleSaveSuccess = () => {
-        refreshProfile(); // Refetch profile to get the latest step
-        refreshUserProfile(); // Refetch user data in auth context
+        refreshProfile();
+        refreshUserProfile();
         const nextStep = effectiveStep + 1;
         setOptimisticProfileStep(nextStep);
         if (nextStep <= steps.length) {
             router.push(`${pathname}?step=${nextStep}`);
         } else {
-             router.push(pathname);
+             router.push(pathname); // Go to preview
         }
     };
 
@@ -119,42 +114,15 @@ function ProfileWizardContent() {
         }
     };
     
-    const handleFinish = () => {
+    const handleFinish = async () => {
         refreshProfile();
         refreshUserProfile();
         setOptimisticProfileStep(steps.length + 1);
-        router.push(pathname);
+        router.push(pathname); // Go to preview
     }
-
-    const handleEdit = async () => {
-        if (!firebaseUser) {
-            toast({
-                variant: 'destructive',
-                title: 'Gagal memulai edit',
-                description: 'User tidak ditemukan. Silakan login kembali.',
-            });
-            return;
-        }
-
-        setIsEditing(true);
-        const profileDocRef = doc(firestore, 'profiles', firebaseUser.uid);
-        const userDocRef = doc(firestore, 'users', firebaseUser.uid);
-        try {
-             const batch = writeBatch(firestore);
-             batch.update(profileDocRef, { profileStatus: 'draft' });
-             batch.update(userDocRef, { isProfileComplete: false });
-             await batch.commit();
-            setOptimisticProfileStep(1);
-            router.push(`${pathname}?step=1`);
-        } catch (error: any) {
-            toast({
-                variant: 'destructive',
-                title: 'Gagal memulai mode edit',
-                description: error.message || 'Terjadi kesalahan pada server.',
-            });
-        } finally {
-            setIsEditing(false);
-        }
+    
+    const onEditRequest = (step: number) => {
+        router.push(`${pathname}?step=${step}`);
     };
 
     if (isLoading || !authProfile) {
@@ -165,32 +133,27 @@ function ProfileWizardContent() {
              </div>
         )
     }
-    
-    if (effectiveStep > steps.length) {
-       return (
+
+    if (!profile) {
+        return (
             <Card className="flex flex-col items-center justify-center text-center p-8">
                 <CardHeader>
-                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
-                        <CheckCircle className="h-10 w-10 text-green-600" />
-                    </div>
-                    <CardTitle className="mt-4 text-2xl">Profil Anda Sudah Lengkap!</CardTitle>
+                    <CardTitle className="mt-4 text-2xl">Profil Pelamar Belum Dibuat</CardTitle>
                 </CardHeader>
                 <CardContent className="w-full max-w-sm">
                     <p className="text-muted-foreground mb-6">
-                        Terima kasih telah melengkapi profil Anda. Anda sekarang dapat melamar pekerjaan atau mengedit profil Anda jika ada perubahan.
+                       Anda belum memiliki profil pelamar. Mulai isi profil Anda untuk dapat melamar pekerjaan.
                     </p>
-                    <div className="flex flex-col sm:flex-row gap-4">
-                        <Button variant="outline" className="w-full" onClick={handleEdit} disabled={isEditing}>
-                            {isEditing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Edit className="mr-2 h-4 w-4" />}
-                            Edit Profil
-                        </Button>
-                        <Button className="w-full" asChild>
-                            <a href="/careers/portal/jobs">Cari Lowongan</a>
-                        </Button>
-                    </div>
+                    <Button className="w-full" onClick={() => onEditRequest(1)}>
+                        Mulai Isi Profil
+                    </Button>
                 </CardContent>
             </Card>
-       )
+        )
+    }
+    
+    if (isPreviewMode) {
+       return <ProfilePreview profile={profile} onEditRequest={onEditRequest} />;
     }
 
     const initialProfileData = {
