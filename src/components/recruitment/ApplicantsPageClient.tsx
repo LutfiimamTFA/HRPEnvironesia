@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
@@ -24,7 +23,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../ui/dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '../ui/form';
 import { Input } from '../ui/input';
-import { updateDocumentNonBlocking, doc, useFirestore, serverTimestamp } from '@/firebase';
+import { updateDocumentNonBlocking, useFirestore } from '@/firebase';
+import { doc, serverTimestamp } from 'firebase/firestore';
 
 type SelectionState = {
   selectedIds: Set<string>;
