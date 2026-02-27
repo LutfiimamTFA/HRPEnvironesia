@@ -37,8 +37,8 @@ service cloud.firestore {
     }
 
     /**
-     * WARNING: NOT SAFE FOR LIST QUERIES.
      * Checks if the user is a 'super_admin' via a performant existence check.
+     * This is safe for list queries when checking against the requesting user's UID.
      */
     function isSuperAdmin() {
       return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
@@ -46,7 +46,7 @@ service cloud.firestore {
     
     /**
      * Checks if the user's role is 'hrd' via a performant existence check.
-     * This is safe for list queries.
+     * This is safe for list queries when checking against the requesting user's UID.
      */
     function isHrd() {
       return isSignedIn() && exists(/databases/$(database)/documents/roles_hrd/$(request.auth.uid));
@@ -116,18 +116,20 @@ service cloud.firestore {
     
     /**
      * /roles_admin/{userId}
-     * - This is a private lookup table. No client access is allowed.
+     * - This is a private lookup table for super admin checks.
+     * - Only other super admins can manage this collection.
      */
     match /roles_admin/{userId} {
-      allow read, write: if false;
+      allow read, write: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super-admin';
     }
     
     /**
      * /roles_hrd/{userId}
-     * - This is a private lookup table. No client access is allowed.
+     * - This is a private lookup table for HRD checks.
+     * - Only super admins can manage this collection.
      */
     match /roles_hrd/{userId} {
-      allow read, write: if false;
+      allow read, write: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super-admin';
     }
     
     /**
