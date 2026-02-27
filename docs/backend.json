@@ -638,6 +638,114 @@
         }
       },
       "required": ["summary", "score", "strengths", "weaknesses"]
+    },
+    "AttendanceEvent": {
+        "title": "Attendance Event",
+        "description": "Represents a single clock-in or clock-out event.",
+        "type": "object",
+        "properties": {
+            "uid": { "type": "string", "description": "User ID" },
+            "type": { "type": "string", "enum": ["tap_in", "tap_out"], "description": "Event type" },
+            "timestamp": { "type": "string", "format": "date-time" },
+            "workMode": { "type": "string", "enum": ["onsite", "offsite"], "description": "Work mode" },
+            "location": { "type": "object", "properties": { "lat": {"type": "number"}, "lng": {"type": "number"} } },
+            "photoUrl": { "type": "string", "format": "uri" }
+        },
+        "required": ["uid", "type", "timestamp", "workMode"]
+    },
+    "OvertimeLog": {
+        "title": "Overtime Log",
+        "description": "Represents a log of overtime work.",
+        "type": "object",
+        "properties": {
+            "uid": { "type": "string" },
+            "brandId": { "type": "string" },
+            "date": { "type": "string", "format": "date" },
+            "minutes": { "type": "number", "description": "Overtime duration in minutes" },
+            "source": { "type": "string", "enum": ["manual", "auto"] },
+            "note": { "type": "string" },
+            "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["uid", "date", "minutes", "source", "createdAt"]
+    },
+    "FieldTrackingEntry": {
+        "title": "Field Tracking Entry",
+        "description": "Represents a location update from an employee on field duty.",
+        "type": "object",
+        "properties": {
+            "uid": { "type": "string" },
+            "lat": { "type": "number" },
+            "lng": { "type": "number" },
+            "accuracyM": { "type": "number" },
+            "address": { "type": "string", "description": "Reverse-geocoded address" },
+            "status": { "type": "string", "enum": ["dinas", "normal"] },
+            "updatedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["uid", "lat", "lng", "status", "updatedAt"]
+    },
+    "LeaveRequest": {
+        "title": "Leave Request",
+        "description": "Represents an employee's request for leave.",
+        "type": "object",
+        "properties": {
+            "uid": { "type": "string" },
+            "brandId": { "type": "string" },
+            "type": { "type": "string", "enum": ["annual", "sick", "unpaid", "maternity", "paternity"] },
+            "startDate": { "type": "string", "format": "date" },
+            "endDate": { "type": "string", "format": "date" },
+            "days": { "type": "number" },
+            "reason": { "type": "string" },
+            "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+            "requestedAt": { "type": "string", "format": "date-time" },
+            "decidedAt": { "type": "string", "format": "date-time" },
+            "decidedBy": { "type": "string", "description": "UID of the decider" }
+        },
+        "required": ["uid", "type", "startDate", "endDate", "days", "reason", "status", "requestedAt"]
+    },
+    "PermissionRequest": {
+        "title": "Permission Request",
+        "description": "Represents an employee's request for a short permission (e.g., leaving early).",
+        "type": "object",
+        "properties": {
+            "uid": { "type": "string" },
+            "brandId": { "type": "string" },
+            "date": { "type": "string", "format": "date" },
+            "startTime": { "type": "string", "format": "time" },
+            "endTime": { "type": "string", "format": "time" },
+            "reason": { "type": "string" },
+            "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+            "requestedAt": { "type": "string", "format": "date-time" },
+            "decidedBy": { "type": "string", "description": "UID of the decider" }
+        },
+        "required": ["uid", "date", "startTime", "endTime", "reason", "status", "requestedAt"]
+    },
+    "TrainingVideo": {
+        "title": "Training Video",
+        "description": "Represents a training video in the library.",
+        "type": "object",
+        "properties": {
+            "title": { "type": "string" },
+            "description": { "type": "string" },
+            "url": { "type": "string", "format": "uri" },
+            "durationMin": { "type": "number" },
+            "category": { "type": "string" },
+            "isActive": { "type": "boolean" },
+            "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["title", "url", "durationMin", "category", "isActive", "createdAt"]
+    },
+    "TrainingProgress": {
+        "title": "Training Progress",
+        "description": "Tracks an employee's progress on a training video.",
+        "type": "object",
+        "properties": {
+            "uid": { "type": "string" },
+            "videoId": { "type": "string" },
+            "progressPercent": { "type": "number" },
+            "completedAt": { "type": "string", "format": "date-time" },
+            "updatedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["uid", "videoId", "progressPercent", "updatedAt"]
     }
   },
   "auth": {
@@ -839,8 +947,38 @@
           "description": "Stores candidate assessment attempts and results.",
           "params": [{ "name": "sessionId", "description": "The unique ID for the session." }]
         }
+      },
+      {
+        "path": "/attendance_events/{eventId}",
+        "definition": { "schema": { "$ref": "#/backend/entities/AttendanceEvent" }, "description": "Employee attendance events (tap in/out)." }
+      },
+      {
+        "path": "/overtime_logs/{logId}",
+        "definition": { "schema": { "$ref": "#/backend/entities/OvertimeLog" }, "description": "Employee overtime logs." }
+      },
+      {
+        "path": "/field_tracking/{uid}/entries/{entryId}",
+        "definition": { "schema": { "$ref": "#/backend/entities/FieldTrackingEntry" }, "description": "Location entries for an employee on field duty." }
+      },
+      {
+        "path": "/leave_requests/{requestId}",
+        "definition": { "schema": { "$ref": "#/backend/entities/LeaveRequest" }, "description": "Employee leave requests." }
+      },
+      {
+        "path": "/permission_requests/{requestId}",
+        "definition": { "schema": { "$ref": "#/backend/entities/PermissionRequest" }, "description": "Employee permission requests (short leave)." }
+      },
+      {
+        "path": "/training_videos/{videoId}",
+        "definition": { "schema": { "$ref": "#/backend/entities/TrainingVideo" }, "description": "Training video library." }
+      },
+      {
+        "path": "/training_progress/{progressId}",
+        "definition": { "schema": { "$ref": "#/backend/entities/TrainingProgress" }, "description": "Employee progress on training videos. ID is {uid}_{videoId}." }
       }
     ],
     "reasoning": "The Firestore structure is designed to provide a secure and scalable foundation for the HRP Starter Kit application. It emphasizes authorization independence, clarity, and adherence to Firestore best practices.\n\nThe design leverages path-based ownership for user profiles, ensuring that only the user (or a super_admin) can access their data.  This is achieved by placing user documents at `/users/{userId}`. This structure inherently provides authorization independence; security rules can validate `request.auth.uid` against the `{userId}` path segment without needing to perform costly and brittle `get()` operations to check ownership.\n\nThe application requirements include a seeding process that creates initial user accounts with specific roles.  The `users/{userId}` collection stores user profiles (fullName, email, role, isActive, createdAt) and facilitates role-based access control. The `super_admin` role has read/write access to all collections, which is achieved in security rules by checking for the existence of a document in a dedicated `/roles_admin/{userId}` collection.\n\nQAPs (Rules Are Not Filters): List operations are inherently safe due to the structure.  A regular user can only read their own document in `users/{userId}`, so listing the entire collection would return no documents (without super-admin privileges).  The super-admin role, indicated by membership in `/roles_admin/{userId}`, grants broad access and bypasses the filtering constraints imposed on other users.\n\nAuthorization Independence: Achieved by storing all necessary authorization information directly within the user document at `/users/{userId}` (specifically, the `role` field) and leveraging path-based ownership. The super admin role is checked for via existence of a document, avoiding document `get()` calls.\n\n"
   }
 }
+
+    

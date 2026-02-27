@@ -2,7 +2,7 @@
 import { createElement, type ReactNode } from 'react';
 import { 
     LayoutDashboard, Users, Briefcase, User, Calendar, DollarSign, Settings, ShieldCheck, Database, History, 
-    Contact, UserPlus, FolderKanban, CalendarOff, UserMinus, KanbanSquare, CheckSquare, BarChart, ClipboardCheck, Award, Search, FileText, FileUp, Video, BrainCircuit 
+    Contact, UserPlus, FolderKanban, CalendarOff, UserMinus, KanbanSquare, CheckSquare, BarChart, ClipboardCheck, Award, Search, FileText, FileUp, Video, BrainCircuit, Timer, MapPin, BookUser, FileHeart, FileClock, GraduationCap 
 } from 'lucide-react';
 import type { UserRole } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
@@ -19,8 +19,9 @@ export type MenuGroup = {
     items: MenuItem[];
 }
 
-const HRD_MENU_ITEMS: MenuGroup[] = [
+const RECRUITMENT_MENU_ITEMS: MenuGroup[] = [
     {
+        title: "Recruitment",
         items: [
             { href: '/admin/hrd', label: 'Dashboard', icon: createElement(LayoutDashboard) },
             { href: '/admin/jobs', label: 'Job Postings', icon: createElement(Briefcase) },
@@ -30,16 +31,26 @@ const HRD_MENU_ITEMS: MenuGroup[] = [
     }
 ];
 
+const EMPLOYEE_MONITORING_ITEMS: MenuGroup[] = [
+    {
+        title: "Employee Monitoring",
+        items: [
+            { href: '/admin/hrd/monitoring', label: 'Dashboard Karyawan', icon: createElement(LayoutDashboard) },
+            { href: '/admin/hrd/monitoring/absen', label: 'Absen', icon: createElement(FileClock) },
+            { href: '/admin/hrd/monitoring/lembur', label: 'Lembur', icon: createElement(Timer) },
+            { href: '/admin/hrd/monitoring/dinas', label: 'Dinas (Tracking)', icon: createElement(MapPin) },
+            { href: '/admin/hrd/monitoring/cuti', label: 'Cuti', icon: createElement(CalendarOff) },
+            { href: '/admin/hrd/monitoring/izin', label: 'Izin', icon: createElement(FileHeart) },
+            { href: '/admin/hrd/monitoring/pelatihan', label: 'Pengembangan SDM', icon: createElement(GraduationCap) },
+        ]
+    }
+];
+
+
 export const MENU_CONFIG: Record<string, MenuGroup[]> = {
   'super-admin': [
-    {
-        title: "Main",
-        items: [
-            { href: '/admin/super-admin', label: 'Overview', icon: createElement(LayoutDashboard) },
-            ...HRD_MENU_ITEMS[0].items,
-            { href: '/admin/interviews', label: 'My Interviews', icon: createElement(Video) },
-        ]
-    },
+    ...RECRUITMENT_MENU_ITEMS,
+    ...EMPLOYEE_MONITORING_ITEMS,
     {
         title: "Administration",
         items: [
@@ -47,10 +58,17 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
             { href: '/admin/super-admin/departments-brands', label: 'Master Data', icon: createElement(Database) },
             { href: '/admin/super-admin/menu-settings', label: 'Access & Roles', icon: createElement(ShieldCheck) },
         ]
+    },
+    {
+        title: "Personal",
+        items: [
+            { href: '/admin/interviews', label: 'My Interviews', icon: createElement(Video) },
+        ]
     }
   ],
   'hrd': [
-    ...HRD_MENU_ITEMS,
+    ...RECRUITMENT_MENU_ITEMS,
+    ...EMPLOYEE_MONITORING_ITEMS,
     {
         title: "Personal",
         items: [
@@ -119,3 +137,5 @@ Object.values(allMenuItemsByRole).flat().forEach(item => {
 });
 
 export const ALL_UNIQUE_MENU_ITEMS: MenuItem[] = Array.from(uniqueItems.values());
+
+    
