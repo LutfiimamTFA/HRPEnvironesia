@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Loader2, Save, MapPin, LocateFixed } from 'lucide-react';
+import { Loader2, Save, MapPin, LocateFixed, Link as LinkIcon, AlertCircle, X } from 'lucide-react';
 import type { AttendanceConfig } from '@/lib/types';
 import { useFirestore, useDoc, useMemoFirebase, setDocumentNonBlocking } from '@/firebase';
 import { doc, serverTimestamp, Timestamp } from 'firebase/firestore';
@@ -16,6 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/providers/auth-provider';
 import { Skeleton } from '../ui/skeleton';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../ui/accordion';
+import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
 
 const formSchema = z.object({
   office: z.object({
@@ -31,6 +32,12 @@ const formSchema = z.object({
 });
 
 type FormValues = z.infer<typeof formSchema>;
+
+type DraftLocation = {
+    lat: number;
+    lng: number;
+    accuracy: number;
+};
 
 const DEFAULT_OFFICE = {
     lat: -7.761699086851509,
@@ -77,7 +84,10 @@ export function AttendanceSettingsClient() {
   const { toast } = useToast();
   const { userProfile } = useAuth();
   const [isSaving, setIsSaving] = useState(false);
-  const [isGettingLocation, setIsGettingLocation] = useState(false);
+  const [isFetchingLocation, setIsFetchingLocation] = useState(false);
+  const [draftLocation, setDraftLocation] = useState<DraftLocation | null>(null);
+  const [geocodeResult, setGeocodeResult] = useState<string | null>(null);
+  const [geocodeError, setGeocodeError] = useState<string | null>(null);
 
   const configRef = useMemoFirebase(() => doc(firestore, 'attendance_config', 'default'), [firestore]);
   const { data: config, isLoading } = useDoc<AttendanceConfig>(configRef);
@@ -96,6 +106,67 @@ export function AttendanceSettingsClient() {
         });
     }
   }, [config, form]);
+
+  const reverseGeocode = async (lat: number, lng: number) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (!response.ok) throw new Error(`Nominatim API failed: ${response.statusText}`);
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
+      setGeocodeResult(data.display_name || 'Alamat tidak ditemukan.');
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        setGeocodeError('Gagal mendapatkan alamat: Waktu habis.');
+      } else {
+        setGeocodeError(`Gagal mendapatkan alamat: ${error.message}`);
+      }
+    }
+  };
+
+  const getCurrentLocation = () => {
+    if (!navigator.geolocation) {
+        toast({ variant: 'destructive', title: 'Error', description: 'Geolocation tidak didukung oleh browser Anda.' });
+        return;
+    }
+    setIsFetchingLocation(true);
+    setDraftLocation(null);
+    setGeocodeResult(null);
+    setGeocodeError(null);
+    
+    navigator.geolocation.getCurrentPosition(
+        (position) => {
+            const newLocation = {
+                lat: position.coords.latitude,
+                lng: position.coords.longitude,
+                accuracy: position.coords.accuracy,
+            };
+            setDraftLocation(newLocation);
+            reverseGeocode(newLocation.lat, newLocation.lng);
+            setIsFetchingLocation(false);
+        },
+        () => {
+            toast({ variant: 'destructive', title: 'Izin Lokasi Ditolak', description: 'Aktifkan izin lokasi di browser Anda untuk menggunakan fitur ini.' });
+            setIsFetchingLocation(false);
+        }
+    );
+  };
+
+  const handleUseLocation = () => {
+    if (!draftLocation) return;
+    form.setValue('office.lat', draftLocation.lat);
+    form.setValue('office.lng', draftLocation.lng);
+    toast({ title: 'Lokasi Diterapkan', description: 'Koordinat kantor telah diisi pada formulir.'});
+    setDraftLocation(null);
+  };
+
+  const setDefaults = () => {
+    form.reset(DEFAULT_VALUES);
+    toast({ title: 'Pengaturan Default', description: 'Formulir telah diisi dengan nilai default.'});
+  };
 
   const onSubmit = async (values: FormValues) => {
     if (!userProfile) {
@@ -120,31 +191,6 @@ export function AttendanceSettingsClient() {
     }
   };
 
-  const setDefaults = () => {
-    form.setValue('office', DEFAULT_OFFICE);
-    form.setValue('radiusM', 150);
-  };
-  
-  const getCurrentLocation = () => {
-    if (!navigator.geolocation) {
-        toast({ variant: 'destructive', title: 'Error', description: 'Geolocation tidak didukung oleh browser Anda.' });
-        return;
-    }
-    setIsGettingLocation(true);
-    navigator.geolocation.getCurrentPosition(
-        (position) => {
-            form.setValue('office.lat', position.coords.latitude);
-            form.setValue('office.lng', position.coords.longitude);
-            toast({ title: 'Lokasi Diambil', description: 'Koordinat kantor telah diperbarui.'});
-            setIsGettingLocation(false);
-        },
-        () => {
-            toast({ variant: 'destructive', title: 'Gagal Mengambil Lokasi', description: 'Pastikan Anda telah memberikan izin akses lokasi.' });
-            setIsGettingLocation(false);
-        }
-    );
-  };
-
   if (isLoading) {
       return <SettingsFormSkeleton />;
   }
@@ -161,12 +207,48 @@ export function AttendanceSettingsClient() {
                     <div className="space-y-4 p-4 border rounded-lg">
                         <h3 className="font-semibold">Lokasi Kantor</h3>
                          <div className="space-y-2">
-                             <Button type="button" onClick={getCurrentLocation} disabled={isGettingLocation}>
-                                 {isGettingLocation ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LocateFixed className="mr-2 h-4 w-4" />}
+                             <Button type="button" onClick={getCurrentLocation} disabled={isFetchingLocation}>
+                                 {isFetchingLocation ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LocateFixed className="mr-2 h-4 w-4" />}
                                  Ambil Lokasi Saya Sekarang
                              </Button>
                              <FormDescription>Klik tombol ini saat Anda berada di lokasi kantor untuk mengisi koordinat secara otomatis.</FormDescription>
                          </div>
+                        
+                        {isFetchingLocation && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin"/>Mencari lokasi dan alamat...</div>}
+                        
+                        {draftLocation && (
+                            <div className="p-4 border-2 border-dashed rounded-lg space-y-4">
+                               <div className="flex justify-between items-start">
+                                 <div>
+                                    <h4 className="font-semibold text-lg">Pratinjau Lokasi</h4>
+                                    <p className="text-sm text-muted-foreground">Pastikan lokasi yang terdeteksi sudah benar.</p>
+                                 </div>
+                                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDraftLocation(null)}><X className="h-4 w-4" /></Button>
+                               </div>
+
+                                <iframe
+                                    width="100%"
+                                    height="250"
+                                    loading="lazy"
+                                    className="rounded-md border"
+                                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${draftLocation.lng - 0.005},${draftLocation.lat - 0.005},${draftLocation.lng + 0.005},${draftLocation.lat + 0.005}&layer=mapnik&marker=${draftLocation.lat},${draftLocation.lng}`}
+                                ></iframe>
+                                
+                                {geocodeResult && <Alert><AlertCircle className="h-4 w-4" /><AlertTitle>Perkiraan Alamat</AlertTitle><AlertDescription>{geocodeResult}</AlertDescription></Alert>}
+                                {geocodeError && <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertTitle>Gagal Mendapatkan Alamat</AlertTitle><AlertDescription>{geocodeError}</AlertDescription></Alert>}
+
+                                <div className="text-xs text-muted-foreground">
+                                    <p>Koordinat: {draftLocation.lat.toFixed(6)}, {draftLocation.lng.toFixed(6)}</p>
+                                    <p>Akurasi: &plusmn;{draftLocation.accuracy.toFixed(0)} meter</p>
+                                </div>
+                                
+                                <div className="flex flex-wrap items-center gap-2 pt-2">
+                                    <Button type="button" onClick={handleUseLocation}>Gunakan Lokasi Ini</Button>
+                                    <Button asChild variant="outline"><a href={`https://www.google.com/maps?q=${draftLocation.lat},${draftLocation.lng}`} target="_blank" rel="noopener noreferrer"><LinkIcon className="mr-2 h-4 w-4" /> Buka di Google Maps</a></Button>
+                                </div>
+                            </div>
+                        )}
+                        
                         <FormField control={form.control} name="radiusM" render={({ field }) => (<FormItem><FormLabel>Radius Toleransi (meter)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormDescription>Jarak maksimal dari titik kantor yang masih dianggap "Onsite".</FormDescription><FormMessage /></FormItem>)} />
                         
                         <Accordion type="single" collapsible>
@@ -177,11 +259,10 @@ export function AttendanceSettingsClient() {
                                         <FormField control={form.control} name="office.lat" render={({ field }) => (<FormItem><FormLabel>Latitude</FormLabel><FormControl><Input type="number" step="any" {...field} /></FormControl><FormMessage /></FormItem>)} />
                                         <FormField control={form.control} name="office.lng" render={({ field }) => (<FormItem><FormLabel>Longitude</FormLabel><FormControl><Input type="number" step="any" {...field} /></FormControl><FormMessage /></FormItem>)} />
                                     </div>
-                                     <Button type="button" variant="outline" size="sm" onClick={setDefaults}><MapPin className="mr-2 h-4 w-4" /> Gunakan Alamat Default</Button>
+                                     <Button type="button" variant="outline" size="sm" onClick={setDefaults}><MapPin className="mr-2 h-4 w-4" /> Gunakan Lokasi Default</Button>
                                 </AccordionContent>
                             </AccordionItem>
                         </Accordion>
-
                     </div>
 
                     <div className="space-y-4 p-4 border rounded-lg">
