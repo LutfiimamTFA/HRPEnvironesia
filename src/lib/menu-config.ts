@@ -21,7 +21,7 @@ export type MenuGroup = {
 
 const RECRUITMENT_MENU_ITEMS: MenuGroup[] = [
     {
-        title: "Recruitment",
+        title: "Rekrutmen",
         items: [
             { href: '/admin/hrd', label: 'Dashboard', icon: createElement(LayoutDashboard) },
             { href: '/admin/jobs', label: 'Job Postings', icon: createElement(Briefcase) },
@@ -33,7 +33,7 @@ const RECRUITMENT_MENU_ITEMS: MenuGroup[] = [
 
 const EMPLOYEE_MONITORING_ITEMS: MenuGroup[] = [
     {
-        title: "Employee Monitoring",
+        title: "Monitoring Karyawan",
         items: [
             { href: '/admin/hrd/monitoring', label: 'Dashboard Karyawan', icon: createElement(LayoutDashboard) },
             { href: '/admin/hrd/monitoring/absen', label: 'Absen', icon: createElement(FileClock) },
@@ -52,7 +52,7 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
     ...RECRUITMENT_MENU_ITEMS,
     ...EMPLOYEE_MONITORING_ITEMS,
     {
-        title: "Administration",
+        title: "Administrasi",
         items: [
             { href: '/admin/super-admin/user-management', label: 'User Management', icon: createElement(Users) },
             { href: '/admin/super-admin/departments-brands', label: 'Master Data', icon: createElement(Database) },
@@ -137,5 +137,3 @@ Object.values(allMenuItemsByRole).flat().forEach(item => {
 });
 
 export const ALL_UNIQUE_MENU_ITEMS: MenuItem[] = Array.from(uniqueItems.values());
-
-    
