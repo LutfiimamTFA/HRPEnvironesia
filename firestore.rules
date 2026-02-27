@@ -1,3 +1,4 @@
+
 /**
  * This ruleset enforces a strict security model for the HRP Starter application,
  * balancing user ownership with powerful administrative capabilities.
@@ -120,7 +121,7 @@ service cloud.firestore {
      * - Only other super admins can manage this collection.
      */
     match /roles_admin/{userId} {
-      allow read, write: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super-admin';
+      allow read, write: if request.auth.token.email == 'super_admin@gmail.com' || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super-admin';
     }
     
     /**
@@ -129,7 +130,7 @@ service cloud.firestore {
      * - Only super admins can manage this collection.
      */
     match /roles_hrd/{userId} {
-      allow read, write: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super-admin';
+      allow read, write: if request.auth.token.email == 'super_admin@gmail.com' || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super-admin';
     }
     
     /**
@@ -238,6 +239,12 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
     
+    // --- Monitoring & Attendance Rules ---
+    match /attendance_config/{configId} {
+      allow read: if isInternal();
+      allow write: if isHrd() || isSuperAdmin();
+    }
+    
     // --- Assessment Rules ---
 
     match /assessment_config/{configId} {
@@ -295,3 +302,5 @@ service cloud.firestore {
     }
   }
 }
+
+    

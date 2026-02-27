@@ -1,3 +1,4 @@
+
 'use client';
 
 import type { Timestamp } from 'firebase/firestore';
@@ -533,3 +534,28 @@ export interface InterviewAssignment {
   meetingLink: string;
   createdAt: Timestamp;
 }
+
+// --- EMPLOYEE MONITORING TYPES ---
+export type AttendanceConfig = {
+    id?: string;
+    office: {
+        lat: number;
+        lng: number;
+    };
+    radiusM: number;
+    timezone: string;
+    workDays: string[];
+    shift: {
+        startTime: string; // HH:mm
+        endTime: string; // HH:mm
+        graceLateMinutes: number;
+    };
+    rules?: {
+        requireSelfieOffsite?: boolean;
+        requireSelfieOnAnomaly?: boolean;
+    };
+    updatedAt?: Timestamp;
+    updatedBy?: string;
+};
+
+    
