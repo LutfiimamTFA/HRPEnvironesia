@@ -561,8 +561,9 @@ export type AttendanceEvent = {
     id?: string;
     uid: string;
     type: 'tap_in' | 'tap_out';
-    timestamp: Timestamp;
-    workMode: 'onsite' | 'offsite';
+    tsServer: Timestamp;
+    tsClient?: Timestamp;
+    mode: 'ONSITE' | 'OFFSITE';
     location: {
         lat: number;
         lng: number;
