@@ -1,14 +1,27 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, query } from 'firebase/firestore';
-import type { Brand, UserProfile } from '@/lib/types';
+import { useCollection, useFirestore, useMemoFirebase, useDoc } from '@/firebase';
+import { collection, query, where, doc } from 'firebase/firestore';
+import type { Brand, UserProfile, AttendanceEvent, AttendanceConfig } from '@/lib/types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { GoogleDatePicker } from '@/components/ui/google-date-picker';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '../ui/skeleton';
 import { KpiCard } from '@/components/recruitment/KpiCard';
+import { startOfDay, endOfDay, format } from 'date-fns';
+import { Badge } from '../ui/badge';
+
+interface AttendanceRecord {
+  id: string;
+  name: string;
+  brandName: string;
+  tapIn: string;
+  tapOut: string;
+  status: 'Tepat Waktu' | 'Terlambat' | 'Belum Tap In';
+  mode: 'onsite' | 'offsite' | '-';
+  flags: string[];
+}
 
 const kpiCardsData = [
     { title: "Hadir", value: 0 },
@@ -35,14 +48,112 @@ export function AttendanceMonitoringClient() {
     const [statusFilter, setStatusFilter] = useState('all');
     const firestore = useFirestore();
 
+    // --- Data Fetching ---
+    const { data: config, isLoading: isLoadingConfig } = useDoc<AttendanceConfig>(
+        useMemoFirebase(() => doc(firestore, 'attendance_config', 'default'), [firestore])
+    );
+    const { data: users, isLoading: isLoadingUsers } = useCollection<UserProfile>(
+        useMemoFirebase(() => query(collection(firestore, 'users'), where('role', '==', 'karyawan')), [firestore])
+    );
     const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(
         useMemoFirebase(() => collection(firestore, 'brands'), [firestore])
     );
+
+    const eventsQuery = useMemoFirebase(() => {
+        if (!date) return null;
+        const start = startOfDay(date);
+        const end = endOfDay(date);
+        return query(
+            collection(firestore, 'attendance_events'),
+            where('timestamp', '>=', start),
+            where('timestamp', '<=', end)
+        );
+    }, [firestore, date]);
+    const { data: attendanceEvents, isLoading: isLoadingEvents } = useCollection<AttendanceEvent>(eventsQuery);
+
+    const isLoading = isLoadingConfig || isLoadingUsers || isLoadingBrands || isLoadingEvents;
     
-    // Placeholder - replace with actual data fetching and processing
-    const isLoading = false;
-    const summaryData = kpiCardsData;
-    const tableData: any[] = [];
+    // --- Data Processing ---
+    const { tableData, summaryData } = useMemo(() => {
+        const summary = { hadir: 0, belumTapIn: 0, offsite: 0, anomali: 0, terlambat: 0 };
+        if (!users || !attendanceEvents || !config) {
+            const defaultSummary = kpiCardsData.map(c => ({ title: c.title, value: 0 }));
+            return { tableData: [], summaryData: defaultSummary };
+        }
+        
+        const brandMap = new Map(brands?.map(b => [b.id, b.name]));
+
+        const processedData = users.map(user => {
+            const userEvents = attendanceEvents.filter(e => e.uid === user.uid);
+            const tapIn = userEvents.find(e => e.type === 'tap_in');
+            const tapOut = userEvents.find(e => e.type === 'tap_out');
+            const flags: string[] = [];
+            let status: AttendanceRecord['status'] = 'Belum Tap In';
+
+            if (tapIn) {
+                status = 'Tepat Waktu';
+                summary.hadir++;
+                if (tapIn.workMode === 'offsite') {
+                    flags.push('Offsite');
+                    summary.offsite++;
+                }
+
+                const tapInTime = tapIn.timestamp.toDate();
+                const shiftStart = new Date(tapInTime);
+                const [startHour, startMinute] = config.shift.startTime.split(':').map(Number);
+                shiftStart.setHours(startHour, startMinute + config.shift.graceLateMinutes, 0, 0);
+
+                if (tapInTime > shiftStart) {
+                    status = 'Terlambat';
+                    flags.push('Terlambat');
+                    summary.terlambat++;
+                }
+            }
+
+            if (tapOut) {
+                const tapOutTime = tapOut.timestamp.toDate();
+                const shiftEnd = new Date(tapOutTime);
+                const [endHour, endMinute] = config.shift.endTime.split(':').map(Number);
+                shiftEnd.setHours(endHour, endMinute, 0, 0);
+                if (tapOutTime < shiftEnd) flags.push('Pulang Cepat');
+            }
+
+            return {
+                id: user.uid,
+                name: user.fullName,
+                brandId: user.brandId,
+                brandName: Array.isArray(user.brandId) ? user.brandId.map(id => brandMap.get(id)).join(', ') : brandMap.get(user.brandId as string) || '-',
+                tapIn: tapIn ? format(tapIn.timestamp.toDate(), 'HH:mm') : '-',
+                tapOut: tapOut ? format(tapOut.timestamp.toDate(), 'HH:mm') : '-',
+                status: status,
+                mode: tapIn?.workMode || '-',
+                flags: flags,
+            };
+        });
+
+        summary.belumTapIn = users.length - summary.hadir;
+
+        const filteredTableData = processedData.filter(row => {
+            const brandMatch = brandFilter === 'all' || (Array.isArray(row.brandId) ? row.brandId.includes(brandFilter) : row.brandId === brandFilter);
+            const statusMatch = statusFilter === 'all' ||
+                (statusFilter === 'present' && (row.status === 'Tepat Waktu' || row.status === 'Terlambat')) ||
+                (statusFilter === 'absent' && row.status === 'Belum Tap In') ||
+                (statusFilter === 'late' && row.status === 'Terlambat') ||
+                (statusFilter === 'offsite' && row.flags.includes('Offsite'));
+            return brandMatch && statusMatch;
+        });
+
+        return {
+            tableData: filteredTableData,
+            summaryData: [
+                { title: "Hadir", value: summary.hadir },
+                { title: "Belum Tap In", value: summary.belumTapIn },
+                { title: "Offsite", value: summary.offsite },
+                { title: "Anomali", value: summary.anomali },
+                { title: "Terlambat", value: summary.terlambat },
+            ]
+        };
+    }, [users, attendanceEvents, config, brands, brandFilter, statusFilter, date]);
 
     return (
         <div className="space-y-6">
@@ -97,7 +208,21 @@ export function AttendanceMonitoringClient() {
                             <TableBody>
                                 {tableData.length > 0 ? tableData.map(row => (
                                     <TableRow key={row.id}>
-                                        {/* Render table cells here */}
+                                        <TableCell className="font-medium">{row.name}</TableCell>
+                                        <TableCell>{row.brandName}</TableCell>
+                                        <TableCell>{row.tapIn}</TableCell>
+                                        <TableCell>{row.tapOut}</TableCell>
+                                        <TableCell>
+                                            <Badge variant={row.status === 'Terlambat' ? 'destructive' : row.status === 'Belum Tap In' ? 'secondary' : 'default'}>
+                                                {row.status}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell className="capitalize">{row.mode}</TableCell>
+                                        <TableCell>
+                                            <div className="flex flex-wrap gap-1">
+                                                {row.flags.map((flag: string) => <Badge key={flag} variant="outline">{flag}</Badge>)}
+                                            </div>
+                                        </TableCell>
                                     </TableRow>
                                 )) : (
                                     <TableRow>

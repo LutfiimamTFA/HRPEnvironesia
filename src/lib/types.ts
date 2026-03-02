@@ -1,4 +1,3 @@
-
 'use client';
 
 import type { Timestamp } from 'firebase/firestore';
@@ -558,4 +557,18 @@ export type AttendanceConfig = {
     updatedBy?: string;
 };
 
-    
+export type AttendanceEvent = {
+    id?: string;
+    uid: string;
+    type: 'tap_in' | 'tap_out';
+    timestamp: Timestamp;
+    workMode: 'onsite' | 'offsite';
+    location: {
+        lat: number;
+        lng: number;
+    };
+    photoUrl?: string;
+    brandId?: string;
+    displayName?: string;
+    flags?: string[];
+};
