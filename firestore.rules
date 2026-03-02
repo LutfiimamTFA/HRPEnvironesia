@@ -241,7 +241,7 @@ service cloud.firestore {
     
     // --- Monitoring & Attendance Rules ---
     match /attendance_sites/{siteId} {
-      allow read: if isInternal();
+      allow read: if isHrd() || isSuperAdmin();
       allow write: if isHrd() || isSuperAdmin();
     }
     
@@ -302,5 +302,3 @@ service cloud.firestore {
     }
   }
 }
-
-    
