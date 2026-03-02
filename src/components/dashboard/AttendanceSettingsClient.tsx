@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo } from 'react';
@@ -83,24 +82,28 @@ export function AttendanceSettingsClient() {
                         <TableRow>
                             <TableHead>Nama Site</TableHead>
                             <TableHead>Brand Terkait</TableHead>
+                            <TableHead>Radius (m)</TableHead>
+                            <TableHead>Jam Kerja</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
                         {isLoadingSites || isLoadingBrands ? (
-                            <TableRow><TableCell colSpan={4} className="h-24 text-center">Loading sites...</TableCell></TableRow>
+                            <TableRow><TableCell colSpan={6} className="h-24 text-center">Loading sites...</TableCell></TableRow>
                         ) : sites && sites.length > 0 ? (
                             sites.map(site => (
                                 <TableRow key={site.id}>
                                     <TableCell className="font-medium">{site.name}</TableCell>
                                     <TableCell>
                                         <div className="flex flex-wrap gap-1">
-                                            {site.brandIds.map(id => (
+                                            {Array.isArray(site.brandIds) && site.brandIds.map(id => (
                                                 <Badge key={id} variant="secondary">{brandMap.get(id) || id}</Badge>
                                             ))}
                                         </div>
                                     </TableCell>
+                                    <TableCell>{site.radiusM}m</TableCell>
+                                    <TableCell>{site.shift.startTime} - {site.shift.endTime}</TableCell>
                                     <TableCell><Badge variant={site.isActive ? 'default' : 'outline'}>{site.isActive ? 'Aktif' : 'Non-Aktif'}</Badge></TableCell>
                                     <TableCell className="text-right">
                                         <Button variant="ghost" size="icon" onClick={() => handleEdit(site)}>
@@ -114,7 +117,7 @@ export function AttendanceSettingsClient() {
                             ))
                         ) : (
                              <TableRow>
-                                <TableCell colSpan={4} className="h-24 text-center">
+                                <TableCell colSpan={6} className="h-24 text-center">
                                     Belum ada situs yang dikonfigurasi.
                                 </TableCell>
                             </TableRow>
