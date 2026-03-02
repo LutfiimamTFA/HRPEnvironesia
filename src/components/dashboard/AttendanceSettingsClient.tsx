@@ -206,12 +206,23 @@ export function AttendanceSettingsClient() {
                 <CardContent className="space-y-8">
                     <div className="space-y-4 p-4 border rounded-lg">
                         <h3 className="font-semibold">Lokasi Kantor</h3>
+                        <div className="p-3 bg-muted rounded-md text-sm">
+                          <p className="font-semibold text-muted-foreground">Pengaturan Lokasi Saat Ini:</p>
+                          {config ? (
+                            <>
+                              <p className="font-mono">{`${config.office.lat.toFixed(6)}, ${config.office.lng.toFixed(6)}`}</p>
+                              <p className="text-xs text-muted-foreground">Radius: {config.radiusM} meter</p>
+                            </>
+                          ) : (
+                            <p className="text-muted-foreground italic">Belum diatur</p>
+                          )}
+                        </div>
                          <div className="space-y-2">
                              <Button type="button" onClick={getCurrentLocation} disabled={isFetchingLocation}>
                                  {isFetchingLocation ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LocateFixed className="mr-2 h-4 w-4" />}
                                  Ambil Lokasi Saya Sekarang
                              </Button>
-                             <FormDescription>Klik tombol ini saat Anda berada di lokasi kantor untuk mengisi koordinat secara otomatis.</FormDescription>
+                             <FormDescription>Klik tombol ini saat Anda berada di kantor untuk mengisi koordinat secara otomatis.</FormDescription>
                          </div>
                         
                         {isFetchingLocation && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin"/>Mencari lokasi dan alamat...</div>}
@@ -267,6 +278,16 @@ export function AttendanceSettingsClient() {
 
                     <div className="space-y-4 p-4 border rounded-lg">
                         <h3 className="font-semibold">Jam Kerja</h3>
+                        <div className="p-3 bg-muted rounded-md text-sm">
+                          <p className="font-semibold text-muted-foreground">Pengaturan Jam Kerja Saat Ini:</p>
+                          {config ? (
+                            <p className="font-mono">
+                              Masuk: {config.shift.startTime}, Pulang: {config.shift.endTime}, Batas Telat: {config.shift.graceLateMinutes} menit
+                            </p>
+                          ) : (
+                            <p className="text-muted-foreground italic">Belum diatur</p>
+                          )}
+                        </div>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <FormField control={form.control} name="shift.startTime" render={({ field }) => (<FormItem><FormLabel>Jam Masuk</FormLabel><FormControl><Input type="time" {...field} /></FormControl><FormMessage /></FormItem>)} />
                             <FormField control={form.control} name="shift.endTime" render={({ field }) => (<FormItem><FormLabel>Jam Pulang</FormLabel><FormControl><Input type="time" {...field} /></FormControl><FormMessage /></FormItem>)} />
