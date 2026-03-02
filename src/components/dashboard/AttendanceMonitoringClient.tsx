@@ -11,6 +11,9 @@ import { Skeleton } from '../ui/skeleton';
 import { KpiCard } from '@/components/recruitment/KpiCard';
 import { startOfDay, endOfDay, format } from 'date-fns';
 import { Badge } from '../ui/badge';
+import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
+import { getInitials } from '@/lib/utils';
+import Link from 'next/link';
 
 interface AttendanceRecord {
   id: string;
@@ -18,9 +21,10 @@ interface AttendanceRecord {
   brandName: string;
   tapIn: string;
   tapOut: string;
-  status: 'Tepat Waktu' | 'Terlambat' | 'Belum Tap In';
+  status: 'Sedang Bekerja' | 'Selesai' | 'Belum Tap In';
   mode: 'onsite' | 'offsite' | '-';
   flags: string[];
+  photoUrl?: string | null;
 }
 
 const kpiCardsData = [
@@ -53,7 +57,7 @@ export function AttendanceMonitoringClient() {
         useMemoFirebase(() => doc(firestore, 'attendance_config', 'default'), [firestore])
     );
     const { data: users, isLoading: isLoadingUsers } = useCollection<UserProfile>(
-        useMemoFirebase(() => query(collection(firestore, 'users'), where('role', '==', 'karyawan')), [firestore])
+        useMemoFirebase(() => query(collection(firestore, 'users'), where('role', 'in', ['karyawan', 'manager'])), [firestore])
     );
     const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(
         useMemoFirebase(() => collection(firestore, 'brands'), [firestore])
@@ -87,11 +91,13 @@ export function AttendanceMonitoringClient() {
             const userEvents = attendanceEvents.filter(e => e.uid === user.uid);
             const tapIn = userEvents.find(e => e.type === 'tap_in');
             const tapOut = userEvents.find(e => e.type === 'tap_out');
-            const flags: string[] = [];
+            
             let status: AttendanceRecord['status'] = 'Belum Tap In';
+            if (tapIn && !tapOut) status = 'Sedang Bekerja';
+            else if (tapIn && tapOut) status = 'Selesai';
 
+            const flags: string[] = [];
             if (tapIn) {
-                status = 'Tepat Waktu';
                 summary.hadir++;
                 if (tapIn.workMode === 'offsite') {
                     flags.push('Offsite');
@@ -104,7 +110,6 @@ export function AttendanceMonitoringClient() {
                 shiftStart.setHours(startHour, startMinute + config.shift.graceLateMinutes, 0, 0);
 
                 if (tapInTime > shiftStart) {
-                    status = 'Terlambat';
                     flags.push('Terlambat');
                     summary.terlambat++;
                 }
@@ -128,6 +133,7 @@ export function AttendanceMonitoringClient() {
                 status: status,
                 mode: tapIn?.workMode || '-',
                 flags: flags,
+                photoUrl: tapIn?.photoUrl,
             };
         });
 
@@ -136,9 +142,9 @@ export function AttendanceMonitoringClient() {
         const filteredTableData = processedData.filter(row => {
             const brandMatch = brandFilter === 'all' || (Array.isArray(row.brandId) ? row.brandId.includes(brandFilter) : row.brandId === brandFilter);
             const statusMatch = statusFilter === 'all' ||
-                (statusFilter === 'present' && (row.status === 'Tepat Waktu' || row.status === 'Terlambat')) ||
+                (statusFilter === 'present' && (row.status === 'Sedang Bekerja' || row.status === 'Selesai')) ||
                 (statusFilter === 'absent' && row.status === 'Belum Tap In') ||
-                (statusFilter === 'late' && row.status === 'Terlambat') ||
+                (statusFilter === 'late' && row.flags.includes('Terlambat')) ||
                 (statusFilter === 'offsite' && row.flags.includes('Offsite'));
             return brandMatch && statusMatch;
         });
@@ -198,6 +204,7 @@ export function AttendanceMonitoringClient() {
                                 <TableRow>
                                     <TableHead>Nama</TableHead>
                                     <TableHead>Brand</TableHead>
+                                    <TableHead>Foto</TableHead>
                                     <TableHead>Tap In</TableHead>
                                     <TableHead>Tap Out</TableHead>
                                     <TableHead>Status</TableHead>
@@ -210,23 +217,37 @@ export function AttendanceMonitoringClient() {
                                     <TableRow key={row.id}>
                                         <TableCell className="font-medium">{row.name}</TableCell>
                                         <TableCell>{row.brandName}</TableCell>
+                                        <TableCell>
+                                            {row.photoUrl ? (
+                                                <Link href={row.photoUrl} target="_blank">
+                                                    <Avatar>
+                                                        <AvatarImage src={row.photoUrl} alt={`Foto ${row.name}`} />
+                                                        <AvatarFallback>{getInitials(row.name)}</AvatarFallback>
+                                                    </Avatar>
+                                                </Link>
+                                            ) : (
+                                                <Avatar>
+                                                    <AvatarFallback>{getInitials(row.name)}</AvatarFallback>
+                                                </Avatar>
+                                            )}
+                                        </TableCell>
                                         <TableCell>{row.tapIn}</TableCell>
                                         <TableCell>{row.tapOut}</TableCell>
                                         <TableCell>
-                                            <Badge variant={row.status === 'Terlambat' ? 'destructive' : row.status === 'Belum Tap In' ? 'secondary' : 'default'}>
+                                            <Badge variant={row.status === 'Belum Tap In' ? 'secondary' : 'default'}>
                                                 {row.status}
                                             </Badge>
                                         </TableCell>
                                         <TableCell className="capitalize">{row.mode}</TableCell>
                                         <TableCell>
                                             <div className="flex flex-wrap gap-1">
-                                                {row.flags.map((flag: string) => <Badge key={flag} variant="outline">{flag}</Badge>)}
+                                                {row.flags.map((flag: string) => <Badge key={flag} variant={flag === 'Terlambat' ? 'destructive' : 'outline'}>{flag}</Badge>)}
                                             </div>
                                         </TableCell>
                                     </TableRow>
                                 )) : (
                                     <TableRow>
-                                        <TableCell colSpan={7} className="h-24 text-center">
+                                        <TableCell colSpan={8} className="h-24 text-center">
                                             Data absensi untuk tanggal yang dipilih belum tersedia.
                                         </TableCell>
                                     </TableRow>
