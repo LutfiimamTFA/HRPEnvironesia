@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Button } from '@/components/ui/button';
@@ -18,16 +18,17 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '..
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Switch } from '../ui/switch';
 import { Checkbox } from '../ui/checkbox';
-import L, { Icon } from 'leaflet';
 import { Slider } from '../ui/slider';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
 // Fix for default marker icon not showing in Next.js
-delete (Icon.Default.prototype as any)._getIconUrl;
+delete (L.Icon.Default.prototype as any)._getIconUrl;
 
-Icon.Default.mergeOptions({
-  iconRetinaUrl: require('leaflet/dist/images/marker-icon-2x.png'),
-  iconUrl: require('leaflet/dist/images/marker-icon.png'),
-  shadowUrl: require('leaflet/dist/images/marker-shadow.png'),
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: require('leaflet/dist/images/marker-icon-2x.png').default.src,
+  iconUrl: require('leaflet/dist/images/marker-icon.png').default.src,
+  shadowUrl: require('leaflet/dist/images/marker-shadow.png').default.src,
 });
 
 
@@ -68,7 +69,6 @@ export function AttendanceSiteFormDialog({ open, onOpenChange, site, brands }: A
   const mapRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
   const circleRef = useRef<L.Circle | null>(null);
-  const mapContainerRef = useRef<HTMLDivElement>(null);
   
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -83,10 +83,16 @@ export function AttendanceSiteFormDialog({ open, onOpenChange, site, brands }: A
   const watchedLng = form.watch('office.lng');
   const watchedRadius = form.watch('radiusM');
 
-  const initializeMap = useCallback(() => {
-    if (mapContainerRef.current && !mapRef.current) {
-        const initialCoords: [number, number] = [watchedLat, watchedLng];
-        const map = L.map(mapContainerRef.current).setView(initialCoords, 16);
+  const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
+  const [isResolvingAddress, setIsResolvingAddress] = useState(false);
+  
+  const mapId = useMemo(() => `attendance-site-map-${site?.id ?? 'new'}`, [site]);
+  
+  const initializeMap = useCallback((lat: number, lng: number, radius: number) => {
+    const mapContainer = document.getElementById(mapId);
+    if (mapContainer && !mapRef.current) {
+        const initialCoords: [number, number] = [lat, lng];
+        const map = L.map(mapId).setView(initialCoords, 16);
         mapRef.current = map;
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -96,47 +102,53 @@ export function AttendanceSiteFormDialog({ open, onOpenChange, site, brands }: A
         const marker = L.marker(initialCoords, { draggable: true }).addTo(map);
         markerRef.current = marker;
 
-        const circle = L.circle(initialCoords, { radius: watchedRadius }).addTo(map);
+        const circle = L.circle(initialCoords, { radius: radius }).addTo(map);
         circleRef.current = circle;
 
         marker.on('dragend', (e) => {
             const { lat, lng } = e.target.getLatLng();
             form.setValue('office', { lat, lng }, { shouldValidate: true });
         });
-
-        setTimeout(() => map.invalidateSize(), 300);
+        
+        // This is crucial for maps inside modals/tabs
+        setTimeout(() => map.invalidateSize(), 400); 
     }
-  }, [watchedLat, watchedLng, watchedRadius, form]);
+  }, [mapId, form]);
 
   useEffect(() => {
     if (open) {
+      const initialValues = site ? { 
+        ...site, 
+        brandIds: Array.isArray(site.brandIds) ? site.brandIds : (site.brandId ? [site.brandId] : []),
+        office: { lat: site.office?.lat ?? -7.7956, lng: site.office?.lng ?? 110.3695 },
+        radiusM: site.radiusM || 100,
+      } : {
+        name: '', brandIds: [], isActive: true,
+        office: { lat: -7.7956, lng: 110.3695 }, radiusM: 100,
+        shift: { startTime: '09:00', endTime: '17:00', graceLateMinutes: 15 }
+      };
+      form.reset(initialValues as any);
+      
       setTimeout(() => {
-          initializeMap();
+          initializeMap(initialValues.office.lat, initialValues.office.lng, initialValues.radiusM);
       }, 100);
-    } else if (mapRef.current) {
-      mapRef.current.remove();
-      mapRef.current = null;
-    }
-    return () => {
-      if (mapRef.current) {
+    } else if (!open && mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
-      }
-    };
-  }, [open, initializeMap]);
-
+        markerRef.current = null;
+        circleRef.current = null;
+    }
+  }, [open, site, form, initializeMap]);
 
   useEffect(() => {
-      if (mapRef.current && markerRef.current) {
-          const newLatLng: [number, number] = [watchedLat, watchedLng];
-          if (mapRef.current.distance(mapRef.current.getCenter(), newLatLng) > 10) {
-            mapRef.current.setView(newLatLng, mapRef.current.getZoom());
-          }
-          markerRef.current.setLatLng(newLatLng);
-      }
-      if(circleRef.current) {
-          circleRef.current.setLatLng([watchedLat, watchedLng]);
-      }
+    if (mapRef.current && markerRef.current) {
+        const newLatLng: [number, number] = [watchedLat, watchedLng];
+        mapRef.current.setView(newLatLng, mapRef.current.getZoom());
+        markerRef.current.setLatLng(newLatLng);
+    }
+    if(circleRef.current) {
+        circleRef.current.setLatLng([watchedLat, watchedLng]);
+    }
   }, [watchedLat, watchedLng]);
 
   useEffect(() => {
@@ -145,20 +157,26 @@ export function AttendanceSiteFormDialog({ open, onOpenChange, site, brands }: A
       }
   }, [watchedRadius]);
 
+  // Reverse Geocoding Effect
   useEffect(() => {
-    if (open) {
-      const initialValues = site ? { 
-        ...site, 
-        radiusM: site.radiusM || 100, 
-        brandIds: Array.isArray(site.brandIds) ? site.brandIds : (site.brandId ? [site.brandId] : [])
-      } : {
-        name: '', brandIds: [], isActive: true,
-        office: { lat: -7.7956, lng: 110.3695 }, radiusM: 100,
-        shift: { startTime: '09:00', endTime: '17:00', graceLateMinutes: 15 }
-      };
-      form.reset(initialValues as any);
-    }
-  }, [open, site, form]);
+    const handler = setTimeout(async () => {
+      if (watchedLat && watchedLng) {
+        setIsResolvingAddress(true);
+        try {
+          const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${watchedLat}&lon=${watchedLng}`);
+          if (!response.ok) throw new Error('Failed to fetch address');
+          const data = await response.json();
+          setResolvedAddress(data.display_name || 'Alamat tidak dapat ditemukan.');
+        } catch (error) {
+          setResolvedAddress('Gagal mengambil alamat.');
+        } finally {
+          setIsResolvingAddress(false);
+        }
+      }
+    }, 500); // Debounce for 500ms
+
+    return () => clearTimeout(handler);
+  }, [watchedLat, watchedLng]);
 
   const getCurrentLocation = () => {
     if (!navigator.geolocation) {
@@ -198,7 +216,7 @@ export function AttendanceSiteFormDialog({ open, onOpenChange, site, brands }: A
   };
   
   const handleUseDefaultLocation = () => {
-    const defaultLocation = { lat: -7.761699, lng: 110.367134 }; // Default to a known location (e.g., company HQ)
+    const defaultLocation = { lat: -7.761699, lng: 110.367134 }; 
     form.setValue('office', defaultLocation, { shouldValidate: true });
     toast({ title: 'Lokasi Default Digunakan'});
   };
@@ -270,7 +288,15 @@ export function AttendanceSiteFormDialog({ open, onOpenChange, site, brands }: A
             </div>
             <div className="p-6 lg:border-l flex flex-col gap-4">
                <h3 className="font-semibold">Titik Lokasi & Radius</h3>
-               <div ref={mapContainerRef} className="w-full h-[320px] rounded-xl overflow-hidden z-0 bg-muted" />
+               <div id={mapId} className="w-full h-[320px] rounded-xl overflow-hidden z-0 bg-muted" />
+                <div className="mt-2 text-xs p-2 bg-muted rounded-md min-h-[4rem]">
+                    <p className="font-semibold">Alamat Terdeteksi:</p>
+                    {isResolvingAddress ? (
+                        <p className="italic text-muted-foreground">Mencari alamat...</p>
+                    ) : (
+                        <p className="text-muted-foreground">{resolvedAddress || 'Geser penanda untuk melihat alamat.'}</p>
+                    )}
+                </div>
                <FormField control={form.control} name="radiusM" render={({ field }) => (
                 <FormItem>
                     <FormLabel>Radius Area Absensi: {field.value} meter</FormLabel>
@@ -299,7 +325,7 @@ export function AttendanceSiteFormDialog({ open, onOpenChange, site, brands }: A
                         <FormField control={form.control} name="office.lat" render={({ field }) => (<FormItem><FormLabel>Latitude</FormLabel><FormControl><Input type="number" step="any" {...field} /></FormControl><FormMessage /></FormItem>)} />
                         <FormField control={form.control} name="office.lng" render={({ field }) => (<FormItem><FormLabel>Longitude</FormLabel><FormControl><Input type="number" step="any" {...field} /></FormControl><FormMessage /></FormItem>)} />
                     </div>
-                     <Button
+                    <Button
                         type="button"
                         variant="secondary"
                         size="sm"
