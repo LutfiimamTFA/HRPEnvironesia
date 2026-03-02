@@ -18,8 +18,18 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '..
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Switch } from '../ui/switch';
 import { Checkbox } from '../ui/checkbox';
-import L from 'leaflet';
+import L, { Icon } from 'leaflet';
 import { Slider } from '../ui/slider';
+
+// Fix for default marker icon not showing in Next.js
+delete (Icon.Default.prototype as any)._getIconUrl;
+
+Icon.Default.mergeOptions({
+  iconRetinaUrl: require('leaflet/dist/images/marker-icon-2x.png'),
+  iconUrl: require('leaflet/dist/images/marker-icon.png'),
+  shadowUrl: require('leaflet/dist/images/marker-shadow.png'),
+});
+
 
 const formSchema = z.object({
   name: z.string().min(3, "Nama site minimal 3 karakter."),
@@ -94,8 +104,7 @@ export function AttendanceSiteFormDialog({ open, onOpenChange, site, brands }: A
             form.setValue('office', { lat, lng }, { shouldValidate: true });
         });
 
-        // Add a small delay for invalidateSize to ensure the container is fully rendered.
-        setTimeout(() => map.invalidateSize(), 200);
+        setTimeout(() => map.invalidateSize(), 300);
     }
   }, [watchedLat, watchedLng, watchedRadius, form]);
 
@@ -120,7 +129,6 @@ export function AttendanceSiteFormDialog({ open, onOpenChange, site, brands }: A
   useEffect(() => {
       if (mapRef.current && markerRef.current) {
           const newLatLng: [number, number] = [watchedLat, watchedLng];
-          // Check if map view is already close to the target, to avoid jarring jumps
           if (mapRef.current.distance(mapRef.current.getCenter(), newLatLng) > 10) {
             mapRef.current.setView(newLatLng, mapRef.current.getZoom());
           }
@@ -262,7 +270,7 @@ export function AttendanceSiteFormDialog({ open, onOpenChange, site, brands }: A
             </div>
             <div className="p-6 lg:border-l flex flex-col gap-4">
                <h3 className="font-semibold">Titik Lokasi & Radius</h3>
-               <div ref={mapContainerRef} className="w-full h-[320px] rounded-xl overflow-hidden z-0" />
+               <div ref={mapContainerRef} className="w-full h-[320px] rounded-xl overflow-hidden z-0 bg-muted" />
                <FormField control={form.control} name="radiusM" render={({ field }) => (
                 <FormItem>
                     <FormLabel>Radius Area Absensi: {field.value} meter</FormLabel>
