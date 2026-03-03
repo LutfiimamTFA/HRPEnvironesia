@@ -1,5 +1,3 @@
-// This file path is for the new non-locale structure.
-// The content is taken from the original [locale] equivalent.
 'use client';
 
 import { useMemo, useState, useCallback, ChangeEvent, useEffect } from 'react';
@@ -226,33 +224,33 @@ export default function DocumentsPage() {
     if (!applicationsForEditing || applicationsForEditing.length === 0 || !uploads.cv || !uploads.ijazah) return;
     setIsSubmitting(true);
     
-    const currentStatus = applicationsForEditing[0].status;
-    const isFirstSubmission = currentStatus === 'document_submission';
+    const isFirstSubmissionForAny = applicationsForEditing.some(app => app.status === 'document_submission');
 
     const batch = writeBatch(firestore);
     
-    const updatePayload: any = {
-      cvUrl: uploads.cv?.url,
-      ijazahUrl: uploads.ijazah?.url,
-      cvFileName: uploads.cv?.name,
-      ijazahFileName: uploads.ijazah?.name,
-      updatedAt: serverTimestamp(),
-    };
-
-    if (isFirstSubmission) {
-      updatePayload.status = 'interview';
-    }
-
     applicationsForEditing.forEach(app => {
       const appRef = doc(firestore, 'applications', app.id!);
+      
+      const updatePayload: any = {
+        cvUrl: uploads.cv?.url,
+        ijazahUrl: uploads.ijazah?.url,
+        cvFileName: uploads.cv?.name,
+        ijazahFileName: uploads.ijazah?.name,
+        updatedAt: serverTimestamp(),
+      };
+
+      if (app.status === 'document_submission') {
+        updatePayload.status = 'interview';
+      }
+
       batch.update(appRef, updatePayload);
     });
 
     try {
       await batch.commit();
       toast({
-        title: isFirstSubmission ? "Dokumen Berhasil Dikirim" : "Dokumen Diperbarui",
-        description: isFirstSubmission ? "Selamat, Anda lolos ke tahap wawancara!" : "Perubahan dokumen Anda telah disimpan.",
+        title: isFirstSubmissionForAny ? "Dokumen Berhasil Dikirim" : "Dokumen Diperbarui",
+        description: isFirstSubmissionForAny ? "Selamat, Anda lolos ke tahap wawancara!" : "Perubahan dokumen Anda telah disimpan.",
       });
       // The useCollection hook will update automatically
     } catch (error: any) {
@@ -266,8 +264,7 @@ export default function DocumentsPage() {
     }
   };
   
-  const currentStatus = applicationsForEditing.length > 0 ? applicationsForEditing[0].status : null;
-  const isFirstSubmission = currentStatus === 'document_submission';
+  const isFirstSubmission = applicationsForEditing.some(app => app.status === 'document_submission');
 
   if (isLoading) {
     return <Skeleton className="h-96 w-full" />;
@@ -358,3 +355,5 @@ export default function DocumentsPage() {
     </div>
   )
 }
+
+    
