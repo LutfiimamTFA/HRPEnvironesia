@@ -27,7 +27,6 @@ const RECRUITMENT_MENU_ITEMS: MenuGroup[] = [
             { href: '/admin/jobs', label: 'Job Postings', icon: createElement(Briefcase) },
             { href: '/admin/recruitment', label: 'Recruitment', icon: createElement(Users) },
             { href: '/admin/hrd/assessments', label: 'Assessments', icon: createElement(ClipboardCheck) },
-            { href: '/admin/hrd/invites', label: 'Employee Invites', icon: createElement(UserPlus) },
         ]
     }
 ];
@@ -37,6 +36,7 @@ const EMPLOYEE_MONITORING_ITEMS: MenuGroup[] = [
         title: "Monitoring Karyawan",
         items: [
             { href: '/admin/hrd/monitoring', label: 'Dashboard Karyawan', icon: createElement(LayoutDashboard) },
+            { href: '/admin/hrd/invites', label: 'Employee Invites', icon: createElement(UserPlus) },
             { href: '/admin/hrd/monitoring/absen', label: 'Monitoring Absen', icon: createElement(FileClock) },
             { href: '/admin/hrd/monitoring/lembur', label: 'Lembur', icon: createElement(Timer) },
             { href: '/admin/hrd/monitoring/dinas', label: 'Dinas (Tracking)', icon: createElement(MapPin) },
