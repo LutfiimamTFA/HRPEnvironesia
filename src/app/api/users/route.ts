@@ -1,42 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server';
 import admin from '@/lib/firebase/admin';
-import { UserRole, ROLES } from '@/lib/types';
+import { UserRole, ROLES, EMPLOYMENT_TYPES, EmploymentType } from '@/lib/types';
 import { Timestamp } from 'firebase-admin/firestore';
 
-function isValidBody(body: any): body is { email: string; password: string; fullName: string; role: UserRole, brandId?: string | string[] } {
-  return (
-    body &&
-    typeof body.email === 'string' &&
-    typeof body.password === 'string' && body.password.length >= 8 &&
-    typeof body.fullName === 'string' &&
-    typeof body.role === 'string' &&
-    ROLES.includes(body.role) &&
-    (body.brandId === undefined || typeof body.brandId === 'string' || Array.isArray(body.brandId))
-  );
-}
+const createSchema = z.object({
+  fullName: z.string().min(2),
+  email: z.string().email(),
+  password: z.string().min(8),
+  role: z.enum(ROLES),
+  employmentType: z.enum(EMPLOYMENT_TYPES),
+  isActive: z.boolean().default(true),
+  brandId: z.union([z.string(), z.array(z.string())]).optional(),
+});
 
 export async function POST(req: NextRequest) {
   if (!admin.apps.length) {
-    console.error('Firebase Admin SDK has not been initialized. Please check your server-side environment variables.');
-    return NextResponse.json(
-      { error: 'Firebase Admin SDK not initialized. Ensure FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY are set correctly in your .env.local file.' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Firebase Admin SDK not initialized.' }, { status: 500 });
   }
 
-  const secret = req.headers.get('x-seed-secret');
-  if (secret !== process.env.SEED_SECRET) {
-    return NextResponse.json({ error: 'Invalid secret for this operation.' }, { status: 401 });
+  const authorization = req.headers.get('Authorization');
+  if (!authorization?.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Unauthorized: Missing token.' }, { status: 401 });
   }
+  const idToken = authorization.split('Bearer ')[1];
 
   try {
-    const body = await req.json();
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const userDoc = await admin.firestore().collection('users').doc(decodedToken.uid).get();
 
-    if (!isValidBody(body)) {
-      return NextResponse.json({ error: 'Invalid request body. Ensure all fields are correct.' }, { status: 400 });
+    if (!userDoc.exists() || !['super-admin', 'hrd'].includes(userDoc.data()?.role)) {
+        return NextResponse.json({ error: 'Forbidden: Insufficient permissions.' }, { status: 403 });
     }
 
-    const { email, password, fullName, role, brandId } = body;
+    const body = await req.json();
+    const parseResult = createSchema.safeParse(body);
+
+    if (!parseResult.success) {
+      return NextResponse.json({ error: 'Invalid request body.', details: parseResult.error.flatten() }, { status: 400 });
+    }
+
+    const { email, password, fullName, role, employmentType, brandId, isActive } = parseResult.data;
     const db = admin.firestore();
 
     try {
@@ -59,12 +62,17 @@ export async function POST(req: NextRequest) {
       uid: userRecord.uid,
       email,
       fullName,
+      nameLower: fullName.toLowerCase(),
       role,
-      isActive: true,
+      employmentType,
+      isActive,
       createdAt: Timestamp.now(),
+      createdBy: decodedToken.uid,
     };
-
-    if (brandId) {
+    
+    if (role === 'hrd') {
+      userProfile.brandId = Array.isArray(brandId) ? brandId : [];
+    } else if (role !== 'super-admin' && brandId) {
       userProfile.brandId = brandId;
     }
 
@@ -73,11 +81,18 @@ export async function POST(req: NextRequest) {
     if (role === 'super-admin') {
       await db.collection('roles_admin').doc(userRecord.uid).set({ role: 'super-admin' });
     }
+    if (role === 'hrd') {
+        await db.collection('roles_hrd').doc(userRecord.uid).set({ role: 'hrd' });
+    }
 
     return NextResponse.json({ message: 'User created successfully.', uid: userRecord.uid }, { status: 201 });
 
   } catch (error: any) {
     console.error(`Failed to create user:`, error);
-    return NextResponse.json({ error: error.message || 'An unexpected error occurred.' }, { status: 500 });
+    let message = error.message || 'An unexpected error occurred.';
+    if (error.code === 'auth/id-token-expired') {
+      message = 'Your session has expired. Please log in again.';
+    }
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

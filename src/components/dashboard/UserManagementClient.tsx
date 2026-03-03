@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect } from 'react';
 import { collection, doc } from 'firebase/firestore';
-import { useCollection, useFirestore, useMemoFirebase, deleteDocumentNonBlocking } from '@/firebase';
+import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { UserProfile, ROLES, UserRole, Brand } from '@/lib/types';
 import {
   Table,
@@ -32,6 +32,7 @@ import { MoreHorizontal, Pencil, Trash2, PlusCircle } from 'lucide-react';
 import { UserFormDialog } from './UserFormDialog';
 import { DeleteConfirmationDialog } from './DeleteConfirmationDialog';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/providers/auth-provider';
 
 function UserTableSkeleton() {
   return (
@@ -54,6 +55,7 @@ const roleDisplayNames: Record<UserRole, string> = {
 export function UserManagementClient() {
   const firestore = useFirestore();
   const { toast } = useToast();
+  const { firebaseUser } = useAuth();
   const [isFormDialogOpen, setIsFormDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
@@ -96,24 +98,25 @@ export function UserManagementClient() {
   };
 
   const confirmDelete = async () => {
-    if (!userToDelete) return;
+    if (!userToDelete || !firebaseUser) return;
     try {
-        const docRef = doc(firestore, 'users', userToDelete.uid);
-        await deleteDocumentNonBlocking(docRef);
+        const idToken = await firebaseUser.getIdToken();
+        const res = await fetch(`/api/users/${userToDelete.uid}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${idToken}`,
+            },
+        });
+        if (!res.ok) {
+            const errorData = await res.json();
+            throw new Error(errorData.error || 'Failed to delete user.');
+        }
 
-        // Also clean up from roles collections for hygiene
-        if (userToDelete.role === 'super-admin') {
-            await deleteDocumentNonBlocking(doc(firestore, 'roles_admin', userToDelete.uid)).catch(() => {});
-        }
-        if (userToDelete.role === 'hrd') {
-            await deleteDocumentNonBlocking(doc(firestore, 'roles_hrd', userToDelete.uid)).catch(() => {});
-        }
-        
-        toast({ title: 'User Record Deleted', description: `Firestore record for ${userToDelete.fullName} has been deleted.` });
+        toast({ title: 'User Deleted', description: `User account for ${userToDelete.fullName} has been deleted.` });
     } catch (error: any) {
         toast({
             variant: 'destructive',
-            title: 'Error deleting user record',
+            title: 'Error deleting user',
             description: error.message,
         });
     } finally {
