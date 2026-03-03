@@ -1,4 +1,3 @@
-
 'use client';
 
 import type { Timestamp } from 'firebase/firestore';
@@ -40,6 +39,20 @@ export type NavigationSetting = {
   role: UserRole;
   visibleMenuItems: string[];
 };
+
+export type Invite = {
+    id?: string;
+    code: string;
+    brandId: string;
+    brandName?: string; // Denormalized
+    employmentType: EmploymentType;
+    createdBy: string; // UID of HRD/SuperAdmin
+    createdAt: Timestamp;
+    expiresAt: Timestamp;
+    usedAt: Timestamp | null;
+    usedByUid: string | null;
+    isActive: boolean;
+}
 
 export type Job = {
   id?: string;
