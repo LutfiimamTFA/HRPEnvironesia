@@ -431,6 +431,7 @@ export type AssessmentSession = {
   jobPosition?: string;
   brandName?: string;
   status: 'draft' | 'submitted';
+  deadlineAt?: Timestamp;
   currentTestPart?: 'likert' | 'forced-choice';
   part1GuideAck?: boolean;
   part2GuideAck?: boolean;

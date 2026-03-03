@@ -111,6 +111,8 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
                         forcedChoice: shuffle(forcedChoiceIds).slice(0, forcedChoiceCount),
                     };
 
+                    const deadline = new Date((application.personalityTestAssignedAt || Timestamp.now()).toDate().getTime() + 24 * 60 * 60 * 1000);
+
                     await setDocumentNonBlocking(existingSessionDoc.ref, {
                         selectedQuestionIds: newSelectedQuestionIds,
                         answers: {}, // Reset answers
@@ -118,7 +120,8 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
                         part1GuideAck: false,
                         part2GuideAck: false,
                         status: 'draft',
-                        updatedAt: serverTimestamp()
+                        updatedAt: serverTimestamp(),
+                        deadlineAt: Timestamp.fromDate(deadline),
                     }, { merge: true });
 
                     router.push(`/careers/portal/assessment/personality/${existingSessionDoc.id}`);
@@ -137,6 +140,7 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
             }
 
             // If no existing session, create a new one
+            const deadline = new Date((application.personalityTestAssignedAt || Timestamp.now()).toDate().getTime() + 24 * 60 * 60 * 1000);
             const sessionData: Omit<AssessmentSession, 'id'> = {
                 assessmentId: activeAssessment.id!,
                 candidateUid: userProfile.uid,
@@ -146,6 +150,7 @@ function StartTestForApplication({ applicationId }: { applicationId: string }) {
                 jobPosition: application.jobPosition,
                 brandName: application.brandName,
                 status: 'draft',
+                deadlineAt: Timestamp.fromDate(deadline),
                 part1GuideAck: false,
                 part2GuideAck: false,
                 currentTestPart: 'likert',
@@ -249,6 +254,7 @@ function StartGeneralTest() {
                 throw new Error(`Bank soal tidak mencukupi. Hubungi HRD.`);
             }
 
+            // General test has no deadline
             const sessionData: Omit<AssessmentSession, 'id'> = {
                 assessmentId: activeAssessment.id,
                 candidateUid: userProfile.uid,
