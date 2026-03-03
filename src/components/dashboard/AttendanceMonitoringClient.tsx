@@ -1,10 +1,9 @@
 
-
 'use client';
 
 import { useState, useMemo } from 'react';
 import { useCollection, useFirestore, useMemoFirebase, useDoc } from '@/firebase';
-import { collection, query, where, doc, type Timestamp, startOfDay, endOfDay } from 'firebase/firestore';
+import { collection, query, where, doc, type Timestamp } from 'firebase/firestore';
 import type { Brand, UserProfile, AttendanceEvent } from '@/lib/types';
 import { ROLES_INTERNAL } from '@/lib/types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -12,7 +11,7 @@ import { GoogleDatePicker } from '@/components/ui/google-date-picker';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '../ui/skeleton';
 import { KpiCard } from '@/components/recruitment/KpiCard';
-import { format } from 'date-fns';
+import { format, startOfDay, endOfDay } from 'date-fns';
 import { Badge } from '../ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { getInitials } from '@/lib/utils';
@@ -109,7 +108,8 @@ export function AttendanceMonitoringClient() {
             const flags: string[] = [];
             if (tapIn && tapInTimestamp) {
                 summary.hadir++;
-                if (tapIn.mode && (tapIn.mode as string).toLowerCase() === 'offsite') {
+                const modeString = (tapIn.mode as string)?.toLowerCase();
+                if (modeString === 'offsite') {
                     flags.push('Offsite');
                     summary.offsite++;
                 }
@@ -272,4 +272,3 @@ export function AttendanceMonitoringClient() {
         </div>
     );
 }
-
