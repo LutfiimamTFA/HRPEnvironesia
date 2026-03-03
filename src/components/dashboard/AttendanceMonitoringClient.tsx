@@ -70,8 +70,8 @@ export function AttendanceMonitoringClient() {
         const end = endOfDay(date);
         return query(
             collection(firestore, 'attendance_events'),
-            where('tsServer', '>=', start),
-            where('tsServer', '<=', end)
+            where('timestamp', '>=', start),
+            where('timestamp', '<=', end)
         );
     }, [firestore, date]);
     const { data: attendanceEvents, isLoading: isLoadingEvents } = useCollection<AttendanceEvent>(eventsQuery);
@@ -105,7 +105,7 @@ export function AttendanceMonitoringClient() {
                     summary.offsite++;
                 }
 
-                const tapInTime = tapIn.tsServer.toDate();
+                const tapInTime = tapIn.timestamp.toDate();
                 const shiftStart = new Date(tapInTime);
                 const [startHour, startMinute] = config.shift.startTime.split(':').map(Number);
                 shiftStart.setHours(startHour, startMinute + config.shift.graceLateMinutes, 0, 0);
@@ -117,7 +117,7 @@ export function AttendanceMonitoringClient() {
             }
 
             if (tapOut) {
-                const tapOutTime = tapOut.tsServer.toDate();
+                const tapOutTime = tapOut.timestamp.toDate();
                 const shiftEnd = new Date(tapOutTime);
                 const [endHour, endMinute] = config.shift.endTime.split(':').map(Number);
                 shiftEnd.setHours(endHour, endMinute, 0, 0);
@@ -129,8 +129,8 @@ export function AttendanceMonitoringClient() {
                 name: user.fullName,
                 brandId: user.brandId,
                 brandName: Array.isArray(user.brandId) ? user.brandId.map(id => brandMap.get(id)).join(', ') : brandMap.get(user.brandId as string) || '-',
-                tapIn: tapIn ? format(tapIn.tsServer.toDate(), 'HH:mm') : '-',
-                tapOut: tapOut ? format(tapOut.tsServer.toDate(), 'HH:mm') : '-',
+                tapIn: tapIn ? format(tapIn.timestamp.toDate(), 'HH:mm') : '-',
+                tapOut: tapOut ? format(tapOut.timestamp.toDate(), 'HH:mm') : '-',
                 status: status,
                 mode: tapIn?.mode.toLowerCase() || '-',
                 flags: flags,
@@ -261,3 +261,5 @@ export function AttendanceMonitoringClient() {
         </div>
     );
 }
+
+    

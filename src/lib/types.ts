@@ -1,4 +1,3 @@
-
 'use client';
 
 import type { Timestamp } from 'firebase/firestore';
@@ -561,8 +560,7 @@ export type AttendanceEvent = {
     id?: string;
     uid: string;
     type: 'tap_in' | 'tap_out';
-    tsServer: Timestamp;
-    tsClient?: Timestamp;
+    timestamp: Timestamp;
     mode: 'ONSITE' | 'OFFSITE';
     location: {
         lat: number;
@@ -573,5 +571,7 @@ export type AttendanceEvent = {
     displayName?: string;
     flags?: string[];
 };
+
+    
 
     
