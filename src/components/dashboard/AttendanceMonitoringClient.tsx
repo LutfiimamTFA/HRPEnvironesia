@@ -245,7 +245,7 @@ export function AttendanceMonitoringClient() {
                                                 </Avatar>
                                             )}
                                         </TableCell>
-                                        <TableCell className="text-xs max-w-[150px] truncate" title={row.address}>{row.address}</TableCell>
+                                        <TableCell className="text-xs" title={row.address}>{row.address}</TableCell>
                                         <TableCell>{row.tapIn}</TableCell>
                                         <TableCell>{row.tapOut}</TableCell>
                                         <TableCell>
