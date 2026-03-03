@@ -2,8 +2,8 @@
 
 import { useState, useMemo } from 'react';
 import { useCollection, useFirestore, useMemoFirebase, useDoc } from '@/firebase';
-import { collection, query, where, doc } from 'firebase/firestore';
-import type { Brand, UserProfile, AttendanceEvent, AttendanceConfig } from '@/lib/types';
+import { collection, query, where, doc, type Timestamp } from 'firebase/firestore';
+import type { Brand, UserProfile, AttendanceEvent } from '@/lib/types';
 import { ROLES_INTERNAL } from '@/lib/types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { GoogleDatePicker } from '@/components/ui/google-date-picker';
@@ -54,8 +54,8 @@ export function AttendanceMonitoringClient() {
     const firestore = useFirestore();
 
     // --- Data Fetching ---
-    const { data: config, isLoading: isLoadingConfig } = useDoc<AttendanceConfig>(
-        useMemoFirebase(() => doc(firestore, 'attendance_config', 'default'), [firestore])
+    const { data: sites, isLoading: isLoadingConfig } = useCollection<any>(
+        useMemoFirebase(() => collection(firestore, 'attendance_sites'), [firestore])
     );
     const { data: users, isLoading: isLoadingUsers } = useCollection<UserProfile>(
         useMemoFirebase(() => query(collection(firestore, 'users'), where('role', 'in', ROLES_INTERNAL)), [firestore])
@@ -66,12 +66,10 @@ export function AttendanceMonitoringClient() {
 
     const eventsQuery = useMemoFirebase(() => {
         if (!date) return null;
-        const start = startOfDay(date);
-        const end = endOfDay(date);
+        const key = format(date, 'yyyy-MM-dd');
         return query(
             collection(firestore, 'attendance_events'),
-            where('timestamp', '>=', start),
-            where('timestamp', '<=', end)
+            where('dateKey', '==', key)
         );
     }, [firestore, date]);
     const { data: attendanceEvents, isLoading: isLoadingEvents } = useCollection<AttendanceEvent>(eventsQuery);
@@ -81,43 +79,50 @@ export function AttendanceMonitoringClient() {
     // --- Data Processing ---
     const { tableData, summaryData } = useMemo(() => {
         const summary = { hadir: 0, belumTapIn: 0, offsite: 0, anomali: 0, terlambat: 0 };
-        if (!users || !attendanceEvents || !config) {
+        if (!users || !attendanceEvents || !sites) {
             const defaultSummary = kpiCardsData.map(c => ({ title: c.title, value: 0 }));
             return { tableData: [], summaryData: defaultSummary };
         }
         
+        const getTimestamp = (event: any): Timestamp | undefined => event.timestamp || event.ts || event.createdAt;
         const brandMap = new Map(brands?.map(b => [b.id, b.name]));
+        const config = sites.find(s => s.isActive); // Find first active site config
 
         const processedData = users.map(user => {
             const userEvents = attendanceEvents.filter(e => e.uid === user.uid);
             const tapIn = userEvents.find(e => e.type === 'tap_in');
             const tapOut = userEvents.find(e => e.type === 'tap_out');
             
+            const tapInTimestamp = tapIn ? getTimestamp(tapIn) : null;
+            const tapOutTimestamp = tapOut ? getTimestamp(tapOut) : null;
+
             let status: AttendanceRecord['status'] = 'Belum Tap In';
             if (tapIn && !tapOut) status = 'Sedang Bekerja';
             else if (tapIn && tapOut) status = 'Selesai';
 
             const flags: string[] = [];
-            if (tapIn) {
+            if (tapIn && tapInTimestamp) {
                 summary.hadir++;
                 if (tapIn.mode.toLowerCase() === 'offsite') {
                     flags.push('Offsite');
                     summary.offsite++;
                 }
 
-                const tapInTime = tapIn.timestamp.toDate();
-                const shiftStart = new Date(tapInTime);
-                const [startHour, startMinute] = config.shift.startTime.split(':').map(Number);
-                shiftStart.setHours(startHour, startMinute + config.shift.graceLateMinutes, 0, 0);
+                if (config) {
+                    const tapInTime = tapInTimestamp.toDate();
+                    const shiftStart = new Date(tapInTime);
+                    const [startHour, startMinute] = config.shift.startTime.split(':').map(Number);
+                    shiftStart.setHours(startHour, startMinute + config.shift.graceLateMinutes, 0, 0);
 
-                if (tapInTime > shiftStart) {
-                    flags.push('Terlambat');
-                    summary.terlambat++;
+                    if (tapInTime > shiftStart) {
+                        flags.push('Terlambat');
+                        summary.terlambat++;
+                    }
                 }
             }
 
-            if (tapOut) {
-                const tapOutTime = tapOut.timestamp.toDate();
+            if (tapOut && tapOutTimestamp && config) {
+                const tapOutTime = tapOutTimestamp.toDate();
                 const shiftEnd = new Date(tapOutTime);
                 const [endHour, endMinute] = config.shift.endTime.split(':').map(Number);
                 shiftEnd.setHours(endHour, endMinute, 0, 0);
@@ -129,8 +134,8 @@ export function AttendanceMonitoringClient() {
                 name: user.fullName,
                 brandId: user.brandId,
                 brandName: Array.isArray(user.brandId) ? user.brandId.map(id => brandMap.get(id)).join(', ') : brandMap.get(user.brandId as string) || '-',
-                tapIn: tapIn ? format(tapIn.timestamp.toDate(), 'HH:mm') : '-',
-                tapOut: tapOut ? format(tapOut.timestamp.toDate(), 'HH:mm') : '-',
+                tapIn: tapInTimestamp ? format(tapInTimestamp.toDate(), 'HH:mm') : '-',
+                tapOut: tapOutTimestamp ? format(tapOutTimestamp.toDate(), 'HH:mm') : '-',
                 status: status,
                 mode: tapIn?.mode.toLowerCase() || '-',
                 flags: flags,
@@ -160,7 +165,7 @@ export function AttendanceMonitoringClient() {
                 { title: "Terlambat", value: summary.terlambat },
             ]
         };
-    }, [users, attendanceEvents, config, brands, brandFilter, statusFilter, date]);
+    }, [users, attendanceEvents, config, sites, brands, brandFilter, statusFilter, date]);
 
     return (
         <div className="space-y-6">
@@ -261,5 +266,3 @@ export function AttendanceMonitoringClient() {
         </div>
     );
 }
-
-    

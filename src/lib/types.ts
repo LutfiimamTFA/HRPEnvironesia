@@ -538,7 +538,7 @@ export interface InterviewAssignment {
 export type AttendanceSite = {
     id?: string;
     name: string;
-    brandIds: string[]; // Changed from brandId to brandIds
+    brandId: string;
     isActive: boolean;
     office: {
         lat: number;
@@ -559,8 +559,12 @@ export type AttendanceSite = {
 export type AttendanceEvent = {
     id?: string;
     uid: string;
+    userId?: string; // Alias for uid
     type: 'tap_in' | 'tap_out';
     timestamp: Timestamp;
+    ts?: Timestamp; // Alias for timestamp
+    createdAt?: Timestamp; // Alias for timestamp
+    dateKey?: string; // YYYY-MM-DD
     mode: 'ONSITE' | 'OFFSITE';
     location: {
         lat: number;
@@ -571,7 +575,3 @@ export type AttendanceEvent = {
     displayName?: string;
     flags?: string[];
 };
-
-    
-
-    
