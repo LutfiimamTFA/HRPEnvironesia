@@ -538,7 +538,8 @@ export interface InterviewAssignment {
 export type AttendanceSite = {
     id?: string;
     name: string;
-    brandId: string;
+    brandIds?: string[]; // Updated from brandId
+    brandId?: string; // Legacy
     isActive: boolean;
     office: {
         lat: number;
@@ -561,9 +562,11 @@ export type AttendanceEvent = {
     uid: string;
     userId?: string; // Alias for uid
     type: 'tap_in' | 'tap_out';
-    timestamp: Timestamp;
+    timestamp?: Timestamp; // Original HRP field
     ts?: Timestamp; // Alias for timestamp
     createdAt?: Timestamp; // Alias for timestamp
+    tsServer?: Timestamp; // From AbsenHRP
+    tsClient?: Timestamp; // From AbsenHRP
     dateKey?: string; // YYYY-MM-DD
     mode: 'ONSITE' | 'OFFSITE';
     location: {

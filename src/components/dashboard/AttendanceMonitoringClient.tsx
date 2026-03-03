@@ -66,10 +66,12 @@ export function AttendanceMonitoringClient() {
 
     const eventsQuery = useMemoFirebase(() => {
         if (!date) return null;
-        const key = format(date, 'yyyy-MM-dd');
+        const start = startOfDay(date);
+        const end = endOfDay(date);
         return query(
             collection(firestore, 'attendance_events'),
-            where('dateKey', '==', key)
+            where('tsServer', '>=', start),
+            where('tsServer', '<=', end)
         );
     }, [firestore, date]);
     const { data: attendanceEvents, isLoading: isLoadingEvents } = useCollection<AttendanceEvent>(eventsQuery);
@@ -84,7 +86,7 @@ export function AttendanceMonitoringClient() {
             return { tableData: [], summaryData: defaultSummary };
         }
         
-        const getTimestamp = (event: any): Timestamp | undefined => event.timestamp || event.ts || event.createdAt;
+        const getTimestamp = (event: any): Timestamp | undefined => event.tsServer || event.timestamp || event.ts || event.createdAt;
         const brandMap = new Map(brands?.map(b => [b.id, b.name]));
         const config = sites.find(s => s.isActive); // Find first active site config
 
