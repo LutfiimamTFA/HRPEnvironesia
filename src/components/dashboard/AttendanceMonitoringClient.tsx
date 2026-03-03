@@ -89,7 +89,7 @@ export function AttendanceMonitoringClient() {
         const config = sites.find(s => s.isActive); // Find first active site config
 
         const processedData = users.map(user => {
-            const userEvents = attendanceEvents.filter(e => e.uid === user.uid);
+            const userEvents = attendanceEvents.filter(e => e.uid === user.uid || e.userId === user.uid);
             const tapIn = userEvents.find(e => e.type === 'tap_in');
             const tapOut = userEvents.find(e => e.type === 'tap_out');
             
