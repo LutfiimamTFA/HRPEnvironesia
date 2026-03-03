@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useMemo } from 'react';
@@ -67,10 +68,12 @@ export function AttendanceMonitoringClient() {
 
     const eventsQuery = useMemoFirebase(() => {
         if (!date) return null;
-        const key = format(date, 'yyyy-MM-dd');
+        const start = startOfDay(date);
+        const end = endOfDay(date);
         return query(
             collection(firestore, 'attendance_events'),
-            where('dateKey', '==', key)
+            where('tsServer', '>=', start),
+            where('tsServer', '<=', end)
         );
     }, [firestore, date]);
     const { data: attendanceEvents, isLoading: isLoadingEvents } = useCollection<AttendanceEvent>(eventsQuery);
@@ -104,7 +107,7 @@ export function AttendanceMonitoringClient() {
             const flags: string[] = [];
             if (tapIn && tapInTimestamp) {
                 summary.hadir++;
-                if (tapIn.mode && tapIn.mode.toLowerCase() === 'offsite') {
+                if (tapIn.mode && (tapIn.mode as string).toLowerCase() === 'offsite') {
                     flags.push('Offsite');
                     summary.offsite++;
                 }
@@ -138,7 +141,7 @@ export function AttendanceMonitoringClient() {
                 tapIn: tapInTimestamp ? format(tapInTimestamp.toDate(), 'HH:mm') : '-',
                 tapOut: tapOutTimestamp ? format(tapOutTimestamp.toDate(), 'HH:mm') : '-',
                 status: status,
-                mode: tapIn?.mode?.toLowerCase() || '-',
+                mode: (tapIn?.mode as string)?.toLowerCase() || '-',
                 flags: flags,
                 photoUrl: tapIn?.photoUrl,
             };
