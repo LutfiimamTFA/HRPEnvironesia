@@ -130,7 +130,9 @@ export function InviteManagementClient() {
   const [addQuotaBatch, setAddQuotaBatch] = useState<InviteBatch | null>(null);
 
   const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
-  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [isDeleteUserConfirmOpen, setIsDeleteUserConfirmOpen] = useState(false);
+  const [batchToDelete, setBatchToDelete] = useState<InviteBatch | null>(null);
+  const [isDeleteBatchConfirmOpen, setIsDeleteBatchConfirmOpen] = useState(false);
 
   const { data: inviteBatches, isLoading: isLoadingInvites, mutate: mutateBatches } = useCollection<InviteBatch>(
     useMemoFirebase(() => collection(firestore, 'invite_batches'), [firestore])
@@ -207,7 +209,7 @@ export function InviteManagementClient() {
   
   const handleDeleteUserClick = (user: UserProfile) => {
     setUserToDelete(user);
-    setIsDeleteConfirmOpen(true);
+    setIsDeleteUserConfirmOpen(true);
   };
   
   const confirmDeleteUser = async () => {
@@ -232,10 +234,41 @@ export function InviteManagementClient() {
             description: error.message,
         });
     } finally {
-        setIsDeleteConfirmOpen(false);
+        setIsDeleteUserConfirmOpen(false);
         setUserToDelete(null);
     }
   };
+  
+  const handleDeleteBatchClick = (batch: InviteBatch) => {
+    setBatchToDelete(batch);
+    setIsDeleteBatchConfirmOpen(true);
+  };
+
+  const confirmDeleteBatch = async () => {
+    if (!batchToDelete || !firebaseUser) return;
+    try {
+      const idToken = await firebaseUser.getIdToken();
+      const res = await fetch(`/api/admin/invite-batches/${batchToDelete.id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${idToken}` },
+      });
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to delete batch.');
+      }
+      toast({ title: 'Batch Dihapus', description: `Batch undangan untuk ${batchToDelete.brandName} telah dihapus.` });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Gagal Menghapus Batch',
+        description: error.message,
+      });
+    } finally {
+      setIsDeleteBatchConfirmOpen(false);
+      setBatchToDelete(null);
+    }
+  };
+
 
   const copyToClipboard = (batchId: string) => {
     const url = `${window.location.origin}/register?batch=${batchId}`;
@@ -305,24 +338,15 @@ export function InviteManagementClient() {
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <Badge variant="secondary">{batch.claimedSlots} / {batch.totalSlots} Terpakai</Badge>
-                                         <div
-                                            role="button"
-                                            tabIndex={0}
-                                            onClick={(e) => { e.stopPropagation(); setAddQuotaBatch(batch); }}
-                                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setAddQuotaBatch(batch); }}}
-                                            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), "cursor-pointer")}
-                                         >
+                                         <div role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); setAddQuotaBatch(batch); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setAddQuotaBatch(batch); }}} className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), "cursor-pointer")}>
                                             <PlusCircle className="mr-2 h-3 w-3"/> Tambah
                                          </div>
-                                         <div
-                                            role="button"
-                                            tabIndex={0}
-                                            onClick={(e) => { e.stopPropagation(); copyToClipboard(batch.id!); }}
-                                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); copyToClipboard(batch.id!); }}}
-                                            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), "cursor-pointer")}
-                                            >
+                                         <div role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); copyToClipboard(batch.id!); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); copyToClipboard(batch.id!); }}} className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), "cursor-pointer")}>
                                             <Copy className="mr-2 h-3 w-3" /> Salin Link
                                         </div>
+                                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => {e.stopPropagation(); handleDeleteBatchClick(batch);}}>
+                                            <Trash2 className="h-4 w-4 text-destructive" />
+                                        </Button>
                                     </div>
                                 </div>
                             </AccordionTrigger>
@@ -361,11 +385,18 @@ export function InviteManagementClient() {
         </div>
       </div>
       <DeleteConfirmationDialog 
-        open={isDeleteConfirmOpen}
-        onOpenChange={setIsDeleteConfirmOpen}
+        open={isDeleteUserConfirmOpen}
+        onOpenChange={setIsDeleteUserConfirmOpen}
         onConfirm={confirmDeleteUser}
         itemName={userToDelete?.fullName}
         itemType="User Account"
+      />
+       <DeleteConfirmationDialog
+        open={isDeleteBatchConfirmOpen}
+        onOpenChange={setIsDeleteBatchConfirmOpen}
+        onConfirm={confirmDeleteBatch}
+        itemName={batchToDelete?.brandName}
+        itemType={`Invite Batch (${batchToDelete?.employmentType})`}
       />
       <AddQuotaDialog
         batch={addQuotaBatch}
