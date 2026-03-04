@@ -7,10 +7,8 @@ import { z } from 'zod';
 import { generateUniqueCode } from '@/lib/utils';
 import { type Invite } from '@/lib/types';
 
-// As per your request, only 'magang' and 'training' are valid.
 const inviteEmploymentTypes = ['magang', 'training'] as const;
 
-// Schema for request body validation
 const generateSchema = z.object({
   brandId: z.string().min(1, 'Brand is required.'),
   employmentType: z.enum(inviteEmploymentTypes),
@@ -44,7 +42,8 @@ export async function POST(req: NextRequest) {
     const { brandId, employmentType, quantity } = parseResult.data;
     const batch = db.batch();
     const now = Timestamp.now();
-    const expiresAt = Timestamp.fromMillis(now.toMillis() + 7 * 24 * 60 * 60 * 1000); // 7 days from now
+    // Change expiration to 24 hours
+    const expiresAt = Timestamp.fromMillis(now.toMillis() + 24 * 60 * 60 * 1000); 
 
     for (let i = 0; i < quantity; i++) {
         const code = generateUniqueCode(8);
@@ -71,7 +70,6 @@ export async function POST(req: NextRequest) {
 
   } catch (error: any) {
     console.error("Generate invites error:", error);
-    // Differentiate between auth errors and other server errors
     if (error.code && error.code.startsWith('auth/')) {
         let message = 'Authentication error. Please try logging out and in again.';
         if (error.code === 'auth/id-token-expired') {

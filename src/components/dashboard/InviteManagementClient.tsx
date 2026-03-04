@@ -4,8 +4,8 @@ import { useState, useMemo, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection } from 'firebase/firestore';
+import { useCollection, useFirestore, useMemoFirebase, deleteDocumentNonBlocking } from '@/firebase';
+import { collection, doc } from 'firebase/firestore';
 import type { Invite, Brand, UserProfile } from '@/lib/types';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/hooks/use-toast';
@@ -16,10 +16,11 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, PlusCircle, Copy, Users, CheckCircle, Percent } from 'lucide-react';
+import { Loader2, PlusCircle, Copy, Users, CheckCircle, Percent, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { KpiCard } from '../recruitment/KpiCard';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { DeleteConfirmationDialog } from './DeleteConfirmationDialog';
 
 const inviteEmploymentTypes = ['magang', 'training'] as const;
 
@@ -71,6 +72,9 @@ export function InviteManagementClient() {
   const firestore = useFirestore();
   const { toast } = useToast();
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [inviteToDelete, setInviteToDelete] = useState<Invite | null>(null);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
   const { data: invites, isLoading: isLoadingInvites } = useCollection<Invite>(
     useMemoFirebase(() => collection(firestore, 'invites'), [firestore])
@@ -169,6 +173,38 @@ export function InviteManagementClient() {
       setIsGenerating(false);
     }
   };
+
+  const handleDeleteClick = (invite: Invite) => {
+    setInviteToDelete(invite);
+    setIsDeleteConfirmOpen(true);
+  };
+  
+  const confirmDelete = async () => {
+    if (!inviteToDelete || !firebaseUser) return;
+
+    setIsDeleting(true);
+    try {
+        const idToken = await firebaseUser.getIdToken();
+        const res = await fetch(`/api/invites/${inviteToDelete.code}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${idToken}`,
+            },
+        });
+
+        if (!res.ok) {
+            const data = await res.json();
+            throw new Error(data.error || 'Failed to delete invite.');
+        }
+
+        toast({ title: 'Invite Deleted', description: `Code ${inviteToDelete.code} has been deleted.`});
+    } catch (e: any) {
+        toast({ variant: 'destructive', title: 'Deletion Failed', description: e.message });
+    } finally {
+        setIsDeleting(false);
+        setIsDeleteConfirmOpen(false);
+    }
+  };
   
   const copyToClipboard = (code: string) => {
     const url = `${window.location.origin}/register?code=${code}`;
@@ -177,6 +213,7 @@ export function InviteManagementClient() {
   };
 
   return (
+    <>
     <div className="space-y-6">
        <div className="grid gap-4 md:grid-cols-3">
           <KpiCard title="Total Undangan Dibuat" value={summary.total} />
@@ -237,7 +274,10 @@ export function InviteManagementClient() {
                                             <TableCell className="font-mono text-xs">{invite.code}</TableCell>
                                             <TableCell><Badge variant={getInviteStatus(invite).variant}>{getInviteStatus(invite).label}</Badge></TableCell>
                                             <TableCell className="text-xs">{userMap.get(invite.usedByUid!) || '-'}</TableCell>
-                                            <TableCell className="text-right"><Button variant="outline" size="sm" onClick={() => copyToClipboard(invite.code)}><Copy className="mr-2 h-3 w-3" /> Salin Link</Button></TableCell>
+                                            <TableCell className="text-right flex justify-end gap-2">
+                                              <Button variant="outline" size="sm" onClick={() => copyToClipboard(invite.code)}><Copy className="mr-2 h-3 w-3" /> Salin</Button>
+                                              <Button variant="destructive" size="icon" className="h-9 w-9" onClick={() => handleDeleteClick(invite)} disabled={isDeleting}><Trash2 className="h-4 w-4" /></Button>
+                                            </TableCell>
                                         </TableRow>
                                     ))}
                                 </TableBody>
@@ -257,5 +297,13 @@ export function InviteManagementClient() {
         </div>
       </div>
     </div>
+    <DeleteConfirmationDialog 
+        open={isDeleteConfirmOpen}
+        onOpenChange={setIsDeleteConfirmOpen}
+        onConfirm={confirmDelete}
+        itemName={`invite code ${inviteToDelete?.code}`}
+        itemType="Code"
+    />
+    </>
   );
 }

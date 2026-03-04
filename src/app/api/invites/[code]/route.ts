@@ -54,3 +54,54 @@ export async function GET(
     return NextResponse.json({ error: 'Server error during code validation.' }, { status: 500 });
   }
 }
+
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: { code: string } }
+) {
+  if (!admin.apps.length) {
+    return NextResponse.json({ error: 'Firebase Admin SDK not initialized.' }, { status: 500 });
+  }
+
+  const { code } = params;
+  if (!code) {
+    return NextResponse.json({ error: 'Invite code is required.' }, { status: 400 });
+  }
+
+  try {
+    const authorization = req.headers.get('Authorization');
+    if (!authorization?.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Unauthorized: Missing token.' }, { status: 401 });
+    }
+    const idToken = authorization.split('Bearer ')[1];
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+
+    const db = admin.firestore();
+    const adminRoleDoc = await db.collection('roles_admin').doc(decodedToken.uid).get();
+    const hrdRoleDoc = await db.collection('roles_hrd').doc(decodedToken.uid).get();
+
+    if (!adminRoleDoc.exists && !hrdRoleDoc.exists) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const inviteRef = db.collection('invites').doc(code);
+    const inviteDoc = await inviteRef.get();
+
+    if (!inviteDoc.exists) {
+      return NextResponse.json({ error: 'Invite code not found.' }, { status: 404 });
+    }
+
+    await inviteRef.delete();
+
+    return NextResponse.json({ message: 'Invite deleted successfully.' }, { status: 200 });
+
+  } catch (error: any) {
+    console.error('Error deleting invite:', error);
+    if (error.code && error.code.startsWith('auth/')) {
+        return NextResponse.json({ error: 'Invalid authentication token.' }, { status: 401 });
+    }
+    return NextResponse.json({ error: 'An unexpected server error occurred.' }, { status: 500 });
+  }
+}
+
