@@ -344,9 +344,9 @@ export function InviteManagementClient() {
                                          <div role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); copyToClipboard(batch.id!); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); copyToClipboard(batch.id!); }}} className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), "cursor-pointer")}>
                                             <Copy className="mr-2 h-3 w-3" /> Salin Link
                                         </div>
-                                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => {e.stopPropagation(); handleDeleteBatchClick(batch);}}>
+                                        <div role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); handleDeleteBatchClick(batch); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); handleDeleteBatchClick(batch); }}} className={cn(buttonVariants({ variant: 'ghost', size: 'icon' }), "h-8 w-8 cursor-pointer")}>
                                             <Trash2 className="h-4 w-4 text-destructive" />
-                                        </Button>
+                                        </div>
                                     </div>
                                 </div>
                             </AccordionTrigger>
