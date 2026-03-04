@@ -5,12 +5,15 @@ import admin from '@/lib/firebase/admin';
 import { Timestamp } from 'firebase-admin/firestore';
 import { z } from 'zod';
 import { generateUniqueCode } from '@/lib/utils';
-import { EMPLOYMENT_TYPES, type Invite } from '@/lib/types';
+import { type Invite } from '@/lib/types';
+
+// As per your request, only 'magang' and 'training' are valid.
+const inviteEmploymentTypes = ['magang', 'training'] as const;
 
 // Schema for request body validation
 const generateSchema = z.object({
   brandId: z.string().min(1, 'Brand is required.'),
-  employmentType: z.enum(EMPLOYMENT_TYPES),
+  employmentType: z.enum(inviteEmploymentTypes),
   quantity: z.coerce.number().int().min(1).max(100),
 });
 
@@ -18,7 +21,7 @@ export async function POST(req: NextRequest) {
   try {
     const authorization = req.headers.get('Authorization');
     if (!authorization?.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: 'Unauthorized: Missing token.' }, { status: 401 });
     }
     const idToken = authorization.split('Bearer ')[1];
     const decodedToken = await admin.auth().verifyIdToken(idToken);
@@ -68,6 +71,14 @@ export async function POST(req: NextRequest) {
 
   } catch (error: any) {
     console.error("Generate invites error:", error);
-    return NextResponse.json({ error: 'Invalid token or server error.' }, { status: 401 });
+    // Differentiate between auth errors and other server errors
+    if (error.code && error.code.startsWith('auth/')) {
+        let message = 'Authentication error. Please try logging out and in again.';
+        if (error.code === 'auth/id-token-expired') {
+            message = 'Your session has expired. Please log in again.';
+        }
+        return NextResponse.json({ error: message }, { status: 401 });
+    }
+    return NextResponse.json({ error: 'An unexpected server error occurred.' }, { status: 500 });
   }
 }
