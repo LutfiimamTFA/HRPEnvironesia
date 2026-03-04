@@ -115,7 +115,7 @@ export function UserFormDialog({ user, open, onOpenChange }: UserFormDialogProps
               role: 'hrd' as UserRole, // Default to hrd for creation
               employmentType: 'karyawan' as EmploymentType,
               isActive: true,
-              brandId: '',
+              brandId: [], // Default to empty array for create mode HRD
             };
       form.reset(defaultValues as any);
     }
@@ -218,67 +218,54 @@ export function UserFormDialog({ user, open, onOpenChange }: UserFormDialogProps
 
                   {role && role !== 'super-admin' && (
                     role === 'hrd' ? (
-                        <FormField
-                            control={form.control}
-                            name="brandId"
-                            render={() => (
-                            <FormItem>
-                                <FormLabel>Brands</FormLabel>
-                                <FormDescription>
-                                Assign one or more brands to this HRD user.
-                                </FormDescription>
-                                <div className="h-24 w-full rounded-md border p-4 overflow-y-auto space-y-2">
-                                {brandsLoading ? (
-                                    <p>Loading brands...</p>
-                                ) : brands && brands.length > 0 ? (
-                                    brands.map((brand) => (
-                                    <FormField
-                                        key={brand.id}
-                                        control={form.control}
-                                        name="brandId"
-                                        render={({ field }) => {
-                                        return (
-                                            <FormItem
-                                            key={brand.id}
-                                            className="flex flex-row items-start space-x-3 space-y-0"
-                                            >
-                                            <FormControl>
-                                                <Checkbox
-                                                checked={
-                                                    Array.isArray(field.value) &&
-                                                    field.value.includes(brand.id!)
-                                                }
-                                                onCheckedChange={(checked) => {
-                                                    const currentValue = Array.isArray(field.value)
-                                                    ? field.value
-                                                    : [];
-                                                    const newValues = checked
-                                                    ? [...currentValue, brand.id!]
-                                                    : currentValue.filter(
-                                                        (value) => value !== brand.id!
-                                                    );
-                                                    return field.onChange(newValues);
-                                                }}
-                                                />
-                                            </FormControl>
-                                            <FormLabel className="font-normal">
-                                                {brand.name}
-                                            </FormLabel>
-                                            </FormItem>
-                                        );
-                                        }}
-                                    />
-                                    ))
-                                ) : (
-                                    <p className="text-sm text-muted-foreground">
-                                    No brands exist.
-                                    </p>
-                                )}
-                                </div>
-                                <FormMessage />
-                            </FormItem>
-                            )}
-                        />
+                       <FormField
+                        control={form.control}
+                        name="brandId"
+                        render={() => (
+                          <FormItem>
+                            <div className="mb-4">
+                              <FormLabel>Brands</FormLabel>
+                              <FormDescription>Assign one or more brands to this HRD user.</FormDescription>
+                            </div>
+                            <div className="h-24 w-full rounded-md border p-4 overflow-y-auto space-y-2">
+                            {brands?.map((brand) => (
+                              <FormField
+                                key={brand.id}
+                                control={form.control}
+                                name="brandId"
+                                render={({ field }) => {
+                                  return (
+                                    <FormItem
+                                      key={brand.id}
+                                      className="flex flex-row items-start space-x-3 space-y-0"
+                                    >
+                                      <FormControl>
+                                        <Checkbox
+                                          checked={Array.isArray(field.value) && field.value.includes(brand.id!)}
+                                          onCheckedChange={(checked) => {
+                                            const currentValue = Array.isArray(field.value) ? field.value : [];
+                                            const newValues = checked
+                                              ? [...currentValue, brand.id!]
+                                              : currentValue.filter(
+                                                  (value) => value !== brand.id!
+                                                );
+                                            return field.onChange(newValues);
+                                          }}
+                                        />
+                                      </FormControl>
+                                      <FormLabel className="font-normal">
+                                        {brand.name}
+                                      </FormLabel>
+                                    </FormItem>
+                                  )
+                                }}
+                              />
+                            ))}
+                            </div>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                     ) : (
                       <FormField
                         control={form.control}
