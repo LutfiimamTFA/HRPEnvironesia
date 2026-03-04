@@ -68,6 +68,8 @@ const editSchema = z.object({
 
 type FormValues = z.infer<typeof createSchema> | z.infer<typeof editSchema>;
 
+const creatableRoles: UserRole[] = ['hrd', 'manager'];
+
 export function UserFormDialog({ user, open, onOpenChange }: UserFormDialogProps) {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -110,7 +112,7 @@ export function UserFormDialog({ user, open, onOpenChange }: UserFormDialogProps
               fullName: '',
               email: '',
               password: '',
-              role: 'karyawan' as UserRole,
+              role: 'hrd' as UserRole, // Default to hrd for creation
               employmentType: 'karyawan' as EmploymentType,
               isActive: true,
               brandId: '',
@@ -210,57 +212,54 @@ export function UserFormDialog({ user, open, onOpenChange }: UserFormDialogProps
                         />
                   )}
 
-                  <FormField control={form.control} name="role" render={({ field }) => (<FormItem><FormLabel>Role</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a role" /></SelectTrigger></FormControl><SelectContent>{ROLES.filter(r => r !== 'kandidat').map((r) => (<SelectItem key={r} value={r}>{r.replace(/[-_]/g, ' ')}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)}/>
+                  <FormField control={form.control} name="role" render={({ field }) => (<FormItem><FormLabel>Role</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a role" /></SelectTrigger></FormControl><SelectContent>{creatableRoles.map((r) => (<SelectItem key={r} value={r}>{r.replace(/[-_]/g, ' ')}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)}/>
                   
                   <FormField control={form.control} name="employmentType" render={({ field }) => (<FormItem><FormLabel>Jenis Pekerja</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Pilih jenis pekerja" /></SelectTrigger></FormControl><SelectContent>{EMPLOYMENT_TYPES.map((r) => (<SelectItem key={r} value={r}>{r}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)}/>
 
                   {role && role !== 'super-admin' && (
                     role === 'hrd' ? (
                       <FormField
-                        control={form.control}
-                        name="brandId"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Brands</FormLabel>
-                            <FormDescription>
-                              Assign one or more brands to this HRD user.
-                            </FormDescription>
-                            <div className="h-24 w-full rounded-md border p-4 overflow-y-auto space-y-2">
-                            {brandsLoading ? (
-                              <p>Loading brands...</p>
-                            ) : brands && brands.length > 0 ? (
-                              brands.map((brand) => (
-                                <FormItem
-                                  key={brand.id}
-                                  className="flex flex-row items-start space-x-3 space-y-0"
-                                >
-                                  <FormControl>
-                                    <Checkbox
-                                      checked={Array.isArray(field.value) && field.value.includes(brand.id!)}
-                                      onCheckedChange={(checked) => {
-                                        const currentValue = Array.isArray(field.value) ? field.value : [];
-                                        return checked
-                                          ? field.onChange([...currentValue, brand.id!])
-                                          : field.onChange(
-                                              currentValue.filter(
-                                                (value) => value !== brand.id!
-                                              )
-                                            );
-                                      }}
-                                    />
-                                  </FormControl>
-                                  <FormLabel className="font-normal">
-                                    {brand.name}
-                                  </FormLabel>
-                                </FormItem>
-                              ))
-                            ) : (
-                              <p className="text-sm text-muted-foreground">No brands exist.</p>
-                            )}
-                            </div>
-                            <FormMessage />
-                          </FormItem>
-                        )}
+                          control={form.control}
+                          name="brandId"
+                          render={({ field }) => (
+                              <FormItem>
+                                  <FormLabel>Brands</FormLabel>
+                                  <FormDescription>
+                                      Assign one or more brands to this HRD user.
+                                  </FormDescription>
+                                  <div className="h-24 w-full rounded-md border p-4 overflow-y-auto space-y-2">
+                                      {brandsLoading ? (
+                                          <p>Loading brands...</p>
+                                      ) : brands && brands.length > 0 ? (
+                                          brands.map((brand) => (
+                                              <FormItem
+                                                  key={brand.id}
+                                                  className="flex flex-row items-start space-x-3 space-y-0"
+                                              >
+                                                  <FormControl>
+                                                      <Checkbox
+                                                          checked={Array.isArray(field.value) && field.value.includes(brand.id!)}
+                                                          onCheckedChange={(checked) => {
+                                                              const currentValue = Array.isArray(field.value) ? field.value : [];
+                                                              const newValues = checked
+                                                                  ? [...currentValue, brand.id!]
+                                                                  : currentValue.filter((value) => value !== brand.id!);
+                                                              field.onChange(newValues);
+                                                          }}
+                                                      />
+                                                  </FormControl>
+                                                  <FormLabel className="font-normal">
+                                                      {brand.name}
+                                                  </FormLabel>
+                                              </FormItem>
+                                          ))
+                                      ) : (
+                                          <p className="text-sm text-muted-foreground">No brands exist.</p>
+                                      )}
+                                  </div>
+                                  <FormMessage />
+                              </FormItem>
+                          )}
                       />
                     ) : (
                       <FormField

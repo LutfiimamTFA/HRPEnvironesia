@@ -27,9 +27,11 @@ export async function POST(req: NextRequest) {
 
   try {
     const decodedToken = await admin.auth().verifyIdToken(idToken);
-    const userDoc = await admin.firestore().collection('users').doc(decodedToken.uid).get();
+    const userDocRef = admin.firestore().collection('users').doc(decodedToken.uid);
+    const userDoc = await userDocRef.get();
+    const userDocData = userDoc.data();
 
-    if (!userDoc.exists() || !['super-admin', 'hrd'].includes(userDoc.data()?.role)) {
+    if (!userDocData || !['super-admin', 'hrd'].includes(userDocData.role)) {
         return NextResponse.json({ error: 'Forbidden: Insufficient permissions.' }, { status: 403 });
     }
 
@@ -41,6 +43,14 @@ export async function POST(req: NextRequest) {
     }
 
     const { email, password, fullName, role, employmentType, brandId, isActive } = parseResult.data;
+    const requesterRole = userDocData.role;
+
+    // --- New Validation Logic ---
+    if (requesterRole === 'super-admin' && !['hrd', 'manager'].includes(role)) {
+      return NextResponse.json({ error: 'Super Admins can only create HRD or Manager accounts via this form.' }, { status: 403 });
+    }
+    // --- End New Validation ---
+
     const db = admin.firestore();
 
     try {
