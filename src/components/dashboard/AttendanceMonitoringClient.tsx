@@ -19,6 +19,7 @@ import Link from 'next/link';
 import { Trash2 } from 'lucide-react';
 import { DeleteConfirmationDialog } from './DeleteConfirmationDialog';
 import { useToast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
 
 interface AttendanceRecord {
   id: string; // userId
