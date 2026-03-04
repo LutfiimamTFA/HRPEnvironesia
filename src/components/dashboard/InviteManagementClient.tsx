@@ -305,7 +305,15 @@ export function InviteManagementClient() {
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <Badge variant="secondary">{batch.claimedSlots} / {batch.totalSlots} Terpakai</Badge>
-                                         <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); setAddQuotaBatch(batch); }}><PlusCircle className="mr-2 h-3 w-3"/> Tambah</Button>
+                                         <div
+                                            role="button"
+                                            tabIndex={0}
+                                            onClick={(e) => { e.stopPropagation(); setAddQuotaBatch(batch); }}
+                                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setAddQuotaBatch(batch); }}}
+                                            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), "cursor-pointer")}
+                                         >
+                                            <PlusCircle className="mr-2 h-3 w-3"/> Tambah
+                                         </div>
                                          <div
                                             role="button"
                                             tabIndex={0}
