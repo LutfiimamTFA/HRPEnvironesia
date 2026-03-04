@@ -25,6 +25,7 @@ import { Avatar, AvatarFallback } from '../ui/avatar';
 import { getInitials, cn } from '@/lib/utils';
 import { Separator } from '../ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { useRouter } from 'next/navigation';
 
 const inviteEmploymentTypes = ['karyawan', 'magang', 'training'] as const;
 
@@ -42,8 +43,9 @@ type AddQuotaFormValues = z.infer<typeof addQuotaSchema>;
 
 
 function AddQuotaDialog({ batch, open, onOpenChange, onQuotaAdded }: { batch: InviteBatch | null, open: boolean, onOpenChange: (open: boolean) => void, onQuotaAdded: () => void }) {
-    const { firebaseUser } = useAuth();
+    const { firebaseUser, auth } = useAuth();
     const { toast } = useToast();
+    const router = useRouter();
     const [isSaving, setIsSaving] = useState(false);
     
     const form = useForm<AddQuotaFormValues>({
@@ -67,26 +69,22 @@ function AddQuotaDialog({ batch, open, onOpenChange, onQuotaAdded }: { batch: In
                 headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ additionalQuantity: values.additionalQuantity }),
             });
+            if (response.status === 401) {
+                toast({ variant: 'destructive', title: 'Sesi Habis', description: "Sesi Anda telah berakhir. Silakan login kembali." });
+                await auth.signOut();
+                router.push('/admin/login');
+                return;
+            }
             if (!response.ok) {
-                let errorMsg = 'Gagal menambah kuota.';
-                if (response.status === 401) {
-                  errorMsg = "Your session has expired. Please log in again.";
-                } else {
-                    try {
-                        const errorData = await response.json();
-                        errorMsg = errorData.error || errorMsg;
-                    } catch (e) {
-                        errorMsg = response.statusText || errorMsg;
-                    }
-                }
-                throw new Error(errorMsg);
+                const errorData = await response.json().catch(() => ({ error: 'Gagal menambah kuota.' }));
+                throw new Error(errorData.error);
             }
             
             toast({ title: 'Kuota Ditambahkan', description: `${values.additionalQuantity} slot baru telah ditambahkan ke batch ini.` });
             onQuotaAdded();
             onOpenChange(false);
         } catch (e: any) {
-            toast({ variant: 'destructive', title: 'Gagal', description: e.message });
+            toast({ variant: 'destructive', title: 'Gagal Menambah Kuota', description: e.message });
         } finally {
             setIsSaving(false);
         }
@@ -134,9 +132,10 @@ function AddQuotaDialog({ batch, open, onOpenChange, onQuotaAdded }: { batch: In
 
 
 export function InviteManagementClient() {
-  const { firebaseUser, userProfile } = useAuth();
+  const { firebaseUser, userProfile, auth } = useAuth();
   const firestore = useFirestore();
   const { toast } = useToast();
+  const router = useRouter();
   const [isGenerating, setIsGenerating] = useState(false);
   const [brandFilter, setBrandFilter] = useState('all');
   const [addQuotaBatch, setAddQuotaBatch] = useState<InviteBatch | null>(null);
@@ -209,7 +208,10 @@ export function InviteManagementClient() {
       });
 
       if (response.status === 401) {
-        throw new Error("Your session has expired. Please log in again.");
+        toast({ variant: 'destructive', title: 'Sesi Habis', description: "Sesi Anda telah berakhir. Silakan login kembali." });
+        await auth.signOut();
+        router.push('/admin/login');
+        return;
       }
 
       const result = await response.json();
@@ -240,7 +242,10 @@ export function InviteManagementClient() {
         });
         
         if (res.status === 401) {
-            throw new Error("Your session has expired. Please log in again.");
+            toast({ variant: 'destructive', title: 'Sesi Habis', description: "Sesi Anda telah berakhir. Silakan login kembali." });
+            await auth.signOut();
+            router.push('/admin/login');
+            return;
         }
         if (!res.ok) {
             const errorData = await res.json();
@@ -273,7 +278,10 @@ export function InviteManagementClient() {
         headers: { 'Authorization': `Bearer ${idToken}` },
       });
       if (res.status === 401) {
-        throw new Error("Your session has expired. Please log in again.");
+        toast({ variant: 'destructive', title: 'Sesi Habis', description: "Sesi Anda telah berakhir. Silakan login kembali." });
+        await auth.signOut();
+        router.push('/admin/login');
+        return;
       }
       if (!res.ok) {
         let errorMsg = 'Failed to delete batch.';
@@ -282,6 +290,7 @@ export function InviteManagementClient() {
                 const errorData = await res.json();
                 errorMsg = errorData.error || errorMsg;
             } catch (jsonError) {
+                // If response is not JSON, use status text
                 errorMsg = res.statusText || errorMsg;
             }
         }
