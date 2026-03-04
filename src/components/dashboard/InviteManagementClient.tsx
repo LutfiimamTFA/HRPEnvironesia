@@ -67,8 +67,16 @@ function AddQuotaDialog({ batch, open, onOpenChange, onQuotaAdded }: { batch: In
                 headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ additionalQuantity: values.additionalQuantity }),
             });
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.error || 'Gagal menambah kuota.');
+            if (!response.ok) {
+                let errorMsg = 'Gagal menambah kuota.';
+                try {
+                    const errorData = await response.json();
+                    errorMsg = errorData.error || errorMsg;
+                } catch (e) {
+                    errorMsg = response.statusText || errorMsg;
+                }
+                throw new Error(errorMsg);
+            }
             
             toast({ title: 'Kuota Ditambahkan', description: `${values.additionalQuantity} slot baru telah ditambahkan ke batch ini.` });
             onQuotaAdded();
@@ -253,8 +261,18 @@ export function InviteManagementClient() {
         headers: { 'Authorization': `Bearer ${idToken}` },
       });
       if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Failed to delete batch.');
+        let errorMsg = 'Failed to delete batch.';
+        // A 204 response has no body, so trying to parse it would throw.
+        // We only parse if there's likely an error message in the body.
+        if (res.status !== 204) {
+            try {
+                const errorData = await res.json();
+                errorMsg = errorData.error || errorMsg;
+            } catch (jsonError) {
+                errorMsg = res.statusText || errorMsg;
+            }
+        }
+        throw new Error(errorMsg);
       }
       toast({ title: 'Batch Dihapus', description: `Batch undangan untuk ${batchToDelete.brandName} telah dihapus.` });
     } catch (error: any) {

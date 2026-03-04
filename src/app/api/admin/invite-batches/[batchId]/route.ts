@@ -19,7 +19,7 @@ async function verifyAdmin(req: NextRequest) {
     try {
         const decodedToken = await admin.auth().verifyIdToken(idToken);
         const userDoc = await admin.firestore().collection('users').doc(decodedToken.uid).get();
-        if (!userDoc.exists || !['super-admin', 'hrd'].includes(userDoc.data()?.role)) {
+        if (!userDoc.exists() || !['super-admin', 'hrd'].includes(userDoc.data()?.role)) {
             return { error: 'Forbidden.', status: 403 };
         }
         return { uid: decodedToken.uid };
@@ -72,6 +72,41 @@ export async function PATCH(
 
   } catch (error: any) {
     console.error('Error adding quota to batch:', error);
+    return NextResponse.json({ error: error.message || 'An unexpected server error occurred.' }, { status: 500 });
+  }
+}
+
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: { batchId: string } }
+) {
+  const authResult = await verifyAdmin(req);
+  if (authResult.error) {
+      return NextResponse.json({ error: authResult.error }, { status: authResult.status });
+  }
+
+  const { batchId } = params;
+  if (!batchId) {
+    return NextResponse.json({ error: 'Batch ID is required.' }, { status: 400 });
+  }
+
+  try {
+    const db = admin.firestore();
+    const batchRef = db.collection('invite_batches').doc(batchId);
+    
+    const batchDoc = await batchRef.get();
+    if (!batchDoc.exists) {
+        throw new Error('Batch not found.');
+    }
+
+    await batchRef.delete();
+
+    // Return a response without a body for DELETE requests
+    return new NextResponse(null, { status: 204 });
+
+  } catch (error: any) {
+    console.error('Error deleting invite batch:', error);
     return NextResponse.json({ error: error.message || 'An unexpected server error occurred.' }, { status: 500 });
   }
 }
