@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo } from 'react';
@@ -17,10 +16,14 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, PlusCircle, Copy, Users, Trash2 } from 'lucide-react';
+import { Loader2, PlusCircle, Copy, Users, Trash2, UserX } from 'lucide-react';
 import { format } from 'date-fns';
 import { KpiCard } from '../recruitment/KpiCard';
 import { DeleteConfirmationDialog } from './DeleteConfirmationDialog';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../ui/accordion';
+import { Avatar, AvatarFallback } from '../ui/avatar';
+import { getInitials } from '@/lib/utils';
+import { Separator } from '../ui/separator';
 
 const inviteEmploymentTypes = ['magang', 'training'] as const;
 
@@ -33,11 +36,13 @@ const generateFormSchema = z.object({
 type GenerateFormValues = z.infer<typeof generateFormSchema>;
 
 export function InviteManagementClient() {
-  const { firebaseUser } = useAuth();
+  const { firebaseUser, userProfile } = useAuth();
   const firestore = useFirestore();
   const { toast } = useToast();
   const [isGenerating, setIsGenerating] = useState(false);
-  const [batchToDelete, setBatchToDelete] = useState<InviteBatch | null>(null);
+  const [brandFilter, setBrandFilter] = useState('all');
+
+  const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
   const { data: inviteBatches, isLoading: isLoadingInvites } = useCollection<InviteBatch>(
@@ -46,24 +51,47 @@ export function InviteManagementClient() {
   const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(
     useMemoFirebase(() => collection(firestore, 'brands'), [firestore])
   );
-  
+  const { data: users, isLoading: isLoadingUsers } = useCollection<UserProfile>(
+    useMemoFirebase(() => query(collection(firestore, 'users'), where('role', '==', 'karyawan')), [firestore])
+  );
+
   const form = useForm<GenerateFormValues>({
     resolver: zodResolver(generateFormSchema),
     defaultValues: { quantity: 10 },
   });
 
+  const filteredBatches = useMemo(() => {
+    if (!inviteBatches) return [];
+    if (brandFilter === 'all') return inviteBatches;
+    return inviteBatches.filter(batch => batch.brandId === brandFilter);
+  }, [inviteBatches, brandFilter]);
+
   const summary = useMemo(() => {
-    if (!inviteBatches) return { total: 0, used: 0, rate: 0 };
-    const total = inviteBatches.reduce((sum, batch) => sum + batch.totalSlots, 0);
-    const used = inviteBatches.reduce((sum, batch) => sum + batch.claimedSlots, 0);
+    const batches = filteredBatches || [];
+    const total = batches.reduce((sum, batch) => sum + batch.totalSlots, 0);
+    const used = batches.reduce((sum, batch) => sum + batch.claimedSlots, 0);
     const rate = total > 0 ? (used / total) * 100 : 0;
     return { total, used, rate: Math.round(rate) };
-  }, [inviteBatches]);
+  }, [filteredBatches]);
   
   const sortedBatches = useMemo(() => {
-    if (!inviteBatches) return [];
-    return [...inviteBatches].sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
-  }, [inviteBatches]);
+    if (!filteredBatches) return [];
+    return [...filteredBatches].sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+  }, [filteredBatches]);
+
+  const usersByBatch = useMemo(() => {
+    if (!users) return new Map<string, UserProfile[]>();
+    return users.reduce((acc, user) => {
+        if (user.inviteBatchId) {
+            if (!acc.has(user.inviteBatchId)) {
+                acc.set(user.inviteBatchId, []);
+            }
+            acc.get(user.inviteBatchId)!.push(user);
+        }
+        return acc;
+    }, new Map<string, UserProfile[]>());
+  }, [users]);
+
 
   const handleGenerate = async (values: GenerateFormValues) => {
     if (!firebaseUser) {
@@ -82,7 +110,7 @@ export function InviteManagementClient() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Failed to generate invite batch.');
       toast({ title: 'Batch Undangan Dibuat', description: `Satu link undangan dengan kuota ${result.totalSlots} telah dibuat.` });
-      form.reset({ quantity: 10 });
+      form.reset({ brandId: values.brandId, employmentType: values.employmentType, quantity: 10 });
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Gagal Membuat Batch', description: e.message });
     } finally {
@@ -90,21 +118,35 @@ export function InviteManagementClient() {
     }
   };
   
-  const handleDeleteClick = (batch: InviteBatch) => {
-    setBatchToDelete(batch);
+  const handleDeleteUserClick = (user: UserProfile) => {
+    setUserToDelete(user);
     setIsDeleteConfirmOpen(true);
   };
   
-  const confirmDelete = async () => {
-    if (!batchToDelete || !firebaseUser) return;
+  const confirmDeleteUser = async () => {
+    if (!userToDelete || !firebaseUser) return;
     try {
-      await deleteDocumentNonBlocking(doc(firestore, 'invite_batches', batchToDelete.id!));
-      toast({ title: 'Batch Dihapus', description: `Batch undangan untuk ${batchToDelete.brandName} telah dihapus.` });
-    } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Gagal Menghapus', description: e.message });
+        const idToken = await firebaseUser.getIdToken();
+        const res = await fetch(`/api/users/${userToDelete.uid}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${idToken}`,
+            },
+        });
+        if (!res.ok) {
+            const errorData = await res.json();
+            throw new Error(errorData.error || 'Failed to delete user.');
+        }
+        toast({ title: 'Pengguna Dihapus', description: `Akun untuk ${userToDelete.fullName} telah dihapus.` });
+    } catch (error: any) {
+        toast({
+            variant: 'destructive',
+            title: 'Gagal menghapus pengguna',
+            description: error.message,
+        });
     } finally {
-      setIsDeleteConfirmOpen(false);
-      setBatchToDelete(null);
+        setIsDeleteConfirmOpen(false);
+        setUserToDelete(null);
     }
   };
 
@@ -117,6 +159,17 @@ export function InviteManagementClient() {
   return (
     <>
       <div className="space-y-6">
+        <div className="flex justify-end">
+            <Select value={brandFilter} onValueChange={setBrandFilter}>
+                <SelectTrigger className="w-[240px]">
+                    <SelectValue placeholder="Filter by brand..." />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">Semua Brand</SelectItem>
+                    {brands?.map(brand => <SelectItem key={brand.id!} value={brand.id!}>{brand.name}</SelectItem>)}
+                </SelectContent>
+            </Select>
+        </div>
         <div className="grid gap-4 md:grid-cols-3">
           <KpiCard title="Total Kuota Undangan" value={summary.total} />
           <KpiCard title="Kuota Terpakai" value={summary.used} />
@@ -151,30 +204,53 @@ export function InviteManagementClient() {
                 <CardDescription>Kelola dan pantau penggunaan link undangan yang telah dibuat.</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="rounded-lg border">
-                  <Table>
-                    <TableHeader><TableRow><TableHead>Detail</TableHead><TableHead>Penggunaan</TableHead><TableHead>Dibuat</TableHead><TableHead className="text-right">Aksi</TableHead></TableRow></TableHeader>
-                    <TableBody>
-                      {isLoadingInvites ? <TableRow><TableCell colSpan={4} className="h-24 text-center">Loading...</TableCell></TableRow>
-                        : sortedBatches.length > 0 ? sortedBatches.map(batch => (
-                            <TableRow key={batch.id}>
-                              <TableCell>
-                                <p className="font-semibold">{batch.brandName}</p>
-                                <p className="text-sm text-muted-foreground capitalize">{batch.employmentType}</p>
-                              </TableCell>
-                              <TableCell><Badge variant="secondary">{batch.claimedSlots} / {batch.totalSlots}</Badge></TableCell>
-                              <TableCell className="text-xs">{format(batch.createdAt.toDate(), 'dd MMM yyyy')}</TableCell>
-                              <TableCell className="text-right">
-                                <Button variant="outline" size="sm" onClick={() => copyToClipboard(batch.id!)}><Copy className="mr-2 h-3 w-3" /> Salin Link</Button>
-                                <Button variant="ghost" size="icon" className="ml-2" onClick={() => handleDeleteClick(batch)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                              </TableCell>
-                            </TableRow>
-                          ))
-                        : <TableRow><TableCell colSpan={4} className="h-24 text-center">Belum ada batch undangan yang dibuat.</TableCell></TableRow>
-                      }
-                    </TableBody>
-                  </Table>
-                </div>
+                <Accordion type="single" collapsible className="w-full space-y-2">
+                  {isLoadingInvites ? <p>Loading...</p> 
+                    : sortedBatches.length > 0 ? sortedBatches.map(batch => {
+                      const registeredUsers = usersByBatch.get(batch.id!) || [];
+                      return (
+                        <AccordionItem value={batch.id!} key={batch.id!} className="border rounded-md px-4 bg-background">
+                           <AccordionTrigger className="hover:no-underline">
+                                <div className="flex justify-between items-center w-full pr-4">
+                                    <div>
+                                        <p className="font-semibold text-left">{batch.brandName}</p>
+                                        <p className="text-sm text-muted-foreground capitalize text-left">{batch.employmentType}</p>
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <Badge variant="secondary">{batch.claimedSlots} / {batch.totalSlots} Terpakai</Badge>
+                                        <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); copyToClipboard(batch.id!); }}><Copy className="mr-2 h-3 w-3" /> Salin Link</Button>
+                                    </div>
+                                </div>
+                            </AccordionTrigger>
+                            <AccordionContent>
+                                <Separator className="mb-4" />
+                                {registeredUsers.length > 0 ? (
+                                    <Table>
+                                        <TableHeader><TableRow><TableHead>Nama</TableHead><TableHead>Email</TableHead>{userProfile?.role === 'super-admin' && <TableHead className="text-right">Aksi</TableHead>}</TableRow></TableHeader>
+                                        <TableBody>
+                                            {registeredUsers.map(user => (
+                                                <TableRow key={user.uid}>
+                                                    <TableCell className="flex items-center gap-2 font-medium"><Avatar className="h-6 w-6"><AvatarFallback>{getInitials(user.fullName)}</AvatarFallback></Avatar>{user.fullName}</TableCell>
+                                                    <TableCell>{user.email}</TableCell>
+                                                     {userProfile?.role === 'super-admin' && (
+                                                        <TableCell className="text-right">
+                                                            <Button variant="ghost" size="icon" onClick={() => handleDeleteUserClick(user)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                                                        </TableCell>
+                                                     )}
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                ) : (
+                                    <p className="text-center text-sm text-muted-foreground py-4">Belum ada yang menggunakan undangan dari batch ini.</p>
+                                )}
+                            </AccordionContent>
+                        </AccordionItem>
+                      )
+                    })
+                    : <p className="text-center text-sm text-muted-foreground py-4">Belum ada batch undangan yang dibuat.</p>
+                  }
+                </Accordion>
               </CardContent>
             </Card>
           </div>
@@ -183,12 +259,10 @@ export function InviteManagementClient() {
       <DeleteConfirmationDialog 
         open={isDeleteConfirmOpen}
         onOpenChange={setIsDeleteConfirmOpen}
-        onConfirm={confirmDelete}
-        itemName={`batch undangan untuk ${batchToDelete?.brandName}`}
-        itemType="Batch"
+        onConfirm={confirmDeleteUser}
+        itemName={userToDelete?.fullName}
+        itemType="User Account"
       />
     </>
   );
 }
-
-    

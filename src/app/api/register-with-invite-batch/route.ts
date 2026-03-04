@@ -1,4 +1,3 @@
-
 'use server';
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -80,6 +79,7 @@ export async function POST(req: NextRequest) {
       isActive: true,
       createdAt: Timestamp.now(),
       createdBy: batchData.createdBy,
+      inviteBatchId: batchCode,
     };
     await userRef.set(userProfile);
     
@@ -94,5 +94,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'An unexpected server error occurred.' }, { status: 500 });
   }
 }
-
-    

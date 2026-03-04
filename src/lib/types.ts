@@ -1,4 +1,3 @@
-
 'use client';
 
 import type { Timestamp } from 'firebase/firestore';
@@ -27,6 +26,7 @@ export type UserProfile = {
   brandId?: string | string[];
   isProfileComplete?: boolean;
   photoUrl?: string;
+  inviteBatchId?: string;
 };
 
 export type Brand = {
@@ -597,5 +597,3 @@ export type AttendanceEvent = {
     flags?: string[];
     address?: string;
 };
-
-    
