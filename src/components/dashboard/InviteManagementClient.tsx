@@ -61,7 +61,7 @@ function AddQuotaDialog({ batch, open, onOpenChange, onQuotaAdded }: { batch: In
         if (!batch || !firebaseUser) return;
         setIsSaving(true);
         try {
-            const idToken = await firebaseUser.getIdToken();
+            const idToken = await firebaseUser.getIdToken(true);
             const response = await fetch(`/api/admin/invite-batches/${batch.id}`, {
                 method: 'PATCH',
                 headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
@@ -69,11 +69,15 @@ function AddQuotaDialog({ batch, open, onOpenChange, onQuotaAdded }: { batch: In
             });
             if (!response.ok) {
                 let errorMsg = 'Gagal menambah kuota.';
-                try {
-                    const errorData = await response.json();
-                    errorMsg = errorData.error || errorMsg;
-                } catch (e) {
-                    errorMsg = response.statusText || errorMsg;
+                if (response.status === 401) {
+                  errorMsg = "Your session has expired. Please log in again.";
+                } else {
+                    try {
+                        const errorData = await response.json();
+                        errorMsg = errorData.error || errorMsg;
+                    } catch (e) {
+                        errorMsg = response.statusText || errorMsg;
+                    }
                 }
                 throw new Error(errorMsg);
             }
@@ -149,7 +153,7 @@ export function InviteManagementClient() {
     useMemoFirebase(() => collection(firestore, 'brands'), [firestore])
   );
   const { data: users, isLoading: isLoadingUsers } = useCollection<UserProfile>(
-    useMemoFirebase(() => query(collection(firestore, 'users'), where('employmentType', 'in', ['magang', 'training'])), [firestore])
+    useMemoFirebase(() => query(collection(firestore, 'users'), where('employmentType', 'in', ['karyawan', 'magang', 'training'])), [firestore])
   );
 
   const form = useForm<GenerateFormValues>({
@@ -197,12 +201,16 @@ export function InviteManagementClient() {
     }
     setIsGenerating(true);
     try {
-      const idToken = await firebaseUser.getIdToken();
+      const idToken = await firebaseUser.getIdToken(true);
       const response = await fetch('/api/admin/generate-invites', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(values),
       });
+
+      if (response.status === 401) {
+        throw new Error("Your session has expired. Please log in again.");
+      }
 
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Failed to generate invite batch.');
@@ -223,13 +231,17 @@ export function InviteManagementClient() {
   const confirmDeleteUser = async () => {
     if (!userToDelete || !firebaseUser) return;
     try {
-        const idToken = await firebaseUser.getIdToken();
+        const idToken = await firebaseUser.getIdToken(true);
         const res = await fetch(`/api/users/${userToDelete.uid}`, {
             method: 'DELETE',
             headers: {
                 'Authorization': `Bearer ${idToken}`,
             },
         });
+        
+        if (res.status === 401) {
+            throw new Error("Your session has expired. Please log in again.");
+        }
         if (!res.ok) {
             const errorData = await res.json();
             throw new Error(errorData.error || 'Failed to delete user.');
@@ -255,15 +267,16 @@ export function InviteManagementClient() {
   const confirmDeleteBatch = async () => {
     if (!batchToDelete || !firebaseUser) return;
     try {
-      const idToken = await firebaseUser.getIdToken();
+      const idToken = await firebaseUser.getIdToken(true);
       const res = await fetch(`/api/admin/invite-batches/${batchToDelete.id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${idToken}` },
       });
+      if (res.status === 401) {
+        throw new Error("Your session has expired. Please log in again.");
+      }
       if (!res.ok) {
         let errorMsg = 'Failed to delete batch.';
-        // A 204 response has no body, so trying to parse it would throw.
-        // We only parse if there's likely an error message in the body.
         if (res.status !== 204) {
             try {
                 const errorData = await res.json();

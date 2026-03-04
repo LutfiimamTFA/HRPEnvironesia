@@ -1,4 +1,5 @@
 
+
 'use server';
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -9,7 +10,7 @@ import { generateUniqueCode } from '@/lib/utils';
 import { type InviteBatch } from '@/lib/types';
 import { firestore } from 'firebase-admin';
 
-const inviteEmploymentTypes = ['magang', 'training'] as const;
+const inviteEmploymentTypes = ['karyawan', 'magang', 'training'] as const;
 
 const generateSchema = z.object({
   brandId: z.string().min(1, 'Brand is required.'),
