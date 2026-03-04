@@ -219,7 +219,7 @@ export function UserFormDialog({ user, open, onOpenChange }: UserFormDialogProps
                       <FormField
                         control={form.control}
                         name="brandId"
-                        render={({ field }) => (
+                        render={() => (
                           <FormItem>
                             <FormLabel>Brands</FormLabel>
                             <FormDescription>
@@ -230,29 +230,38 @@ export function UserFormDialog({ user, open, onOpenChange }: UserFormDialogProps
                               <p>Loading brands...</p>
                             ) : brands && brands.length > 0 ? (
                               brands.map((brand) => (
-                                <FormItem
+                                <FormField
                                   key={brand.id}
-                                  className="flex flex-row items-start space-x-3 space-y-0 mb-2"
-                                >
-                                  <FormControl>
-                                    <Checkbox
-                                      checked={Array.isArray(field.value) && field.value.includes(brand.id!)}
-                                      onCheckedChange={(checked) => {
-                                        const currentValue = Array.isArray(field.value) ? field.value : [];
-                                        return checked
-                                          ? field.onChange([...currentValue, brand.id!])
-                                          : field.onChange(
-                                              currentValue.filter(
-                                                (value) => value !== brand.id!
-                                              )
-                                            );
-                                      }}
-                                    />
-                                  </FormControl>
-                                  <FormLabel className="font-normal">
-                                    {brand.name}
-                                  </FormLabel>
-                                </FormItem>
+                                  control={form.control}
+                                  name="brandId"
+                                  render={({ field }) => {
+                                    return (
+                                      <FormItem
+                                        key={brand.id}
+                                        className="flex flex-row items-start space-x-3 space-y-0 mb-2"
+                                      >
+                                        <FormControl>
+                                          <Checkbox
+                                            checked={Array.isArray(field.value) && field.value.includes(brand.id!)}
+                                            onCheckedChange={(checked) => {
+                                              const currentValue = Array.isArray(field.value) ? field.value : [];
+                                              return checked
+                                                ? field.onChange([...currentValue, brand.id!])
+                                                : field.onChange(
+                                                    currentValue.filter(
+                                                      (value) => value !== brand.id!
+                                                    )
+                                                  );
+                                            }}
+                                          />
+                                        </FormControl>
+                                        <FormLabel className="font-normal">
+                                          {brand.name}
+                                        </FormLabel>
+                                      </FormItem>
+                                    );
+                                  }}
+                                />
                               ))
                             ) : (
                               <p className="text-sm text-muted-foreground">No brands exist.</p>
