@@ -24,6 +24,11 @@
           "type": "string",
           "description": "The role of the user within the application (super-admin, hrd, manager, kandidat, karyawan)."
         },
+        "employmentType": {
+            "type": "string",
+            "description": "The type of employment for the user.",
+            "enum": ["karyawan", "magang", "training"]
+        },
         "isActive": {
           "type": "boolean",
           "description": "Indicates whether the user account is active."
@@ -32,6 +37,10 @@
           "type": "string",
           "description": "The timestamp indicating when the user account was created.",
           "format": "date-time"
+        },
+        "createdBy": {
+            "type": "string",
+            "description": "UID of the user who created this user profile."
         },
         "brandId": {
           "type": "string",
@@ -50,6 +59,22 @@
         "isActive",
         "createdAt"
       ]
+    },
+    "InviteBatch": {
+      "title": "Invite Batch",
+      "type": "object",
+      "description": "Represents a batch of invitations with a shared link and quota.",
+      "properties": {
+        "brandId": { "type": "string" },
+        "brandName": { "type": "string" },
+        "employmentType": { "type": "string", "enum": ["magang", "training"] },
+        "totalSlots": { "type": "number" },
+        "claimedSlots": { "type": "number" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["brandId", "brandName", "employmentType", "totalSlots", "claimedSlots", "createdBy", "createdAt", "updatedAt"]
     },
     "Brand": {
       "title": "Brand",
@@ -813,6 +838,15 @@
               "description": "The Firebase Auth UID of the user."
             }
           ]
+        }
+      },
+      {
+        "path": "/invite_batches/{batchId}",
+        "definition": {
+          "schema": {
+            "$ref": "#/backend/entities/InviteBatch"
+          },
+          "description": "Stores batches of invitations with a shared quota."
         }
       },
       {

@@ -1,3 +1,4 @@
+
 'use server';
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -5,7 +6,8 @@ import admin from '@/lib/firebase/admin';
 import { Timestamp } from 'firebase-admin/firestore';
 import { z } from 'zod';
 import { generateUniqueCode } from '@/lib/utils';
-import { type Invite } from '@/lib/types';
+import { type InviteBatch } from '@/lib/types';
+import { firestore } from 'firebase-admin';
 
 const inviteEmploymentTypes = ['magang', 'training'] as const;
 
@@ -40,33 +42,34 @@ export async function POST(req: NextRequest) {
     }
     
     const { brandId, employmentType, quantity } = parseResult.data;
-    const batch = db.batch();
-    const now = Timestamp.now();
-    // Change expiration to 24 hours
-    const expiresAt = Timestamp.fromMillis(now.toMillis() + 24 * 60 * 60 * 1000); 
-
-    for (let i = 0; i < quantity; i++) {
-        const code = generateUniqueCode(8);
-        const inviteRef = db.collection('invites').doc(code);
-        
-        const inviteData: Omit<Invite, 'id'> = {
-            code,
-            brandId,
-            employmentType,
-            createdBy: decodedToken.uid,
-            createdAt: now,
-            expiresAt,
-            usedAt: null,
-            usedByUid: null,
-            isActive: true,
-        };
-
-        batch.set(inviteRef, inviteData);
-    }
     
-    await batch.commit();
+    const brandDoc = await db.collection('brands').doc(brandId).get();
+    if (!brandDoc.exists) {
+        return NextResponse.json({ error: 'Brand not found.' }, { status: 404 });
+    }
+    const brandName = brandDoc.data()?.name || 'Unknown Brand';
+    
+    const now = Timestamp.now();
+    const batchId = generateUniqueCode(10);
+    const batchRef = db.collection('invite_batches').doc(batchId);
+    
+    const batchData: Omit<InviteBatch, 'id'> = {
+        brandId,
+        brandName,
+        employmentType,
+        totalSlots: quantity,
+        claimedSlots: 0,
+        createdBy: decodedToken.uid,
+        createdAt: now,
+        updatedAt: now,
+    };
+    
+    await batchRef.set(batchData);
 
-    return NextResponse.json({ message: 'Invites generated successfully.', count: quantity }, { status: 201 });
+    return NextResponse.json(
+        { message: 'Invite batch generated successfully.', ...batchData },
+        { status: 201 }
+    );
 
   } catch (error: any) {
     console.error("Generate invites error:", error);
@@ -80,3 +83,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'An unexpected server error occurred.' }, { status: 500 });
   }
 }
+
+    

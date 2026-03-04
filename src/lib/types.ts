@@ -1,3 +1,4 @@
+
 'use client';
 
 import type { Timestamp } from 'firebase/firestore';
@@ -40,18 +41,16 @@ export type NavigationSetting = {
   visibleMenuItems: string[];
 };
 
-export type Invite = {
-    id?: string;
-    code: string;
-    brandId: string;
-    brandName?: string; // Denormalized
-    employmentType: 'magang' | 'training';
-    createdBy: string; // UID of HRD/SuperAdmin
-    createdAt: Timestamp;
-    expiresAt: Timestamp;
-    usedAt: Timestamp | null;
-    usedByUid: string | null;
-    isActive: boolean;
+export type InviteBatch = {
+  id?: string; // The unique batch code
+  brandId: string;
+  brandName: string;
+  employmentType: 'magang' | 'training';
+  totalSlots: number;
+  claimedSlots: number;
+  createdBy: string; // UID of HRD/SuperAdmin
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 }
 
 export type Job = {
@@ -598,3 +597,5 @@ export type AttendanceEvent = {
     flags?: string[];
     address?: string;
 };
+
+    

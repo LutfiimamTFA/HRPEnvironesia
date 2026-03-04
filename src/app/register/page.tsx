@@ -1,11 +1,12 @@
+
 'use client';
 
 import { Suspense } from 'react';
-import { RegisterWithCodeForm } from '@/components/auth/RegisterWithCodeForm';
+import { RegisterWithBatchForm } from '@/components/auth/RegisterWithCodeForm';
 import { Loader2 } from 'lucide-react';
 
 function RegisterPageContent() {
-    return <RegisterWithCodeForm />;
+    return <RegisterWithBatchForm />;
 }
 
 export default function RegisterPage() {
@@ -15,3 +16,5 @@ export default function RegisterPage() {
     </Suspense>
   );
 }
+
+    

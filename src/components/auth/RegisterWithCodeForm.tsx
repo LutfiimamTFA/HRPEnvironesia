@@ -1,6 +1,7 @@
+
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -8,14 +9,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Eye, EyeOff, XCircle, FileText, CheckCircle, Clock } from 'lucide-react';
+import { Loader2, Eye, EyeOff, XCircle } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
 import Link from 'next/link';
-import { format } from 'date-fns';
-import { id as idLocale } from 'date-fns/locale';
-import type { Invite } from '@/lib/types';
+import type { InviteBatch } from '@/lib/types';
 
 const formSchema = z.object({
     fullName: z.string().min(2, { message: 'Nama lengkap (sesuai KTP) harus diisi.' }),
@@ -29,10 +28,10 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
-export function RegisterWithCodeForm() {
+export function RegisterWithBatchForm() {
     const [inviteState, setInviteState] = useState<{
         status: 'loading' | 'valid' | 'invalid';
-        data: Invite | null;
+        data: InviteBatch | null;
         message: string | null;
     }>({ status: 'loading', data: null, message: null });
 
@@ -43,20 +42,20 @@ export function RegisterWithCodeForm() {
     const searchParams = useSearchParams();
     const router = useRouter();
     const { toast } = useToast();
-    const code = searchParams.get('code');
+    const batchCode = searchParams.get('batch');
 
     useEffect(() => {
-        if (!code) {
-            setInviteState({ status: 'invalid', data: null, message: 'Kode undangan tidak ditemukan. Pastikan URL Anda benar.' });
+        if (!batchCode) {
+            setInviteState({ status: 'invalid', data: null, message: 'Kode batch undangan tidak ditemukan. Pastikan URL Anda benar.' });
             return;
         }
 
         const validateCode = async () => {
             try {
-                const response = await fetch(`/api/invites/${code}`);
+                const response = await fetch(`/api/invites/batch/${batchCode}`);
                 const data = await response.json();
                 if (!response.ok) {
-                    throw new Error(data.error || 'Gagal memvalidasi kode.');
+                    throw new Error(data.error || 'Gagal memvalidasi kode batch.');
                 }
                 setInviteState({ status: 'valid', data, message: null });
             } catch (error: any) {
@@ -65,7 +64,7 @@ export function RegisterWithCodeForm() {
         };
 
         validateCode();
-    }, [code]);
+    }, [batchCode]);
 
     const form = useForm<FormValues>({
         resolver: zodResolver(formSchema),
@@ -75,10 +74,10 @@ export function RegisterWithCodeForm() {
     async function onSubmit(values: FormValues) {
         setIsRegistering(true);
         try {
-            const response = await fetch('/api/register-with-code', {
+            const response = await fetch('/api/register-with-invite-batch', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...values, code }),
+                body: JSON.stringify({ ...values, batchCode }),
             });
             const data = await response.json();
             if (!response.ok) {
@@ -167,3 +166,6 @@ export function RegisterWithCodeForm() {
         </Card>
     );
 }
+
+
+    
