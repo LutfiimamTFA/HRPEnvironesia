@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -19,6 +19,7 @@ import { Badge } from '@/components/ui/badge';
 import { Loader2, PlusCircle, Copy, Users, CheckCircle, Percent } from 'lucide-react';
 import { format } from 'date-fns';
 import { KpiCard } from '../recruitment/KpiCard';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 
 const inviteEmploymentTypes = ['magang', 'training'] as const;
 
@@ -29,6 +30,41 @@ const generateFormSchema = z.object({
 });
 
 type GenerateFormValues = z.infer<typeof generateFormSchema>;
+
+interface AddMoreFormProps {
+    brandId: string;
+    employmentType: 'magang' | 'training';
+    onGenerate: (values: GenerateFormValues) => Promise<void>;
+}
+
+function AddMoreForm({ brandId, employmentType, onGenerate }: AddMoreFormProps) {
+    const [quantity, setQuantity] = useState(5);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsSubmitting(true);
+        await onGenerate({ brandId, employmentType, quantity });
+        setIsSubmitting(false);
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="flex items-center gap-2 py-2">
+            <Input 
+                type="number" 
+                value={quantity}
+                onChange={(e) => setQuantity(parseInt(e.target.value, 10) || 1)}
+                className="w-24 h-9"
+                min="1"
+                max="100"
+            />
+            <Button type="submit" size="sm" disabled={isSubmitting}>
+                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />}
+                Tambah
+            </Button>
+        </form>
+    );
+}
 
 export function InviteManagementClient() {
   const { firebaseUser } = useAuth();
@@ -60,23 +96,41 @@ export function InviteManagementClient() {
     if (!users) return new Map<string, string>();
     return new Map(users.map(user => [user.uid, user.fullName]));
   }, [users]);
-
-  const { sortedInvites, summary } = useMemo(() => {
-    if (!invites) return { sortedInvites: [], summary: { total: 0, used: 0, rate: 0 } };
-
+  
+  const groupedInvites = useMemo(() => {
+    if (!invites || !brandMap) return [];
+    
+    const groups = new Map<string, { brandName: string, employmentType: 'magang' | 'training', invites: Invite[] }>();
+    
     const sorted = [...invites].sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
-    const usedCount = sorted.filter(invite => invite.usedByUid).length;
-    const totalCount = sorted.length;
+
+    sorted.forEach(invite => {
+        const key = `${invite.brandId}-${invite.employmentType}`;
+        if (!groups.has(key)) {
+            groups.set(key, {
+                brandName: brandMap.get(invite.brandId) || 'Unknown Brand',
+                employmentType: invite.employmentType,
+                invites: []
+            });
+        }
+        groups.get(key)!.invites.push(invite);
+    });
+    
+    return Array.from(groups.values());
+  }, [invites, brandMap]);
+
+
+  const summary = useMemo(() => {
+    if (!invites) return { total: 0, used: 0, rate: 0 };
+    const usedCount = invites.filter(invite => invite.usedByUid).length;
+    const totalCount = invites.length;
     const rate = totalCount > 0 ? (usedCount / totalCount) * 100 : 0;
     
     return {
-      sortedInvites: sorted,
-      summary: {
-        total: totalCount,
-        used: usedCount,
-        rate: Math.round(rate),
-      }
-    };
+      total: totalCount,
+      used: usedCount,
+      rate: Math.round(rate),
+    }
   }, [invites]);
 
   const getInviteStatus = (invite: Invite) => {
@@ -108,6 +162,7 @@ export function InviteManagementClient() {
         throw new Error(result.error || 'Failed to generate invites.');
       }
       toast({ title: 'Codes Generated', description: `${result.count} new invite codes have been created.` });
+      form.reset({ quantity: 10 });
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Generation Failed', description: e.message });
     } finally {
@@ -120,12 +175,6 @@ export function InviteManagementClient() {
     navigator.clipboard.writeText(url);
     toast({ title: "Link Copied!", description: "Registration link copied to clipboard." });
   };
-  
-  const handleRegenerate = (invite: Invite) => {
-    form.setValue('brandId', invite.brandId);
-    form.setValue('employmentType', invite.employmentType);
-    toast({ description: "Formulir telah diisi berdasarkan undangan yang dipilih." });
-  };
 
   return (
     <div className="space-y-6">
@@ -134,107 +183,75 @@ export function InviteManagementClient() {
           <KpiCard title="Undangan Terpakai" value={summary.used} />
           <KpiCard title="Tingkat Penggunaan" value={`${summary.rate}%`} />
        </div>
-      <div className="grid gap-6 md:grid-cols-3">
-        <div className="md:col-span-1">
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-1">
           <Card>
             <CardHeader>
-              <CardTitle>Generate Invites</CardTitle>
-              <CardDescription>Create new registration invite codes for employees.</CardDescription>
+              <CardTitle>Buat Batch Undangan Baru</CardTitle>
+              <CardDescription>Gunakan ini untuk membuat grup undangan baru untuk brand atau tipe yang belum ada.</CardDescription>
             </CardHeader>
             <CardContent>
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(handleGenerate)} className="space-y-4">
-                  <FormField
-                    control={form.control}
-                    name="brandId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Brand</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value} disabled={isLoadingBrands}>
-                          <FormControl><SelectTrigger><SelectValue placeholder="Select a brand" /></SelectTrigger></FormControl>
-                          <SelectContent>{brands?.map(b => <SelectItem key={b.id!} value={b.id!}>{b.name}</SelectItem>)}</SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="employmentType"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Employment Type</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl><SelectTrigger><SelectValue placeholder="Select a type" /></SelectTrigger></FormControl>
-                          <SelectContent>{inviteEmploymentTypes.map(type => <SelectItem key={type} value={type} className="capitalize">{type}</SelectItem>)}</SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="quantity"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Quantity</FormLabel>
-                        <FormControl><Input type="number" {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  <FormField control={form.control} name="brandId" render={({ field }) => (<FormItem><FormLabel>Brand</FormLabel><Select onValueChange={field.onChange} value={field.value} disabled={isLoadingBrands}><FormControl><SelectTrigger><SelectValue placeholder="Pilih brand" /></SelectTrigger></FormControl><SelectContent>{brands?.map(b => <SelectItem key={b.id!} value={b.id!}>{b.name}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem>)}/>
+                  <FormField control={form.control} name="employmentType" render={({ field }) => (<FormItem><FormLabel>Jenis Pekerja</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Pilih tipe" /></SelectTrigger></FormControl><SelectContent>{inviteEmploymentTypes.map(type => <SelectItem key={type} value={type} className="capitalize">{type}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem>)}/>
+                  <FormField control={form.control} name="quantity" render={({ field }) => (<FormItem><FormLabel>Jumlah</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)}/>
                   <Button type="submit" className="w-full" disabled={isGenerating}>
                     {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />}
-                    Generate
+                    Generate Batch Baru
                   </Button>
                 </form>
               </Form>
             </CardContent>
           </Card>
         </div>
-        <div className="md:col-span-2">
+        <div className="lg:col-span-2">
           <Card>
             <CardHeader>
-              <CardTitle>Generated Invites</CardTitle>
-              <CardDescription>List of all invite codes.</CardDescription>
+              <CardTitle>Grup Undangan</CardTitle>
+              <CardDescription>Kelola undangan yang sudah ada per kelompok.</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="rounded-lg border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Code</TableHead>
-                      <TableHead>Used By</TableHead>
-                      <TableHead>Used At</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {isLoadingInvites || isLoadingUsers ? (
-                      <TableRow><TableCell colSpan={5} className="h-24 text-center">Loading...</TableCell></TableRow>
-                    ) : sortedInvites.length > 0 ? (
-                      sortedInvites.map(invite => {
-                        const status = getInviteStatus(invite);
-                        return (
-                          <TableRow key={invite.id}>
-                            <TableCell className="font-mono text-xs">{invite.code}</TableCell>
-                            <TableCell className="text-sm">{invite.usedByUid ? userMap.get(invite.usedByUid) || 'N/A' : '-'}</TableCell>
-                            <TableCell>{invite.usedAt ? format(invite.usedAt.toDate(), 'dd MMM, HH:mm') : '-'}</TableCell>
-                            <TableCell><Badge variant={status.variant}>{status.label}</Badge></TableCell>
-                            <TableCell className="text-right space-x-1">
-                               <Button variant="outline" size="sm" onClick={() => copyToClipboard(invite.code)}><Copy className="mr-2 h-3 w-3" /> Copy</Button>
-                               <Button variant="ghost" size="sm" onClick={() => handleRegenerate(invite)}><PlusCircle className="mr-2 h-3 w-3" /> Lagi</Button>
-                            </TableCell>
-                          </TableRow>
-                        )
-                      })
-                    ) : (
-                      <TableRow><TableCell colSpan={5} className="h-24 text-center">No invites found.</TableCell></TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
+              {isLoadingInvites || isLoadingBrands ? <p>Loading...</p> : 
+              groupedInvites.length > 0 ? (
+                <Accordion type="multiple" className="w-full space-y-2">
+                  {groupedInvites.map((group, index) => {
+                    const usedCount = group.invites.filter(i => i.usedByUid).length;
+                    const totalCount = group.invites.length;
+                    return (
+                      <AccordionItem value={`item-${index}`} key={index} className="border rounded-md">
+                        <AccordionTrigger className="px-4 hover:no-underline">
+                          <div className='flex-1 text-left'>
+                            <p className="font-semibold">{group.brandName} - <span className="capitalize">{group.employmentType}</span></p>
+                            <p className="text-sm text-muted-foreground">{usedCount} / {totalCount} terpakai</p>
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="p-4 border-t">
+                           <AddMoreForm brandId={group.invites[0].brandId} employmentType={group.employmentType} onGenerate={handleGenerate} />
+                           <div className="rounded-lg border mt-4">
+                            <Table>
+                                <TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Status</TableHead><TableHead>Used By</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                                <TableBody>
+                                    {group.invites.slice(0, 5).map(invite => (
+                                        <TableRow key={invite.id}>
+                                            <TableCell className="font-mono text-xs">{invite.code}</TableCell>
+                                            <TableCell><Badge variant={getInviteStatus(invite).variant}>{getInviteStatus(invite).label}</Badge></TableCell>
+                                            <TableCell className="text-xs">{userMap.get(invite.usedByUid!) || '-'}</TableCell>
+                                            <TableCell className="text-right"><Button variant="outline" size="sm" onClick={() => copyToClipboard(invite.code)}><Copy className="mr-2 h-3 w-3" /> Salin Link</Button></TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                            {group.invites.length > 5 && <p className="text-xs text-muted-foreground text-center p-2">...dan {group.invites.length - 5} lainnya.</p>}
+                           </div>
+                        </AccordionContent>
+                      </AccordionItem>
+                    )
+                  })}
+                </Accordion>
+              ) : (
+                <p className="text-sm text-center text-muted-foreground py-8">Belum ada undangan yang dibuat. Silakan buat batch baru.</p>
+              )}
             </CardContent>
           </Card>
         </div>
