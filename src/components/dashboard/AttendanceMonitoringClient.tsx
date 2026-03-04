@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo } from 'react';
@@ -16,7 +15,7 @@ import { Badge } from '../ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { getInitials } from '@/lib/utils';
 import Link from 'next/link';
-import { Trash2 } from 'lucide-react';
+import { XCircle } from 'lucide-react';
 import { DeleteConfirmationDialog } from './DeleteConfirmationDialog';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -324,7 +323,7 @@ export function AttendanceMonitoringClient() {
                                         </TableCell>
                                         <TableCell className="text-right">
                                             <Button variant="ghost" size="icon" onClick={() => handleCancelClick(row)} disabled={!row.tapInId && !row.tapOutId} title="Batalkan Absensi">
-                                                <Trash2 className="h-4 w-4 text-destructive" />
+                                                <XCircle className="h-4 w-4 text-destructive" />
                                             </Button>
                                         </TableCell>
                                     </TableRow>
@@ -344,8 +343,8 @@ export function AttendanceMonitoringClient() {
                 open={isDeleteConfirmOpen}
                 onOpenChange={setIsDeleteConfirmOpen}
                 onConfirm={confirmCancelAttendance}
-                itemName={`absensi untuk ${eventsToDelete.userName}`}
-                itemType="catatan"
+                itemName={`catatan absensi untuk ${eventsToDelete.userName}`}
+                itemType=""
             />
         </div>
     );
