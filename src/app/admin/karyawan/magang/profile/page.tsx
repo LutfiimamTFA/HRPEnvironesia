@@ -21,6 +21,7 @@ import { Loader2, PlusCircle, Trash2, X } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 
 const orgExperienceSchema = z.object({
   id: z.string(),
