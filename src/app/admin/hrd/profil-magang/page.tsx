@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useMemo, useState } from 'react';
@@ -104,7 +105,7 @@ export default function ProfilMagangPage() {
                             {filteredProfiles.length > 0 ? filteredProfiles.map(profile => (
                                 <TableRow key={profile.id}>
                                     <TableCell className="font-medium">{profile.fullName}</TableCell>
-                                    <TableCell className="capitalize">{profile.internSubtype}</TableCell>
+                                    <TableCell className="capitalize">{profile.internSubtype === 'intern_education' ? 'Terikat Pendidikan' : 'Pra-Probation'}</TableCell>
                                     <TableCell>{profile.schoolOrCampus}</TableCell>
                                     <TableCell>{profile.phone}</TableCell>
                                     <TableCell>

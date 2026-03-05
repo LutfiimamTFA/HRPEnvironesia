@@ -37,7 +37,7 @@ export type EmployeeProfile = {
   id?: string;
   uid: string;
   employmentType: 'magang' | 'training' | 'karyawan';
-  internSubtype: 'sekolah' | 'freshgraduate';
+  internSubtype?: 'intern_education' | 'intern_pre_probation';
   fullName: string;
   nickName?: string;
   phone: string;

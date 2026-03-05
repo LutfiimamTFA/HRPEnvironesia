@@ -7,7 +7,7 @@ import { Separator } from '@/components/ui/separator';
 import type { EmployeeProfile } from '@/lib/types';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 const InfoRow = ({ label, value }: { label: string; value?: string | number | null }) => (
   <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 py-1.5">
@@ -38,6 +38,27 @@ export function InternProfileDetailDialog({ profile, open, onOpenChange }: Inter
         </DialogHeader>
         <ScrollArea className="flex-grow pr-6 -mr-6">
           <div className="space-y-6 py-4">
+             {(profile.internshipStartDate || profile.internshipEndDate) && (
+                <Card className="bg-primary/5 text-primary-foreground border-primary/20">
+                    <CardHeader>
+                        <CardTitle className="text-lg text-primary">Periode Magang</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="flex items-center justify-around text-center">
+                            <div>
+                                <p className="text-xs text-primary/80">Mulai Magang</p>
+                                <p className="font-bold text-xl text-primary">{profile.internshipStartDate ? format(profile.internshipStartDate.toDate(), 'dd MMM yyyy', { locale: id }) : 'TBA'}</p>
+                            </div>
+                            <div className="h-10 w-px bg-primary/20" />
+                            <div>
+                                <p className="text-xs text-primary/80">Selesai Magang</p>
+                                <p className="font-bold text-xl text-primary">{profile.internshipEndDate ? format(profile.internshipEndDate.toDate(), 'dd MMM yyyy', { locale: id }) : 'TBA'}</p>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+
             <div>
               <SectionTitle>Identitas</SectionTitle>
               <dl className="space-y-1">
@@ -54,7 +75,7 @@ export function InternProfileDetailDialog({ profile, open, onOpenChange }: Inter
             <div>
                 <SectionTitle>Status Magang</SectionTitle>
                 <dl className="space-y-1">
-                    <InfoRow label="Sub-tipe Magang" value={profile.internSubtype} />
+                    <InfoRow label="Tipe Magang" value={profile.internSubtype === 'intern_education' ? 'Terikat Pendidikan' : 'Pra-Probation'} />
                     <InfoRow label="Asal Sekolah/Kampus" value={profile.schoolOrCampus} />
                     <InfoRow label="Jurusan" value={profile.major} />
                     <InfoRow label="Jenjang Pendidikan" value={profile.educationLevel} />
@@ -63,30 +84,6 @@ export function InternProfileDetailDialog({ profile, open, onOpenChange }: Inter
             </div>
             
              <Separator />
-
-            <div>
-              <SectionTitle>Periode Magang</SectionTitle>
-              <Card className="bg-primary/5 text-primary-foreground border-primary/20">
-                  <CardContent className="p-4">
-                      <div className="flex items-center justify-around text-center">
-                          <div>
-                              <p className="text-xs text-primary/80">Mulai Magang</p>
-                              <p className="font-bold text-lg text-primary">{profile.internshipStartDate ? format(profile.internshipStartDate.toDate(), 'dd MMM yyyy', { locale: id }) : 'TBA'}</p>
-                          </div>
-                          <div className="h-10 w-px bg-primary/20" />
-                          <div>
-                              <p className="text-xs text-primary/80">Selesai Magang</p>
-                              <p className="font-bold text-lg text-primary">{profile.internshipEndDate ? format(profile.internshipEndDate.toDate(), 'dd MMM yyyy', { locale: id }) : 'TBA'}</p>
-                          </div>
-                      </div>
-                      {!profile.internshipStartDate && (
-                          <p className="text-xs text-center text-primary/70 mt-3">Periode akan diatur oleh HRD.</p>
-                      )}
-                  </CardContent>
-              </Card>
-            </div>
-            
-            <Separator />
             
             <div>
                 <SectionTitle>Domisili & Kontak Darurat</SectionTitle>
