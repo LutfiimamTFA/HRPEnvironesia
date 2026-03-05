@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useForm, useFieldArray } from 'react-hook-form';
+import { Suspense, useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useAuth } from '@/providers/auth-provider';
@@ -9,7 +9,7 @@ import { useFirestore, useDoc, useMemoFirebase, setDocumentNonBlocking } from '@
 import { doc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import type { EmployeeProfile } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
@@ -17,8 +17,11 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Edit } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
+import { format } from 'date-fns';
+import { id } from 'date-fns/locale';
+
 
 const profileSchema = z.object({
   fullName: z.string().min(2, "Nama lengkap harus diisi."),
@@ -44,67 +47,19 @@ const profileSchema = z.object({
 
 type FormValues = z.infer<typeof profileSchema>;
 
-function ProfileFormSkeleton() {
-    return (
-        <Card>
-            <CardHeader>
-                <Skeleton className="h-8 w-1/2" />
-                <Skeleton className="h-4 w-3/4" />
-            </CardHeader>
-            <CardContent className="space-y-8">
-                <div className="space-y-4">
-                    <Skeleton className="h-6 w-1/4" />
-                    <Skeleton className="h-10 w-full" />
-                    <Skeleton className="h-10 w-full" />
-                </div>
-                 <div className="space-y-4">
-                    <Skeleton className="h-6 w-1/4" />
-                    <Skeleton className="h-10 w-full" />
-                    <Skeleton className="h-10 w-full" />
-                </div>
-                 <div className="flex justify-end">
-                    <Skeleton className="h-10 w-32" />
-                </div>
-            </CardContent>
-        </Card>
-    )
-}
-
-export default function InternProfilePage() {
-  const { userProfile, loading: authLoading } = useAuth();
+function ProfileForm({ initialProfile, onSaveSuccess }: { initialProfile: Partial<EmployeeProfile>, onSaveSuccess: () => void }) {
+  const [isSaving, setIsSaving] = useState(false);
+  const { userProfile } = useAuth();
   const firestore = useFirestore();
   const { toast } = useToast();
-  const router = useRouter();
-  const [isSaving, setIsSaving] = useState(false);
-
-  const profileDocRef = useMemoFirebase(
-    () => (userProfile ? doc(firestore, 'employee_profiles', userProfile.uid) : null),
-    [firestore, userProfile]
-  );
-  const { data: initialProfile, isLoading: profileLoading } = useDoc<EmployeeProfile>(profileDocRef);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
-        email: userProfile?.email || '',
-    },
-  });
-
-  useEffect(() => {
-    if (initialProfile) {
-      form.reset({
         ...initialProfile,
         email: initialProfile.email || userProfile?.email,
-      });
-    } else if (userProfile) {
-      form.reset({
-        email: userProfile.email,
-        fullName: userProfile.fullName,
-      });
-    }
-  }, [initialProfile, userProfile, form]);
-  
-  const isLoading = authLoading || profileLoading;
+    },
+  });
 
   async function onSubmit(values: FormValues) {
     if (!userProfile) {
@@ -113,6 +68,7 @@ export default function InternProfilePage() {
     }
     setIsSaving(true);
     
+    const profileDocRef = doc(firestore, 'employee_profiles', userProfile.uid);
     const payload: Partial<EmployeeProfile> & { updatedAt: any, completeness: any } = {
         ...values,
         uid: userProfile.uid,
@@ -125,25 +81,21 @@ export default function InternProfilePage() {
     };
     
     try {
-        await setDocumentNonBlocking(profileDocRef!, payload, { merge: true });
+        await setDocumentNonBlocking(profileDocRef, payload, { merge: true });
         toast({ title: "Profil Disimpan", description: "Profil Anda telah berhasil diperbarui." });
-        router.push('/admin/karyawan/dashboard-magang');
+        onSaveSuccess();
     } catch (error: any) {
         toast({ variant: "destructive", title: "Gagal menyimpan profil", description: error.message });
     } finally {
         setIsSaving(false);
     }
   }
-
-  if (isLoading) {
-    return <ProfileFormSkeleton />;
-  }
-
+  
   return (
-    <Card>
+      <Card>
         <CardHeader>
             <CardTitle>Lengkapi Profil Magang</CardTitle>
-            <CardDescription>Data ini akan digunakan oleh tim HRD untuk keperluan administrasi dan komunikasi selama periode magang Anda.</CardDescription>
+            <CardDescription>Data ini akan digunakan oleh tim HRD untuk keperluan administrasi dan komunikasi selama periode magang Anda. Kolom dengan tanda <span className="text-destructive">*</span> adalah kolom yang wajib diisi.</CardDescription>
         </CardHeader>
         <CardContent>
             <Form {...form}>
@@ -171,11 +123,7 @@ export default function InternProfilePage() {
                     <section>
                         <h3 className="text-lg font-semibold border-b pb-2 mb-4">Status Magang</h3>
                         <div className="space-y-4">
-                            <FormField control={form.control} name="internSubtype" render={({ field }) => (<FormItem><FormLabel>Tipe Magang <span className="text-destructive">*</span></FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Pilih tipe magang" /></SelectTrigger></FormControl><SelectContent><SelectItem value="sekolah">Magang Sekolah</SelectItem><SelectItem value="freshgraduate">Magang Fresh Graduate</SelectItem></SelectContent></Select><FormDescription>
-                                <strong>Magang Sekolah:</strong> Peserta yang masih memiliki ikatan pendidikan (sekolah/kuliah) dan akan kembali studi setelah magang.
-                                <br />
-                                <strong>Magang Fresh Graduate:</strong> Peserta yang sudah lulus dan mengikuti magang sebagai jalur menuju masa percobaan/karyawan.
-                            </FormDescription><FormMessage /></FormItem>)} />
+                           <FormField control={form.control} name="internSubtype" render={({ field }) => (<FormItem><FormLabel>Tipe Magang <span className="text-destructive">*</span></FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Pilih tipe magang" /></SelectTrigger></FormControl><SelectContent><SelectItem value="sekolah">Magang Terikat Pendidikan</SelectItem><SelectItem value="freshgraduate">Magang Pra-Probation</SelectItem></SelectContent></Select><FormDescription><strong>Magang Terikat Pendidikan:</strong> Peserta yang masih memiliki ikatan pendidikan dan akan kembali studi setelah magang.<br/><strong>Magang Pra-Probation:</strong> Peserta yang sudah lulus dan mengikuti magang sebagai jalur menuju masa percobaan.</FormDescription><FormMessage /></FormItem>)} />
                             <FormField control={form.control} name="schoolOrCampus" render={({ field }) => (<FormItem><FormLabel>Asal Sekolah/Kampus <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                             <div className="grid md:grid-cols-2 gap-4">
                                 <FormField control={form.control} name="educationLevel" render={({ field }) => (<FormItem><FormLabel>Jenjang Pendidikan <span className="text-destructive">*</span></FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Pilih jenjang" /></SelectTrigger></FormControl><SelectContent><SelectItem value="SMA/SMK">SMA/SMK</SelectItem><SelectItem value="D3">D3</SelectItem><SelectItem value="S1">S1</SelectItem><SelectItem value="S2">S2</SelectItem><SelectItem value="Lainnya">Lainnya</SelectItem></SelectContent></Select><FormMessage /></FormItem>)} />
@@ -216,4 +164,108 @@ export default function InternProfilePage() {
         </CardContent>
     </Card>
   )
+}
+
+function ProfilePreview({ profile, onEdit }: { profile: EmployeeProfile, onEdit: () => void }) {
+    const InfoRow = ({ label, value }: { label: string; value?: string | number | null }) => (
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 py-1.5">
+        <dt className="text-sm font-medium text-muted-foreground">{label}</dt>
+        <dd className="text-sm col-span-2">{value || '-'}</dd>
+      </div>
+    );
+    const SectionTitle = ({ children }: { children: React.ReactNode }) => (
+        <h3 className="text-lg font-semibold tracking-tight border-b pb-2 mb-4">{children}</h3>
+    );
+
+    return (
+         <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                    <CardTitle>Profil Magang Anda</CardTitle>
+                    <CardDescription>Data ini digunakan oleh HRD untuk keperluan administrasi.</CardDescription>
+                </div>
+                <Button variant="outline" onClick={onEdit}><Edit className="mr-2 h-4 w-4"/>Edit Profil</Button>
+            </CardHeader>
+            <CardContent className="space-y-6">
+                <div>
+                    <SectionTitle>Identitas</SectionTitle>
+                    <dl className="space-y-1">
+                        <InfoRow label="Nama Lengkap" value={profile.fullName} />
+                        <InfoRow label="Nama Panggilan" value={profile.nickName} />
+                        <InfoRow label="Telepon" value={profile.phone} />
+                        <InfoRow label="Jenis Kelamin" value={profile.gender} />
+                        <InfoRow label="Tempat, Tanggal Lahir" value={`${profile.birthPlace || ''}, ${profile.birthDate || ''}`} />
+                    </dl>
+                </div>
+                <Separator/>
+                <div>
+                    <SectionTitle>Status Magang</SectionTitle>
+                     <dl className="space-y-1">
+                        <InfoRow label="Tipe Magang" value={profile.internSubtype === 'sekolah' ? 'Magang Terikat Pendidikan' : 'Magang Pra-Probation'} />
+                        <InfoRow label="Asal Sekolah/Kampus" value={profile.schoolOrCampus} />
+                        <InfoRow label="Jurusan" value={profile.major} />
+                        <InfoRow label="Jenjang Pendidikan" value={profile.educationLevel} />
+                    </dl>
+                </div>
+                <Separator/>
+                 <div>
+                    <SectionTitle>Domisili & Kontak Darurat</SectionTitle>
+                    <dl className="space-y-1">
+                        <InfoRow label="Alamat Domisili" value={profile.addressCurrent} />
+                        <InfoRow label="Nama Kontak Darurat" value={profile.emergencyContactName} />
+                        <InfoRow label="Hubungan" value={profile.emergencyContactRelation} />
+                        <InfoRow label="Telepon Darurat" value={profile.emergencyContactPhone} />
+                    </dl>
+                </div>
+            </CardContent>
+        </Card>
+    )
+}
+
+function InternProfilePageContent() {
+    const { userProfile, loading: authLoading } = useAuth();
+    const firestore = useFirestore();
+    const router = useRouter();
+    const searchParams = useSearchParams();
+
+    const profileDocRef = useMemoFirebase(
+        () => (userProfile ? doc(firestore, 'employee_profiles', userProfile.uid) : null),
+        [firestore, userProfile]
+    );
+    const { data: initialProfile, isLoading: profileLoading, mutate: refetchProfile } = useDoc<EmployeeProfile>(profileDocRef);
+
+    const mode = searchParams.get('mode');
+    const isLoading = authLoading || profileLoading;
+
+    const handleSaveSuccess = () => {
+        refetchProfile();
+        router.push('/admin/karyawan/magang/profile');
+    };
+
+    if (isLoading) {
+        return <Skeleton className="h-96 w-full" />;
+    }
+    
+    const isProfileComplete = initialProfile?.completeness?.isComplete;
+    const showForm = !isProfileComplete || mode === 'edit';
+
+    const defaultProfile = {
+        email: userProfile?.email || '',
+        fullName: userProfile?.fullName || '',
+        ...initialProfile,
+    };
+
+    return showForm ? (
+        <ProfileForm initialProfile={defaultProfile} onSaveSuccess={handleSaveSuccess} />
+    ) : (
+        <ProfilePreview profile={initialProfile!} onEdit={() => router.push('/admin/karyawan/magang/profile?mode=edit')} />
+    );
+}
+
+export default function InternProfilePage() {
+    return (
+        <Suspense fallback={<Skeleton className="h-96 w-full" />}>
+            <InternProfilePageContent />
+        </Suspense>
+    )
 }
