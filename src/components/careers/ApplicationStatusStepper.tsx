@@ -9,6 +9,7 @@ import { statusDisplayLabels } from '@/components/recruitment/ApplicationStatusB
 import { Skeleton } from '../ui/skeleton';
 import { format } from 'date-fns';
 import { ORDERED_RECRUITMENT_STAGES } from '@/lib/types';
+import { useMemo } from 'react';
 
 // The key stages a candidate sees, in order.
 const candidateStages: JobApplicationStatus[] = [
@@ -76,7 +77,20 @@ export function ApplicationStatusStepper({ application, highestStatus, isProfile
                 case 'document_submission':
                     return { status: 'active', cta: <Button asChild size="sm"><Link href="/careers/portal/documents">Unggah Dokumen</Link></Button> };
                 case 'interview':
-                     const scheduledInterview = application?.interviews?.find(i => i.status === 'scheduled' && i.startAt.toDate() > new Date());
+                     const getNextUpcomingInterview = () => {
+                        if (!application?.interviews || application.interviews.length === 0) return null;
+                        const now = new Date().getTime();
+                        const scheduledInterviews = application.interviews.filter(i => i.status === 'scheduled');
+                        if (scheduledInterviews.length === 0) return null;
+                        
+                        const upcoming = scheduledInterviews
+                          .filter(i => i.startAt.toDate().getTime() >= now)
+                          .sort((a, b) => a.startAt.toDate().getTime() - b.startAt.toDate().getTime());
+                          
+                        return upcoming.length > 0 ? upcoming[0] : null;
+                    };
+                    const scheduledInterview = getNextUpcomingInterview();
+
                     if (scheduledInterview) {
                         return { 
                             status: 'active', 
