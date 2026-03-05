@@ -198,16 +198,16 @@ export default function InternProfilePage() {
                     <section>
                         <h3 className="text-lg font-semibold border-b pb-2 mb-4">Identitas</h3>
                         <div className="space-y-4">
-                            <FormField control={form.control} name="fullName" render={({ field }) => (<FormItem><FormLabel>Nama Lengkap <span className="text-destructive">*</span></FormLabel><FormControl><Input placeholder="Sesuai KTP" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                            <FormField control={form.control} name="nickName" render={({ field }) => (<FormItem><FormLabel>Nama Panggilan</FormLabel><FormControl><Input placeholder="Nama panggilan Anda" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                            <FormField control={form.control} name="phone" render={({ field }) => (<FormItem><FormLabel>No. HP Aktif <span className="text-destructive">*</span></FormLabel><FormControl><Input placeholder="0812..." {...field} /></FormControl><FormMessage /></FormItem>)} />
-                            <FormField control={form.control} name="email" render={({ field }) => (<FormItem><FormLabel>Email</FormLabel><FormControl><Input {...field} readOnly /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="fullName" render={({ field }) => (<FormItem><FormLabel>Nama Lengkap <span className="text-destructive">*</span></FormLabel><FormControl><Input placeholder="Sesuai KTP" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="nickName" render={({ field }) => (<FormItem><FormLabel>Nama Panggilan</FormLabel><FormControl><Input placeholder="Nama panggilan Anda" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="phone" render={({ field }) => (<FormItem><FormLabel>No. HP Aktif <span className="text-destructive">*</span></FormLabel><FormControl><Input placeholder="0812..." {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="email" render={({ field }) => (<FormItem><FormLabel>Email</FormLabel><FormControl><Input {...field} value={field.value ?? ''} readOnly /></FormControl><FormMessage /></FormItem>)} />
                             <div className="grid md:grid-cols-2 gap-4">
                                 <FormField control={form.control} name="gender" render={({ field }) => (<FormItem><FormLabel>Jenis Kelamin</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Pilih jenis kelamin" /></SelectTrigger></FormControl><SelectContent><SelectItem value="Laki-laki">Laki-laki</SelectItem><SelectItem value="Perempuan">Perempuan</SelectItem><SelectItem value="Lainnya">Lainnya</SelectItem></SelectContent></Select><FormMessage /></FormItem>)} />
                             </div>
                             <div className="grid md:grid-cols-2 gap-4">
-                                <FormField control={form.control} name="birthPlace" render={({ field }) => (<FormItem><FormLabel>Tempat Lahir</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
-                                <FormField control={form.control} name="birthDate" render={({ field }) => (<FormItem><FormLabel>Tanggal Lahir</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                <FormField control={form.control} name="birthPlace" render={({ field }) => (<FormItem><FormLabel>Tempat Lahir</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                                <FormField control={form.control} name="birthDate" render={({ field }) => (<FormItem><FormLabel>Tanggal Lahir</FormLabel><FormControl><Input type="date" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                             </div>
                         </div>
                     </section>
@@ -222,12 +222,12 @@ export default function InternProfilePage() {
                                 <br />
                                 <strong>Magang Fresh Graduate:</strong> Untuk mahasiswa atau lulusan baru D3/S1.
                             </FormDescription><FormMessage /></FormItem>)} />
-                            <FormField control={form.control} name="schoolOrCampus" render={({ field }) => (<FormItem><FormLabel>Asal Sekolah/Kampus <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="schoolOrCampus" render={({ field }) => (<FormItem><FormLabel>Asal Sekolah/Kampus <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                             <div className="grid md:grid-cols-2 gap-4">
                                 <FormField control={form.control} name="educationLevel" render={({ field }) => (<FormItem><FormLabel>Jenjang Pendidikan <span className="text-destructive">*</span></FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Pilih jenjang" /></SelectTrigger></FormControl><SelectContent><SelectItem value="SMA/SMK">SMA/SMK</SelectItem><SelectItem value="D3">D3</SelectItem><SelectItem value="S1">S1</SelectItem><SelectItem value="S2">S2</SelectItem><SelectItem value="Lainnya">Lainnya</SelectItem></SelectContent></Select><FormMessage /></FormItem>)} />
-                                <FormField control={form.control} name="major" render={({ field }) => (<FormItem><FormLabel>Jurusan</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                <FormField control={form.control} name="major" render={({ field }) => (<FormItem><FormLabel>Jurusan</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                             </div>
-                            <FormField control={form.control} name="expectedEndDate" render={({ field }) => (<FormItem><FormLabel>Perkiraan Selesai Magang</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormDescription>Ini adalah perkiraan dari Anda, tanggal resmi akan ditentukan oleh HRD.</FormDescription><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="expectedEndDate" render={({ field }) => (<FormItem><FormLabel>Perkiraan Selesai Magang</FormLabel><FormControl><Input type="date" {...field} value={field.value ?? ''} /></FormControl><FormDescription>Ini adalah perkiraan dari Anda, tanggal resmi akan ditentukan oleh HRD.</FormDescription><FormMessage /></FormItem>)} />
                         </div>
                     </section>
                     
@@ -236,7 +236,7 @@ export default function InternProfilePage() {
                     <section>
                         <h3 className="text-lg font-semibold border-b pb-2 mb-4">Keahlian & Pengalaman</h3>
                         <div className="space-y-4">
-                           <FormField control={form.control} name="portfolioUrl" render={({ field }) => (<FormItem><FormLabel>URL Portofolio (Opsional)</FormLabel><FormControl><Input {...field} placeholder="https://behance.net/nama" /></FormControl><FormDescription>Sangat direkomendasikan untuk posisi kreatif/teknis (contoh: desain, video, web).</FormDescription><FormMessage /></FormItem>)} />
+                           <FormField control={form.control} name="portfolioUrl" render={({ field }) => (<FormItem><FormLabel>URL Portofolio (Opsional)</FormLabel><FormControl><Input {...field} placeholder="https://behance.net/nama" value={field.value ?? ''} /></FormControl><FormDescription>Sangat direkomendasikan untuk posisi kreatif/teknis (contoh: desain, video, web).</FormDescription><FormMessage /></FormItem>)} />
 
                            <FormItem>
                              <FormLabel>Keahlian Teknis (Opsional)</FormLabel>
@@ -259,21 +259,21 @@ export default function InternProfilePage() {
                            </FormItem>
                            
                            <div className="space-y-2">
-                                <Label>Pengalaman Organisasi/Proyek (Opsional)</Label>
+                                 <Label>Pengalaman Organisasi/Proyek (Opsional)</Label>
                                 <div className="space-y-4">
                                 {orgExpFields.map((field, index) => (
                                     <div key={field.id} className="space-y-4 p-3 border rounded-md relative">
                                         <Button type="button" variant="ghost" size="icon" className="absolute top-1 right-1 h-7 w-7 text-destructive hover:bg-destructive/10" onClick={() => removeOrgExp(index)}><Trash2 className="h-4 w-4" /></Button>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <FormField control={form.control} name={`organizationalExperience.${index}.organization`} render={({ field }) => (<FormItem><FormLabel>Nama Organisasi/Proyek</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
-                                            <FormField control={form.control} name={`organizationalExperience.${index}.position`} render={({ field }) => (<FormItem><FormLabel>Jabatan/Peran</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                            <FormField control={form.control} name={`organizationalExperience.${index}.organization`} render={({ field }) => (<FormItem><FormLabel>Nama Organisasi/Proyek</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                                            <FormField control={form.control} name={`organizationalExperience.${index}.position`} render={({ field }) => (<FormItem><FormLabel>Jabatan/Peran</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                                         </div>
                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <FormField control={form.control} name={`organizationalExperience.${index}.startDate`} render={({ field }) => (<FormItem><FormLabel>Tahun Mulai</FormLabel><FormControl><Input type="number" {...field} placeholder="YYYY" /></FormControl><FormMessage /></FormItem>)} />
-                                            <FormField control={form.control} name={`organizationalExperience.${index}.endDate`} render={({ field }) => (<FormItem><FormLabel>Tahun Selesai</FormLabel><FormControl><Input type="number" {...field} placeholder="YYYY" disabled={form.watch(`organizationalExperience.${index}.isCurrent`)} /></FormControl><FormMessage /></FormItem>)} />
+                                            <FormField control={form.control} name={`organizationalExperience.${index}.startDate`} render={({ field }) => (<FormItem><FormLabel>Tahun Mulai</FormLabel><FormControl><Input type="number" {...field} placeholder="YYYY" value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                                            <FormField control={form.control} name={`organizationalExperience.${index}.endDate`} render={({ field }) => (<FormItem><FormLabel>Tahun Selesai</FormLabel><FormControl><Input type="number" {...field} placeholder="YYYY" disabled={form.watch(`organizationalExperience.${index}.isCurrent`)} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                                         </div>
-                                         <FormField control={form.control} name={`organizationalExperience.${index}.isCurrent`} render={({ field }) => (<FormItem className="flex flex-row items-center space-x-3 space-y-0"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><div className="space-y-1 leading-none"><FormLabel>Masih aktif</FormLabel></div></FormItem>)} />
-                                        <FormField control={form.control} name={`organizationalExperience.${index}.description`} render={({ field }) => (<FormItem><FormLabel>Deskripsi Singkat</FormLabel><FormControl><Textarea {...field} rows={2} /></FormControl><FormMessage /></FormItem>)} />
+                                         <FormField control={form.control} name={`organizationalExperience.${index}.isCurrent`} render={({ field }) => (<FormItem className="flex flex-row items-center space-x-3 space-y-0"><FormControl><Checkbox checked={!!field.value} onCheckedChange={field.onChange} /></FormControl><div className="space-y-1 leading-none"><FormLabel>Masih aktif</FormLabel></div></FormItem>)} />
+                                        <FormField control={form.control} name={`organizationalExperience.${index}.description`} render={({ field }) => (<FormItem><FormLabel>Deskripsi Singkat</FormLabel><FormControl><Textarea {...field} rows={2} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                                     </div>
                                 ))}
                                 </div>
@@ -287,7 +287,7 @@ export default function InternProfilePage() {
                     
                     <section>
                         <h3 className="text-lg font-semibold border-b pb-2 mb-4">Domisili</h3>
-                        <FormField control={form.control} name="addressCurrent" render={({ field }) => (<FormItem><FormLabel>Alamat Domisili Saat Ini <span className="text-destructive">*</span></FormLabel><FormControl><Textarea rows={3} placeholder="Alamat lengkap tempat Anda tinggal sekarang" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                        <FormField control={form.control} name="addressCurrent" render={({ field }) => (<FormItem><FormLabel>Alamat Domisili Saat Ini <span className="text-destructive">*</span></FormLabel><FormControl><Textarea rows={3} placeholder="Alamat lengkap tempat Anda tinggal sekarang" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                     </section>
                     
                     <Separator />
@@ -295,10 +295,10 @@ export default function InternProfilePage() {
                     <section>
                         <h3 className="text-lg font-semibold border-b pb-2 mb-4">Kontak Darurat</h3>
                         <div className="space-y-4">
-                            <FormField control={form.control} name="emergencyContactName" render={({ field }) => (<FormItem><FormLabel>Nama Kontak Darurat <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="emergencyContactName" render={({ field }) => (<FormItem><FormLabel>Nama Kontak Darurat <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                             <div className="grid md:grid-cols-2 gap-4">
-                                <FormField control={form.control} name="emergencyContactRelation" render={({ field }) => (<FormItem><FormLabel>Hubungan <span className="text-destructive">*</span></FormLabel><FormControl><Input placeholder="Ibu, Ayah, Saudara, dll." {...field} /></FormControl><FormMessage /></FormItem>)} />
-                                <FormField control={form.control} name="emergencyContactPhone" render={({ field }) => (<FormItem><FormLabel>No. HP Kontak Darurat <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                <FormField control={form.control} name="emergencyContactRelation" render={({ field }) => (<FormItem><FormLabel>Hubungan <span className="text-destructive">*</span></FormLabel><FormControl><Input placeholder="Ibu, Ayah, Saudara, dll." {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                                <FormField control={form.control} name="emergencyContactPhone" render={({ field }) => (<FormItem><FormLabel>No. HP Kontak Darurat <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                             </div>
                         </div>
                     </section>
