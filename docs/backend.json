@@ -24,9 +24,14 @@
           "description": "The role of the user within the application (super-admin, hrd, manager, kandidat, karyawan)."
         },
         "employmentType": {
-            "type": "string",
-            "description": "The type of employment for the user.",
-            "enum": ["karyawan", "magang", "training"]
+          "type": "string",
+          "description": "The type of employment for the user.",
+          "enum": ["karyawan", "magang", "training"]
+        },
+        "employmentStage": {
+          "type": "string",
+          "description": "The specific stage of employment.",
+          "enum": ["intern_education", "intern_pre_probation", "probation", "active"]
         },
         "isActive": {
           "type": "boolean",

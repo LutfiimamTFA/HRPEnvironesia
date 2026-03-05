@@ -9,6 +9,9 @@ export type UserRole = (typeof ROLES)[number];
 export const EMPLOYMENT_TYPES = ['karyawan', 'magang', 'training'] as const;
 export type EmploymentType = (typeof EMPLOYMENT_TYPES)[number];
 
+export const EMPLOYMENT_STAGES = ['intern_education', 'intern_pre_probation', 'probation', 'active'] as const;
+export type EmploymentStage = (typeof EMPLOYMENT_STAGES)[number];
+
 export type UserProfile = {
   id?: string; // Same as uid
   uid: string;
@@ -17,6 +20,7 @@ export type UserProfile = {
   nameLower?: string; // For searching
   role: UserRole;
   employmentType?: EmploymentType;
+  employmentStage?: EmploymentStage;
   isActive: boolean;
   department?: string;
   jobTitle?: string;
@@ -172,23 +176,23 @@ export type ApplicationInterview = {
 };
 
 export type InterviewChangeRequest = {
-    id?: string;
-    applicationId: string;
-    interviewId: string;
-    requestedByUid: string;
-    requestedByName: string;
-    type: 'replace_panelist' | 'add_panelist' | 'remove_panelist';
-    payload: {
-        removeUid?: string;
-        addUid?: string;
-        addUids?: string[];
-        removeUids?: string[];
-    };
-    reason: string;
-    status: 'pending' | 'approved' | 'denied';
-    createdAt: Timestamp;
-    decidedByUid?: string;
-    decidedAt?: Timestamp;
+  id?: string;
+  applicationId: string;
+  interviewId: string;
+  requestedByUid: string;
+  requestedByName: string;
+  type: 'replace_panelist' | 'add_panelist' | 'remove_panelist';
+  payload: {
+    removeUid?: string;
+    addUid?: string;
+    addUids?: string[];
+    removeUids?: string[];
+  };
+  reason: string;
+  status: 'pending' | 'approved' | 'denied';
+  createdAt: Timestamp;
+  decidedByUid?: string;
+  decidedAt?: Timestamp;
 };
 
 
