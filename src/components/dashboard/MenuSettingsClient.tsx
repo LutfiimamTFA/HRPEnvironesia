@@ -4,8 +4,8 @@ import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { collection, doc } from 'firebase/firestore';
 import { useCollection, useFirestore, useMemoFirebase, setDocumentNonBlocking } from '@/firebase';
-import { UserRole, ROLES } from '@/lib/types';
-import { ALL_MENU_GROUPS } from '@/lib/menu-config';
+import { UserRole, ROLES, EMPLOYMENT_TYPES } from '@/lib/types';
+import { ALL_MENU_GROUPS, MENU_CONFIG } from '@/lib/menu-config';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -19,7 +19,20 @@ type NavigationSettings = {
   visibleMenuItems: string[]; // Stores menu item keys
 }
 
-const rolesToDisplay: UserRole[] = ['super-admin', 'hrd', 'manager', 'karyawan', 'kandidat'];
+type DisplayRole = {
+  id: string;
+  label: string;
+};
+
+const rolesToDisplay: DisplayRole[] = [
+  { id: 'super-admin', label: 'Super Admin' },
+  { id: 'hrd', label: 'HRD' },
+  { id: 'manager', label: 'Manager' },
+  { id: 'karyawan', label: 'Karyawan (Penuh Waktu)' },
+  { id: 'karyawan-magang', label: 'Karyawan (Magang)' },
+  { id: 'karyawan-training', label: 'Karyawan (Training)' },
+  { id: 'kandidat', label: 'Kandidat' },
+];
 
 export function MenuSettingsClient() {
   const firestore = useFirestore();
@@ -37,14 +50,15 @@ export function MenuSettingsClient() {
     }
 
     const newSettings: Record<string, string[]> = {};
-    const allMenuKeys = new Set(ALL_MENU_GROUPS.flatMap(g => g.items.map(i => i.key)));
     
     rolesToDisplay.forEach(role => {
-      const savedSetting = initialSettings?.find(s => s.id === role);
+      const savedSetting = initialSettings?.find(s => s.id === role.id);
       if (savedSetting) {
-        newSettings[role] = savedSetting.visibleMenuItems;
+        newSettings[role.id] = savedSetting.visibleMenuItems;
       } else {
-        newSettings[role] = Array.from(allMenuKeys);
+        // Default to all menus defined for that specific role/sub-role in MENU_CONFIG
+        const defaultMenus = MENU_CONFIG[role.id] || [];
+        newSettings[role.id] = defaultMenus.flatMap(group => group.items.map(item => item.key));
       }
     });
     
@@ -53,24 +67,21 @@ export function MenuSettingsClient() {
 
   }, [initialSettings, isLoadingSettings, isInitialized]);
 
-  const handleCheckboxChange = (role: string, menuItemKey: string, checked: boolean) => {
+  const handleCheckboxChange = (roleId: string, menuItemKey: string, checked: boolean) => {
     setSettings(prevSettings => {
-      const currentItems = prevSettings[role] || [];
+      const currentItems = prevSettings[roleId] || [];
       const newItems = checked
         ? [...currentItems, menuItemKey]
         : currentItems.filter(key => key !== menuItemKey);
-      return { ...prevSettings, [role]: newItems };
+      return { ...prevSettings, [roleId]: newItems };
     });
   };
 
   const handleSave = async () => {
     setLoading(true);
-    const promises = Object.entries(settings).map(([role, visibleMenuItems]) => {
-      if (rolesToDisplay.includes(role as UserRole)) {
-        const docRef = doc(firestore, 'navigation_settings', role);
-        return setDocumentNonBlocking(docRef, { role, visibleMenuItems }, { merge: true });
-      }
-      return Promise.resolve();
+    const promises = Object.entries(settings).map(([roleId, visibleMenuItems]) => {
+      const docRef = doc(firestore, 'navigation_settings', roleId);
+      return setDocumentNonBlocking(docRef, { role: roleId, visibleMenuItems }, { merge: true });
     });
     
     await Promise.all(promises);
@@ -99,7 +110,7 @@ export function MenuSettingsClient() {
         <CardHeader>
           <CardTitle>Menu Visibility Settings</CardTitle>
            <CardDescription>
-            Configure which navigation menu items are visible for each user role.
+            Configure which navigation menu items are visible for each user role and type.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -109,7 +120,7 @@ export function MenuSettingsClient() {
                 <TableRow>
                   <TableHead className="font-semibold">Menu Item</TableHead>
                   {rolesToDisplay.map(role => (
-                    <TableHead key={role} className="text-center font-semibold capitalize">{role.replace('-', ' ')}</TableHead>
+                    <TableHead key={role.id} className="text-center font-semibold capitalize">{role.label}</TableHead>
                   ))}
                 </TableRow>
               </TableHeader>
@@ -128,14 +139,14 @@ export function MenuSettingsClient() {
                             <TableRow key={menuItem.key}>
                                 <TableCell className="font-medium pl-8">{menuItem.label}</TableCell>
                                 {rolesToDisplay.map(role => {
-                                  const isVisible = (settings[role] || []).includes(menuItem.key);
+                                  const isVisible = (settings[role.id] || []).includes(menuItem.key);
                                   return (
-                                    <TableCell key={`${role}-${menuItem.key}`} className="text-center">
+                                    <TableCell key={`${role.id}-${menuItem.key}`} className="text-center">
                                       <Checkbox
                                         checked={isVisible}
-                                        onCheckedChange={(checked) => handleCheckboxChange(role, menuItem.key, !!checked)}
-                                        id={`${role}-${menuItem.key}`}
-                                        aria-label={`Toggle ${menuItem.label} for ${role}`}
+                                        onCheckedChange={(checked) => handleCheckboxChange(role.id, menuItem.key, !!checked)}
+                                        id={`${role.id}-${menuItem.key}`}
+                                        aria-label={`Toggle ${menuItem.label} for ${role.label}`}
                                       />
                                     </TableCell>
                                   );

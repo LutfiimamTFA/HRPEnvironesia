@@ -50,7 +50,6 @@ const EMPLOYEE_MONITORING_ITEMS: MenuGroup[] = [
     }
 ];
 
-
 export const MENU_CONFIG: Record<string, MenuGroup[]> = {
   'super-admin': [
     ...EMPLOYEE_MONITORING_ITEMS,
@@ -85,15 +84,32 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
         title: "Manager",
         items: [
             { key: 'manager.team', href: '/admin/manager', label: 'My Team', icon: createElement(Users) },
-            { key: 'manager.interviews', href: '/admin/interviews', label: 'My Interviews', icon: createElement(Video) },
+            { key: 'manager.interviews.manager', href: '/admin/interviews', label: 'My Interviews', icon: createElement(Video) },
         ]
     }
   ],
-  'karyawan': [
+  'karyawan': [ // This will be the default for full-time employees
     {
         title: "Karyawan",
         items: [
-            { key: 'employee.profile', href: '/admin/karyawan', label: 'My Profile', icon: createElement(User) },
+            { key: 'employee.dashboard', href: '/admin/karyawan/dashboard', label: 'Dashboard', icon: createElement(LayoutDashboard) },
+        ]
+    }
+  ],
+  'karyawan-magang': [
+    {
+        title: "Karyawan",
+        items: [
+            { key: 'employee.dashboard.magang', href: '/admin/karyawan/dashboard-magang', label: 'Dashboard Magang', icon: createElement(LayoutDashboard) },
+            { key: 'employee.profile.magang', href: '/admin/karyawan/magang/profile', label: 'Profil Magang', icon: createElement(User) },
+        ]
+    }
+  ],
+  'karyawan-training': [
+      {
+        title: "Karyawan",
+        items: [
+            { key: 'employee.dashboard.training', href: '/admin/karyawan/dashboard-training', label: 'Dashboard Training', icon: createElement(LayoutDashboard) },
         ]
     }
   ],

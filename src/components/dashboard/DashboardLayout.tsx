@@ -26,18 +26,27 @@ export function DashboardLayout({
   const { userProfile } = useAuth();
   const firestore = useFirestore();
 
+  const roleKey = useMemo(() => {
+    if (!userProfile) return null;
+    if (userProfile.role === 'karyawan' && userProfile.employmentType) {
+        return `karyawan-${userProfile.employmentType}`;
+    }
+    return userProfile.role;
+  }, [userProfile]);
+
+
   const settingsDocRef = useMemoFirebase(
-    () => (userProfile ? doc(firestore, 'navigation_settings', userProfile.role) : null),
-    [userProfile, firestore]
+    () => (roleKey ? doc(firestore, 'navigation_settings', roleKey) : null),
+    [roleKey, firestore]
   );
   const { data: navSettings, isLoading: isLoadingSettings } = useDoc<NavigationSetting>(settingsDocRef);
   
   const menuConfig = useMemo(() => {
-    if (!userProfile) return [];
+    if (!roleKey) return [];
     
     // While loading or if no settings are found, fall back to default role config.
     if (isLoadingSettings || !navSettings?.visibleMenuItems) {
-      return MENU_CONFIG[userProfile.role] || [];
+      return MENU_CONFIG[roleKey] || [];
     }
     
     // If settings are found, filter the master list of all menus.
@@ -53,7 +62,7 @@ export function DashboardLayout({
 
     return filteredMenuConfig;
 
-  }, [userProfile, navSettings, isLoadingSettings]);
+  }, [roleKey, navSettings, isLoadingSettings]);
 
   return (
     <SidebarProvider>
