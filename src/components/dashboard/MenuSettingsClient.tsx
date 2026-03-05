@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { collection, doc } from 'firebase/firestore';
 import { useCollection, useFirestore, useMemoFirebase, setDocumentNonBlocking } from '@/firebase';
 import { UserRole, ROLES } from '@/lib/types';
-import { ALL_UNIQUE_MENU_ITEMS, ALL_MENU_ITEMS } from '@/lib/menu-config';
+import { ALL_MENU_GROUPS, ALL_MENU_ITEMS } from '@/lib/menu-config';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Save } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Separator } from '../ui/separator';
 
 type NavigationSettings = {
   id: string; // role name
@@ -42,9 +43,8 @@ export function MenuSettingsClient() {
       if (savedSetting) {
         newSettings[role] = savedSetting.visibleMenuItems;
       } else {
-        // Default to all keys for that role if no setting exists
-        const defaultItemsForRole = ALL_MENU_ITEMS[role as UserRole] || [];
-        newSettings[role] = defaultItemsForRole.map(item => item.key);
+        // Default to all menu items relevant to that role if no setting exists
+        newSettings[role] = (ALL_MENU_ITEMS[role as UserRole] || []).map(item => item.key);
       }
     });
     
@@ -114,27 +114,38 @@ export function MenuSettingsClient() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {ALL_UNIQUE_MENU_ITEMS.map(menuItem => {
-                   if (menuItem.key.startsWith('candidate.')) return null;
-                   return (
-                  <TableRow key={menuItem.key}>
-                    <TableCell className="font-medium">{menuItem.label}</TableCell>
-                    {rolesToDisplay.map(role => {
-                      const isVisible = (settings[role] || []).includes(menuItem.key);
-                      return (
-                        <TableCell key={`${role}-${menuItem.key}`} className="text-center">
-                          <Checkbox
-                            checked={isVisible}
-                            onCheckedChange={(checked) => handleCheckboxChange(role, menuItem.key, !!checked)}
-                            id={`${role}-${menuItem.key}`}
-                            aria-label={`Toggle ${menuItem.label} for ${role}`}
-                          />
-                        </TableCell>
-                      );
-                    })}
-                  </TableRow>
-                   )
-                })}
+                {ALL_MENU_GROUPS.map((group, groupIndex) => (
+                    <React.Fragment key={group.title || `group-${groupIndex}`}>
+                      {group.title && (
+                        <TableRow className="bg-muted/50 hover:bg-muted/50">
+                          <TableCell colSpan={rolesToDisplay.length + 1} className="py-2 px-4">
+                            <h4 className="font-semibold text-sm">{group.title}</h4>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      {group.items.map(menuItem => {
+                         if (menuItem.key.startsWith('candidate.')) return null;
+                         return (
+                            <TableRow key={menuItem.key}>
+                                <TableCell className="font-medium pl-8">{menuItem.label}</TableCell>
+                                {rolesToDisplay.map(role => {
+                                  const isVisible = (settings[role] || []).includes(menuItem.key);
+                                  return (
+                                    <TableCell key={`${role}-${menuItem.key}`} className="text-center">
+                                      <Checkbox
+                                        checked={isVisible}
+                                        onCheckedChange={(checked) => handleCheckboxChange(role, menuItem.key, !!checked)}
+                                        id={`${role}-${menuItem.key}`}
+                                        aria-label={`Toggle ${menuItem.label} for ${role}`}
+                                      />
+                                    </TableCell>
+                                  );
+                                })}
+                            </TableRow>
+                         )
+                      })}
+                    </React.Fragment>
+                ))}
               </TableBody>
             </Table>
           </div>

@@ -131,9 +131,31 @@ export const ALL_MENU_ITEMS = allMenuItemsByRole as Record<UserRole, MenuItem[]>
 
 const uniqueItems = new Map<string, MenuItem>();
 Object.values(allMenuItemsByRole).flat().forEach(item => {
-    if (item && item.label && !uniqueItems.has(item.label)) {
-        uniqueItems.set(item.label, item);
+    if (item && item.label && !uniqueItems.has(item.key)) {
+        uniqueItems.set(item.key, item);
     }
 });
 
 export const ALL_UNIQUE_MENU_ITEMS: MenuItem[] = Array.from(uniqueItems.values());
+
+
+// Create a master list of all groups with their items, merging items under the same group title.
+const allGroupsMap = new Map<string, MenuItem[]>();
+Object.values(MENU_CONFIG).flat().forEach(group => {
+    const title = group.title || 'General';
+    if (!allGroupsMap.has(title)) {
+        allGroupsMap.set(title, []);
+    }
+    const existingItems = allGroupsMap.get(title)!;
+    const itemKeys = new Set(existingItems.map(i => i.key));
+    group.items.forEach(item => {
+        if (!itemKeys.has(item.key)) {
+            existingItems.push(item);
+        }
+    });
+});
+
+export const ALL_MENU_GROUPS: MenuGroup[] = Array.from(allGroupsMap.entries()).map(([title, items]) => ({
+    title: title === 'General' ? undefined : title,
+    items,
+}));

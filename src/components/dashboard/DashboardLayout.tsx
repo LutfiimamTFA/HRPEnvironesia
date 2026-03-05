@@ -10,7 +10,7 @@ import { useAuth } from '@/providers/auth-provider';
 import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { doc } from 'firebase/firestore';
 import type { NavigationSetting } from '@/lib/types';
-import { MENU_CONFIG } from '@/lib/menu-config';
+import { MENU_CONFIG, ALL_MENU_GROUPS } from '@/lib/menu-config';
 
 type DashboardLayoutProps = {
   children: React.ReactNode;
@@ -35,24 +35,23 @@ export function DashboardLayout({
   const menuConfig = useMemo(() => {
     if (!userProfile) return [];
     
-    const roleMenuConfig = MENU_CONFIG[userProfile.role] || [];
-    
-    if (isLoadingSettings) {
-      // While loading settings, return the default config to prevent UI flicker
-      return roleMenuConfig;
+    // While loading or if no settings are found, fall back to default role config.
+    if (isLoadingSettings || !navSettings?.visibleMenuItems) {
+      return MENU_CONFIG[userProfile.role] || [];
     }
-
-    if (navSettings && navSettings.visibleMenuItems) {
-      // Filter menu items based on the keys stored in Firestore
-      const visibleKeys = new Set(navSettings.visibleMenuItems);
-      return roleMenuConfig.map(group => ({
+    
+    // If settings are found, filter the master list of all menus.
+    const visibleKeys = new Set(navSettings.visibleMenuItems);
+    
+    const filteredMenuConfig = ALL_MENU_GROUPS.map(group => {
+      const visibleItems = group.items.filter(item => visibleKeys.has(item.key));
+      return {
         ...group,
-        items: group.items.filter(item => visibleKeys.has(item.key))
-      })).filter(group => group.items.length > 0);
-    }
-    
-    // If no settings document exists, return the default full menu for that role
-    return roleMenuConfig;
+        items: visibleItems,
+      };
+    }).filter(group => group.items.length > 0); // Remove groups that become empty after filtering
+
+    return filteredMenuConfig;
 
   }, [userProfile, navSettings, isLoadingSettings]);
 
