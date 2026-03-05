@@ -198,9 +198,9 @@ export default function InternProfilePage() {
                         <h3 className="text-lg font-semibold border-b pb-2 mb-4">Status Magang</h3>
                         <div className="space-y-4">
                             <FormField control={form.control} name="internSubtype" render={({ field }) => (<FormItem><FormLabel>Tipe Magang <span className="text-destructive">*</span></FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Pilih tipe magang" /></SelectTrigger></FormControl><SelectContent><SelectItem value="sekolah">Magang Sekolah</SelectItem><SelectItem value="freshgraduate">Magang Fresh Graduate</SelectItem></SelectContent></Select><FormDescription>
-                                <strong>Magang Sekolah:</strong> Untuk siswa/i SMK/sederajat.
+                                <strong>Magang Sekolah:</strong> Peserta yang masih memiliki ikatan pendidikan (sekolah/kuliah) dan akan kembali studi setelah magang.
                                 <br />
-                                <strong>Magang Fresh Graduate:</strong> Untuk mahasiswa atau lulusan baru D3/S1.
+                                <strong>Magang Fresh Graduate:</strong> Peserta yang sudah lulus dan mengikuti magang sebagai jalur menuju masa percobaan/karyawan.
                             </FormDescription><FormMessage /></FormItem>)} />
                             <FormField control={form.control} name="schoolOrCampus" render={({ field }) => (<FormItem><FormLabel>Asal Sekolah/Kampus <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                             <div className="grid md:grid-cols-2 gap-4">
