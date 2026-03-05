@@ -19,7 +19,8 @@ type NavigationSettings = {
   visibleMenuItems: string[]; // Now stores keys
 }
 
-const rolesToDisplay = ROLES.filter(r => r !== 'kandidat');
+// Show all roles for the super admin to configure
+const rolesToDisplay = ROLES;
 
 export function MenuSettingsClient() {
   const firestore = useFirestore();
