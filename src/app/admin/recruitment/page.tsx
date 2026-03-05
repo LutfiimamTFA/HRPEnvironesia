@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection } from 'firebase/firestore';
+import { collection, query } from 'firebase/firestore';
 import type { Job, JobApplication, Brand } from '@/lib/types';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
@@ -24,13 +24,13 @@ function JobListSkeleton() {
         <Table>
           <TableHeader>
             <TableRow>
-              {[...Array(5)].map((_, i) => <TableHead key={i}><Skeleton className="h-5 w-full" /></TableHead>)}
+              {[...Array(6)].map((_, i) => <TableHead key={i}><Skeleton className="h-5 w-full" /></TableHead>)}
             </TableRow>
           </TableHeader>
           <TableBody>
             {[...Array(5)].map((_, i) => (
               <TableRow key={i}>
-                {[...Array(5)].map((_, j) => <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>)}
+                {[...Array(6)].map((_, j) => <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>)}
               </TableRow>
             ))}
           </TableBody>
@@ -45,6 +45,7 @@ export default function RecruitmentJobSelectionPage() {
   const { userProfile } = useAuth();
   const firestore = useFirestore();
   const [brandFilter, setBrandFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
 
   const jobsQuery = useMemoFirebase(() => collection(firestore, 'jobs'), [firestore]);
   const { data: jobs, isLoading: isLoadingJobs, error: jobsError } = useCollection<Job>(jobsQuery);
@@ -77,12 +78,15 @@ export default function RecruitmentJobSelectionPage() {
     if (brandFilter !== 'all') {
       filteredJobs = jobs.filter(job => job.brandId === brandFilter);
     }
+    if (typeFilter !== 'all') {
+        filteredJobs = filteredJobs.filter(job => job.statusJob === typeFilter);
+    }
 
     return filteredJobs.map(job => ({
       ...job,
       applicantCount: applicantCounts.get(job.id!) || 0,
     })).sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
-  }, [jobs, applicantCounts, brandFilter]);
+  }, [jobs, applicantCounts, brandFilter, typeFilter]);
 
   const isLoading = isLoadingJobs || isLoadingApps || isLoadingBrands;
   const error = jobsError || appsError || brandsError;
@@ -108,7 +112,7 @@ export default function RecruitmentJobSelectionPage() {
 
   return (
     <DashboardLayout pageTitle="Recruitment: Select Job Posting" menuConfig={menuConfig}>
-        <div className="flex justify-end mb-4">
+        <div className="flex justify-end mb-4 gap-2">
             <Select value={brandFilter} onValueChange={setBrandFilter} disabled={isLoadingBrands}>
                 <SelectTrigger className="w-[240px]">
                     <SelectValue placeholder="Filter by brand..." />
@@ -120,6 +124,17 @@ export default function RecruitmentJobSelectionPage() {
                     ))}
                 </SelectContent>
             </Select>
+            <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Filter by type..." />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="fulltime">Full-time</SelectItem>
+                    <SelectItem value="internship">Internship</SelectItem>
+                    <SelectItem value="contract">Contract</SelectItem>
+                </SelectContent>
+            </Select>
         </div>
         <div className="rounded-lg border">
             <Table>
@@ -127,6 +142,7 @@ export default function RecruitmentJobSelectionPage() {
                     <TableRow>
                         <TableHead>Position</TableHead>
                         <TableHead>Company</TableHead>
+                        <TableHead>Type</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Total Applicants</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
@@ -138,6 +154,7 @@ export default function RecruitmentJobSelectionPage() {
                             <TableRow key={job.id}>
                                 <TableCell className="font-medium">{job.position}</TableCell>
                                 <TableCell>{job.brandName}</TableCell>
+                                <TableCell><Badge variant="outline" className="capitalize">{job.statusJob}</Badge></TableCell>
                                 <TableCell><Badge variant={job.publishStatus === 'published' ? 'default' : 'secondary'}>{job.publishStatus}</Badge></TableCell>
                                 <TableCell>{job.applicantCount}</TableCell>
                                 <TableCell className="text-right">
@@ -152,7 +169,7 @@ export default function RecruitmentJobSelectionPage() {
                         ))
                     ) : (
                         <TableRow>
-                            <TableCell colSpan={5} className="h-24 text-center">
+                            <TableCell colSpan={6} className="h-24 text-center">
                                 {brandFilter !== 'all' ? 'No jobs found for the selected brand.' : 'No jobs found. Create one in "Job Postings".'}
                             </TableCell>
                         </TableRow>

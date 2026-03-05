@@ -84,6 +84,7 @@ export function JobManagementClient() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [brandFilter, setBrandFilter] = useState('all');
   const [jobFilter, setJobFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
 
 
   const jobsRef = useMemoFirebase(() => collection(firestore, 'jobs'), [firestore]);
@@ -126,6 +127,10 @@ export function JobManagementClient() {
     if (jobFilter !== 'all') {
         filteredJobs = filteredJobs.filter(job => job.id === jobFilter);
     }
+    
+    if (typeFilter !== 'all') {
+        filteredJobs = filteredJobs.filter(job => job.statusJob === typeFilter);
+    }
 
     return filteredJobs.map(job => ({
       ...job,
@@ -136,7 +141,7 @@ export function JobManagementClient() {
       const timeB = b.updatedAt?.toMillis ? b.updatedAt.toMillis() : Date.now();
       return timeB - timeA;
     });
-  }, [jobs, brandMap, userMap, brandFilter, jobFilter]);
+  }, [jobs, brandMap, userMap, brandFilter, jobFilter, typeFilter]);
 
 
   const handleCreate = () => {
@@ -243,6 +248,18 @@ export function JobManagementClient() {
                     </SelectContent>
                 </Select>
             )}
+            
+            <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Filter by type..." />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="fulltime">Full-time</SelectItem>
+                    <SelectItem value="internship">Internship</SelectItem>
+                    <SelectItem value="contract">Contract</SelectItem>
+                </SelectContent>
+            </Select>
         </div>
         <Button onClick={handleCreate}>
           <PlusCircle className="mr-2 h-4 w-4" />
@@ -271,7 +288,7 @@ export function JobManagementClient() {
                 <TableRow key={job.id}>
                   <TableCell className="font-medium">{job.position}</TableCell>
                   <TableCell>{job.brandName}</TableCell>
-                  <TableCell className="capitalize">{job.statusJob}</TableCell>
+                  <TableCell><Badge variant="outline" className="capitalize">{job.statusJob}</Badge></TableCell>
                   <TableCell className="text-center">{job.numberOfOpenings || '-'}</TableCell>
                   <TableCell>
                     <Badge variant={
