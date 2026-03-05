@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useMemo, useState, useEffect } from 'react';
@@ -9,7 +10,7 @@ import type { JobApplication, Profile, Job, ApplicationTimelineEvent, Applicatio
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Mail, Phone, XCircle, Calendar, Users, RefreshCw, X, MessageSquare, AlertTriangle, Edit, ShieldCheck } from 'lucide-react';
+import { Mail, Phone, XCircle, Calendar, Users, RefreshCw, X, MessageSquare, AlertTriangle, Edit, ShieldCheck, Briefcase } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { ProfileView } from '@/components/recruitment/ProfileView';
@@ -355,9 +356,7 @@ function InterviewManagement({ application, onUpdate, allUsers, allBrands, job }
             meetingLink: activeInterview.meetingLink,
             panelists: activeInterview.panelistIds?.map((id, index) => ({ value: id, label: (activeInterview.panelistNames || [])[index] || id })) || [],
             notes: activeInterview.notes,
-        } : {
-             panelists: [{ value: userProfile!.uid, label: userProfile!.fullName }],
-        }}
+        } : undefined}
         allUsers={allUsers}
         allBrands={allBrands}
         job={job}
@@ -552,7 +551,10 @@ export default function ApplicationDetailPage() {
               </div>
             </CardHeader>
             <CardContent className="border-t pt-6 space-y-6">
-                <h3 className="font-semibold text-lg">Applied for: {application.jobPosition}</h3>
+                <div className="flex items-center gap-4">
+                    <h3 className="font-semibold text-lg">Applied for: {application.jobPosition}</h3>
+                    <Badge variant="outline" className="capitalize">{application.jobType}</Badge>
+                </div>
                  {application.status !== 'rejected' ? (
                   <ApplicationProgressStepper currentStatus={application.status} />
                  ) : (
@@ -580,3 +582,5 @@ export default function ApplicationDetailPage() {
     </DashboardLayout>
   );
 }
+
+    
