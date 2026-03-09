@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils';
 export const offerSchema = z.object({
   offeredSalary: z.coerce.number().min(1, "Gaji yang ditawarkan harus diisi."),
   contractStartDate: z.date({ required_error: 'Tanggal mulai harus diisi.' }),
+  startTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, "Waktu mulai harus diisi dengan format HH:MM."),
   contractDurationMonths: z.coerce.number().int().min(1, 'Durasi kontrak minimal 1 bulan.'),
   contractEndDate: z.date().optional(),
   probationDurationMonths: z.coerce.number().int().min(0).optional().nullable(),
@@ -58,6 +59,7 @@ export function OfferDialog({ open, onOpenChange, onConfirm, candidateName, job 
     defaultValues: {
         offeredSalary: 0,
         contractStartDate: new Date(),
+        startTime: '09:00',
         contractDurationMonths: 12,
         probationDurationMonths: job.statusJob === 'fulltime' ? 3 : null,
         offerNotes: '',
@@ -142,6 +144,9 @@ export function OfferDialog({ open, onOpenChange, onConfirm, candidateName, job 
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField control={form.control} name="contractStartDate" render={({ field }) => ( <FormItem className="flex flex-col"><FormLabel>Tanggal Mulai Kerja</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem> )}/>
+                <FormField control={form.control} name="startTime" render={({ field }) => (<FormItem><FormLabel>Jam Mulai Hari Pertama</FormLabel><FormControl><Input type="time" {...field} /></FormControl><FormMessage /></FormItem>)} />
+            </div>
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="contractDurationMonths"
@@ -153,10 +158,6 @@ export function OfferDialog({ open, onOpenChange, onConfirm, candidateName, job 
                           <Input
                             type="number"
                             {...field}
-                            onChange={(e) => {
-                                const val = e.target.value;
-                                field.onChange(val === '' ? undefined : parseInt(val, 10));
-                            }}
                           />
                         </FormControl>
                         <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground">
@@ -167,13 +168,15 @@ export function OfferDialog({ open, onOpenChange, onConfirm, candidateName, job 
                     </FormItem>
                   )}
                 />
+                 {contractEndDate && (
+                    <div className="flex flex-col">
+                        <FormLabel>Perkiraan Selesai Kontrak</FormLabel>
+                        <div className="h-10 px-3 py-2 text-sm text-muted-foreground">
+                            {format(contractEndDate, 'eeee, dd MMMM yyyy', { locale: idLocale })}
+                        </div>
+                    </div>
+                )}
             </div>
-            
-            {contractEndDate && (
-                <div className="text-sm text-muted-foreground">
-                    Perkiraan Selesai Kontrak: <span className="font-semibold text-foreground">{format(contractEndDate, 'eeee, dd MMMM yyyy', { locale: idLocale })}</span>
-                </div>
-            )}
             
             {job.statusJob === 'fulltime' && (
                  <FormField

@@ -9,8 +9,8 @@ import type { JobApplication, Profile, Job, ApplicationTimelineEvent, Applicatio
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Mail, Phone, XCircle, CheckCircle, AlertCircle } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Mail, Phone, XCircle, CheckCircle } from 'lucide-react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { ProfileView } from '@/components/recruitment/ProfileView';
 import { ApplicationStatusBadge, statusDisplayLabels } from '@/components/recruitment/ApplicationStatusBadge';
@@ -25,6 +25,7 @@ import { ApplicationActionBar } from './ApplicationActionBar';
 import { ApplicationNotes } from './ApplicationNotes';
 import { OfferDialog, type OfferFormData } from './OfferDialog';
 import { Button } from '../ui/button';
+import { Loader2 } from 'lucide-react';
 
 function ApplicationDetailSkeleton() {
   return <Skeleton className="h-[500px] w-full" />;
@@ -115,15 +116,19 @@ export default function ApplicationDetailPage() {
         by: userProfile.uid,
         meta: { note: 'Penawaran kerja resmi telah dikirimkan kepada kandidat.' }
     };
+    
+    const [hours, minutes] = offerData.startTime.split(':').map(Number);
+    const combinedDate = new Date(offerData.contractStartDate);
+    combinedDate.setHours(hours, minutes);
 
     const updatePayload = {
         status: 'hired' as const, // Represents "Offer Stage"
         offerStatus: 'sent' as const,
         offeredSalary: offerData.offeredSalary,
         probationDurationMonths: offerData.probationDurationMonths,
-        contractStartDate: offerData.contractStartDate,
+        contractStartDate: Timestamp.fromDate(combinedDate),
         contractDurationMonths: offerData.contractDurationMonths,
-        contractEndDate: offerData.contractEndDate,
+        contractEndDate: offerData.contractEndDate ? Timestamp.fromDate(offerData.contractEndDate) : null,
         offerNotes: offerData.offerNotes,
         updatedAt: serverTimestamp(),
         timeline: [...(application.timeline || []), timelineEvent],
@@ -217,7 +222,7 @@ export default function ApplicationDetailPage() {
       ) : (
         <>
           <div className="space-y-6">
-            <ApplicationActionBar application={application} onStageChange={handleStageChange} />
+            <ApplicationActionBar application={application} onStageChange={handleStageChange} onSendOfferClick={() => setIsOfferDialogOpen(true)} />
             
             <Card>
               <CardHeader>
@@ -274,7 +279,7 @@ export default function ApplicationDetailPage() {
                  <Card className="border-destructive">
                     <CardHeader>
                         <CardTitle className="text-destructive flex items-center gap-2"><XCircle /> Penawaran Ditolak</CardTitle>
-                        <CardDescription>Kandidat telah menolak penawaran kerja pada {format(application.candidateOfferDecisionAt!.toDate(), 'dd MMM yyyy')}.</CardDescription>
+                        <CardDescription>Kandidat telah menolak penawaran kerja pada {application.candidateOfferDecisionAt ? format(application.candidateOfferDecisionAt.toDate(), 'dd MMM yyyy') : ''}.</CardDescription>
                     </CardHeader>
                 </Card>
             )}
@@ -285,7 +290,7 @@ export default function ApplicationDetailPage() {
                   <ProfileView profile={profile} />
               </div>
               <div className="lg:sticky lg:top-24 space-y-6">
-                  <CandidateDocumentsCard application={application} onVerificationChange={mutateApplication}/>
+                  <CandidateDocumentsCard application={application} />
                   <ApplicationNotes application={application} onNoteAdded={mutateApplication} />
               </div>
             </div>
