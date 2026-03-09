@@ -82,7 +82,7 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, applica
   const filteredSupervisors = useMemo(() => {
     if (!supervisors || !brandId) return [];
     return supervisors.filter(user => {
-      if (user.uid === profile.uid) return false; // Exclude the intern themselves
+      if (user.uid === profile.uid) return false;
       if (!user.isActive || !['manager', 'karyawan'].includes(user.role)) return false;
       if (Array.isArray(user.brandId)) return user.brandId.includes(brandId);
       return user.brandId === brandId;
@@ -147,64 +147,66 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, applica
   
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col p-0">
+        <DialogHeader className="p-6 pb-4 border-b">
           <DialogTitle>Edit Data Administrasi: {profile.fullName}</DialogTitle>
           <DialogDescription>
             Data ini hanya dapat diubah oleh HRD dan akan digunakan untuk keperluan internal.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-4">
-            <Card>
-                <CardHeader className="pb-2">
-                    <CardTitle className="text-base">Ringkasan Penempatan</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <InfoRow label="Penempatan Brand" value={brandName} />
-                    <InfoRow label="Uang Saku (per bulan)" value={compensationAmount ? `Rp ${compensationAmount.toLocaleString('id-ID')}` : 'Belum diatur'} />
-                </CardContent>
-            </Card>
+        <div className="flex-grow overflow-y-auto px-6">
+            <div className="space-y-4 py-4">
+                <Card>
+                    <CardHeader className="pb-2">
+                        <CardTitle className="text-base">Ringkasan Penempatan</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <InfoRow label="Penempatan Brand" value={brandName} />
+                        <InfoRow label="Uang Saku (per bulan)" value={compensationAmount ? `Rp ${compensationAmount.toLocaleString('id-ID')}` : 'Belum diatur'} />
+                    </CardContent>
+                </Card>
 
-            <Form {...form}>
-            <form id="intern-admin-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 pt-4">
-                
-                <section>
-                    <h3 className="text-lg font-semibold border-b pb-2 mb-4">Informasi Penempatan</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-6">
-                        <FormField control={form.control} name="division" render={({ field }) => (<FormItem><FormLabel>Divisi</FormLabel><FormControl><Input placeholder="e.g., Creative, Finance" {...field} value={field.value || ''} /></FormControl><FormMessage /></FormItem>)} />
-                        <FormField control={form.control} name="supervisorName" render={({ field }) => (
-                            <FormItem><FormLabel>Supervisor / PIC</FormLabel><Select onValueChange={field.onChange} value={field.value || ''} disabled={isLoadingSupervisors}><FormControl><SelectTrigger><SelectValue placeholder="Pilih Supervisor" /></SelectTrigger></FormControl><SelectContent>{filteredSupervisors.map(s => <SelectItem key={s.uid} value={s.fullName}>{s.fullName}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem>
-                        )}/>
-                        <FormField control={form.control} name="internSubtype" render={({ field }) => (
-                            <FormItem><FormLabel>Tipe Magang</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Pilih tipe magang" /></SelectTrigger></FormControl><SelectContent><SelectItem value="intern_education">Terikat Pendidikan</SelectItem><SelectItem value="intern_pre_probation">Pra-Probation</SelectItem></SelectContent></Select><FormMessage /></FormItem>
-                        )}/>
-                    </div>
-                </section>
-                
-                <Separator />
-                
-                <section>
-                    <h3 className="text-lg font-semibold border-b pb-2 mb-4">Informasi Kontrak Magang</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-6">
-                        <FormField control={form.control} name="internshipStartDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>Mulai Magang</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>)} />
-                        <FormField control={form.control} name="contractDurationMonths" render={({ field }) => (<FormItem><FormLabel>Durasi (bulan)</FormLabel><FormControl><Input type="number" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))} /></FormControl><FormMessage /></FormItem>)} />
-                        <div className="md:col-span-2">
-                           <FormField control={form.control} name="internshipEndDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>Selesai Magang (Otomatis)</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} disabled /></FormControl><FormMessage /></FormItem>)} />
+                <Form {...form}>
+                <form id="intern-admin-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 pt-4">
+                    
+                    <section>
+                        <h3 className="text-lg font-semibold border-b pb-2 mb-4">Informasi Penempatan</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-6">
+                            <FormField control={form.control} name="division" render={({ field }) => (<FormItem><FormLabel>Divisi</FormLabel><FormControl><Input placeholder="e.g., Creative, Finance" {...field} value={field.value || ''} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="supervisorName" render={({ field }) => (
+                                <FormItem><FormLabel>Supervisor / PIC</FormLabel><Select onValueChange={field.onChange} value={field.value || ''} disabled={isLoadingSupervisors}><FormControl><SelectTrigger><SelectValue placeholder="Pilih Supervisor" /></SelectTrigger></FormControl><SelectContent>{filteredSupervisors.map(s => <SelectItem key={s.uid} value={s.fullName}>{s.fullName}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem>
+                            )}/>
+                            <FormField control={form.control} name="internSubtype" render={({ field }) => (
+                                <FormItem><FormLabel>Tipe Magang</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Pilih tipe magang" /></SelectTrigger></FormControl><SelectContent><SelectItem value="intern_education">Terikat Pendidikan</SelectItem><SelectItem value="intern_pre_probation">Pra-Probation</SelectItem></SelectContent></Select><FormMessage /></FormItem>
+                            )}/>
                         </div>
-                    </div>
-                </section>
-                
-                <Separator />
-                
-                <section>
-                    <h3 className="text-lg font-semibold border-b pb-2 mb-4">Catatan Internal HRD</h3>
-                    <FormField control={form.control} name="hrdNotes" render={({ field }) => (<FormItem><FormControl><Textarea placeholder="Catatan internal..." {...field} value={field.value || ''} /></FormControl><FormMessage /></FormItem>)} />
-                </section>
+                    </section>
+                    
+                    <Separator />
+                    
+                    <section>
+                        <h3 className="text-lg font-semibold border-b pb-2 mb-4">Informasi Kontrak Magang</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-6">
+                            <FormField control={form.control} name="internshipStartDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>Mulai Magang</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} portalled={false} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="contractDurationMonths" render={({ field }) => (<FormItem><FormLabel>Durasi (bulan)</FormLabel><FormControl><Input type="number" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))} /></FormControl><FormMessage /></FormItem>)} />
+                            <div className="md:col-span-2">
+                                <FormField control={form.control} name="internshipEndDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>Selesai Magang (Otomatis)</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} disabled portalled={false} /></FormControl><FormMessage /></FormItem>)} />
+                            </div>
+                        </div>
+                    </section>
+                    
+                    <Separator />
+                    
+                    <section>
+                        <h3 className="text-lg font-semibold border-b pb-2 mb-4">Catatan Internal HRD</h3>
+                        <FormField control={form.control} name="hrdNotes" render={({ field }) => (<FormItem><FormControl><Textarea placeholder="Catatan internal..." {...field} value={field.value || ''} /></FormControl><FormMessage /></FormItem>)} />
+                    </section>
 
-            </form>
-            </Form>
+                </form>
+                </Form>
+            </div>
         </div>
-        <DialogFooter>
+        <DialogFooter className="flex-shrink-0 p-6 pt-4 border-t">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Batal</Button>
           <Button type="submit" form="intern-admin-form" disabled={isSaving}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
