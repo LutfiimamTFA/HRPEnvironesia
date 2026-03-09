@@ -10,7 +10,7 @@ import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, query, where } from 'firebase/firestore';
+import { collection, query, where, orderBy } from 'firebase/firestore';
 import { Loader2, Edit } from 'lucide-react';
 import { InternAdminDataFormDialog } from './InternAdminDataFormDialog';
 
@@ -42,20 +42,20 @@ export function InternProfileDetailDialog({ profile, open, onOpenChange, onAdmin
 
   const applicationQuery = useMemoFirebase(() => {
     if (!profile) return null;
+    // Query for hired applications and sort by the last update to get the most recent one.
     return query(
       collection(firestore, 'applications'),
       where('candidateUid', '==', profile.uid),
-      where('status', '==', 'hired')
+      where('status', '==', 'hired'),
+      orderBy('updatedAt', 'desc'),
     );
   }, [firestore, profile]);
 
   const { data: applications, isLoading: isLoadingApplication } = useCollection<JobApplication>(applicationQuery);
 
   const application = useMemo(() => {
-    if (!applications || applications.length === 0) return null;
-    // Sort by updated date to get the most recent 'hired' application if there are multiple
-    const sortedApps = [...applications].sort((a, b) => (b.updatedAt?.toMillis() ?? 0) - (a.updatedAt?.toMillis() ?? 0));
-    return sortedApps[0];
+    // Since we sort by date, the first result is the most recent.
+    return applications?.[0] || null;
   }, [applications]);
   
   const handleAdminFormSuccess = () => {
@@ -64,15 +64,15 @@ export function InternProfileDetailDialog({ profile, open, onOpenChange, onAdmin
   }
 
   // --- UNIFIED DATA LOGIC ---
-  const officialStartDate = profile.internshipStartDate?.toDate();
-  const officialEndDate = profile.internshipEndDate?.toDate();
-  const officialCompensation = profile.compensationAmount;
-  const officialNotes = profile.hrdNotes;
+  // Priority: Official HR data > Data from recruitment offer
+  const brandNameToDisplay = profile.brandName || application?.brandName;
+  const divisionToDisplay = profile.division || application?.jobPosition; // jobPosition as fallback for division
+  const supervisorToDisplay = profile.supervisorName;
 
-  const startDateToDisplay = officialStartDate || application?.contractStartDate?.toDate();
-  const endDateToDisplay = officialEndDate || application?.contractEndDate?.toDate();
-  const compensationToDisplay = officialCompensation ?? application?.offeredSalary;
-  const notesToDisplay = officialNotes || application?.offerNotes;
+  const startDateToDisplay = profile.internshipStartDate?.toDate() || application?.contractStartDate?.toDate();
+  const endDateToDisplay = profile.internshipEndDate?.toDate() || application?.contractEndDate?.toDate();
+  const compensationToDisplay = profile.compensationAmount ?? application?.offeredSalary;
+  const notesToDisplay = profile.hrdNotes || application?.offerNotes;
 
   return (
     <>
@@ -99,38 +99,36 @@ export function InternProfileDetailDialog({ profile, open, onOpenChange, onAdmin
               </div>
               
               <Separator />
-              
+
               <div>
-                  <SectionTitle>Status & Penempatan</SectionTitle>
-                   <dl className="space-y-1">
-                      <InfoRow label="Penempatan Brand" value={application?.brandName || profile.brandName || '-'} />
-                      <InfoRow label="Divisi" value={profile.division || '-'} />
-                      <InfoRow label="Supervisor" value={profile.supervisorName || '-'} />
-                      <InfoRow label="Tipe Magang" value={profile.internSubtype === 'intern_education' ? 'Terikat Pendidikan' : 'Pra-Probation'} />
-                      <InfoRow label="Tipe Pekerja" value={profile.employmentType} />
-                  </dl>
-               </div>
+                <SectionTitle>Status & Penempatan</SectionTitle>
+                <dl className="space-y-1">
+                  <InfoRow label="Tipe Magang" value={profile.internSubtype === 'intern_education' ? 'Terikat Pendidikan' : 'Pra-Probation'} />
+                  <InfoRow label="Tipe Pekerja" value={profile.employmentType} />
+                  <InfoRow label="Penempatan Brand" value={brandNameToDisplay} />
+                  <InfoRow label="Divisi" value={divisionToDisplay} />
+                  <InfoRow label="Supervisor / PIC" value={supervisorToDisplay} />
+                </dl>
+              </div>
                
-               <Card>
-                  <CardHeader>
-                      <CardTitle className="text-lg">Detail Kontrak & Kompensasi</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                      {isLoadingApplication ? (
-                          <div className="flex items-center justify-center h-24">
-                              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                          </div>
-                      ) : (
-                           <div className="space-y-4">
-                              <dl className="space-y-1 text-sm">
-                                  <InfoRow label="Uang Saku / Kompensasi" value={compensationToDisplay ? `Rp ${compensationToDisplay.toLocaleString('id-ID')}` : 'Belum diatur'} />
-                                  <InfoRow label="Tanggal Mulai Magang" value={startDateToDisplay ? format(startDateToDisplay, 'dd MMMM yyyy', { locale: id }) : 'Belum diatur'} />
-                                  <InfoRow label="Tanggal Selesai Magang" value={endDateToDisplay ? format(endDateToDisplay, 'dd MMMM yyyy', { locale: id }) : 'Belum diatur'} />
-                                  {notesToDisplay && <InfoRow label="Catatan Tambahan" value={notesToDisplay} />}
-                              </dl>
-                          </div>
-                      )}
-                  </CardContent>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Detail Kontrak & Kompensasi</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {isLoadingApplication ? (
+                    <div className="flex items-center justify-center h-24">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : (
+                    <dl className="space-y-1 text-sm">
+                      <InfoRow label="Uang Saku / Kompensasi" value={compensationToDisplay ? `Rp ${compensationToDisplay.toLocaleString('id-ID')}` : 'Belum diatur'} />
+                      <InfoRow label="Tanggal Mulai Magang" value={startDateToDisplay ? format(startDateToDisplay, 'dd MMMM yyyy', { locale: id }) : 'Belum diatur'} />
+                      <InfoRow label="Tanggal Selesai Magang" value={endDateToDisplay ? format(endDateToDisplay, 'dd MMMM yyyy', { locale: id }) : 'Belum diatur'} />
+                      {notesToDisplay && <InfoRow label="Catatan Tambahan" value={notesToDisplay} />}
+                    </dl>
+                  )}
+                </CardContent>
               </Card>
 
               <Separator />
