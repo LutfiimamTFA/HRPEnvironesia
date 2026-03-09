@@ -34,12 +34,12 @@ function PlacementInfoCard({
   userProfile: UserProfile | null;
   brands: Brand[] | null;
 }) {
-  const brandMap = React.useMemo(() => {
+  const brandMap = useMemo(() => {
     if (!brands) return new Map<string, string>();
     return new Map(brands.map(b => [b.id!, b.name]));
   }, [brands]);
 
-  const brandNameToDisplay = React.useMemo(() => {
+  const brandNameToDisplay = useMemo(() => {
     // Priority 1: From employee_profiles (HR-set override)
     if (profile?.brandName) {
       return profile.brandName;
