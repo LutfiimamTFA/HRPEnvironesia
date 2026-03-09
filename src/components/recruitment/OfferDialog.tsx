@@ -10,7 +10,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Save } from 'lucide-react';
 import { add, addMonths, format } from 'date-fns';
 import { GoogleDatePicker } from '../ui/google-date-picker';
 import type { Job, JobApplication } from '@/lib/types';
@@ -58,7 +58,7 @@ export function OfferDialog({ open, onOpenChange, onConfirm, candidateName, job 
   const duration = watch('contractDurationMonths');
   
   useEffect(() => {
-    if (startDate && duration) {
+    if (startDate && duration && duration > 0) {
         const endDate = addMonths(startDate, duration);
         setValue('contractEndDate', endDate);
     }
@@ -112,18 +112,29 @@ export function OfferDialog({ open, onOpenChange, onConfirm, candidateName, job 
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField control={form.control} name="contractStartDate" render={({ field }) => ( <FormItem className="flex flex-col"><FormLabel>Tanggal Mulai Kerja</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem> )}/>
-                <FormField control={form.control} name="contractDurationMonths" render={({ field }) => ( 
-                     <FormItem>
-                        <FormLabel>Durasi Kontrak</FormLabel>
+                <FormField
+                  control={form.control}
+                  name="contractDurationMonths"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Durasi Kontrak</FormLabel>
+                      <div className="relative flex items-center">
                         <FormControl>
-                            <div className="flex items-center gap-2">
-                                <Input type="number" {...field} />
-                                <span>bulan</span>
-                            </div>
+                          <Input
+                            type="number"
+                            {...field}
+                            onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
+                            className="pr-12"
+                          />
                         </FormControl>
-                        <FormMessage />
+                        <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground">
+                          bulan
+                        </span>
+                      </div>
+                      <FormMessage />
                     </FormItem>
-                )}/>
+                  )}
+                />
             </div>
             
             {contractEndDate && (
@@ -133,17 +144,28 @@ export function OfferDialog({ open, onOpenChange, onConfirm, candidateName, job 
             )}
             
             {job.statusJob === 'fulltime' && (
-                 <FormField control={form.control} name="probationDurationMonths" render={({ field }) => ( 
+                 <FormField
+                  control={form.control}
+                  name="probationDurationMonths"
+                  render={({ field }) => (
                     <FormItem>
                         <FormLabel>Masa Percobaan</FormLabel>
-                        <FormControl>
-                            <div className="flex items-center gap-2">
-                                <Input type="number" {...field} value={field.value ?? ''} /> 
-                                <span>bulan</span>
-                            </div>
-                        </FormControl>
-                        <FormMessage /> 
-                    </FormItem> 
+                        <div className="relative flex items-center">
+                          <FormControl>
+                            <Input
+                              type="number"
+                              {...field}
+                              value={field.value ?? ''}
+                              onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
+                              className="pr-12"
+                            />
+                          </FormControl>
+                           <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground">
+                              bulan
+                          </span>
+                        </div>
+                        <FormMessage />
+                    </FormItem>
                 )}/>
             )}
             
