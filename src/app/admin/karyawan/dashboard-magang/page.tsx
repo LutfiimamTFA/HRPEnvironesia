@@ -9,9 +9,9 @@ import { MENU_CONFIG } from '@/lib/menu-config';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Loader2 } from 'lucide-react';
-import { useDoc, useFirestore, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
-import type { EmployeeProfile } from '@/lib/types';
+import { useDoc, useFirestore, useMemoFirebase, useCollection } from '@/firebase';
+import { doc, collection } from 'firebase/firestore';
+import type { EmployeeProfile, UserProfile, Brand } from '@/lib/types';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 
@@ -25,7 +25,38 @@ function DashboardSkeleton() {
     )
 }
 
-function PlacementInfoCard({ profile }: { profile: EmployeeProfile | null }) {
+function PlacementInfoCard({
+  profile,
+  userProfile,
+  brands,
+}: {
+  profile: EmployeeProfile | null;
+  userProfile: UserProfile | null;
+  brands: Brand[] | null;
+}) {
+  const brandMap = React.useMemo(() => {
+    if (!brands) return new Map<string, string>();
+    return new Map(brands.map(b => [b.id!, b.name]));
+  }, [brands]);
+
+  const brandNameToDisplay = React.useMemo(() => {
+    // Priority 1: From employee_profiles (HR-set override)
+    if (profile?.brandName) {
+      return profile.brandName;
+    }
+    // Priority 2: From users (set during registration/activation)
+    if (userProfile?.brandId) {
+      if (Array.isArray(userProfile.brandId)) {
+        return userProfile.brandId
+          .map(id => brandMap.get(id))
+          .filter(Boolean)
+          .join(', ');
+      }
+      return brandMap.get(userProfile.brandId as string);
+    }
+    return 'Belum diatur';
+  }, [profile, userProfile, brandMap]);
+  
     return (
         <Card>
             <CardHeader>
@@ -33,7 +64,7 @@ function PlacementInfoCard({ profile }: { profile: EmployeeProfile | null }) {
                  <CardDescription>Detail penempatan dan penanggung jawab Anda selama periode magang.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
-                <div className="flex justify-between"><span className="text-muted-foreground">Brand</span> <span className="font-semibold">{profile?.brandName || 'Belum diatur'}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Brand</span> <span className="font-semibold">{brandNameToDisplay}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Divisi</span> <span className="font-semibold">{profile?.division || 'Belum diatur'}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Supervisor / PIC</span> <span className="font-semibold">{profile?.supervisorName || 'Belum diatur'}</span></div>
             </CardContent>
@@ -80,7 +111,11 @@ export default function MagangDashboardPage() {
   );
   const { data: employeeProfile, isLoading: profileLoading } = useDoc<EmployeeProfile>(employeeProfileRef);
 
-  const isLoading = authLoading || profileLoading;
+  const { data: brands, isLoading: brandsLoading } = useCollection<Brand>(
+    useMemoFirebase(() => collection(firestore, 'brands'), [firestore])
+  );
+
+  const isLoading = authLoading || profileLoading || brandsLoading;
 
   if (!hasAccess || !userProfile || userProfile.employmentType !== 'magang') {
     return (
@@ -106,7 +141,7 @@ export default function MagangDashboardPage() {
                     <Badge className="mt-4 capitalize">{userProfile.employmentType}</Badge>
                 </CardContent>
             </Card>
-            <PlacementInfoCard profile={employeeProfile} />
+            <PlacementInfoCard profile={employeeProfile} userProfile={userProfile} brands={brands} />
             <PeriodCard profile={employeeProfile} />
         </div>
       )}
