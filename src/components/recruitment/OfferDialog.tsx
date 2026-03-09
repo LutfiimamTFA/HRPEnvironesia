@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
@@ -94,7 +94,7 @@ export function OfferDialog({ open, onOpenChange, onConfirm, candidateName, job 
             )}
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField control={form.control} name="contractStartDate" render={({ field }) => ( <FormItem className="flex flex-col"><FormLabel>Tanggal Mulai Kerja</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} portalled={false} /></FormControl><FormMessage /></FormItem> )}/>
+                <FormField control={form.control} name="contractStartDate" render={({ field }) => ( <FormItem className="flex flex-col"><FormLabel>Tanggal Mulai Kerja</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem> )}/>
                 <FormField control={form.control} name="contractDurationMonths" render={({ field }) => ( <FormItem><FormLabel>Durasi Kontrak (bulan)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)}/>
             </div>
             
