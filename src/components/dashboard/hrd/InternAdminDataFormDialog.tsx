@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -64,7 +64,7 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, applica
   );
   
   const { data: supervisors, isLoading: isLoadingSupervisors } = useCollection<UserProfile>(
-    useMemoFirebase(() => query(collection(firestore, 'users'), where('role', 'in', ROLES_INTERNAL)), [firestore])
+    useMemoFirebase(() => query(collection(firestore, 'users'), where('role', 'in', ['manager', 'karyawan'])), [firestore])
   );
 
   const form = useForm<AdminFormValues>({
@@ -74,6 +74,24 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, applica
   const { watch, setValue } = form;
   const startDate = watch('internshipStartDate');
   const duration = watch('contractDurationMonths');
+  const selectedBrandId = watch('brandId');
+
+  const filteredSupervisors = useMemo(() => {
+    if (!supervisors || !selectedBrandId) return [];
+
+    return supervisors.filter(user => {
+      // Must be an active manager or employee
+      if (!user.isActive || !['manager', 'karyawan'].includes(user.role)) {
+        return false;
+      }
+      
+      // Must match the brand
+      if (Array.isArray(user.brandId)) {
+        return user.brandId.includes(selectedBrandId);
+      }
+      return user.brandId === selectedBrandId;
+    });
+  }, [supervisors, selectedBrandId]);
 
   useEffect(() => {
     if (startDate && duration && duration > 0) {
@@ -151,7 +169,7 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, applica
             )}/>
              <FormField control={form.control} name="division" render={({ field }) => (<FormItem><FormLabel>Divisi</FormLabel><FormControl><Input placeholder="e.g., Creative, Finance" {...field} value={field.value || ''} /></FormControl><FormMessage /></FormItem>)} />
              <FormField control={form.control} name="supervisorName" render={({ field }) => (
-                <FormItem><FormLabel>Supervisor / PIC</FormLabel><Select onValueChange={field.onChange} value={field.value} disabled={isLoadingSupervisors}><FormControl><SelectTrigger><SelectValue placeholder="Pilih Supervisor" /></SelectTrigger></FormControl><SelectContent>{supervisors?.map(s => <SelectItem key={s.uid} value={s.fullName}>{s.fullName}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem>
+                <FormItem><FormLabel>Supervisor / PIC</FormLabel><Select onValueChange={field.onChange} value={field.value || ''} disabled={isLoadingSupervisors}><FormControl><SelectTrigger><SelectValue placeholder="Pilih Supervisor" /></SelectTrigger></FormControl><SelectContent>{filteredSupervisors.map(s => <SelectItem key={s.uid} value={s.fullName}>{s.fullName}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem>
             )}/>
             <FormField control={form.control} name="internSubtype" render={({ field }) => (
                 <FormItem><FormLabel>Tipe Magang</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Pilih tipe magang" /></SelectTrigger></FormControl><SelectContent><SelectItem value="intern_education">Terikat Pendidikan</SelectItem><SelectItem value="intern_pre_probation">Pra-Probation</SelectItem></SelectContent></Select><FormMessage /></FormItem>
