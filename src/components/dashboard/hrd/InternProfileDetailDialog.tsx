@@ -10,7 +10,7 @@ import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, query, where, orderBy } from 'firebase/firestore';
+import { collection, query, where } from 'firebase/firestore';
 import { Loader2, Edit } from 'lucide-react';
 import { InternAdminDataFormDialog } from './InternAdminDataFormDialog';
 
@@ -63,6 +63,17 @@ export function InternProfileDetailDialog({ profile, open, onOpenChange, onAdmin
     setIsEditAdminOpen(false);
   }
 
+  // --- UNIFIED DATA LOGIC ---
+  const officialStartDate = profile.internshipStartDate?.toDate();
+  const officialEndDate = profile.internshipEndDate?.toDate();
+  const officialCompensation = profile.compensationAmount;
+  const officialNotes = profile.hrdNotes;
+
+  const startDateToDisplay = officialStartDate || application?.contractStartDate?.toDate();
+  const endDateToDisplay = officialEndDate || application?.contractEndDate?.toDate();
+  const compensationToDisplay = officialCompensation ?? application?.offeredSalary;
+  const notesToDisplay = officialNotes || application?.offerNotes;
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -102,7 +113,7 @@ export function InternProfileDetailDialog({ profile, open, onOpenChange, onAdmin
                
                <Card>
                   <CardHeader>
-                      <CardTitle className="text-lg">Detail Kontrak & Penawaran</CardTitle>
+                      <CardTitle className="text-lg">Detail Kontrak & Kompensasi</CardTitle>
                   </CardHeader>
                   <CardContent>
                       {isLoadingApplication ? (
@@ -111,29 +122,12 @@ export function InternProfileDetailDialog({ profile, open, onOpenChange, onAdmin
                           </div>
                       ) : (
                            <div className="space-y-4">
-                              <div>
-                                  <h4 className="text-sm font-semibold mb-2">Periode Magang Resmi</h4>
-                                  <dl className="space-y-1 text-sm">
-                                      <InfoRow label="Mulai Magang" value={profile.internshipStartDate ? format(profile.internshipStartDate.toDate(), 'dd MMMM yyyy', { locale: id }) : 'Belum diatur'} />
-                                      <InfoRow label="Selesai Magang" value={profile.internshipEndDate ? format(profile.internshipEndDate.toDate(), 'dd MMMM yyyy', { locale: id }) : 'Belum diatur'} />
-                                      <InfoRow label="Kompensasi" value={profile.compensationAmount ? `Rp ${profile.compensationAmount.toLocaleString('id-ID')}` : '-'} />
-                                  </dl>
-                              </div>
-                              {application && !profile.internshipStartDate && (
-                                  <>
-                                    <Separator />
-                                    <div>
-                                        <h4 className="text-sm font-semibold mb-2">Detail Penawaran Awal (dari Rekrutmen)</h4>
-                                        <dl className="space-y-1 text-sm">
-                                            <InfoRow label="Uang Saku" value={application.offeredSalary ? `Rp ${application.offeredSalary.toLocaleString('id-ID')}` : '-'} />
-                                            <InfoRow label="Durasi Kontrak" value={application.contractDurationMonths ? `${application.contractDurationMonths} bulan` : '-'} />
-                                            <InfoRow label="Tanggal Mulai (Offer)" value={application.contractStartDate ? format(application.contractStartDate.toDate(), 'dd MMM yyyy, HH:mm') : '-'} />
-                                            <InfoRow label="Tanggal Selesai (Offer)" value={application.contractEndDate ? format(application.contractEndDate.toDate(), 'dd MMMM yyyy') : '-'} />
-                                            <InfoRow label="Catatan Penawaran" value={application.offerNotes} />
-                                        </dl>
-                                    </div>
-                                  </>
-                              )}
+                              <dl className="space-y-1 text-sm">
+                                  <InfoRow label="Uang Saku / Kompensasi" value={compensationToDisplay ? `Rp ${compensationToDisplay.toLocaleString('id-ID')}` : 'Belum diatur'} />
+                                  <InfoRow label="Tanggal Mulai Magang" value={startDateToDisplay ? format(startDateToDisplay, 'dd MMMM yyyy', { locale: id }) : 'Belum diatur'} />
+                                  <InfoRow label="Tanggal Selesai Magang" value={endDateToDisplay ? format(endDateToDisplay, 'dd MMMM yyyy', { locale: id }) : 'Belum diatur'} />
+                                  {notesToDisplay && <InfoRow label="Catatan Tambahan" value={notesToDisplay} />}
+                              </dl>
                           </div>
                       )}
                   </CardContent>
@@ -174,6 +168,7 @@ export function InternProfileDetailDialog({ profile, open, onOpenChange, onAdmin
             open={isEditAdminOpen}
             onOpenChange={setIsEditAdminOpen}
             profile={profile}
+            application={application}
             onSuccess={handleAdminFormSuccess}
         />
       )}
