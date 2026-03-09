@@ -309,7 +309,7 @@ function InternProfilePageContent() {
         };
         
         const latestEducation = recruitmentProfile?.education?.[0];
-        const addressToUse = recruitmentProfile?.isDomicileSameAsKtp ? recruitmentProfile.addressKtp : recruitmentProfile.addressDomicile;
+        const addressToUse = recruitmentProfile?.isDomicileSameAsKtp ? recruitmentProfile?.addressKtp : recruitmentProfile?.addressDomicile;
 
         // Merge data with priority: existing employee data > recruitment data > auth data
         return {
@@ -362,4 +362,3 @@ export default function InternProfilePage() {
         </Suspense>
     )
 }
-
