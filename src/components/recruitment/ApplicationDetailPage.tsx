@@ -4,7 +4,7 @@ import { useMemo, useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
-import { doc, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore';
+import { doc, serverTimestamp, updateDoc, writeBatch, Timestamp } from 'firebase/firestore';
 import type { JobApplication, Profile, Job, ApplicationTimelineEvent, ApplicationInterview, UserProfile } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
@@ -71,14 +71,15 @@ export default function ApplicationDetailPage() {
   const handleStageChange = async (newStage: JobApplication['status'], reason: string) => {
     if (!application || !userProfile) return false;
     
-    if (newStage === 'hired') {
+    // 'offered' is now handled by onSendOfferClick, not here.
+    if (newStage === 'offered') {
         setIsOfferDialogOpen(true);
-        return false; // Prevent default stage change, let the dialog handle it
+        return false;
     }
 
     const timelineEvent: ApplicationTimelineEvent = {
         type: 'stage_changed',
-        at: serverTimestamp() as any,
+        at: Timestamp.now(),
         by: userProfile.uid,
         meta: { from: application.status, to: newStage, note: reason }
     };
@@ -112,7 +113,7 @@ export default function ApplicationDetailPage() {
 
     const timelineEvent: ApplicationTimelineEvent = {
         type: 'offer_sent',
-        at: serverTimestamp() as any,
+        at: Timestamp.now(),
         by: userProfile.uid,
         meta: { note: 'Penawaran kerja resmi telah dikirimkan kepada kandidat.' }
     };
@@ -122,7 +123,7 @@ export default function ApplicationDetailPage() {
     combinedDate.setHours(hours, minutes);
 
     const updatePayload = {
-        status: 'hired' as const, // Represents "Offer Stage"
+        status: 'offered' as const,
         offerStatus: 'sent' as const,
         offeredSalary: offerData.offeredSalary,
         probationDurationMonths: offerData.probationDurationMonths,
@@ -167,11 +168,12 @@ export default function ApplicationDetailPage() {
     
     const timelineEvent: ApplicationTimelineEvent = {
         type: 'status_changed',
-        at: serverTimestamp() as any,
+        at: Timestamp.now(),
         by: userProfile.uid,
-        meta: { note: 'Akun kandidat telah diaktifkan sebagai karyawan internal.' }
+        meta: { from: 'offered', to: 'hired', note: 'Akun kandidat telah diaktifkan sebagai karyawan internal.' }
     };
     batch.update(appRef, {
+        status: 'hired',
         internalAccessEnabled: true,
         timeline: [...(application.timeline || []), timelineEvent]
     });
@@ -194,7 +196,7 @@ export default function ApplicationDetailPage() {
       
       setHasTriggeredAutoScreen(true);
       const timelineEvent: ApplicationTimelineEvent = {
-        type: 'stage_changed', at: serverTimestamp() as any, by: userProfile.uid,
+        type: 'stage_changed', at: Timestamp.now(), by: userProfile.uid,
         meta: { from: 'submitted', to: 'screening', note: 'Application automatically moved to screening upon HR review.' },
       };
       await updateDocumentNonBlocking(applicationRef!, { status: 'screening', timeline: [...(application.timeline || []), timelineEvent] });
@@ -222,7 +224,11 @@ export default function ApplicationDetailPage() {
       ) : (
         <>
           <div className="space-y-6">
-            <ApplicationActionBar application={application} onStageChange={handleStageChange} onSendOfferClick={() => setIsOfferDialogOpen(true)} />
+            <ApplicationActionBar 
+              application={application} 
+              onStageChange={handleStageChange}
+              onSendOfferClick={() => setIsOfferDialogOpen(true)}
+            />
             
             <Card>
               <CardHeader>
@@ -260,7 +266,7 @@ export default function ApplicationDetailPage() {
               </CardContent>
             </Card>
 
-            {application.offerStatus === 'accepted' && !application.internalAccessEnabled && (
+            {application.status === 'offered' && application.offerStatus === 'accepted' && !application.internalAccessEnabled && (
                 <Card className="border-green-500">
                     <CardHeader>
                         <CardTitle className="text-green-600 flex items-center gap-2"><CheckCircle /> Penawaran Diterima</CardTitle>
@@ -275,11 +281,11 @@ export default function ApplicationDetailPage() {
                 </Card>
             )}
 
-            {application.offerStatus === 'rejected' && (
+            {application.status !== 'rejected' && application.offerStatus === 'rejected' && (
                  <Card className="border-destructive">
                     <CardHeader>
                         <CardTitle className="text-destructive flex items-center gap-2"><XCircle /> Penawaran Ditolak</CardTitle>
-                        <CardDescription>Kandidat telah menolak penawaran kerja pada {application.candidateOfferDecisionAt ? format(application.candidateOfferDecisionAt.toDate(), 'dd MMM yyyy') : ''}.</CardDescription>
+                        <CardDescription>Kandidat telah menolak penawaran kerja pada {application.candidateOfferDecisionAt ? format(application.candidateOfferDecisionAt.toDate(), 'dd MMM yyyy') : ''}. Proses rekrutmen untuk kandidat ini telah selesai.</CardDescription>
                     </CardHeader>
                 </Card>
             )}
@@ -290,7 +296,7 @@ export default function ApplicationDetailPage() {
                   <ProfileView profile={profile} />
               </div>
               <div className="lg:sticky lg:top-24 space-y-6">
-                  <CandidateDocumentsCard application={application} />
+                  <CandidateDocumentsCard application={application} onVerificationChange={mutateApplication}/>
                   <ApplicationNotes application={application} onNoteAdded={mutateApplication} />
               </div>
             </div>

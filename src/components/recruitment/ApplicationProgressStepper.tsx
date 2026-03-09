@@ -13,7 +13,8 @@ const applicationSteps = [
   { status: 'verification', label: 'Verifikasi', icon: ClipboardCheck },
   { status: 'document_submission', label: 'Dokumen', icon: FileText },
   { status: 'interview', label: 'Wawancara', icon: Users },
-  { status: 'hired', label: 'Diterima', icon: Award },
+  { status: 'offered', label: 'Penawaran', icon: Award },
+  { status: 'hired', label: 'Diterima', icon: Check },
 ];
 
 interface ApplicationProgressStepperProps {
@@ -30,7 +31,7 @@ export function ApplicationProgressStepper({ currentStatus }: ApplicationProgres
 
   return (
     <div className="w-full overflow-x-auto pb-4">
-      <div className="flex items-center min-w-[700px]">
+      <div className="flex items-center min-w-[800px]">
         {applicationSteps.map((step, index) => {
           const canonicalIndex = ORDERED_RECRUITMENT_STAGES.indexOf(step.status as JobApplicationStatus);
           

@@ -12,6 +12,7 @@ export const statusDisplayLabels: Record<JobApplicationStatus, string> = {
     verification: 'Verifikasi HRD',
     document_submission: 'Dokumen',
     interview: 'Wawancara',
+    offered: 'Penawaran Kerja',
     hired: 'Diterima Kerja',
     rejected: 'Ditolak',
 };
@@ -30,6 +31,7 @@ export function ApplicationStatusBadge({ status, className }: ApplicationStatusB
     verification: { label: statusDisplayLabels.verification, variant: 'default' as const, className: 'bg-purple-600 hover:bg-purple-700' },
     document_submission: { label: statusDisplayLabels.document_submission, variant: 'default' as const, className: 'bg-indigo-500 hover:bg-indigo-600' },
     interview: { label: statusDisplayLabels.interview, variant: 'default' as const, className: 'bg-orange-500 hover:bg-orange-600' },
+    offered: { label: statusDisplayLabels.offered, variant: 'default' as const, className: 'bg-pink-600 hover:bg-pink-700' },
     hired: { label: statusDisplayLabels.hired, variant: 'default' as const, className: 'bg-green-600 hover:bg-green-700' },
     rejected: { label: statusDisplayLabels.rejected, variant: 'destructive' as const },
   };

@@ -17,7 +17,7 @@ interface ApplicationActionBarProps {
 const getStageActions = (currentStatus: JobApplication['status']) => {
     const currentIndex = ORDERED_RECRUITMENT_STAGES.indexOf(currentStatus);
     
-    if (currentStatus === 'hired' || currentStatus === 'rejected' || currentIndex === -1) {
+    if (['offered', 'hired', 'rejected'].includes(currentStatus) || currentIndex === -1) {
         return { primaryAction: null, otherActions: [] };
     }
 
@@ -34,7 +34,7 @@ export function ApplicationActionBar({ application, onStageChange, onSendOfferCl
   const [targetStage, setTargetStage] = useState<JobApplication['status'] | null>(null);
 
   const handleActionClick = (stage: JobApplication['status']) => {
-    if (stage === 'hired') {
+    if (stage === 'offered') {
       onSendOfferClick();
     } else {
       setTargetStage(stage);
@@ -53,7 +53,7 @@ export function ApplicationActionBar({ application, onStageChange, onSendOfferCl
 
   const { primaryAction, otherActions } = getStageActions(application.status);
   
-  const finalStageActions = ['hired', 'rejected'];
+  const finalStageActions = ['hired', 'rejected', 'offered'];
   const backAndSkipActions = otherActions.filter(stage => !finalStageActions.includes(stage));
 
   return (
@@ -89,8 +89,8 @@ export function ApplicationActionBar({ application, onStageChange, onSendOfferCl
                 
                 <DropdownMenuGroup>
                     <DropdownMenuLabel>Keputusan Final</DropdownMenuLabel>
-                    <DropdownMenuItem onSelect={() => handleActionClick('hired')} className="cursor-pointer">
-                        Diterima Kerja
+                    <DropdownMenuItem onSelect={() => handleActionClick('offered')} className="cursor-pointer">
+                        Kirim Penawaran Kerja
                     </DropdownMenuItem>
                     <DropdownMenuItem
                         onSelect={() => handleActionClick('rejected')}
