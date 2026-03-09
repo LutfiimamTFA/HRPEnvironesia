@@ -10,8 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Loader2 } from 'lucide-react';
 import { useDoc, useFirestore, useMemoFirebase, useCollection } from '@/firebase';
-import { doc, collection } from 'firebase/firestore';
-import type { EmployeeProfile, UserProfile, Brand } from '@/lib/types';
+import { doc, collection, query, where, orderBy, limit } from 'firebase/firestore';
+import type { EmployeeProfile, UserProfile, Brand, JobApplication } from '@/lib/types';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 
@@ -72,7 +72,11 @@ function PlacementInfoCard({
     );
 }
 
-function PeriodCard({ profile }: { profile: EmployeeProfile | null }) {
+function PeriodCard({ profile, application }: { profile: EmployeeProfile | null, application: JobApplication | null }) {
+    // Priority: Official HR data (profile) > Data from recruitment offer (application)
+    const startDate = profile?.internshipStartDate?.toDate() || application?.contractStartDate?.toDate();
+    const endDate = profile?.internshipEndDate?.toDate() || application?.contractEndDate?.toDate();
+
     return (
         <Card className="bg-primary/5 text-primary-foreground border-primary/20">
             <CardHeader>
@@ -82,15 +86,15 @@ function PeriodCard({ profile }: { profile: EmployeeProfile | null }) {
                 <div className="flex items-center justify-around text-center">
                     <div>
                         <p className="text-xs text-primary/80">Mulai Magang</p>
-                        <p className="font-bold text-xl text-primary">{profile?.internshipStartDate ? format(profile.internshipStartDate.toDate(), 'dd MMM yyyy', { locale: id }) : 'TBA'}</p>
+                        <p className="font-bold text-xl text-primary">{startDate ? format(startDate, 'dd MMM yyyy', { locale: id }) : 'TBA'}</p>
                     </div>
                     <div className="h-12 w-px bg-primary/20" />
                     <div>
                         <p className="text-xs text-primary/80">Selesai Magang</p>
-                        <p className="font-bold text-xl text-primary">{profile?.internshipEndDate ? format(profile.internshipEndDate.toDate(), 'dd MMM yyyy', { locale: id }) : 'TBA'}</p>
+                        <p className="font-bold text-xl text-primary">{endDate ? format(endDate, 'dd MMM yyyy', { locale: id }) : 'TBA'}</p>
                     </div>
                 </div>
-                {!profile?.internshipStartDate && (
+                {!startDate && (
                     <p className="text-xs text-center text-primary/70 mt-3">Periode resmi magang Anda akan diatur dan ditampilkan di sini oleh HRD.</p>
                 )}
             </CardContent>
@@ -115,7 +119,22 @@ export default function MagangDashboardPage() {
     useMemoFirebase(() => collection(firestore, 'brands'), [firestore])
   );
 
-  const isLoading = authLoading || profileLoading || brandsLoading;
+  const applicationQuery = useMemoFirebase(() => {
+    if (!userProfile) return null;
+    return query(
+      collection(firestore, 'applications'),
+      where('candidateUid', '==', userProfile.uid),
+      where('status', '==', 'hired'),
+      orderBy('updatedAt', 'desc'),
+      limit(1)
+    );
+  }, [firestore, userProfile]);
+
+  const { data: applications, isLoading: isLoadingApplication } = useCollection<JobApplication>(applicationQuery);
+
+  const application = useMemo(() => applications?.[0] || null, [applications]);
+
+  const isLoading = authLoading || profileLoading || brandsLoading || isLoadingApplication;
 
   if (!hasAccess || !userProfile || userProfile.employmentType !== 'magang') {
     return (
@@ -142,7 +161,7 @@ export default function MagangDashboardPage() {
                 </CardContent>
             </Card>
             <PlacementInfoCard profile={employeeProfile} userProfile={userProfile} brands={brands} />
-            <PeriodCard profile={employeeProfile} />
+            <PeriodCard profile={employeeProfile} application={application} />
         </div>
       )}
     </DashboardLayout>
