@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
@@ -102,6 +103,7 @@ function ApplicationCard({ application, assessmentSessionStatus }: { application
   const isOffered = application.status === 'offered';
   
   if (isOffered) {
+    const salaryLabel = application.jobType === 'internship' ? 'Uang Saku' : 'Gaji';
     if (application.offerStatus === 'sent') {
       return (
         <Card className="flex flex-col border-primary/50">
@@ -119,7 +121,7 @@ function ApplicationCard({ application, assessmentSessionStatus }: { application
           <CardContent className="flex-grow space-y-4">
             <Separator />
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 pt-4 text-sm">
-                <div><p className="text-muted-foreground">Kompensasi</p><p className="font-bold text-lg">{formatSalary(application.offeredSalary)} / bulan</p></div>
+                <div><p className="text-muted-foreground">{salaryLabel}</p><p className="font-bold text-lg">{formatSalary(application.offeredSalary)} / bulan</p></div>
                 <div><p className="text-muted-foreground">Tipe Pekerjaan</p><p className="font-semibold capitalize">{application.jobType}</p></div>
                 <div><p className="text-muted-foreground">Durasi Kontrak</p><p className="font-semibold">{application.contractDurationMonths} bulan</p></div>
                 {application.probationDurationMonths && <div><p className="text-muted-foreground">Masa Percobaan</p><p className="font-semibold">{application.probationDurationMonths} bulan</p></div>}
@@ -240,7 +242,7 @@ function ApplicationCard({ application, assessmentSessionStatus }: { application
               const stepStatusIndex = ORDERED_RECRUITMENT_STAGES.indexOf(step.status as JobApplicationStatus);
               const isCurrentRejectedStep = isRejected && step.status === 'rejected';
 
-              let isCompleted = !isRejected && currentStatusIndex > stepStatusIndex;
+              let isCompleted = !isRejected && currentStepIndex > stepStatusIndex;
               if (step.status === 'tes_kepribadian') {
                   isCompleted = assessmentSessionStatus === 'submitted';
               }
@@ -248,7 +250,7 @@ function ApplicationCard({ application, assessmentSessionStatus }: { application
                   isCompleted = true;
               }
 
-              const isActive = !isRejected && currentStatusIndex === stepStatusIndex && !isCompleted;
+              const isActive = !isRejected && currentStepIndex === stepStatusIndex && !isCompleted;
 
               return (
                 <React.Fragment key={step.status}>

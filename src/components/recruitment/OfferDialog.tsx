@@ -110,6 +110,7 @@ export function OfferDialog({ open, onOpenChange, onConfirm, candidateName, job 
   };
   
   const title = `Penawaran Kontrak Kerja: ${candidateName}`;
+  const salaryLabel = job.statusJob === 'internship' ? 'Uang Saku (per bulan)' : 'Gaji / Kompensasi (per bulan)';
 
   return (
     <>
@@ -138,7 +139,7 @@ export function OfferDialog({ open, onOpenChange, onConfirm, candidateName, job 
                   name="offeredSalary"
                   render={({ field }) => (
                   <FormItem>
-                      <FormLabel>Gaji / Kompensasi (per bulan)</FormLabel>
+                      <FormLabel>{salaryLabel}</FormLabel>
                       <FormControl>
                       <div className="relative">
                           <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground pointer-events-none">

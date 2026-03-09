@@ -4,7 +4,7 @@ import { useMemo, useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking, useCollection } from '@/firebase';
-import { doc, serverTimestamp, updateDoc, Timestamp, writeBatch, collection, where, query } from 'firebase/firestore';
+import { doc, serverTimestamp, updateDoc, writeBatch, Timestamp, collection, where, query } from 'firebase/firestore';
 import type { JobApplication, Profile, Job, ApplicationTimelineEvent, ApplicationInterview, RescheduleRequest, Brand, UserProfile } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
@@ -16,7 +16,7 @@ import { ProfileView } from '@/components/recruitment/ProfileView';
 import { ApplicationStatusBadge, statusDisplayLabels } from '@/components/recruitment/ApplicationStatusBadge';
 import { useToast } from '@/hooks/use-toast';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { getInitials, cn } from '@/lib/utils';
+import { getInitials } from '@/lib/utils';
 import { format, differenceInMinutes, add } from 'date-fns';
 import { ApplicationProgressStepper } from '@/components/recruitment/ApplicationProgressStepper';
 import { CandidateDocumentsCard } from '@/components/recruitment/CandidateDocumentsCard';
@@ -381,6 +381,8 @@ function OfferPreviewCard({ application, onActivate, isActivating }: { applicati
     return null;
   }
 
+  const salaryLabel = application.jobType === 'internship' ? 'Uang Saku' : 'Gaji';
+
   const getStatusBadge = () => {
     switch (application.offerStatus) {
       case 'sent':
@@ -412,7 +414,7 @@ function OfferPreviewCard({ application, onActivate, isActivating }: { applicati
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 pt-2">
-            <div><p className="text-muted-foreground">Kompensasi</p><p className="font-bold text-base">{formatSalary(application.offeredSalary)} / bulan</p></div>
+            <div><p className="text-muted-foreground">{salaryLabel}</p><p className="font-bold text-base">{formatSalary(application.offeredSalary)} / bulan</p></div>
             <div><p className="text-muted-foreground">Durasi Kontrak</p><p className="font-semibold">{application.contractDurationMonths} bulan</p></div>
             {application.probationDurationMonths && <div><p className="text-muted-foreground">Masa Percobaan</p><p className="font-semibold">{application.probationDurationMonths} bulan</p></div>}
             <div><p className="text-muted-foreground">Tanggal Mulai</p><p className="font-semibold">{application.contractStartDate ? format(application.contractStartDate.toDate(), 'eeee, dd MMMM yyyy, HH:mm', { locale: idLocale }) : '-'}</p></div>
@@ -710,7 +712,7 @@ export default function ApplicationDetailPage() {
             </CardContent>
           </Card>
           
-          {application.status === 'offered' && (
+          {(application.status === 'offered' || application.status === 'hired') && (
             <OfferPreviewCard
               application={application}
               onActivate={handleActivateEmployee}
