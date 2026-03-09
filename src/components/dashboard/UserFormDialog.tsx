@@ -220,43 +220,56 @@ export function UserFormDialog({ user, open, onOpenChange }: UserFormDialogProps
 
                   {role && role !== 'super-admin' && (
                     role === 'hrd' ? (
-                      <FormField
-                          control={form.control}
-                          name="brandId"
-                          render={({ field }) => (
-                              <FormItem>
-                                  <div className="mb-4">
-                                      <FormLabel>Brands</FormLabel>
-                                      <FormDescription>
-                                          Assign one or more brands to this HRD user.
-                                      </FormDescription>
-                                  </div>
-                                  <div className="h-24 w-full rounded-md border p-4 overflow-y-auto space-y-2">
-                                    {brands?.map((brand) => (
-                                      <div key={brand.id!} className="flex flex-row items-start space-x-3 space-y-0">
+                       <FormField
+                        control={form.control}
+                        name="brandId"
+                        render={() => (
+                          <FormItem>
+                            <div className="mb-4">
+                              <FormLabel>Brands</FormLabel>
+                              <FormDescription>
+                                Assign one or more brands to this HRD user.
+                              </FormDescription>
+                            </div>
+                            <div className="h-24 w-full rounded-md border p-4 overflow-y-auto space-y-2">
+                            {brands?.map((brand) => (
+                              <FormField
+                                key={brand.id}
+                                control={form.control}
+                                name="brandId"
+                                render={({ field }) => {
+                                  const fieldValue = Array.isArray(field.value) ? field.value : [];
+                                  return (
+                                    <FormItem
+                                      key={brand.id}
+                                      className="flex flex-row items-start space-x-3 space-y-0"
+                                    >
+                                      <FormControl>
                                         <Checkbox
-                                          checked={Array.isArray(field.value) && field.value.includes(brand.id!)}
+                                          checked={fieldValue.includes(brand.id!)}
                                           onCheckedChange={(checked) => {
-                                            const currentValue = Array.isArray(field.value) ? field.value : [];
-                                            const newValue = checked
-                                              ? [...currentValue, brand.id!]
-                                              : currentValue.filter((value) => value !== brand.id!);
-                                            field.onChange(newValue);
+                                            return checked
+                                              ? field.onChange([...fieldValue, brand.id!])
+                                              : field.onChange(
+                                                  fieldValue?.filter(
+                                                    (value) => value !== brand.id!
+                                                  )
+                                                )
                                           }}
-                                          id={`brand-${brand.id}`}
                                         />
-                                        <label
-                                          htmlFor={`brand-${brand.id}`}
-                                          className="text-sm font-normal leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                                        >
-                                          {brand.name}
-                                        </label>
-                                      </div>
-                                    ))}
-                                  </div>
-                                  <FormMessage />
-                              </FormItem>
-                          )}
+                                      </FormControl>
+                                      <FormLabel className="font-normal">
+                                        {brand.name}
+                                      </FormLabel>
+                                    </FormItem>
+                                  )
+                                }}
+                              />
+                            ))}
+                            </div>
+                            <FormMessage />
+                          </FormItem>
+                        )}
                       />
                     ) : (
                       <FormField
