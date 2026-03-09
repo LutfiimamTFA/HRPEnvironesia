@@ -160,7 +160,7 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, applica
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Edit Data Administrasi: {profile.fullName}</DialogTitle>
           <DialogDescription>
@@ -168,44 +168,52 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, applica
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form id="intern-admin-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4">
-            <FormField control={form.control} name="brandId" render={({ field }) => (
-                <FormItem><FormLabel>Penempatan Brand</FormLabel><Select onValueChange={field.onChange} value={field.value} disabled={isLoadingBrands}><FormControl><SelectTrigger><SelectValue placeholder="Pilih brand" /></SelectTrigger></FormControl><SelectContent>{brands?.map(b => <SelectItem key={b.id!} value={b.id!}>{b.name}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem>
-            )}/>
-             <FormField control={form.control} name="division" render={({ field }) => (<FormItem><FormLabel>Divisi</FormLabel><FormControl><Input placeholder="e.g., Creative, Finance" {...field} value={field.value || ''} /></FormControl><FormMessage /></FormItem>)} />
-             <FormField control={form.control} name="supervisorName" render={({ field }) => (
-                <FormItem><FormLabel>Supervisor / PIC</FormLabel><Select onValueChange={field.onChange} value={field.value || ''} disabled={isLoadingSupervisors}><FormControl><SelectTrigger><SelectValue placeholder="Pilih Supervisor" /></SelectTrigger></FormControl><SelectContent>{filteredSupervisors.map(s => <SelectItem key={s.uid} value={s.fullName}>{s.fullName}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem>
-            )}/>
-            <FormField control={form.control} name="internSubtype" render={({ field }) => (
-                <FormItem><FormLabel>Tipe Magang</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Pilih tipe magang" /></SelectTrigger></FormControl><SelectContent><SelectItem value="intern_education">Terikat Pendidikan</SelectItem><SelectItem value="intern_pre_probation">Pra-Probation</SelectItem></SelectContent></Select><FormMessage /></FormItem>
-            )}/>
-            <FormField
-                control={form.control}
-                name="compensationAmount"
-                render={({ field }) => (
-                <FormItem>
-                    <FormLabel>Uang Saku (per bulan)</FormLabel>
-                    <FormControl>
-                    <div className="relative">
-                        <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground pointer-events-none">Rp</span>
-                        <Input
-                            type="text" inputMode="numeric" placeholder="300.000" className="pl-8"
-                            value={formatSalary(field.value)}
-                            onChange={(e) => field.onChange(unformatSalary(e.target.value))}
-                        />
-                    </div>
-                    </FormControl>
-                    <FormMessage />
-                </FormItem>
-                )}
-            />
-            <div className="grid grid-cols-2 gap-4">
+          <form id="intern-admin-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 py-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-6">
+                <div className="md:col-span-2">
+                    <FormField control={form.control} name="brandId" render={({ field }) => (
+                        <FormItem><FormLabel>Penempatan Brand</FormLabel><Select onValueChange={field.onChange} value={field.value} disabled={isLoadingBrands}><FormControl><SelectTrigger><SelectValue placeholder="Pilih brand" /></SelectTrigger></FormControl><SelectContent>{brands?.map(b => <SelectItem key={b.id!} value={b.id!}>{b.name}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem>
+                    )}/>
+                </div>
+                
+                <FormField control={form.control} name="division" render={({ field }) => (<FormItem><FormLabel>Divisi</FormLabel><FormControl><Input placeholder="e.g., Creative, Finance" {...field} value={field.value || ''} /></FormControl><FormMessage /></FormItem>)} />
+                
+                <FormField control={form.control} name="supervisorName" render={({ field }) => (
+                    <FormItem><FormLabel>Supervisor / PIC</FormLabel><Select onValueChange={field.onChange} value={field.value || ''} disabled={isLoadingSupervisors}><FormControl><SelectTrigger><SelectValue placeholder="Pilih Supervisor" /></SelectTrigger></FormControl><SelectContent>{filteredSupervisors.map(s => <SelectItem key={s.uid} value={s.fullName}>{s.fullName}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem>
+                )}/>
+                
+                <FormField control={form.control} name="internSubtype" render={({ field }) => (
+                    <FormItem><FormLabel>Tipe Magang</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Pilih tipe magang" /></SelectTrigger></FormControl><SelectContent><SelectItem value="intern_education">Terikat Pendidikan</SelectItem><SelectItem value="intern_pre_probation">Pra-Probation</SelectItem></SelectContent></Select><FormMessage /></FormItem>
+                )}/>
+
+                <FormField
+                    control={form.control}
+                    name="compensationAmount"
+                    render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>Uang Saku (per bulan)</FormLabel>
+                        <FormControl>
+                        <div className="relative">
+                            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground pointer-events-none">Rp</span>
+                            <Input
+                                type="text" inputMode="numeric" placeholder="300.000" className="pl-8"
+                                value={formatSalary(field.value)}
+                                onChange={(e) => field.onChange(unformatSalary(e.target.value))}
+                            />
+                        </div>
+                        </FormControl>
+                        <FormMessage />
+                    </FormItem>
+                    )}
+                />
+
                 <FormField control={form.control} name="internshipStartDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>Mulai Magang</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>)} />
-                 <FormField
+                
+                <FormField
                     control={form.control}
                     name="contractDurationMonths"
                     render={({ field }) => (
-                      <FormItem>
+                        <FormItem>
                         <FormLabel>Durasi (bulan)</FormLabel>
                         <FormControl>
                             <Input
@@ -216,12 +224,18 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, applica
                             />
                         </FormControl>
                         <FormMessage />
-                      </FormItem>
+                        </FormItem>
                     )}
-                  />
+                    />
+                
+                <div className="md:col-span-2">
+                    <FormField control={form.control} name="internshipEndDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>Selesai Magang</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>)} />
+                </div>
+                
+                <div className="md:col-span-2">
+                    <FormField control={form.control} name="hrdNotes" render={({ field }) => (<FormItem><FormLabel>Catatan HRD (Internal)</FormLabel><FormControl><Textarea placeholder="Catatan internal..." {...field} value={field.value || ''} /></FormControl><FormMessage /></FormItem>)} />
+                </div>
             </div>
-             <FormField control={form.control} name="internshipEndDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>Selesai Magang</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>)} />
-             <FormField control={form.control} name="hrdNotes" render={({ field }) => (<FormItem><FormLabel>Catatan HRD (Internal)</FormLabel><FormControl><Textarea placeholder="Catatan internal..." {...field} value={field.value || ''} /></FormControl><FormMessage /></FormItem>)} />
           </form>
         </Form>
         <DialogFooter>
