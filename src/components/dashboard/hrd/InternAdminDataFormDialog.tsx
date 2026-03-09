@@ -21,11 +21,9 @@ import { ROLES_INTERNAL } from '@/lib/types';
 import { addMonths } from 'date-fns';
 
 const adminFormSchema = z.object({
-  brandId: z.string().min(1, 'Brand penempatan harus dipilih.'),
   division: z.string().optional(),
   supervisorName: z.string().optional(),
   internSubtype: z.enum(['intern_education', 'intern_pre_probation'], { required_error: "Tipe magang harus dipilih." }),
-  compensationAmount: z.coerce.number().min(0, 'Kompensasi tidak boleh negatif.').optional(),
   internshipStartDate: z.date().optional().nullable(),
   contractDurationMonths: z.coerce.number().int().min(1, 'Durasi kontrak minimal 1 bulan.').optional().nullable(),
   internshipEndDate: z.date().optional().nullable(),
@@ -42,16 +40,12 @@ interface InternAdminDataFormDialogProps {
   onSuccess: () => void;
 }
 
-const formatSalary = (value: number | string | undefined | null) => {
-    if (value === undefined || value === null || value === '') return '';
-    const num = typeof value === 'string' ? parseInt(value.replace(/\./g, ''), 10) : value;
-    if (isNaN(num)) return '';
-    return num.toLocaleString('id-ID');
-};
-
-const unformatSalary = (value: string) => {
-    return parseInt(value.replace(/\./g, ''), 10) || 0;
-};
+const InfoRow = ({ label, value }: { label: string; value?: string | number | null }) => (
+    <div className="grid grid-cols-3 gap-1 py-1.5">
+      <dt className="text-sm font-medium text-muted-foreground">{label}</dt>
+      <dd className="text-sm font-semibold col-span-2">{value || '-'}</dd>
+    </div>
+);
 
 export function InternAdminDataFormDialog({ open, onOpenChange, profile, application, onSuccess }: InternAdminDataFormDialogProps) {
   const [isSaving, setIsSaving] = useState(false);
@@ -64,8 +58,16 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, applica
   );
   
   const { data: supervisors, isLoading: isLoadingSupervisors } = useCollection<UserProfile>(
-    useMemoFirebase(() => query(collection(firestore, 'users'), where('role', 'in', ['manager', 'karyawan'])), [firestore])
+    useMemoFirebase(() => query(collection(firestore, 'users'), where('role', 'in', ['manager', 'karyawan']), where('isActive', '==', true)), [firestore])
   );
+  
+  const brandId = profile.brandId || application?.brandId;
+  const brandName = useMemo(() => {
+      if (!brands || !brandId) return 'N/A';
+      return brands.find(b => b.id === brandId)?.name || 'Unknown';
+  }, [brands, brandId]);
+  
+  const compensationAmount = profile.compensationAmount ?? application?.offeredSalary;
 
   const form = useForm<AdminFormValues>({
     resolver: zodResolver(adminFormSchema),
@@ -74,23 +76,20 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, applica
   const { watch, setValue } = form;
   const startDate = watch('internshipStartDate');
   const duration = watch('contractDurationMonths');
-  const selectedBrandId = watch('brandId');
+  const selectedBrandId = brandId; // Use the determined brandId
 
   const filteredSupervisors = useMemo(() => {
     if (!supervisors || !selectedBrandId) return [];
 
     return supervisors.filter(user => {
-      // Exclude the intern themselves from being their own supervisor
       if (user.uid === profile.uid) {
         return false;
       }
       
-      // Must be an active manager or employee
       if (!user.isActive || !['manager', 'karyawan'].includes(user.role)) {
         return false;
       }
       
-      // Must match the brand
       if (Array.isArray(user.brandId)) {
         return user.brandId.includes(selectedBrandId);
       }
@@ -108,15 +107,12 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, applica
     }
   }, [startDate, duration, setValue]);
 
-
   useEffect(() => {
     if (open) {
       form.reset({
-        brandId: profile.brandId || application?.brandId || '',
         division: profile.division || '',
         supervisorName: profile.supervisorName || '',
         internSubtype: profile.internSubtype || 'intern_education',
-        compensationAmount: profile.compensationAmount ?? application?.offeredSalary ?? 0,
         internshipStartDate: profile.internshipStartDate?.toDate() || application?.contractStartDate?.toDate() || null,
         contractDurationMonths: profile.contractDurationMonths ?? application?.contractDurationMonths ?? null,
         internshipEndDate: profile.internshipEndDate?.toDate() || application?.contractEndDate?.toDate() || null,
@@ -126,16 +122,17 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, applica
   }, [profile, application, open, form]);
 
   const onSubmit = async (values: AdminFormValues) => {
-    if (!hrdProfile) return;
+    if (!hrdProfile || !brandId) return;
     setIsSaving(true);
     try {
         const batch = writeBatch(firestore);
-
         const employeeProfileRef = doc(firestore, 'employee_profiles', profile.uid);
+
         const employeePayload = {
             ...values,
-            brandId: values.brandId,
-            brandName: brands?.find(b => b.id === values.brandId)?.name || '',
+            brandId: brandId, // Persist the non-editable brandId
+            brandName: brandName,
+            compensationAmount: compensationAmount,
             internshipStartDate: values.internshipStartDate ? Timestamp.fromDate(values.internshipStartDate) : null,
             internshipEndDate: values.internshipEndDate ? Timestamp.fromDate(values.internshipEndDate) : null,
             updatedAt: serverTimestamp(),
@@ -143,21 +140,19 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, applica
         batch.set(employeeProfileRef, employeePayload, { merge: true });
 
         const userRef = doc(firestore, 'users', profile.uid);
-        batch.set(userRef, {
-            employmentStage: values.internSubtype,
-            brandId: values.brandId,
-        }, { merge: true });
+        batch.set(userRef, { employmentStage: values.internSubtype }, { merge: true });
         
         await batch.commit();
         toast({ title: 'Data Administrasi Disimpan' });
         onSuccess();
+        onOpenChange(false);
     } catch (error: any) {
         toast({ variant: 'destructive', title: 'Gagal menyimpan data', description: error.message });
     } finally {
         setIsSaving(false);
     }
   };
-
+  
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">
@@ -167,77 +162,59 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, applica
             Data ini hanya dapat diubah oleh HRD dan akan digunakan untuk keperluan internal.
           </DialogDescription>
         </DialogHeader>
-        <Form {...form}>
-          <form id="intern-admin-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 py-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-6">
-                <div className="md:col-span-2">
-                    <FormField control={form.control} name="brandId" render={({ field }) => (
-                        <FormItem><FormLabel>Penempatan Brand</FormLabel><Select onValueChange={field.onChange} value={field.value} disabled={isLoadingBrands}><FormControl><SelectTrigger><SelectValue placeholder="Pilih brand" /></SelectTrigger></FormControl><SelectContent>{brands?.map(b => <SelectItem key={b.id!} value={b.id!}>{b.name}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem>
-                    )}/>
-                </div>
-                
-                <FormField control={form.control} name="division" render={({ field }) => (<FormItem><FormLabel>Divisi</FormLabel><FormControl><Input placeholder="e.g., Creative, Finance" {...field} value={field.value || ''} /></FormControl><FormMessage /></FormItem>)} />
-                
-                <FormField control={form.control} name="supervisorName" render={({ field }) => (
-                    <FormItem><FormLabel>Supervisor / PIC</FormLabel><Select onValueChange={field.onChange} value={field.value || ''} disabled={isLoadingSupervisors}><FormControl><SelectTrigger><SelectValue placeholder="Pilih Supervisor" /></SelectTrigger></FormControl><SelectContent>{filteredSupervisors.map(s => <SelectItem key={s.uid} value={s.fullName}>{s.fullName}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem>
-                )}/>
-                
-                <FormField control={form.control} name="internSubtype" render={({ field }) => (
-                    <FormItem><FormLabel>Tipe Magang</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Pilih tipe magang" /></SelectTrigger></FormControl><SelectContent><SelectItem value="intern_education">Terikat Pendidikan</SelectItem><SelectItem value="intern_pre_probation">Pra-Probation</SelectItem></SelectContent></Select><FormMessage /></FormItem>
-                )}/>
-
-                <FormField
-                    control={form.control}
-                    name="compensationAmount"
-                    render={({ field }) => (
-                    <FormItem>
-                        <FormLabel>Uang Saku (per bulan)</FormLabel>
-                        <FormControl>
-                        <div className="relative">
-                            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground pointer-events-none">Rp</span>
-                            <Input
-                                type="text" inputMode="numeric" placeholder="300.000" className="pl-8"
-                                value={formatSalary(field.value)}
-                                onChange={(e) => field.onChange(unformatSalary(e.target.value))}
-                            />
-                        </div>
-                        </FormControl>
-                        <FormMessage />
-                    </FormItem>
-                    )}
-                />
-
-                <FormField control={form.control} name="internshipStartDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>Mulai Magang</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>)} />
-                
-                <FormField
-                    control={form.control}
-                    name="contractDurationMonths"
-                    render={({ field }) => (
-                        <FormItem>
-                        <FormLabel>Durasi (bulan)</FormLabel>
-                        <FormControl>
-                            <Input
-                                type="number"
-                                {...field}
-                                value={field.value ?? ''}
-                                onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
-                            />
-                        </FormControl>
-                        <FormMessage />
-                        </FormItem>
-                    )}
-                    />
-                
-                <div className="md:col-span-2">
-                    <FormField control={form.control} name="internshipEndDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>Selesai Magang</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>)} />
-                </div>
-                
-                <div className="md:col-span-2">
-                    <FormField control={form.control} name="hrdNotes" render={({ field }) => (<FormItem><FormLabel>Catatan HRD (Internal)</FormLabel><FormControl><Textarea placeholder="Catatan internal..." {...field} value={field.value || ''} /></FormControl><FormMessage /></FormItem>)} />
-                </div>
+        <div className="space-y-4 py-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-sm border p-4 rounded-lg bg-muted/30">
+                <InfoRow label="Penempatan Brand" value={brandName} />
+                <InfoRow label="Uang Saku (per bulan)" value={compensationAmount ? `Rp ${compensationAmount.toLocaleString('id-ID')}` : 'Belum diatur'} />
             </div>
-          </form>
-        </Form>
+
+            <Form {...form}>
+            <form id="intern-admin-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 pt-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-6">
+                    <FormField control={form.control} name="division" render={({ field }) => (<FormItem><FormLabel>Divisi</FormLabel><FormControl><Input placeholder="e.g., Creative, Finance" {...field} value={field.value || ''} /></FormControl><FormMessage /></FormItem>)} />
+                    
+                    <FormField control={form.control} name="supervisorName" render={({ field }) => (
+                        <FormItem><FormLabel>Supervisor / PIC</FormLabel><Select onValueChange={field.onChange} value={field.value || ''} disabled={isLoadingSupervisors}><FormControl><SelectTrigger><SelectValue placeholder="Pilih Supervisor" /></SelectTrigger></FormControl><SelectContent>{filteredSupervisors.map(s => <SelectItem key={s.uid} value={s.fullName}>{s.fullName}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem>
+                    )}/>
+                    
+                    <FormField control={form.control} name="internSubtype" render={({ field }) => (
+                        <FormItem><FormLabel>Tipe Magang</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Pilih tipe magang" /></SelectTrigger></FormControl><SelectContent><SelectItem value="intern_education">Terikat Pendidikan</SelectItem><SelectItem value="intern_pre_probation">Pra-Probation</SelectItem></SelectContent></Select><FormMessage /></FormItem>
+                    )}/>
+
+                    <div></div> {/* Spacer */}
+
+                    <FormField control={form.control} name="internshipStartDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>Mulai Magang</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>)} />
+                    
+                    <FormField
+                        control={form.control}
+                        name="contractDurationMonths"
+                        render={({ field }) => (
+                            <FormItem>
+                            <FormLabel>Durasi (bulan)</FormLabel>
+                            <FormControl>
+                                <Input
+                                    type="number"
+                                    {...field}
+                                    value={field.value ?? ''}
+                                    onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
+                                />
+                            </FormControl>
+                            <FormMessage />
+                            </FormItem>
+                        )}
+                        />
+                    
+                    <div className="md:col-span-2">
+                        <FormField control={form.control} name="internshipEndDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>Selesai Magang (Otomatis)</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} disabled /></FormControl><FormMessage /></FormItem>)} />
+                    </div>
+                    
+                    <div className="md:col-span-2">
+                        <FormField control={form.control} name="hrdNotes" render={({ field }) => (<FormItem><FormLabel>Catatan HRD (Internal)</FormLabel><FormControl><Textarea placeholder="Catatan internal..." {...field} value={field.value || ''} /></FormControl><FormMessage /></FormItem>)} />
+                    </div>
+                </div>
+            </form>
+            </Form>
+        </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Batal</Button>
           <Button type="submit" form="intern-admin-form" disabled={isSaving}>
