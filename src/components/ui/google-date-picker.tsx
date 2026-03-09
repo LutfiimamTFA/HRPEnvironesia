@@ -35,7 +35,10 @@ export type GoogleDatePickerProps = {
   portalled?: boolean;
 };
 
-export function GoogleDatePicker({
+export const GoogleDatePicker = React.forwardRef<
+  HTMLButtonElement,
+  GoogleDatePickerProps
+>(({
   value,
   onChange,
   placeholder = 'Pilih tanggal',
@@ -45,7 +48,7 @@ export function GoogleDatePicker({
   disabled,
   className,
   portalled = true,
-}: GoogleDatePickerProps) {
+}, ref) => {
   const [open, setOpen] = React.useState(false);
   const [view, setView] = React.useState<View>('day');
   
@@ -208,6 +211,7 @@ export function GoogleDatePicker({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
+          ref={ref}
           variant={'outline'}
           disabled={disabled}
           className={cn('w-full justify-start text-left font-normal', !value && 'text-muted-foreground', className)}
@@ -229,4 +233,5 @@ export function GoogleDatePicker({
       </PopoverContent>
     </Popover>
   );
-}
+});
+GoogleDatePicker.displayName = "GoogleDatePicker";
