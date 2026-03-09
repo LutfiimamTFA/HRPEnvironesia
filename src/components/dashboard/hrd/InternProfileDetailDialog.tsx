@@ -10,7 +10,7 @@ import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, query, where } from 'firebase/firestore';
+import { collection, query, where, orderBy } from 'firebase/firestore';
 import { Loader2, Edit } from 'lucide-react';
 import { InternAdminDataFormDialog } from './InternAdminDataFormDialog';
 
@@ -53,6 +53,7 @@ export function InternProfileDetailDialog({ profile, open, onOpenChange, onAdmin
 
   const application = useMemo(() => {
     if (!applications || applications.length === 0) return null;
+    // Sort by updated date to get the most recent 'hired' application if there are multiple
     const sortedApps = [...applications].sort((a, b) => (b.updatedAt?.toMillis() ?? 0) - (a.updatedAt?.toMillis() ?? 0));
     return sortedApps[0];
   }, [applications]);
@@ -99,8 +100,6 @@ export function InternProfileDetailDialog({ profile, open, onOpenChange, onAdmin
                   </dl>
                </div>
                
-               <Separator />
-
                <Card>
                   <CardHeader>
                       <CardTitle className="text-lg">Detail Kontrak & Penawaran</CardTitle>
@@ -120,18 +119,20 @@ export function InternProfileDetailDialog({ profile, open, onOpenChange, onAdmin
                                       <InfoRow label="Kompensasi" value={profile.compensationAmount ? `Rp ${profile.compensationAmount.toLocaleString('id-ID')}` : '-'} />
                                   </dl>
                               </div>
-                              {application && <Separator />}
-                              {application && (
-                                  <div>
-                                      <h4 className="text-sm font-semibold mb-2">Detail Penawaran Awal (dari Rekrutmen)</h4>
-                                      <dl className="space-y-1 text-sm">
-                                          <InfoRow label="Uang Saku" value={application.offeredSalary ? `Rp ${application.offeredSalary.toLocaleString('id-ID')}` : '-'} />
-                                          <InfoRow label="Durasi Kontrak" value={application.contractDurationMonths ? `${application.contractDurationMonths} bulan` : '-'} />
-                                          <InfoRow label="Tanggal Mulai (Offer)" value={application.contractStartDate ? format(application.contractStartDate.toDate(), 'dd MMM yyyy, HH:mm') : '-'} />
-                                          <InfoRow label="Tanggal Selesai (Offer)" value={application.contractEndDate ? format(application.contractEndDate.toDate(), 'dd MMMM yyyy') : '-'} />
-                                          <InfoRow label="Catatan Penawaran" value={application.offerNotes} />
-                                      </dl>
-                                  </div>
+                              {application && !profile.internshipStartDate && (
+                                  <>
+                                    <Separator />
+                                    <div>
+                                        <h4 className="text-sm font-semibold mb-2">Detail Penawaran Awal (dari Rekrutmen)</h4>
+                                        <dl className="space-y-1 text-sm">
+                                            <InfoRow label="Uang Saku" value={application.offeredSalary ? `Rp ${application.offeredSalary.toLocaleString('id-ID')}` : '-'} />
+                                            <InfoRow label="Durasi Kontrak" value={application.contractDurationMonths ? `${application.contractDurationMonths} bulan` : '-'} />
+                                            <InfoRow label="Tanggal Mulai (Offer)" value={application.contractStartDate ? format(application.contractStartDate.toDate(), 'dd MMM yyyy, HH:mm') : '-'} />
+                                            <InfoRow label="Tanggal Selesai (Offer)" value={application.contractEndDate ? format(application.contractEndDate.toDate(), 'dd MMMM yyyy') : '-'} />
+                                            <InfoRow label="Catatan Penawaran" value={application.offerNotes} />
+                                        </dl>
+                                    </div>
+                                  </>
                               )}
                           </div>
                       )}
