@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { GoogleDatePicker } from '@/components/ui/google-date-picker';
 import { useAuth } from '@/providers/auth-provider';
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { useFirestore, useCollection, useMemoFirebase, useDoc } from '@/firebase';
 import { doc, serverTimestamp, Timestamp, writeBatch, query, collection, where } from 'firebase/firestore';
 import type { EmployeeProfile, Brand, UserProfile, JobApplication } from '@/lib/types';
 import { ROLES_INTERNAL } from '@/lib/types';
@@ -63,11 +63,33 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, applica
     useMemoFirebase(() => query(collection(firestore, 'users'), where('role', 'in', ['manager', 'karyawan']), where('isActive', '==', true)), [firestore])
   );
   
-  const brandId = profile.brandId || application?.brandId;
-  const brandName = useMemo(() => {
-      if (!brands || !brandId) return 'N/A';
-      return brands.find(b => b.id === brandId)?.name || 'Unknown';
-  }, [brands, brandId]);
+  const userRef = useMemoFirebase(() => {
+    if (!profile) return null;
+    return doc(firestore, 'users', profile.uid);
+  }, [firestore, profile]);
+  const { data: userProfile, isLoading: isLoadingUser } = useDoc<UserProfile>(userRef);
+
+  const brandMap = useMemo(() => {
+    if (!brands) return new Map<string, string>();
+    return new Map(brands.map(b => [b.id!, b.name]));
+  }, [brands]);
+
+  const { finalBrandId, finalBrandName } = useMemo(() => {
+    // Priority: Employee Profile -> User Profile -> Application
+    let id = profile.brandId || userProfile?.brandId || application?.brandId;
+    const singleId = Array.isArray(id) ? id[0] : id;
+
+    let name = 'N/A';
+    if (profile.brandName) {
+        name = profile.brandName;
+    } else if (singleId && brands) {
+        name = brands.find(b => b.id === singleId)?.name || 'Unknown';
+    } else if (application?.brandName) {
+        name = application.brandName;
+    }
+    
+    return { finalBrandId: singleId, finalBrandName: name };
+  }, [profile, userProfile, application, brands]);
   
   const compensationAmount = profile.compensationAmount ?? application?.offeredSalary;
 
@@ -80,14 +102,14 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, applica
   const duration = watch('contractDurationMonths');
 
   const filteredSupervisors = useMemo(() => {
-    if (!supervisors || !brandId) return [];
+    if (!supervisors || !finalBrandId) return [];
     return supervisors.filter(user => {
       if (user.uid === profile.uid) return false;
       if (!user.isActive || !['manager', 'karyawan'].includes(user.role)) return false;
-      if (Array.isArray(user.brandId)) return user.brandId.includes(brandId);
-      return user.brandId === brandId;
+      if (Array.isArray(user.brandId)) return user.brandId.includes(finalBrandId);
+      return user.brandId === finalBrandId;
     });
-  }, [supervisors, brandId, profile.uid]);
+  }, [supervisors, finalBrandId, profile.uid]);
 
   useEffect(() => {
     if (startDate && duration && duration > 0) {
@@ -114,7 +136,7 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, applica
   }, [profile, application, open, form]);
 
   const onSubmit = async (values: AdminFormValues) => {
-    if (!hrdProfile || !brandId) return;
+    if (!hrdProfile || !finalBrandId) return;
     setIsSaving(true);
     try {
         const batch = writeBatch(firestore);
@@ -122,8 +144,8 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, applica
 
         const employeePayload = {
             ...values,
-            brandId: brandId, 
-            brandName: brandName,
+            brandId: finalBrandId, 
+            brandName: finalBrandName,
             compensationAmount: compensationAmount,
             internshipStartDate: values.internshipStartDate ? Timestamp.fromDate(values.internshipStartDate) : null,
             internshipEndDate: values.internshipEndDate ? Timestamp.fromDate(values.internshipEndDate) : null,
@@ -161,7 +183,7 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, applica
                         <CardTitle className="text-base">Ringkasan Penempatan</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <InfoRow label="Penempatan Brand" value={brandName} />
+                        <InfoRow label="Penempatan Brand" value={finalBrandName} />
                         <InfoRow label="Uang Saku (per bulan)" value={compensationAmount ? `Rp ${compensationAmount.toLocaleString('id-ID')}` : 'Belum diatur'} />
                     </CardContent>
                 </Card>
@@ -187,10 +209,10 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, applica
                     <section>
                         <h3 className="text-lg font-semibold border-b pb-2 mb-4">Informasi Kontrak Magang</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-6">
-                            <FormField control={form.control} name="internshipStartDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>Mulai Magang</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} portalled={false} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="internshipStartDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>Mulai Magang</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>)} />
                             <FormField control={form.control} name="contractDurationMonths" render={({ field }) => (<FormItem><FormLabel>Durasi (bulan)</FormLabel><FormControl><Input type="number" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))} /></FormControl><FormMessage /></FormItem>)} />
                             <div className="md:col-span-2">
-                                <FormField control={form.control} name="internshipEndDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>Selesai Magang (Otomatis)</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} disabled portalled={false} /></FormControl><FormMessage /></FormItem>)} />
+                                <FormField control={form.control} name="internshipEndDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>Selesai Magang (Otomatis)</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} disabled /></FormControl><FormMessage /></FormItem>)} />
                             </div>
                         </div>
                     </section>
