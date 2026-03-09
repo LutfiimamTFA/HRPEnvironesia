@@ -66,6 +66,13 @@ export type EmployeeProfile = {
   };
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
+
+  // Fields managed by HR
+  division?: string;
+  supervisorName?: string;
+  hrdNotes?: string;
+  compensationAmount?: number;
+  contractDurationMonths?: number;
 };
 
 export type Brand = {
@@ -646,4 +653,3 @@ export type AttendanceEvent = {
     flags?: string[];
     address?: string;
 };
-
