@@ -7,68 +7,56 @@ import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
-import type { UserProfile, Brand } from '@/lib/types';
+import type { EmployeeProfile } from '@/lib/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from '@/components/ui/badge';
-import { Search } from 'lucide-react';
+import { Eye, Search } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
+import { format } from 'date-fns';
+import { InternProfileDetailDialog } from '@/components/dashboard/hrd/InternProfileDetailDialog';
 
 function InternTableSkeleton() {
     return (
         <div className="space-y-4">
             <div className="flex justify-between">
                 <Skeleton className="h-10 w-64" />
-                <Skeleton className="h-10 w-48" />
             </div>
             <Skeleton className="h-96 w-full" />
         </div>
     )
 }
 
-const stageLabels: Record<string, string> = {
-    intern_education: 'Terikat Pendidikan',
-    intern_pre_probation: 'Pra-Probation',
-};
-
 export default function InternDataPage() {
     const { userProfile } = useAuth();
     const hasAccess = useRoleGuard(['hrd', 'super-admin']);
     const firestore = useFirestore();
-    
-    const [activeTab, setActiveTab] = useState('intern_education');
-    const [brandFilter, setBrandFilter] = useState('all');
     const [searchTerm, setSearchTerm] = useState('');
+    const [selectedProfile, setSelectedProfile] = useState<EmployeeProfile | null>(null);
+    const [isDetailOpen, setIsDetailOpen] = useState(false);
 
     const menuConfig = useMemo(() => {
         if (!userProfile) return [];
         return MENU_CONFIG[userProfile.role] || [];
     }, [userProfile]);
 
-    const { data: users, isLoading: usersLoading } = useCollection<UserProfile>(
-        useMemoFirebase(() => query(collection(firestore, 'users'), where('employmentType', '==', 'magang')), [firestore])
+    const { data: profiles, isLoading: profilesLoading } = useCollection<EmployeeProfile>(
+        useMemoFirebase(() => query(collection(firestore, 'employee_profiles'), where('employmentType', '==', 'magang')), [firestore])
     );
     
-    const { data: brands, isLoading: brandsLoading } = useCollection<Brand>(
-        useMemoFirebase(() => collection(firestore, 'brands'), [firestore])
-    );
-
-    const brandMap = useMemo(() => {
-        if (!brands) return new Map<string, string>();
-        return new Map(brands.map(b => [b.id!, b.name]));
-    }, [brands]);
-
-    const filteredUsers = useMemo(() => {
-        if (!users) return [];
-        return users.filter(user => {
-            const userStage = user.employmentStage || 'intern_education'; // Fallback for older data
-            const brandMatch = brandFilter === 'all' || (Array.isArray(user.brandId) ? user.brandId.includes(brandFilter) : user.brandId === brandFilter);
-            const searchMatch = searchTerm === '' || user.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || user.email.toLowerCase().includes(searchTerm.toLowerCase());
-            return userStage === activeTab && brandMatch && searchMatch;
+    const filteredProfiles = useMemo(() => {
+        if (!profiles) return [];
+        return profiles.filter(profile => {
+            const searchMatch = searchTerm === '' || profile.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || profile.email.toLowerCase().includes(searchTerm.toLowerCase());
+            return searchMatch;
         });
-    }, [users, activeTab, brandFilter, searchTerm]);
+    }, [profiles, searchTerm]);
+
+    const handleViewDetails = (profile: EmployeeProfile) => {
+        setSelectedProfile(profile);
+        setIsDetailOpen(true);
+    };
 
     if (!hasAccess) {
         return <DashboardLayout pageTitle="Data Diri Intern" menuConfig={menuConfig}><InternTableSkeleton /></DashboardLayout>;
@@ -76,56 +64,58 @@ export default function InternDataPage() {
 
     return (
         <DashboardLayout pageTitle="Data Diri Intern" menuConfig={menuConfig}>
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <div className="flex justify-between items-center mb-4">
-                    <TabsList>
-                        <TabsTrigger value="intern_education">Terikat Pendidikan</TabsTrigger>
-                        <TabsTrigger value="intern_pre_probation">Pra-Probation</TabsTrigger>
-                    </TabsList>
-                    <div className="flex items-center gap-2">
-                        <div className="relative">
-                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                            <Input placeholder="Cari nama atau email..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full sm:w-[250px] pl-8" />
-                        </div>
-                        <Select value={brandFilter} onValueChange={setBrandFilter} disabled={brandsLoading}>
-                            <SelectTrigger className="w-[180px]"><SelectValue placeholder="Semua Brand" /></SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">Semua Brand</SelectItem>
-                                {brands?.map(b => <SelectItem key={b.id!} value={b.id!}>{b.name}</SelectItem>)}
-                            </SelectContent>
-                        </Select>
-                    </div>
+            <div className="flex justify-between items-center mb-4">
+                 <div className="relative">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input placeholder="Cari nama atau email..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full sm:w-[250px] pl-8" />
                 </div>
+            </div>
 
-                <div className="rounded-lg border">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Nama</TableHead>
-                                <TableHead>Email</TableHead>
-                                <TableHead>Brand</TableHead>
-                                <TableHead>Status</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {usersLoading ? (
-                                <TableRow><TableCell colSpan={4} className="h-24 text-center">Memuat data...</TableCell></TableRow>
-                            ) : filteredUsers.length > 0 ? (
-                                filteredUsers.map(user => (
-                                    <TableRow key={user.uid}>
-                                        <TableCell className="font-medium">{user.fullName}</TableCell>
-                                        <TableCell>{user.email}</TableCell>
-                                        <TableCell>{Array.isArray(user.brandId) ? user.brandId.map(id => brandMap.get(id)).join(', ') : brandMap.get(user.brandId as string) || '-'}</TableCell>
-                                        <TableCell><Badge variant="secondary">{stageLabels[activeTab]}</Badge></TableCell>
-                                    </TableRow>
-                                ))
-                            ) : (
-                                <TableRow><TableCell colSpan={4} className="h-24 text-center">Tidak ada data untuk filter ini.</TableCell></TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
-                </div>
-            </Tabs>
+            <div className="rounded-lg border">
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead>Nama</TableHead>
+                            <TableHead>Email</TableHead>
+                            <TableHead>Asal Sekolah/Kampus</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Update Terakhir</TableHead>
+                            <TableHead className="text-right">Aksi</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {profilesLoading ? (
+                            <TableRow><TableCell colSpan={6} className="h-24 text-center">Memuat data...</TableCell></TableRow>
+                        ) : filteredProfiles.length > 0 ? (
+                            filteredProfiles.map(profile => (
+                                <TableRow key={profile.uid}>
+                                    <TableCell className="font-medium">{profile.fullName}</TableCell>
+                                    <TableCell>{profile.email}</TableCell>
+                                    <TableCell>{profile.schoolOrCampus || '-'}</TableCell>
+                                    <TableCell><Badge variant={profile.completeness?.isComplete ? 'default' : 'secondary'}>{profile.completeness?.isComplete ? 'Lengkap' : 'Draf'}</Badge></TableCell>
+                                    <TableCell>
+                                        {profile.updatedAt ? format(profile.updatedAt.toDate(), 'dd MMM yyyy, HH:mm') : '-'}
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                        <Button variant="ghost" size="sm" onClick={() => handleViewDetails(profile)}>
+                                            <Eye className="mr-2 h-4 w-4" /> Detail
+                                        </Button>
+                                    </TableCell>
+                                </TableRow>
+                            ))
+                        ) : (
+                            <TableRow><TableCell colSpan={6} className="h-24 text-center">Tidak ada data untuk filter ini.</TableCell></TableRow>
+                        )}
+                    </TableBody>
+                </Table>
+            </div>
+            {selectedProfile && (
+                <InternProfileDetailDialog
+                    profile={selectedProfile}
+                    open={isDetailOpen}
+                    onOpenChange={setIsDetailOpen}
+                />
+            )}
         </DashboardLayout>
     );
 }
