@@ -50,8 +50,8 @@ export type EmployeeProfile = {
   major?: string;
   educationLevel: 'SMA/SMK' | 'D3' | 'S1' | 'S2' | 'Lainnya';
   expectedEndDate?: string; // YYYY-MM-DD
-  internshipStartDate?: Timestamp;
-  internshipEndDate?: Timestamp;
+  internshipStartDate?: Timestamp | null;
+  internshipEndDate?: Timestamp | null;
   emergencyContactName: string;
   emergencyContactRelation: string;
   emergencyContactPhone: string;
@@ -73,6 +73,8 @@ export type EmployeeProfile = {
   hrdNotes?: string;
   compensationAmount?: number;
   contractDurationMonths?: number;
+  brandId?: string;
+  brandName?: string;
 };
 
 export type Brand = {

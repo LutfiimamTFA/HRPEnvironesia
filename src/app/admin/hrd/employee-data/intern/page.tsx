@@ -48,7 +48,7 @@ export default function InternDataPage() {
         return MENU_CONFIG[userProfile.role] || [];
     }, [userProfile]);
 
-    const { data: profiles, isLoading: profilesLoading } = useCollection<EmployeeProfile>(
+    const { data: profiles, isLoading: profilesLoading, mutate } = useCollection<EmployeeProfile>(
         useMemoFirebase(() => query(collection(firestore, 'employee_profiles'), where('employmentType', '==', 'magang')), [firestore])
     );
     
@@ -90,6 +90,7 @@ export default function InternDataPage() {
                             <TableRow>
                                 <TableHead>Nama</TableHead>
                                 <TableHead>Email</TableHead>
+                                <TableHead>Tipe Magang</TableHead>
                                 <TableHead>Asal Sekolah/Kampus</TableHead>
                                 <TableHead>Status Profil</TableHead>
                                 <TableHead>Update Terakhir</TableHead>
@@ -98,12 +99,17 @@ export default function InternDataPage() {
                         </TableHeader>
                         <TableBody>
                             {profilesLoading ? (
-                                <TableRow><TableCell colSpan={6} className="h-24 text-center">Memuat data...</TableCell></TableRow>
+                                <TableRow><TableCell colSpan={7} className="h-24 text-center">Memuat data...</TableCell></TableRow>
                             ) : filteredProfiles.length > 0 ? (
                                 filteredProfiles.map(profile => (
                                     <TableRow key={profile.uid}>
                                         <TableCell className="font-medium">{profile.fullName}</TableCell>
                                         <TableCell>{profile.email}</TableCell>
+                                        <TableCell>
+                                            <Badge variant={profile.internSubtype === 'intern_education' ? 'default' : 'secondary'}>
+                                                {subtypeLabels[profile.internSubtype || ''] || 'N/A'}
+                                            </Badge>
+                                        </TableCell>
                                         <TableCell>{profile.schoolOrCampus || '-'}</TableCell>
                                         <TableCell><Badge variant={profile.completeness?.isComplete ? 'default' : 'secondary'}>{profile.completeness?.isComplete ? 'Lengkap' : 'Draf'}</Badge></TableCell>
                                         <TableCell>
@@ -117,7 +123,7 @@ export default function InternDataPage() {
                                     </TableRow>
                                 ))
                             ) : (
-                                <TableRow><TableCell colSpan={6} className="h-24 text-center">Tidak ada data untuk filter ini.</TableCell></TableRow>
+                                <TableRow><TableCell colSpan={7} className="h-24 text-center">Tidak ada data untuk filter ini.</TableCell></TableRow>
                             )}
                         </TableBody>
                     </Table>
@@ -128,6 +134,7 @@ export default function InternDataPage() {
                     profile={selectedProfile}
                     open={isDetailOpen}
                     onOpenChange={setIsDetailOpen}
+                    onAdminDataChange={mutate}
                 />
             )}
         </DashboardLayout>
