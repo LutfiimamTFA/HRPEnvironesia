@@ -53,19 +53,27 @@ export default function LaporanHarianPage() {
     }, [firestore, firebaseUser?.uid]);
     const { data: employeeProfile, isLoading: isLoadingProfile } = useDoc<EmployeeProfile>(employeeProfileRef);
 
-    // Fetch reports for the current month
+    // Fetch all reports for the user to avoid composite index. Client-side filtering will be applied.
     const reportsQuery = useMemoFirebase(() => {
         if (!firebaseUser) return null;
-        const start = startOfMonth(currentMonth);
-        const end = endOfMonth(currentMonth);
         return query(
             collection(firestore, 'daily_reports'),
-            where('uid', '==', firebaseUser.uid),
-            where('date', '>=', start),
-            where('date', '<=', end)
+            where('uid', '==', firebaseUser.uid)
         );
-    }, [firestore, firebaseUser, currentMonth]);
-    const { data: fetchedReports, isLoading: isLoadingReports } = useCollection<DailyReport>(reportsQuery);
+    }, [firestore, firebaseUser?.uid]);
+    const { data: allFetchedReports, isLoading: isLoadingReports } = useCollection<DailyReport>(reportsQuery);
+
+    // Filter reports for the current month on the client side
+    const fetchedReports = useMemo(() => {
+        if (!allFetchedReports) return null;
+        const start = startOfMonth(currentMonth);
+        const end = endOfMonth(currentMonth);
+        return allFetchedReports.filter(report => {
+            const reportDate = report.date.toDate();
+            return reportDate >= start && reportDate <= end;
+        });
+    }, [allFetchedReports, currentMonth]);
+
 
     // Create a map for quick lookups by date
     const reportsMap = useMemo(() => {
