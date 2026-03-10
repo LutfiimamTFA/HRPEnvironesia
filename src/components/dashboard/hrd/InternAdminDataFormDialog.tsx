@@ -23,7 +23,7 @@ import { Separator } from '@/components/ui/separator';
 
 const adminFormSchema = z.object({
   division: z.string().optional(),
-  supervisorName: z.string().optional(),
+  supervisorUid: z.string().optional(),
   internSubtype: z.enum(['intern_education', 'intern_pre_probation'], { required_error: "Tipe magang harus dipilih." }),
   internshipStartDate: z.date().optional().nullable(),
   contractDurationMonths: z.coerce.number().int().min(1, 'Durasi kontrak minimal 1 bulan.').optional().nullable(),
@@ -39,6 +39,7 @@ interface InternAdminDataFormDialogProps {
   onSuccess: () => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  application: JobApplication | null;
 }
 
 const InfoRow = ({ label, value }: { label: string; value?: string | number | null }) => (
@@ -60,24 +61,12 @@ const unformatSalary = (value: string) => {
 };
 
 
-export function InternAdminDataFormDialog({ open, onOpenChange, profile, onSuccess }: InternAdminDataFormDialogProps) {
+export function InternAdminDataFormDialog({ open, onOpenChange, profile, application, onSuccess }: InternAdminDataFormDialogProps) {
   const [isSaving, setIsSaving] = useState(false);
   const { userProfile: hrdProfile } = useAuth();
   const firestore = useFirestore();
   const { toast } = useToast();
 
-  const applicationQuery = useMemoFirebase(() => {
-    if (!profile) return null;
-    return query(
-      collection(firestore, 'applications'),
-      where('candidateUid', '==', profile.uid),
-      where('status', '==', 'hired'),
-      where('jobType', '==', 'internship')
-    );
-  }, [firestore, profile]);
-  const { data: applications } = useCollection<JobApplication>(applicationQuery);
-  const application = useMemo(() => applications?.[0] || null, [applications]);
-  
   const userRef = useMemoFirebase(() => {
     if (!profile) return null;
     return doc(firestore, 'users', profile.uid);
@@ -161,7 +150,7 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, onSucce
     if (open) {
         const defaultValues = {
             division: profile.division || job?.division || '',
-            supervisorName: profile.supervisorName || '',
+            supervisorUid: profile.supervisorUid || '',
             internSubtype: profile.internSubtype || userProfile?.employmentStage || 'intern_education',
             hrdNotes: profile.hrdNotes || application?.offerNotes || '',
             internshipStartDate: profile.internshipStartDate?.toDate() || application?.contractStartDate?.toDate() || null,
@@ -181,17 +170,18 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, onSucce
         const batch = writeBatch(firestore);
         const employeeProfileRef = doc(firestore, 'employee_profiles', profile.uid);
 
-        // Explicitly build the payload to ensure pristine default values are included.
+        const supervisor = supervisors?.find(s => s.uid === values.supervisorUid);
+
         const employeePayload = {
             division: values.division,
-            supervisorName: values.supervisorName,
+            supervisorUid: values.supervisorUid || null,
+            supervisorName: supervisor?.fullName || null,
             internSubtype: values.internSubtype,
             hrdNotes: values.hrdNotes,
             internshipStartDate: values.internshipStartDate ? Timestamp.fromDate(values.internshipStartDate) : null,
             contractDurationMonths: values.contractDurationMonths ?? null,
             internshipEndDate: values.internshipEndDate ? Timestamp.fromDate(values.internshipEndDate) : null,
             compensationAmount: values.compensationAmount ?? 0,
-            // Non-form values that need to be set
             brandId: finalBrandId, 
             brandName: finalBrandName,
             updatedAt: serverTimestamp(),
@@ -240,7 +230,7 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, onSucce
                         <h3 className="text-lg font-semibold border-b pb-2 mb-4">Informasi Penempatan</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-6">
                             <FormField control={form.control} name="division" render={({ field }) => (<FormItem><FormLabel>Divisi</FormLabel><FormControl><Input placeholder="e.g., Creative, Finance" {...field} value={field.value || ''} /></FormControl><FormMessage /></FormItem>)} />
-                            <FormField control={form.control} name="supervisorName" render={({ field }) => (
+                            <FormField control={form.control} name="supervisorUid" render={({ field }) => (
                                 <FormItem>
                                     <FormLabel>Pilih Mentor / Supervisor</FormLabel>
                                     <Select onValueChange={field.onChange} value={field.value || ''}>
@@ -251,13 +241,13 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, onSucce
                                             {managers.length > 0 && (
                                                 <SelectGroup>
                                                     <SelectLabel>Manager</SelectLabel>
-                                                    {managers.map(s => <SelectItem key={s.uid} value={s.fullName}>{s.fullName}</SelectItem>)}
+                                                    {managers.map(s => <SelectItem key={s.uid} value={s.uid}>{s.fullName}</SelectItem>)}
                                                 </SelectGroup>
                                             )}
                                             {employees.length > 0 && (
                                                 <SelectGroup>
                                                     <SelectLabel>Karyawan</SelectLabel>
-                                                    {employees.map(s => <SelectItem key={s.uid} value={s.fullName}>{s.fullName}</SelectItem>)}
+                                                    {employees.map(s => <SelectItem key={s.uid} value={s.uid}>{s.fullName}</SelectItem>)}
                                                 </SelectGroup>
                                             )}
                                             {managers.length === 0 && employees.length === 0 && (
@@ -366,5 +356,3 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, onSucce
     </Dialog>
   );
 }
-
-    
