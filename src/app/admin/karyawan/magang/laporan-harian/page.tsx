@@ -274,22 +274,24 @@ export default function LaporanHarianPage() {
                  <>
                     <DialogHeader>
                         <DialogTitle className="text-2xl">{format(selectedReport.date.toDate(), "eeee, dd MMMM yyyy", { locale: id })}</DialogTitle>
-                        <DialogDescription className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                         <div className="text-sm text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1">
                              <Badge variant={currentStatusInfo.variant === 'default' ? 'secondary' : currentStatusInfo.variant} className={cn(currentStatusInfo.variant === 'warning' && 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900/30 dark:border-yellow-800 dark:text-yellow-200')}>
                                 {currentStatusInfo.title}
                             </Badge>
                             <span>Dikirim: {formatDistanceToNow(selectedReport.submittedAt?.toDate() || selectedReport.createdAt.toDate(), { addSuffix: true, locale: id })}</span>
                             {supervisorDisplayName && <span>Mentor: {supervisorDisplayName}</span>}
-                        </DialogDescription>
+                        </div>
                     </DialogHeader>
                     <div className="space-y-6 py-4 text-sm">
-                        {currentStatusInfo && currentStatusInfo.title === 'Menunggu Review' && (
-                            <Alert variant={currentStatusInfo.variant === 'warning' ? 'default' : currentStatusInfo.variant} className={cn(currentStatusInfo.variant === 'warning' && 'bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800')}>
-                                <FileClock className="h-4 w-4" />
-                                <AlertTitle>{currentStatusInfo.title}</AlertTitle>
-                                <AlertDescription>{currentStatusInfo.description}</AlertDescription>
-                            </Alert>
-                        )}
+                        <Alert variant={currentStatusInfo.variant === 'warning' ? 'default' : currentStatusInfo.variant} className={cn(
+                            currentStatusInfo.variant === 'warning' && 'bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800',
+                            currentStatusInfo.variant === 'default' && 'bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800',
+                            currentStatusInfo.variant === 'destructive' && 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800',
+                        )}>
+                            <FileClock className={cn("h-4 w-4", currentStatusInfo.variant === 'default' && 'text-blue-600 dark:text-blue-300')} />
+                            <AlertTitle>{currentStatusInfo.title}</AlertTitle>
+                            <AlertDescription>{currentStatusInfo.description}</AlertDescription>
+                        </Alert>
                         <div className="space-y-4">
                             <ContentSection title="Uraian Aktivitas" content={selectedReport.activity} />
                             <ContentSection title="Pembelajaran yang Diperoleh" content={selectedReport.learning} />
