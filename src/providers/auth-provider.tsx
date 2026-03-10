@@ -32,7 +32,7 @@ function AuthContent({ children }: { children: ReactNode }) {
   const userDocRef = useMemoFirebase(() => {
     if (!firestore || !firebaseUser) return null;
     return doc(firestore, 'users', firebaseUser.uid);
-  }, [firestore, firebaseUser]);
+  }, [firestore, firebaseUser?.uid]);
   
   const { data: userProfileData, isLoading: isProfileLoading, mutate } = useDoc<UserProfile>(userDocRef);
 

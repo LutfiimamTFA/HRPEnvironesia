@@ -169,7 +169,7 @@ export default function MagangDashboardPage() {
   
   const employeeProfileRef = useMemoFirebase(
     () => (userProfile ? doc(firestore, 'employee_profiles', userProfile.uid) : null),
-    [firestore, userProfile]
+    [firestore, userProfile?.uid]
   );
   const { data: employeeProfile, isLoading: profileLoading } = useDoc<EmployeeProfile>(employeeProfileRef);
 
@@ -246,5 +246,3 @@ export default function MagangDashboardPage() {
     </DashboardLayout>
   );
 }
-
-    
