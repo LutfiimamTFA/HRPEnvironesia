@@ -1,12 +1,12 @@
 'use client';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth, isSameDay, isToday, addMonths, subMonths, isFuture, isPast } from 'date-fns';
 import { id } from 'date-fns/locale';
-import { FilePlus, Send, Edit, ChevronLeft, ChevronRight, Calendar as CalendarIcon, CheckCircle, Clock, AlertCircle, Loader2 } from 'lucide-react';
+import { FilePlus, Send, ChevronLeft, ChevronRight, Calendar as CalendarIcon, CheckCircle, Clock, AlertCircle, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -18,8 +18,17 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Form } from '@/components/ui/form';
 import { useAuth } from '@/providers/auth-provider';
 import { useDoc, useCollection, useFirestore, useMemoFirebase, setDocumentNonBlocking } from '@/firebase';
 import { doc, collection, query, where, Timestamp, serverTimestamp } from 'firebase/firestore';
@@ -31,7 +40,7 @@ const statusConfig: Record<ReportStatus, { label: string; color: string; icon: R
     approved: { label: 'Disetujui', color: 'bg-green-500', icon: <CheckCircle className="h-4 w-4" /> },
     needs_revision: { label: 'Perlu Revisi', color: 'bg-yellow-500', icon: <AlertCircle className="h-4 w-4" /> },
     submitted: { label: 'Terkirim', color: 'bg-blue-500', icon: <Clock className="h-4 w-4" /> },
-    draft: { label: 'Draf', color: 'bg-gray-400', icon: <Edit className="h-4 w-4" /> },
+    draft: { label: 'Draf', color: 'bg-gray-400', icon: <FilePlus className="h-4 w-4" /> },
 };
 
 
@@ -45,25 +54,21 @@ export default function LaporanHarianPage() {
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+    const reportFormRef = useRef<HTMLFormElement | null>(null);
 
-    // Fetch employee profile to get supervisor info, which is needed for saving the report
     const employeeProfileRef = useMemoFirebase(() => {
         if (!firebaseUser) return null;
         return doc(firestore, 'employee_profiles', firebaseUser.uid);
     }, [firestore, firebaseUser?.uid]);
     const { data: employeeProfile, isLoading: isLoadingProfile } = useDoc<EmployeeProfile>(employeeProfileRef);
 
-    // Fetch all reports for the user to avoid composite index. Client-side filtering will be applied.
     const reportsQuery = useMemoFirebase(() => {
         if (!firebaseUser) return null;
-        return query(
-            collection(firestore, 'daily_reports'),
-            where('uid', '==', firebaseUser.uid)
-        );
+        return query(collection(firestore, 'daily_reports'), where('uid', '==', firebaseUser.uid));
     }, [firestore, firebaseUser?.uid]);
     const { data: allFetchedReports, isLoading: isLoadingReports } = useCollection<DailyReport>(reportsQuery);
 
-    // Filter reports for the current month on the client side
     const fetchedReports = useMemo(() => {
         if (!allFetchedReports) return null;
         const start = startOfMonth(currentMonth);
@@ -74,8 +79,6 @@ export default function LaporanHarianPage() {
         });
     }, [allFetchedReports, currentMonth]);
 
-
-    // Create a map for quick lookups by date
     const reportsMap = useMemo(() => {
         if (!fetchedReports) return new Map<string, DailyReport>();
         return new Map(fetchedReports.map(report => [format(report.date.toDate(), 'yyyy-MM-dd'), report]));
@@ -95,7 +98,12 @@ export default function LaporanHarianPage() {
 
     const handleDateClick = (day: Date) => {
         setSelectedDate(day);
-        setIsEditing(false);
+        const report = reportsMap.get(format(day, 'yyyy-MM-dd'));
+        if (report && report.status === 'needs_revision') {
+            setIsEditing(true);
+        } else {
+            setIsEditing(false);
+        }
         setIsDialogOpen(true);
     };
     
@@ -104,21 +112,27 @@ export default function LaporanHarianPage() {
         setTimeout(() => setSelectedDate(null), 300); 
     }
 
-    const handleSaveReport = async (e: React.FormEvent<HTMLFormElement>) => {
+    const prepareSubmit = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
-        if (!selectedDate || !firebaseUser || !employeeProfile) {
-            toast({ title: "Gagal Menyimpan", description: "Data pengguna atau profil tidak ditemukan.", variant: "destructive" });
+        reportFormRef.current = e.currentTarget;
+        setIsConfirmOpen(true);
+    };
+
+    const handleConfirmSave = async () => {
+        if (!reportFormRef.current || !selectedDate || !firebaseUser || !employeeProfile) {
+            toast({ title: "Gagal Menyimpan", description: "Data tidak lengkap untuk menyimpan laporan.", variant: "destructive" });
+            setIsConfirmOpen(false);
             return;
         }
         setIsSaving(true);
-
-        const formData = new FormData(e.currentTarget);
+    
+        const formData = new FormData(reportFormRef.current);
         const dateString = format(selectedDate, 'yyyy-MM-dd');
         const docId = `${firebaseUser.uid}_${dateString}`;
         const reportRef = doc(firestore, 'daily_reports', docId);
-
+    
         const isUpdate = reportsMap.has(dateString);
-
+    
         const newReportData: Partial<DailyReport> = {
             uid: firebaseUser.uid,
             date: Timestamp.fromDate(selectedDate),
@@ -134,18 +148,19 @@ export default function LaporanHarianPage() {
             newReportData.supervisorUid = employeeProfile.supervisorUid || null;
             newReportData.brandId = Array.isArray(employeeProfile.brandId) ? employeeProfile.brandId[0] : employeeProfile.brandId || null;
         }
-
+    
         try {
             await setDocumentNonBlocking(reportRef, newReportData, { merge: true });
             toast({
                 title: "Laporan Terkirim",
-                description: `Laporan Anda untuk tanggal ${format(selectedDate, "dd MMM yyyy")} telah disimpan.`,
+                description: `Laporan Anda untuk tanggal ${format(selectedDate, "dd MMM yyyy")} telah berhasil dikirim.`,
             });
-            setIsEditing(false); // Go back to detail view
+            setIsEditing(false);
         } catch (error: any) {
             toast({ title: "Gagal Menyimpan", description: error.message, variant: "destructive" });
         } finally {
             setIsSaving(false);
+            setIsConfirmOpen(false);
         }
     };
 
@@ -174,7 +189,7 @@ export default function LaporanHarianPage() {
                         <DialogTitle>Laporan: {selectedDate && format(selectedDate, "eeee, dd MMMM", { locale: id })}</DialogTitle>
                         <DialogDescription>Isi semua field untuk melaporkan aktivitas harian Anda.</DialogDescription>
                     </DialogHeader>
-                     <form id="report-form" className="space-y-6 py-4" onSubmit={handleSaveReport}>
+                     <form id="report-form" className="space-y-6 py-4" onSubmit={prepareSubmit}>
                         <div className="space-y-2">
                           <Label htmlFor="activity">Uraian Aktivitas</Label>
                           <Textarea id="activity" name="activity" defaultValue={selectedReport?.activity || ''} rows={5} placeholder="Jelaskan secara rinci pekerjaan dan tugas yang Anda lakukan hari ini..." />
@@ -229,9 +244,6 @@ export default function LaporanHarianPage() {
                         {isDateInPast && <p className="text-xs text-muted-foreground text-left mr-auto">Laporan untuk tanggal yang lewat tidak dapat diubah.</p>}
                         <div className='flex gap-2 self-end'>
                             <Button type="button" variant="outline" onClick={handleCloseDialog}>Tutup</Button>
-                            {isDateToday && (
-                                <Button type="button" onClick={handleEditClick}><Edit className="mr-2 h-4 w-4"/> Edit</Button>
-                            )}
                         </div>
                     </DialogFooter>
                 </>
@@ -248,7 +260,6 @@ export default function LaporanHarianPage() {
             emptyStateDescription = "Laporan hanya dapat dibuat pada hari berjalan.";
         }
 
-
         return (
              <>
                 <DialogHeader>
@@ -260,7 +271,7 @@ export default function LaporanHarianPage() {
                     <p className="text-muted-foreground text-sm">{emptyStateDescription}</p>
                 </div>
                 <DialogFooter className="flex-col sm:flex-row sm:justify-between items-stretch sm:items-center">
-                     {(isDateInPast || isDateInFuture) && <p className="text-xs text-muted-foreground text-left mr-auto">Info</p>}
+                     {(isDateInPast || isDateInFuture) ? <p className="text-xs text-muted-foreground text-left mr-auto">Info</p> : <div></div>}
                      <div className="flex gap-2 self-end">
                         <Button type="button" variant="outline" onClick={handleCloseDialog}>Tutup</Button>
                         {isDateToday && (
@@ -350,6 +361,23 @@ export default function LaporanHarianPage() {
                     </div>
                 </DialogContent>
             </Dialog>
+            <AlertDialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Konfirmasi Pengiriman Laporan</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Apakah Anda yakin ingin mengirim laporan ini? Setelah dikirim, laporan tidak dapat diubah sampai direview oleh mentor.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={isSaving}>Batal</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleConfirmSave} disabled={isSaving}>
+                    {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Ya, Kirim Laporan
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
         </>
     );
 }
