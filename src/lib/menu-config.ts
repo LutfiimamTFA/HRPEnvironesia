@@ -159,6 +159,7 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
         title: "Karyawan",
         items: [
             { key: 'employee.dashboard', href: '/admin/karyawan/dashboard', label: 'Dashboard', icon: createElement(LayoutDashboard) },
+            { key: 'review.reports', href: '/admin/review/laporan-magang', label: 'Review Laporan Magang', icon: createElement(PenSquare) },
         ]
     }
   ],

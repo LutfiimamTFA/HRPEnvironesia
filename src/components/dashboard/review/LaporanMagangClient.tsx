@@ -76,7 +76,7 @@ export function LaporanMagangClient() {
     let filtered = reportsWithDetails;
 
     // Role-based filtering
-    if (userProfile.role === 'manager') {
+    if (['manager', 'karyawan'].includes(userProfile.role)) {
       filtered = filtered.filter(r => r.supervisorUid === userProfile.uid);
     } else { // HRD and Super Admin can filter
         if (brandFilter !== 'all') {

@@ -18,7 +18,7 @@ function ReviewSkeleton() {
 }
 
 export default function LaporanMagangPage() {
-  const hasAccess = useRoleGuard(['super-admin', 'hrd', 'manager']);
+  const hasAccess = useRoleGuard(['super-admin', 'hrd', 'manager', 'karyawan']);
   const { userProfile } = useAuth();
   
   const menuConfig = useMemo(() => {
