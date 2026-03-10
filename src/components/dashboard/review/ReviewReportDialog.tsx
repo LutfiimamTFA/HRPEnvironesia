@@ -4,7 +4,14 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription as DialogDesc,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, CheckCircle, Send, XCircle, FileClock, AlertCircle, UserCheck } from 'lucide-react';
@@ -15,9 +22,8 @@ import { doc, Timestamp, serverTimestamp } from 'firebase/firestore';
 import { format, formatDistanceToNow } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { Separator } from '@/components/ui/separator';
-import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Form, FormControl, FormField, FormItem, FormMessage } from '@/components/ui/form';
+import { Form, FormControl, FormField, FormItem, FormMessage, FormDescription, FormLabel } from '@/components/ui/form';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -108,11 +114,15 @@ export function ReviewReportDialog({ open, onOpenChange, report, onSuccess }: Re
       <DialogContent className="max-w-3xl h-[90vh] flex flex-col p-0">
         <DialogHeader className="p-6 pb-4 border-b">
           <DialogTitle className="text-2xl">{report.internName}</DialogTitle>
-           <DialogDescription className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-              <span>{format(report.date.toDate(), 'eeee, dd MMMM yyyy', { locale: idLocale })}</span>
-              <span className="text-muted-foreground">•</span>
-              <span>Mentor: {report.supervisorName}</span>
-           </DialogDescription>
+           <DialogDesc asChild>
+            <div className="text-sm text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1">
+                <span>{format(report.date.toDate(), 'eeee, dd MMMM yyyy', { locale: idLocale })}</span>
+                <span className="text-muted-foreground">•</span>
+                <span>Mentor: {report.supervisorName}</span>
+                <span className="text-muted-foreground">•</span>
+                <span>Dikirim: {formatDistanceToNow(report.submittedAt?.toDate() || report.createdAt.toDate(), { addSuffix: true, locale: idLocale })}</span>
+            </div>
+           </DialogDesc>
         </DialogHeader>
         <ScrollArea className="flex-grow">
         <div className="px-6 py-4 space-y-6">
@@ -142,7 +152,9 @@ export function ReviewReportDialog({ open, onOpenChange, report, onSuccess }: Re
                             <UserCheck className="h-5 w-5 text-primary" />
                             Feedback Anda Sebelumnya
                         </CardTitle>
-                        <CardDescription>{report.reviewedByName} &bull; {report.reviewedAt ? format(report.reviewedAt.toDate(), 'dd MMM, HH:mm') : ''}</CardDescription>
+                        <DialogDesc asChild>
+                          <div>{report.reviewedByName} &bull; {report.reviewedAt ? format(report.reviewedAt.toDate(), 'dd MMM, HH:mm') : ''}</div>
+                        </DialogDesc>
                     </CardHeader>
                     <CardContent>
                         <blockquote className="border-l-4 pl-4 italic text-muted-foreground">
@@ -161,7 +173,7 @@ export function ReviewReportDialog({ open, onOpenChange, report, onSuccess }: Re
                   name="reviewerNotes"
                   render={({ field }) => (
                     <FormItem>
-                      <Label className="text-base font-semibold">Catatan Reviewer</Label>
+                      <FormLabel className="text-base font-semibold">Catatan Reviewer</FormLabel>
                       <FormDescription className="text-xs">Wajib diisi saat meminta revisi.</FormDescription>
                       <FormControl>
                         <Textarea placeholder="Berikan feedback atau arahan untuk revisi..." {...field} rows={4} />

@@ -221,6 +221,8 @@ export default function LaporanHarianPage() {
         
         const canEdit = isDateToday && (!selectedReport || selectedReport.status === 'needs_revision');
         const mentorNotAssigned = !employeeProfile?.supervisorUid;
+        const supervisorDisplayName = selectedReport?.supervisorName || employeeProfile?.supervisorName || 'Belum ditugaskan';
+
 
         const statusInfo: Record<ReportStatus, { icon: React.ReactNode; title: string; description: string; variant: "default" | "destructive" | "warning"; }> = {
             submitted: { icon: <FileClock className="h-4 w-4" />, title: 'Menunggu Review', description: 'Laporan Anda sedang menunggu tinjauan dari mentor.', variant: 'default' },
@@ -269,12 +271,11 @@ export default function LaporanHarianPage() {
 
         if (selectedReport) {
             const currentStatusInfo = statusInfo[selectedReport.status];
-            const supervisorDisplayName = selectedReport.supervisorName || employeeProfile?.supervisorName || 'Belum ditugaskan';
             return (
                  <>
                     <DialogHeader>
                         <DialogTitle className="text-2xl">{format(selectedReport.date.toDate(), "eeee, dd MMMM yyyy", { locale: id })}</DialogTitle>
-                         <div className="text-sm text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1">
+                         <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
                              <Badge variant={currentStatusInfo.variant === 'default' ? 'secondary' : currentStatusInfo.variant} className={cn(currentStatusInfo.variant === 'warning' && 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900/30 dark:border-yellow-800 dark:text-yellow-200')}>
                                 {currentStatusInfo.title}
                             </Badge>
