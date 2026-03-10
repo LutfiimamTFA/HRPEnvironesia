@@ -59,7 +59,7 @@ export default function LaporanHarianPage() {
 
     const handleDateClick = (day: Date) => {
         setSelectedDate(day);
-        setIsEditing(false); // Always show detail first when a date is clicked
+        setIsEditing(false); // Selalu tampilkan detail dulu saat tanggal diklik
         setIsDialogOpen(true);
     };
     
@@ -92,7 +92,7 @@ export default function LaporanHarianPage() {
             description: `Laporan Anda untuk tanggal ${format(selectedDate, "dd MMM yyyy")} telah disimpan.`,
         });
 
-        setIsEditing(false); // Switch back to detail view
+        setIsEditing(false); // Kembali ke tampilan detail
     };
 
 
@@ -106,6 +106,7 @@ export default function LaporanHarianPage() {
     const renderDialogContent = () => {
         const isDateToday = selectedDate && isToday(selectedDate);
         const isDateInPast = selectedDate && !isToday(selectedDate) && isPast(selectedDate);
+        const isDateInFuture = selectedDate && isFuture(selectedDate);
 
         const handleEditClick = (e: React.MouseEvent<HTMLButtonElement>) => {
             e.preventDefault();
@@ -154,9 +155,9 @@ export default function LaporanHarianPage() {
                     </DialogHeader>
                     <div className="space-y-4 py-4 text-sm">
                          <Separator/>
-                         <div className="space-y-1"><h4 className="font-semibold">Uraian Aktivitas</h4><p className="text-muted-foreground">{selectedReport.activity}</p></div>
-                         <div className="space-y-1"><h4 className="font-semibold">Pembelajaran</h4><p className="text-muted-foreground">{selectedReport.learning}</p></div>
-                         <div className="space-y-1"><h4 className="font-semibold">Kendala</h4><p className="text-muted-foreground">{selectedReport.obstacle}</p></div>
+                         <div className="space-y-1"><h4 className="font-semibold">Uraian Aktivitas</h4><p className="text-muted-foreground whitespace-pre-wrap">{selectedReport.activity}</p></div>
+                         <div className="space-y-1"><h4 className="font-semibold">Pembelajaran</h4><p className="text-muted-foreground whitespace-pre-wrap">{selectedReport.learning}</p></div>
+                         <div className="space-y-1"><h4 className="font-semibold">Kendala</h4><p className="text-muted-foreground whitespace-pre-wrap">{selectedReport.obstacle}</p></div>
                          {selectedReport.mentorNote && (
                             <>
                             <Separator/>
@@ -179,23 +180,34 @@ export default function LaporanHarianPage() {
                 </>
             );
         }
+        
+        let emptyStateTitle = "Belum ada laporan";
+        let emptyStateDescription = "Tidak ada laporan yang dibuat pada tanggal ini.";
+        if (isDateInPast) {
+            emptyStateTitle = "Periode Terlewat";
+            emptyStateDescription = "Periode input untuk tanggal ini telah lewat.";
+        } else if (isDateInFuture) {
+            emptyStateTitle = "Tanggal Akan Datang";
+            emptyStateDescription = "Laporan hanya dapat dibuat pada hari berjalan.";
+        }
+
 
         return (
              <>
                 <DialogHeader>
-                    <DialogTitle>Laporan: {selectedDate && format(selectedDate, "eeee, dd MMMM", { locale: id })}</DialogTitle>
+                    <DialogTitle>{selectedDate ? format(selectedDate, "eeee, dd MMMM", { locale: id }) : 'Pilih Tanggal'}</DialogTitle>
                 </DialogHeader>
                 <div className="h-48 flex flex-col items-center justify-center text-center p-6 bg-muted/50 rounded-md">
                     <CalendarIcon className="h-12 w-12 text-muted-foreground mb-4"/>
-                    <h3 className="font-semibold text-lg">Belum ada laporan</h3>
-                    <p className="text-muted-foreground text-sm">Tidak ada laporan yang dibuat pada tanggal ini.</p>
+                    <h3 className="font-semibold text-lg">{emptyStateTitle}</h3>
+                    <p className="text-muted-foreground text-sm">{emptyStateDescription}</p>
                 </div>
                 <DialogFooter className="flex-col sm:flex-row sm:justify-between items-stretch sm:items-center">
-                     {isDateInPast && <p className="text-xs text-muted-foreground text-left mr-auto">Laporan untuk tanggal yang lewat tidak dapat diubah.</p>}
+                     {(isDateInPast || isDateInFuture) && <p className="text-xs text-muted-foreground text-left mr-auto">Info</p>}
                      <div className="flex gap-2 self-end">
                         <Button type="button" variant="outline" onClick={handleCloseDialog}>Tutup</Button>
                         {isDateToday && (
-                            <Button type="button" onClick={handleEditClick}><FilePlus className="mr-2 h-4 w-4" /> Buat Laporan</Button>
+                            <Button type="button" onClick={(e) => { e.preventDefault(); setIsEditing(true); }}><FilePlus className="mr-2 h-4 w-4" /> Buat Laporan</Button>
                         )}
                     </div>
                 </DialogFooter>
@@ -254,7 +266,7 @@ export default function LaporanHarianPage() {
                                         isFutureDate && "text-muted-foreground/30 cursor-not-allowed hover:bg-transparent"
                                     )}
                                 >
-                                    <span className={cn("font-medium", isToday(day) && "bg-primary text-primary-foreground rounded-full h-6 w-6 flex items-center justify-center")}>
+                                    <span className={cn("font-medium", isToday(day) && "bg-primary text-primary-foreground rounded-full h-6 w-6 flex items-center justify-center ring-2 ring-offset-2 ring-primary")}>
                                         {format(day, 'd')}
                                     </span>
                                     {report && <span className={cn("absolute bottom-2 left-2 h-2 w-2 rounded-full", statusConfig[report.status].color)} />}
