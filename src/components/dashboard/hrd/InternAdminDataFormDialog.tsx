@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -143,26 +143,21 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, onSucce
     }
   }, [startDate, duration, setValue]);
   
-  const initialValuesSet = useRef(false);
   useEffect(() => {
-    if (open && !initialValuesSet.current) {
-        const initialCompensation = profile.compensationAmount ?? application?.offeredSalary ?? 0;
+    if (open) {
         const defaultValues = {
             division: profile.division || job?.division || '',
             supervisorName: profile.supervisorName || '',
-            internSubtype: profile.internSubtype || 'intern_education',
+            internSubtype: profile.internSubtype || userProfile?.employmentStage || 'intern_education',
             hrdNotes: profile.hrdNotes || application?.offerNotes || '',
             internshipStartDate: profile.internshipStartDate?.toDate() || application?.contractStartDate?.toDate() || null,
             contractDurationMonths: profile.contractDurationMonths ?? application?.contractDurationMonths ?? null,
             internshipEndDate: profile.internshipEndDate?.toDate() || application?.contractEndDate?.toDate() || null,
-            compensationAmount: initialCompensation,
+            compensationAmount: profile.compensationAmount ?? application?.offeredSalary ?? 0,
         };
         form.reset(defaultValues);
-        initialValuesSet.current = true;
-    } else if (!open) {
-        initialValuesSet.current = false;
     }
-  }, [open, profile, application, job, form]);
+  }, [open, profile, application, job, form, userProfile]);
 
 
   const onSubmit = async (values: AdminFormValues) => {
@@ -181,7 +176,7 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, onSucce
             internshipStartDate: values.internshipStartDate ? Timestamp.fromDate(values.internshipStartDate) : null,
             contractDurationMonths: values.contractDurationMonths ?? null,
             internshipEndDate: values.internshipEndDate ? Timestamp.fromDate(values.internshipEndDate) : null,
-            compensationAmount: values.compensationAmount ?? null,
+            compensationAmount: values.compensationAmount ?? 0,
             // Non-form values that need to be set
             brandId: finalBrandId, 
             brandName: finalBrandName,
@@ -279,7 +274,6 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, onSucce
                                         <GoogleDatePicker 
                                             value={field.value} 
                                             onChange={field.onChange}
-                                            portalled={false}
                                         />
                                     </FormControl>
                                     <FormMessage />
@@ -303,7 +297,7 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, onSucce
                                 <FormField control={form.control} name="internshipEndDate" render={({ field }) => (
                                 <FormItem className="flex flex-col">
                                     <FormLabel>Selesai Magang (Otomatis)</FormLabel>
-                                    <FormControl><GoogleDatePicker portalled={false} value={field.value} onChange={field.onChange} disabled /></FormControl>
+                                    <FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} disabled /></FormControl>
                                     <FormMessage />
                                 </FormItem>
                                 )} />
