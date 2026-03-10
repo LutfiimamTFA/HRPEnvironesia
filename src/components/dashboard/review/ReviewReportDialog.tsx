@@ -12,8 +12,8 @@ import type { DailyReport } from '@/lib/types';
 import { useAuth } from '@/providers/auth-provider';
 import { useFirestore, updateDocumentNonBlocking } from '@/firebase';
 import { doc, Timestamp, serverTimestamp } from 'firebase/firestore';
-import { format } from 'date-fns';
-import { id } from 'date-fns/locale';
+import { format, formatDistanceToNow } from 'date-fns';
+import { id as idLocale } from 'date-fns/locale';
 import { Separator } from '@/components/ui/separator';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -31,6 +31,16 @@ interface ReviewReportDialogProps {
   report: DailyReport & { internName?: string; };
   onSuccess: () => void;
 }
+
+const ContentSection = ({ title, content }: { title: string, content: string }) => (
+    <div>
+        <h4 className="font-semibold text-base mb-1">{title}</h4>
+        <div className="text-sm text-muted-foreground p-3 bg-muted/50 rounded-md whitespace-pre-wrap">
+            {content}
+        </div>
+    </div>
+);
+
 
 export function ReviewReportDialog({ open, onOpenChange, report, onSuccess }: ReviewReportDialogProps) {
   const [isSaving, setIsSaving] = useState(false);
@@ -75,38 +85,36 @@ export function ReviewReportDialog({ open, onOpenChange, report, onSuccess }: Re
     }
   };
 
-  const InfoRow = ({ label, value }: { label: string; value?: React.ReactNode }) => (
-    <div className="grid grid-cols-3 gap-2 text-sm">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="col-span-2">{value || '-'}</dd>
-    </div>
-  );
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
-        <DialogHeader>
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0">
+        <DialogHeader className="p-6 pb-4 border-b">
           <DialogTitle>Review Laporan: {report.internName}</DialogTitle>
-          <DialogDescription>
-            Tanggal: {format(report.date.toDate(), 'eeee, dd MMMM yyyy', { locale: id })}
+           <DialogDescription>
+            {format(report.date.toDate(), 'eeee, dd MMMM yyyy', { locale: idLocale })}
+            <span className="mx-2 text-muted-foreground">•</span>
+            <span className="text-muted-foreground">
+                Dikirim {formatDistanceToNow(report.submittedAt?.toDate() || report.createdAt.toDate(), { addSuffix: true, locale: idLocale })}
+            </span>
           </DialogDescription>
         </DialogHeader>
-        <div className="flex-grow overflow-y-auto pr-2 -mr-6 pl-1 py-4">
-          <div className="space-y-4 pr-4">
-            <InfoRow label="Aktivitas" value={<p className="whitespace-pre-wrap">{report.activity}</p>} />
-            <InfoRow label="Pembelajaran" value={<p className="whitespace-pre-wrap">{report.learning}</p>} />
-            <InfoRow label="Kendala" value={<p className="whitespace-pre-wrap">{report.obstacle}</p>} />
-            <Separator className="my-4"/>
+        <div className="flex-grow overflow-y-auto -mx-6 px-6 py-4 space-y-6">
+            <ContentSection title="Uraian Aktivitas" content={report.activity} />
+            <ContentSection title="Pembelajaran yang Diperoleh" content={report.learning} />
+            <ContentSection title="Kendala yang Dialami" content={report.obstacle} />
+            
+            <Separator />
+            
             <Form {...form}>
-              <form id="review-form">
+              <form id="review-form" className="space-y-2">
                 <FormField
                   control={form.control}
                   name="reviewerNotes"
                   render={({ field }) => (
                     <FormItem>
-                      <Label>Catatan Reviewer <span className="text-destructive">*</span> (wajib untuk revisi)</Label>
+                      <Label className="text-base font-semibold">Catatan Reviewer <span className="text-destructive font-normal">*</span> (wajib untuk revisi)</Label>
                       <FormControl>
-                        <Textarea placeholder="Berikan feedback atau arahan untuk revisi..." {...field} />
+                        <Textarea placeholder="Berikan feedback atau arahan untuk revisi..." {...field} rows={4} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -114,14 +122,13 @@ export function ReviewReportDialog({ open, onOpenChange, report, onSuccess }: Re
                 />
               </form>
             </Form>
-          </div>
         </div>
-        <DialogFooter className="flex-shrink-0 pt-4 border-t">
-          <Button variant="destructive" onClick={() => handleReview('needs_revision')} disabled={isSaving}>
+        <DialogFooter className="flex-shrink-0 p-6 pt-4 border-t bg-background">
+          <Button variant="destructive" className="w-full sm:w-auto" onClick={() => handleReview('needs_revision')} disabled={isSaving}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
             <XCircle className="mr-2 h-4 w-4" /> Minta Revisi
           </Button>
-          <Button className="bg-green-600 hover:bg-green-700" onClick={() => handleReview('approved')} disabled={isSaving}>
+          <Button className="bg-green-600 hover:bg-green-700 w-full sm:w-auto" onClick={() => handleReview('approved')} disabled={isSaving}>
              {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
             <CheckCircle className="mr-2 h-4 w-4" /> Setujui
           </Button>
