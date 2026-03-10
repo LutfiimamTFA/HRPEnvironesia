@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo } from 'react';
@@ -11,16 +10,19 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { format, formatDistanceToNow } from 'date-fns';
 import { id } from 'date-fns/locale';
-import { Loader2, Eye, Search, RotateCcw } from 'lucide-react';
+import { Loader2, Eye, Search, RotateCcw, AlertTriangle } from 'lucide-react';
 import { ReviewReportDialog } from './ReviewReportDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { KpiCard } from '@/components/recruitment/KpiCard';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { useToast } from '@/hooks/use-toast';
 
 export function LaporanMagangClient() {
-  const { userProfile } = useAuth();
+  const { userProfile, firebaseUser } = useAuth();
   const firestore = useFirestore();
+  const { toast } = useToast();
 
   const [activeTab, setActiveTab] = useState('submitted');
   const [selectedReport, setSelectedReport] = useState<DailyReport & { internName?: string; supervisorName?: string; } | null>(null);
@@ -28,6 +30,7 @@ export function LaporanMagangClient() {
   const [brandFilter, setBrandFilter] = useState('all');
   const [supervisorFilter, setSupervisorFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [isBackfilling, setIsBackfilling] = useState(false);
 
   const reportsQuery = useMemoFirebase(() => {
     if (!userProfile) return null;
@@ -63,14 +66,19 @@ export function LaporanMagangClient() {
         return {
             ...report,
             internName: internProfile?.fullName || 'Unknown Intern',
-            supervisorUid: internProfile?.supervisorUid || report.supervisorUid || null,
-            supervisorName: internProfile?.supervisorName || report.supervisorName || 'Unassigned',
+            supervisorUid: report.supervisorUid || internProfile?.supervisorUid || null,
+            supervisorName: report.supervisorName || internProfile?.supervisorName || 'Unassigned',
             division: internProfile?.division || 'N/A',
             brandName: internProfile?.brandName || 'N/A',
             brandId: internProfile?.brandId || 'N/A',
         };
     }).sort((a, b) => b.date.toMillis() - a.date.toMillis());
   }, [reports, internMap]);
+
+  const reportsNeedingBackfill = useMemo(() => {
+    if (!reportsWithDetails) return [];
+    return reportsWithDetails.filter(r => r.status === 'submitted' && !r.supervisorUid);
+  }, [reportsWithDetails]);
   
   const uniqueSupervisors = useMemo(() => {
     if (!interns) return [];
@@ -126,6 +134,31 @@ export function LaporanMagangClient() {
     setSearchTerm('');
   };
 
+  const handleBackfill = async () => {
+    if (!firebaseUser) return;
+    setIsBackfilling(true);
+    try {
+        const idToken = await firebaseUser.getIdToken();
+        const response = await fetch('/api/admin/backfill-daily-reports', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${idToken}` },
+        });
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.error || 'Failed to start backfill process.');
+        }
+        toast({
+            title: 'Sinkronisasi Selesai',
+            description: `${result.updated} laporan diperbarui, ${result.skipped} laporan dilewati.`,
+        });
+        mutateReports(); // Refresh data
+    } catch (e: any) {
+        toast({ variant: 'destructive', title: 'Gagal Sinkronisasi', description: e.message });
+    } finally {
+        setIsBackfilling(false);
+    }
+  };
+
   const isLoading = isLoadingReports || isLoadingInterns || isLoadingBrands;
 
   if (isLoading) {
@@ -158,6 +191,19 @@ export function LaporanMagangClient() {
                 </Select>
                 <Button onClick={handleResetFilters} variant="ghost" size="sm" className="text-muted-foreground"><RotateCcw className="mr-2 h-4 w-4" />Reset</Button>
             </div>
+            {reportsNeedingBackfill.length > 0 && (
+              <Alert variant="destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>Laporan Tidak Sinkron</AlertTitle>
+                  <AlertDescription className="flex items-center justify-between">
+                      <p>{reportsNeedingBackfill.length} laporan terkirim tidak memiliki data mentor. Jalankan sinkronisasi untuk memperbaikinya.</p>
+                      <Button onClick={handleBackfill} disabled={isBackfilling}>
+                          {isBackfilling && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                          Sinkronkan Data
+                      </Button>
+                  </AlertDescription>
+              </Alert>
+            )}
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                 <KpiCard title="Total Laporan" value={kpiData.totalReports} />
                 <KpiCard title="Menunggu Review" value={kpiData.submitted} />
