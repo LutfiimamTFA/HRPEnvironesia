@@ -130,7 +130,7 @@ export default function LaporanHarianPage() {
                     </div>
                      <DialogFooter>
                         <Button type="button" variant="outline" onClick={handleCloseDialog}>Tutup</Button>
-                        <Button type="button" onClick={() => setIsEditing(true)}><Edit className="mr-2 h-4 w-4"/> Edit</Button>
+                        <Button type="button" onClick={(e) => { e.preventDefault(); setIsEditing(true);}}><Edit className="mr-2 h-4 w-4"/> Edit</Button>
                     </DialogFooter>
                 </>
             );
@@ -148,7 +148,7 @@ export default function LaporanHarianPage() {
                 </div>
                 <DialogFooter>
                     <Button type="button" variant="outline" onClick={handleCloseDialog}>Tutup</Button>
-                    <Button type="button" onClick={() => setIsEditing(true)}><FilePlus className="mr-2 h-4 w-4" /> Buat Laporan</Button>
+                    <Button type="button" onClick={(e) => { e.preventDefault(); setIsEditing(true); }}><FilePlus className="mr-2 h-4 w-4" /> Buat Laporan</Button>
                 </DialogFooter>
             </>
         );
