@@ -28,7 +28,9 @@ export function DashboardLayout({
 
   const roleKey = useMemo(() => {
     if (!userProfile) return null;
-    if (userProfile.role === 'karyawan' && userProfile.employmentType) {
+    // For 'karyawan' role, only create a specific key if employmentType is a sub-type like 'magang' or 'training'.
+    // A regular 'karyawan' (full-time) will just use the 'karyawan' role key.
+    if (userProfile.role === 'karyawan' && userProfile.employmentType && userProfile.employmentType !== 'karyawan') {
         return `karyawan-${userProfile.employmentType}`;
     }
     return userProfile.role;
