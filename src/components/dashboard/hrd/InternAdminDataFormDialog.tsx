@@ -60,7 +60,7 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, onSucce
   }, [firestore, profile]);
   const { data: userProfile } = useDoc<UserProfile>(userRef);
 
-  const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(
+  const { data: brands } = useCollection<Brand>(
     useMemoFirebase(() => collection(firestore, 'brands'), [firestore])
   );
   
@@ -106,7 +106,7 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, onSucce
   const filteredSupervisors = useMemo(() => {
     if (!supervisors || !finalBrandId) return [];
     return supervisors.filter(user => {
-      if (user.uid === profile.uid) return false;
+      if (user.uid === profile.uid) return false; // Exclude self
       if (!user.isActive || !['manager', 'karyawan'].includes(user.role)) return false;
       if (Array.isArray(user.brandId)) return user.brandId.includes(finalBrandId);
       return user.brandId === finalBrandId;
@@ -122,20 +122,26 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, onSucce
         }
     }
   }, [startDate, duration, setValue]);
-
+  
+  const initialValuesSet = useRef(false);
   useEffect(() => {
-    if (open) {
-      form.reset({
-        division: profile.division || job?.division || '',
-        supervisorName: profile.supervisorName || '',
-        internSubtype: profile.internSubtype || 'intern_education',
-        internshipStartDate: profile.internshipStartDate?.toDate() || application?.contractStartDate?.toDate() || null,
-        contractDurationMonths: profile.contractDurationMonths ?? application?.contractDurationMonths ?? null,
-        internshipEndDate: profile.internshipEndDate?.toDate() || application?.contractEndDate?.toDate() || null,
-        hrdNotes: profile.hrdNotes || application?.offerNotes || '',
-      });
+    if (open && !initialValuesSet.current) {
+        const defaultValues = {
+            division: profile.division || job?.division || '',
+            supervisorName: profile.supervisorName || '',
+            internSubtype: profile.internSubtype || 'intern_education',
+            hrdNotes: profile.hrdNotes || application?.offerNotes || '',
+            internshipStartDate: profile.internshipStartDate?.toDate() || application?.contractStartDate?.toDate() || null,
+            contractDurationMonths: profile.contractDurationMonths ?? application?.contractDurationMonths ?? null,
+            internshipEndDate: profile.internshipEndDate?.toDate() || application?.contractEndDate?.toDate() || null,
+        };
+        form.reset(defaultValues);
+        initialValuesSet.current = true;
+    } else if (!open) {
+        initialValuesSet.current = false;
     }
-  }, [profile, application, job, open, form]);
+  }, [open, profile, application, job, form]);
+
 
   const onSubmit = async (values: AdminFormValues) => {
     if (!hrdProfile || !finalBrandId) return;
