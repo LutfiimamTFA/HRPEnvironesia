@@ -9,7 +9,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription as DialogDesc,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -114,15 +114,15 @@ export function ReviewReportDialog({ open, onOpenChange, report, onSuccess }: Re
       <DialogContent className="max-w-3xl h-[90vh] flex flex-col p-0">
         <DialogHeader className="p-6 pb-4 border-b">
           <DialogTitle className="text-2xl">{report.internName}</DialogTitle>
-           <DialogDesc asChild>
-            <div className="text-sm text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1">
+          <DialogDescription>
+            <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
                 <span>{format(report.date.toDate(), 'eeee, dd MMMM yyyy', { locale: idLocale })}</span>
                 <span className="text-muted-foreground">•</span>
                 <span>Mentor: {report.supervisorName}</span>
                 <span className="text-muted-foreground">•</span>
                 <span>Dikirim: {formatDistanceToNow(report.submittedAt?.toDate() || report.createdAt.toDate(), { addSuffix: true, locale: idLocale })}</span>
             </div>
-           </DialogDesc>
+           </DialogDescription>
         </DialogHeader>
         <ScrollArea className="flex-grow">
         <div className="px-6 py-4 space-y-6">
@@ -145,16 +145,16 @@ export function ReviewReportDialog({ open, onOpenChange, report, onSuccess }: Re
             <ContentSection title="Pembelajaran yang Diperoleh" content={report.learning} />
             <ContentSection title="Kendala yang Dialami" content={report.obstacle} />
             
-             {report.status === 'needs_revision' && report.reviewerNotes && (
+             {(report.status === 'needs_revision' || report.status === 'approved') && report.reviewerNotes && (
                 <Card>
                     <CardHeader className="pb-2">
                         <CardTitle className="text-base flex items-center gap-2">
                             <UserCheck className="h-5 w-5 text-primary" />
                             Feedback Anda Sebelumnya
                         </CardTitle>
-                        <DialogDesc asChild>
+                        <DialogDescription>
                           <div>{report.reviewedByName} &bull; {report.reviewedAt ? format(report.reviewedAt.toDate(), 'dd MMM, HH:mm') : ''}</div>
-                        </DialogDesc>
+                        </DialogDescription>
                     </CardHeader>
                     <CardContent>
                         <blockquote className="border-l-4 pl-4 italic text-muted-foreground">
@@ -189,16 +189,18 @@ export function ReviewReportDialog({ open, onOpenChange, report, onSuccess }: Re
         <DialogFooter className="flex-shrink-0 p-6 pt-4 border-t bg-background">
           <div className="flex w-full justify-between items-center">
             <Button variant="ghost" onClick={() => onOpenChange(false)}>Tutup</Button>
-            <div className="flex gap-2">
-              <Button variant="destructive" className="w-full sm:w-auto" onClick={() => handleReview('needs_revision')} disabled={isSaving}>
-                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
-                <XCircle className="mr-2 h-4 w-4" /> Minta Revisi
-              </Button>
-              <Button className="bg-green-600 hover:bg-green-700 w-full sm:w-auto" onClick={() => handleReview('approved')} disabled={isSaving}>
-                 {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
-                <CheckCircle className="mr-2 h-4 w-4" /> Setujui
-              </Button>
-            </div>
+            {report.status === 'submitted' && (
+              <div className="flex gap-2">
+                <Button variant="destructive" className="w-full sm:w-auto" onClick={() => handleReview('needs_revision')} disabled={isSaving}>
+                  {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
+                  <XCircle className="mr-2 h-4 w-4" /> Minta Revisi
+                </Button>
+                <Button className="bg-green-600 hover:bg-green-700 w-full sm:w-auto" onClick={() => handleReview('approved')} disabled={isSaving}>
+                   {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
+                  <CheckCircle className="mr-2 h-4 w-4" /> Setujui
+                </Button>
+              </div>
+            )}
           </div>
         </DialogFooter>
       </DialogContent>
