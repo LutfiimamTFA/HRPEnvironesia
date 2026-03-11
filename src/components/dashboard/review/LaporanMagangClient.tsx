@@ -23,7 +23,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { BulkRevisionDialog } from './BulkRevisionDialog';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 type ReportWithDetails = DailyReport & { internName?: string; supervisorName?: string; division?: string; brandName?: string; brandId?: string; };
 
