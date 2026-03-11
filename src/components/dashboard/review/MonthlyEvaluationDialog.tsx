@@ -1,7 +1,6 @@
 'use client';
 
-import * as React from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -20,6 +19,7 @@ import { Slider } from '@/components/ui/slider';
 import { KpiCard } from '@/components/recruitment/KpiCard';
 import { Loader2 } from 'lucide-react';
 import { startOfMonth, endOfMonth, format } from 'date-fns';
+import { id as idLocale } from 'date-fns/locale';
 
 const EVALUATION_CRITERIA: { key: keyof EvaluationCriteria, label: string }[] = [
     { key: 'attendance', label: 'Kehadiran dan ketepatan waktu' },
@@ -128,6 +128,7 @@ export function MonthlyEvaluationDialog({ open, onOpenChange, internData, intern
             await setDocumentNonBlocking(evalRef, payload, { merge: true });
             toast({ title: 'Evaluasi Disimpan', description: `Evaluasi untuk ${internData.internName} pada bulan ini telah disimpan.` });
             onSuccess();
+            onOpenChange(false);
         } catch (e: any) {
             toast({ variant: 'destructive', title: 'Gagal Menyimpan', description: e.message });
         } finally {
@@ -142,7 +143,7 @@ export function MonthlyEvaluationDialog({ open, onOpenChange, internData, intern
             <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0">
                 <DialogHeader className="p-6 pb-4 border-b">
                     <DialogTitle>Evaluasi Bulanan: {internData.internName}</DialogTitle>
-                    <DialogDescription>Untuk periode: {format(monthStart, 'MMMM yyyy')}</DialogDescription>
+                    <DialogDescription>Untuk periode: {format(monthStart, 'MMMM yyyy', { locale: idLocale })}</DialogDescription>
                 </DialogHeader>
                 <ScrollArea className="flex-grow">
                     <div className="px-6 py-4 space-y-6">
