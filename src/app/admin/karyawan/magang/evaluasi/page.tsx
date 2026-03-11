@@ -1,13 +1,98 @@
 'use client';
 
+import { useMemo } from 'react';
+import { useAuth } from '@/providers/auth-provider';
+import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
+import { collection, query, where, orderBy } from 'firebase/firestore';
+import type { MonthlyEvaluation, RatingScale, EvaluationCriteria } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Separator } from "@/components/ui/separator";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { getInitials } from "@/lib/utils";
-import { Star, ThumbsUp, Lightbulb } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { format, formatDistanceToNow } from 'date-fns';
+import { id } from 'date-fns/locale';
+import { ThumbsUp, Lightbulb, MessageSquare, ListTodo, Star, CheckCircle } from 'lucide-react';
+
+const EVALUATION_CRITERIA: { key: keyof EvaluationCriteria, label: string }[] = [
+    { key: 'attendance', label: 'Kehadiran dan ketepatan waktu' },
+    { key: 'discipline', label: 'Kedisiplinan' },
+    { key: 'attitude', label: 'Sikap dan etika kerja' },
+    { key: 'responsibility', label: 'Tanggung jawab' },
+    { key: 'communication', label: 'Komunikasi' },
+    { key: 'initiative', label: 'Inisiatif' },
+    { key: 'teamwork', label: 'Kerja sama tim' },
+    { key: 'workQuality', label: 'Kualitas pekerjaan' },
+    { key: 'learningAbility', label: 'Kecepatan belajar / adaptasi' },
+    { key: 'consistency', label: 'Konsistensi laporan dan progres kerja' },
+];
+
+const RatingDisplay = ({ rating }: { rating: RatingScale }) => {
+    const config = {
+        "Sangat Baik": "text-green-600",
+        "Baik": "text-blue-600",
+        "Cukup": "text-yellow-600",
+        "Perlu Perbaikan": "text-red-600"
+    };
+    return <span className={`font-semibold ${config[rating] || 'text-muted-foreground'}`}>{rating}</span>
+}
+
+const FeedbackSection = ({ title, content, icon }: { title: string, content?: string, icon: React.ReactNode }) => {
+    if (!content) return null;
+    return (
+        <div className="space-y-2">
+            <h4 className="font-semibold flex items-center gap-2">{icon} {title}</h4>
+            <p className="text-sm text-muted-foreground pl-7 whitespace-pre-wrap">{content}</p>
+        </div>
+    );
+};
 
 export default function EvaluasiPage() {
+    const { userProfile, loading: authLoading } = useAuth();
+    const firestore = useFirestore();
+
+    const evaluationsQuery = useMemoFirebase(() => {
+        if (!userProfile?.uid) return null;
+        return query(
+            collection(firestore, 'monthly_evaluations'), 
+            where('internUid', '==', userProfile.uid),
+            orderBy('evaluationMonth', 'desc')
+        );
+    }, [userProfile?.uid, firestore]);
+
+    const { data: evaluations, isLoading: evalsLoading } = useCollection<MonthlyEvaluation>(evaluationsQuery);
+    
+    const isLoading = authLoading || evalsLoading;
+
+    if (isLoading) {
+        return (
+            <div className="space-y-4">
+                <Skeleton className="h-10 w-1/3" />
+                <Skeleton className="h-6 w-2/3" />
+                <div className="space-y-2 pt-4">
+                    <Skeleton className="h-14 w-full" />
+                    <Skeleton className="h-14 w-full" />
+                </div>
+            </div>
+        );
+    }
+    
+    if (!evaluations || evaluations.length === 0) {
+        return (
+             <Card className="h-80 flex flex-col items-center justify-center text-center">
+                <CardHeader>
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                        <CheckCircle className="h-6 w-6 text-muted-foreground" />
+                    </div>
+                    <CardTitle className="mt-4">Belum Ada Evaluasi</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <p className="text-muted-foreground">Evaluasi bulanan Anda dari HRD akan muncul di sini setelah dibuat.</p>
+                </CardContent>
+            </Card>
+        );
+    }
+
     return (
         <div className="space-y-6">
             <div>
@@ -15,66 +100,74 @@ export default function EvaluasiPage() {
                 <p className="text-muted-foreground">Kumpulan feedback dan evaluasi dari mentor dan HRD selama periode magang.</p>
             </div>
 
-            <Card>
-                <CardHeader>
-                    <CardTitle>Evaluasi Akhir Periode</CardTitle>
-                    <CardDescription>Ringkasan performa dan pencapaian Anda selama program magang.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                    <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                        <div className="space-y-1">
-                            <p className="text-sm text-muted-foreground">Nilai Akhir</p>
-                            <p className="text-3xl font-bold">A</p>
-                        </div>
-                        <div className="space-y-1 text-right">
-                            <p className="text-sm text-muted-foreground">Rekomendasi</p>
-                            <Badge className="bg-green-600">Direkomendasikan untuk Lanjut</Badge>
-                        </div>
-                    </div>
-                    
-                    <div className="grid md:grid-cols-2 gap-6">
-                        <div className="space-y-2">
-                            <h4 className="font-semibold flex items-center gap-2"><ThumbsUp className="h-5 w-5 text-green-500"/> Kelebihan & Pencapaian</h4>
-                            <ul className="list-disc pl-5 text-sm space-y-1 text-muted-foreground">
-                                <li>Inisiatif tinggi dan proaktif dalam mencari solusi.</li>
-                                <li>Kemampuan belajar cepat, terutama dalam adaptasi dengan tools baru.</li>
-                                <li>Kontribusi signifikan pada proyek X, melebihi ekspektasi awal.</li>
-                                <li>Keterampilan komunikasi yang baik dalam tim.</li>
-                            </ul>
-                        </div>
-                         <div className="space-y-2">
-                            <h4 className="font-semibold flex items-center gap-2"><Lightbulb className="h-5 w-5 text-yellow-500"/> Area untuk Perbaikan</h4>
-                            <ul className="list-disc pl-5 text-sm space-y-1 text-muted-foreground">
-                                <li>Manajemen waktu saat menghadapi beberapa tugas sekaligus.</li>
-                                <li>Perlu lebih percaya diri saat mempresentasikan ide di depan forum besar.</li>
-                                <li>Meningkatkan pemahaman teknis mendalam terkait arsitektur sistem.</li>
-                            </ul>
-                        </div>
-                    </div>
+            <Accordion type="single" collapsible className="w-full space-y-4" defaultValue={evaluations[0]?.id}>
+                {evaluations.map(evaluation => (
+                    <AccordionItem value={evaluation.id!} key={evaluation.id} className="border rounded-xl bg-card shadow-sm">
+                        <AccordionTrigger className="px-6 py-4 text-lg font-semibold hover:no-underline">
+                           Evaluasi Bulan: {format(evaluation.evaluationMonth.toDate(), 'MMMM yyyy', { locale: id })}
+                        </AccordionTrigger>
+                        <AccordionContent className="px-6 pb-6">
+                            <Separator className="mb-6" />
+                            <div className="space-y-6">
+                                <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-muted/50 rounded-lg">
+                                    <div>
+                                        <p className="text-sm font-semibold">Dievaluasi oleh: {evaluation.evaluatorName}</p>
+                                        <p className="text-xs text-muted-foreground">Pada: {evaluation.updatedAt ? formatDistanceToNow(evaluation.updatedAt.toDate(), { addSuffix: true, locale: id }) : '-'}</p>
+                                    </div>
+                                    <Badge variant="default">Sudah Dievaluasi</Badge>
+                                </div>
+                                
+                                {evaluation.monthlyFocus && (
+                                     <FeedbackSection
+                                        title="Fokus Bulan Ini (dari Mentor)"
+                                        content={evaluation.monthlyFocus}
+                                        icon={<ListTodo className="h-5 w-5 text-primary" />}
+                                    />
+                                )}
+                                
+                                <Separator />
 
-                    <Separator />
+                                <div className="space-y-4">
+                                    <h4 className="font-semibold flex items-center gap-2"><Star className="h-5 w-5 text-yellow-500" /> Penilaian Parameter</h4>
+                                    <div className="grid md:grid-cols-2 gap-x-8 gap-y-3">
+                                        {EVALUATION_CRITERIA.map(crit => (
+                                            <div key={crit.key} className="flex justify-between items-center text-sm">
+                                                <span className="text-muted-foreground">{crit.label}</span>
+                                                <RatingDisplay rating={evaluation.ratings?.[crit.key] || 'Cukup'} />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                
+                                <Separator />
 
-                     <div className="space-y-3">
-                        <h4 className="font-semibold">Catatan dari Mentor (Budi Santoso)</h4>
-                        <div className="flex items-start gap-3 text-sm">
-                            <Avatar className="h-9 w-9 border"><AvatarFallback>BS</AvatarFallback></Avatar>
-                            <div className="flex-1 rounded-md bg-background border p-3">
-                                <p className="italic text-muted-foreground">"Sangat puas dengan performa [Nama Intern] selama magang. Keinginannya untuk belajar dan kontribusinya sangat terasa. Terus pertahankan semangat dan proaktif dalam mencari tantangan baru. Potensi besar untuk berkembang lebih jauh di industri ini."</p>
+                                <div className="space-y-4">
+                                     <FeedbackSection
+                                        title="Komentar HRD"
+                                        content={evaluation.hrdComment}
+                                        icon={<MessageSquare className="h-5 w-5 text-primary" />}
+                                    />
+                                     <FeedbackSection
+                                        title="Kelebihan Utama"
+                                        content={evaluation.mainStrengths}
+                                        icon={<ThumbsUp className="h-5 w-5 text-green-500" />}
+                                    />
+                                     <FeedbackSection
+                                        title="Area untuk Perbaikan"
+                                        content={evaluation.improvementAreas}
+                                        icon={<Lightbulb className="h-5 w-5 text-yellow-500" />}
+                                    />
+                                     <FeedbackSection
+                                        title="Rekomendasi Bulan Berikutnya"
+                                        content={evaluation.nextMonthRecommendation}
+                                        icon={<CheckCircle className="h-5 w-5 text-blue-500" />}
+                                    />
+                                </div>
                             </div>
-                        </div>
-                    </div>
-                     <div className="space-y-3">
-                        <h4 className="font-semibold">Catatan dari HRD (Dina Anggraini)</h4>
-                        <div className="flex items-start gap-3 text-sm">
-                            <Avatar className="h-9 w-9 border"><AvatarFallback>DA</AvatarFallback></Avatar>
-                            <div className="flex-1 rounded-md bg-background border p-3">
-                                <p className="italic text-muted-foreground">"Secara kultur, [Nama Intern] sangat cocok dengan nilai-nilai perusahaan. Proses adaptasi berjalan lancar dan mampu berkolaborasi dengan baik. Kami akan mempertimbangkan untuk proses selanjutnya."</p>
-                            </div>
-                        </div>
-                    </div>
-
-                </CardContent>
-            </Card>
+                        </AccordionContent>
+                    </AccordionItem>
+                ))}
+            </Accordion>
         </div>
     )
 }
