@@ -1,16 +1,15 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, ReactNode } from 'react';
 import { useCollection, useFirestore, useMemoFirebase, updateDocumentNonBlocking, writeBatch } from '@/firebase';
 import { collection, query, where, doc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import type { DailyReport, UserProfile, EmployeeProfile, Brand } from '@/lib/types';
 import { useAuth } from '@/providers/auth-provider';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { format, formatDistanceToNow } from 'date-fns';
 import { id } from 'date-fns/locale';
-import { Loader2, Eye, Search, RotateCcw, AlertTriangle, Check, CheckCircle, XCircle } from 'lucide-react';
+import { Loader2, Eye, Search, RotateCcw, AlertTriangle, Check, CheckCircle, XCircle, FileClock, PenSquare, ThumbsUp, MessageSquareWarning, FileText } from 'lucide-react';
 import { ReviewReportDialog } from './ReviewReportDialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
@@ -42,10 +41,48 @@ const statusColors: Record<DailyReport['status'], string> = {
     draft: 'bg-gray-400'
 };
 
+
+const ReportPreview = ({ report, onReviewClick, onApproveClick, onReviseClick, isApproving }: { report: ReportWithDetails; onReviewClick: () => void; onApproveClick: () => void; onReviseClick: () => void, isApproving: boolean; }) => {
+  
+  const PreviewSection = ({ title, icon, content, lineClamp }: { title: string; icon: ReactNode; content?: string; lineClamp: string }) => (
+    <div>
+        <h4 className="font-semibold text-xs uppercase text-muted-foreground mb-1 flex items-center gap-2">{icon} {title}</h4>
+        <p className={`text-sm ${lineClamp}`}>{content || '-'}</p>
+    </div>
+  );
+  
+  return (
+    <div className="space-y-4 pt-2 pb-4 px-4 bg-muted/50 ml-12">
+        <div className="space-y-3">
+            <PreviewSection title="Aktivitas" icon={<FileText className="h-4 w-4" />} content={report.activity} lineClamp="line-clamp-3" />
+            <PreviewSection title="Pembelajaran" icon={<ThumbsUp className="h-4 w-4" />} content={report.learning} lineClamp="line-clamp-2" />
+            {report.obstacle && (
+                <PreviewSection title="Kendala" icon={<MessageSquareWarning className="h-4 w-4" />} content={report.obstacle} lineClamp="line-clamp-2" />
+            )}
+        </div>
+        <Separator />
+        <div className="flex justify-end gap-2">
+            <Button size="sm" variant="ghost" onClick={onReviewClick}><Eye className="mr-2 h-4 w-4"/> Lihat Detail</Button>
+            {report.status === 'submitted' && (
+              <>
+                <Button size="sm" variant="destructive" onClick={onReviseClick}><XCircle className="mr-2 h-4 w-4"/> Minta Revisi</Button>
+                <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={onApproveClick} disabled={isApproving}>
+                    {isApproving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <CheckCircle className="mr-2 h-4 w-4"/>} 
+                    Setujui
+                </Button>
+              </>
+            )}
+        </div>
+    </div>
+  );
+};
+
+
 const MentorDashboard = ({ reports, onMutate, userProfile }: { reports: ReportWithDetails[], onMutate: () => void, userProfile: UserProfile}) => {
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [isBulkRevisionOpen, setIsBulkRevisionOpen] = useState(false);
     const [isBulkApproving, setIsBulkApproving] = useState(false);
+    const [approvingId, setApprovingId] = useState<string | null>(null);
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
     const [activeTab, setActiveTab] = useState('submitted');
     const { toast } = useToast();
@@ -119,6 +156,7 @@ const MentorDashboard = ({ reports, onMutate, userProfile }: { reports: ReportWi
                 reviewedAt: serverTimestamp(),
                 reviewedByUid: userProfile.uid,
                 reviewedByName: userProfile.fullName,
+                reviewerNotes: null,
              });
         });
 
@@ -134,6 +172,27 @@ const MentorDashboard = ({ reports, onMutate, userProfile }: { reports: ReportWi
         }
     };
     
+    const handleSingleApprove = async (reportId: string) => {
+      if (!userProfile) return;
+      setApprovingId(reportId);
+      try {
+        const ref = doc(firestore, 'daily_reports', reportId);
+        await updateDocumentNonBlocking(ref, { 
+            status: 'approved',
+            reviewedAt: serverTimestamp(),
+            reviewedByUid: userProfile.uid,
+            reviewedByName: userProfile.fullName,
+            reviewerNotes: null // Clear notes on approval
+        });
+        toast({ title: 'Laporan Disetujui' });
+        onMutate();
+      } catch (e: any) {
+        toast({ variant: 'destructive', title: 'Gagal', description: e.message });
+      } finally {
+        setApprovingId(null);
+      }
+    };
+
     const handleReviewSuccess = () => {
         onMutate();
         setSelectedReport(null);
@@ -170,44 +229,53 @@ const MentorDashboard = ({ reports, onMutate, userProfile }: { reports: ReportWi
                                 </div>
                             </AccordionTrigger>
                             <AccordionContent className="px-1 border-t">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            {activeTab === 'submitted' && (
-                                                <TableHead className="w-12">
-                                                    <Checkbox
-                                                        checked={allSelectedForIntern}
-                                                        onCheckedChange={(checked) => handleSelectAllForIntern(internId, !!checked)}
-                                                    />
-                                                </TableHead>
-                                            )}
-                                            <TableHead>Tanggal</TableHead>
-                                            <TableHead>Diajukan</TableHead>
-                                            <TableHead className="text-right">Aksi</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {reportsForTab.map(report => (
-                                            <TableRow key={report.id}>
+                                <div className="p-2">
+                                     {activeTab === 'submitted' && (
+                                        <div className="flex items-center gap-3 p-2 border-b">
+                                            <Checkbox
+                                                id={`select-all-${internId}`}
+                                                checked={allSelectedForIntern}
+                                                onCheckedChange={(checked) => handleSelectAllForIntern(internId, !!checked)}
+                                            />
+                                            <label htmlFor={`select-all-${internId}`} className="text-sm font-medium">Pilih semua untuk {internGroup.internName}</label>
+                                        </div>
+                                     )}
+                                </div>
+                                <Accordion type="single" collapsible className="w-full space-y-1 px-2 pb-2">
+                                    {reportsForTab.map(report => (
+                                        <AccordionItem value={report.id!} key={report.id!} className="border rounded-md bg-background">
+                                            <div className="flex items-center gap-2 pr-4">
                                                 {activeTab === 'submitted' && (
-                                                    <TableCell>
+                                                    <div className="p-4">
                                                         <Checkbox
                                                             checked={selectedIds.has(report.id!)}
                                                             onCheckedChange={(checked) => handleSelectOne(report.id!, !!checked)}
+                                                            onClick={e => e.stopPropagation()}
                                                         />
-                                                    </TableCell>
+                                                    </div>
                                                 )}
-                                                <TableCell>{format(report.date.toDate(), 'eeee, dd MMM', { locale: id })}</TableCell>
-                                                <TableCell className="text-xs text-muted-foreground">{formatDistanceToNow(report.submittedAt?.toDate() || report.createdAt.toDate(), { addSuffix: true, locale: id })}</TableCell>
-                                                <TableCell className="text-right">
-                                                     <Button variant="ghost" size="sm" onClick={() => setSelectedReport(report)}>
-                                                        <Eye className="mr-2 h-4 w-4" /> Detail
-                                                    </Button>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
+                                                <AccordionTrigger className="flex-1 hover:no-underline">
+                                                    <div className="flex justify-between items-center w-full">
+                                                        <div className="text-left">
+                                                            <p className="font-semibold">{format(report.date.toDate(), 'eeee, dd MMM', { locale: id })}</p>
+                                                            <p className="text-xs text-muted-foreground">Diajukan: {formatDistanceToNow(report.submittedAt?.toDate() || report.createdAt.toDate(), { addSuffix: true, locale: id })}</p>
+                                                        </div>
+                                                    </div>
+                                                </AccordionTrigger>
+                                            </div>
+                                            <AccordionContent>
+                                                <ReportPreview
+                                                    report={report}
+                                                    onReviewClick={() => setSelectedReport(report)}
+                                                    onApproveClick={() => handleSingleApprove(report.id!)}
+                                                    onReviseClick={() => setSelectedReport(report)}
+                                                    isApproving={approvingId === report.id}
+                                                />
+                                            </AccordionContent>
+                                        </AccordionItem>
+                                    ))}
+                                </Accordion>
+                                {reportsForTab.length === 0 && <p className="text-center text-sm text-muted-foreground py-4">Tidak ada laporan di tab ini.</p>}
                             </AccordionContent>
                         </AccordionItem>
                     )
@@ -387,14 +455,17 @@ export function LaporanMagangClient() {
         </>
 
       <div className="rounded-lg border">
-        <Table>
-          <TableHeader><TableRow><TableHead>Nama Intern</TableHead><TableHead>Brand</TableHead><TableHead>Divisi</TableHead><TableHead>Tanggal</TableHead><TableHead>Mentor</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Aksi</TableHead></TableRow></TableHeader>
-          <TableBody>
-            {filteredReportsForAdmin.length > 0 ? filteredReportsForAdmin.map(report => (
-              <TableRow key={report.id}><TableCell className="font-medium">{report.internName}</TableCell><TableCell>{report.brandName}</TableCell><TableCell>{report.division}</TableCell><TableCell>{format(report.date.toDate(), 'dd MMM', { locale: id })}</TableCell><TableCell>{report.supervisorName}</TableCell><TableCell><Badge className={statusColors[report.status]}>{statusLabels[report.status]}</Badge></TableCell><TableCell className="text-right"><Button variant="ghost" size="sm" onClick={() => setSelectedReport(report)}><Eye className="mr-2 h-4 w-4" /> Lihat</Button></TableCell></TableRow>
-            )) : (<TableRow><TableCell colSpan={7} className="h-24 text-center">Tidak ada laporan untuk filter ini.</TableCell></TableRow>)}
-          </TableBody>
-        </Table>
+        <div className="p-4"><p className="text-sm text-muted-foreground">Tampilan untuk HRD. Semua laporan dari semua intern ditampilkan di sini.</p></div>
+        <div className="border-t">
+          <Table>
+            <TableHeader><TableRow><TableHead>Nama Intern</TableHead><TableHead>Brand</TableHead><TableHead>Divisi</TableHead><TableHead>Tanggal</TableHead><TableHead>Mentor</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Aksi</TableHead></TableRow></TableHeader>
+            <TableBody>
+              {filteredReportsForAdmin.length > 0 ? filteredReportsForAdmin.map(report => (
+                <TableRow key={report.id}><TableCell className="font-medium">{report.internName}</TableCell><TableCell>{report.brandName}</TableCell><TableCell>{report.division}</TableCell><TableCell>{format(report.date.toDate(), 'dd MMM', { locale: id })}</TableCell><TableCell>{report.supervisorName}</TableCell><TableCell><Badge className={statusColors[report.status]}>{statusLabels[report.status]}</Badge></TableCell><TableCell className="text-right"><Button variant="ghost" size="sm" onClick={() => setSelectedReport(report)}><Eye className="mr-2 h-4 w-4" /> Lihat</Button></TableCell></TableRow>
+              )) : (<TableRow><TableCell colSpan={7} className="h-24 text-center">Tidak ada laporan untuk filter ini.</TableCell></TableRow>)}
+            </TableBody>
+          </Table>
+        </div>
       </div>
 
       {selectedReport && (<ReviewReportDialog open={!!selectedReport} onOpenChange={(isOpen) => !isOpen && setSelectedReport(null)} report={selectedReport} onSuccess={handleReviewSuccess}/>)}
