@@ -114,15 +114,15 @@ export function ReviewReportDialog({ open, onOpenChange, report, onSuccess }: Re
       <DialogContent className="max-w-3xl h-[90vh] flex flex-col p-0">
         <DialogHeader className="p-6 pb-4 border-b">
           <DialogTitle className="text-2xl">{report.internName}</DialogTitle>
-          <DialogDescription>
-            <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+          <div className="text-sm text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
                 <span>{format(report.date.toDate(), 'eeee, dd MMMM yyyy', { locale: idLocale })}</span>
                 <span className="text-muted-foreground">•</span>
                 <span>Mentor: {report.supervisorName}</span>
                 <span className="text-muted-foreground">•</span>
                 <span>Dikirim: {formatDistanceToNow(report.submittedAt?.toDate() || report.createdAt.toDate(), { addSuffix: true, locale: idLocale })}</span>
             </div>
-           </DialogDescription>
+           </div>
         </DialogHeader>
         <ScrollArea className="flex-grow">
         <div className="px-6 py-4 space-y-6">
@@ -152,9 +152,9 @@ export function ReviewReportDialog({ open, onOpenChange, report, onSuccess }: Re
                             <UserCheck className="h-5 w-5 text-primary" />
                             Feedback Anda Sebelumnya
                         </CardTitle>
-                        <DialogDescription>
+                        <div className="text-sm text-muted-foreground">
                           <div>{report.reviewedByName} &bull; {report.reviewedAt ? format(report.reviewedAt.toDate(), 'dd MMM, HH:mm') : ''}</div>
-                        </DialogDescription>
+                        </div>
                     </CardHeader>
                     <CardContent>
                         <blockquote className="border-l-4 pl-4 italic text-muted-foreground">
