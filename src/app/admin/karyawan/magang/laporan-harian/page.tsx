@@ -1,12 +1,12 @@
 'use client';
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth, isSameDay, isToday, isPast, addMonths, subMonths, isFuture, formatDistanceToNow, startOfDay, endOfDay } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth, isSameDay, isToday, isPast, addMonths, subMonths, isFuture, formatDistanceToNow, getDaysInMonth, isValid } from 'date-fns';
 import { id } from 'date-fns/locale';
-import { FilePlus, Send, ChevronLeft, ChevronRight, Calendar as CalendarIcon, CheckCircle, Clock, AlertCircle, Loader2, UserCheck, FileClock } from 'lucide-react';
+import { FilePlus, Send, ChevronLeft, ChevronRight, Calendar as CalendarIcon, CheckCircle, Clock, AlertCircle, Loader2, UserCheck, FileClock, ThumbsUp, MessageSquareWarning, FileText, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -30,7 +30,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ScrollArea } from '@/components/ui/scroll-area';
-
+import { Progress } from '@/components/ui/progress';
 
 const statusConfig: Record<ReportStatus, { label: string; color: string; icon: React.ReactNode }> = {
     approved: { label: 'Disetujui', color: 'bg-green-500', icon: <CheckCircle className="h-4 w-4" /> },
@@ -50,6 +50,17 @@ const reportSchema = z.object({
 
 type ReportFormValues = z.infer<typeof reportSchema>;
 
+const KpiCard = ({ title, value, icon, className }: { title: string, value: number, icon: ReactNode, className?: string }) => (
+    <Card className={cn("border-l-4", className)}>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">{title}</CardTitle>
+            {icon}
+        </CardHeader>
+        <CardContent>
+            <div className="text-2xl font-bold">{value}</div>
+        </CardContent>
+    </Card>
+)
 
 export default function LaporanHarianPage() {
     const { firebaseUser } = useAuth();
@@ -218,23 +229,40 @@ export default function LaporanHarianPage() {
     };
 
     const statusSummary = useMemo(() => {
-        const summary: Record<string, number> = {
-            approved: 0, submitted: 0, needs_revision: 0, draft: 0, 
-            not_filled: 0, outside_period: 0, future: 0
-        };
-        
-        const monthDays = eachDayOfInterval({
-            start: firstDayOfMonth,
-            end: endOfMonth(firstDayOfMonth)
-        });
+        const summary: Record<string, number> = { approved: 0, submitted: 0, needs_revision: 0, draft: 0, not_filled: 0 };
+        const monthDays = eachDayOfInterval({ start: firstDayOfMonth, end: endOfMonth(firstDayOfMonth) });
 
         monthDays.forEach(day => {
             const status = getDayStatus(day);
-            summary[status]++;
+            if (summary.hasOwnProperty(status)) {
+                summary[status]++;
+            }
+        });
+        return summary;
+    }, [reportsMap, currentMonth, employeeProfile]);
+
+    const { totalWorkDays, filledDays, progress } = useMemo(() => {
+        if (!employeeProfile?.internshipStartDate) return { totalWorkDays: 0, filledDays: 0, progress: 0 };
+
+        let workDaysInMonth = 0;
+        const monthDays = eachDayOfInterval({ start: startOfMonth(currentMonth), end: endOfMonth(currentMonth) });
+        
+        monthDays.forEach(day => {
+            const dayOfWeek = day.getDay();
+            if (dayOfWeek >= 1 && dayOfWeek <= 5) { // Monday to Friday
+                 const status = getDayStatus(day);
+                 if(status !== 'outside_period' && status !== 'future') {
+                    workDaysInMonth++;
+                 }
+            }
         });
 
-        return summary;
-    }, [reportsMap, currentMonth, employeeProfile, firstDayOfMonth]);
+        const filled = statusSummary.approved + statusSummary.submitted + statusSummary.needs_revision + statusSummary.draft;
+        const prog = workDaysInMonth > 0 ? (statusSummary.approved / workDaysInMonth) * 100 : 0;
+
+        return { totalWorkDays: workDaysInMonth, filledDays: filled, progress: Math.round(prog) };
+
+    }, [statusSummary, employeeProfile, currentMonth]);
 
     const legendItems: { status: DayStatus, label: string; color: string }[] = [
         { status: 'approved', label: 'Disetujui', color: 'bg-green-500' },
@@ -245,12 +273,10 @@ export default function LaporanHarianPage() {
     ];
 
     const ContentSection = ({ title, content }: { title: string, content: string }) => (
-        <div>
-            <h4 className="font-semibold text-base mb-1">{title}</h4>
-            <div className="text-sm text-muted-foreground p-3 bg-muted/50 rounded-md whitespace-pre-wrap">
-                {content}
-            </div>
-        </div>
+        <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-base">{title}</CardTitle></CardHeader>
+            <CardContent><div className="text-sm text-muted-foreground whitespace-pre-wrap">{content}</div></CardContent>
+        </Card>
     );
 
     const renderDialogContent = () => {
@@ -299,7 +325,7 @@ export default function LaporanHarianPage() {
         }
 
         if (selectedReport) {
-            const currentStatusInfo = statusConfig[selectedReport.status];
+            const currentStatusInfo = statusInfo[selectedReport.status];
             return (
                  <>
                     <DialogHeader>
@@ -347,7 +373,7 @@ export default function LaporanHarianPage() {
         let emptyStateDescription = "Tidak ada laporan yang dibuat pada tanggal ini.";
         if (dayStatus === 'not_filled') {
             emptyStateTitle = "Anda Belum Mengisi Laporan";
-            emptyStateDescription = "Periode input untuk tanggal ini telah lewat.";
+            emptyStateDescription = isPast(selectedDate) ? "Anda melewatkan laporan untuk tanggal ini." : "Silakan buat laporan untuk hari ini.";
         } else if (dayStatus === 'future') {
             emptyStateTitle = "Tanggal Akan Datang";
             emptyStateDescription = "Laporan hanya dapat dibuat pada hari berjalan.";
@@ -410,60 +436,80 @@ export default function LaporanHarianPage() {
 
     return (
         <>
-            <Card>
-                <CardHeader>
-                    <div className="flex flex-wrap items-center justify-between gap-4">
-                        <div>
-                            <CardTitle className="text-2xl">{format(currentMonth, 'MMMM yyyy', { locale: id })}</CardTitle>
-                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground mt-2">
-                                {legendItems.map(item => (
-                                    <div key={item.status} className="flex items-center gap-1.5">
-                                        <span className={cn("h-2 w-2 rounded-full", item.color)} />
-                                        <span>{item.label} ({statusSummary[item.status as keyof typeof statusSummary] || 0})</span>
-                                    </div>
-                                ))}
+            <div className="space-y-6">
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                    <KpiCard title="Disetujui" value={statusSummary.approved} icon={<CheckCircle className="h-4 w-4 text-muted-foreground" />} className="border-green-500" />
+                    <KpiCard title="Menunggu Review" value={statusSummary.submitted} icon={<Clock className="h-4 w-4 text-muted-foreground" />} className="border-blue-500" />
+                    <KpiCard title="Perlu Revisi" value={statusSummary.needs_revision} icon={<AlertCircle className="h-4 w-4 text-muted-foreground" />} className="border-yellow-500" />
+                    <KpiCard title="Belum Diisi" value={statusSummary.not_filled} icon={<XCircle className="h-4 w-4 text-muted-foreground" />} className="border-red-500" />
+                </div>
+
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Progres Laporan Bulan Ini</CardTitle>
+                        <CardDescription>Total hari kerja pada bulan ini: {totalWorkDays} hari. Anda telah mengisi {filledDays} laporan.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <Progress value={progress} className="w-full h-3" />
+                        <p className="text-right text-sm font-medium mt-2">{progress}% Disetujui</p>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader>
+                        <div className="flex flex-wrap items-center justify-between gap-4">
+                            <div>
+                                <CardTitle className="text-2xl">{format(currentMonth, 'MMMM yyyy', { locale: id })}</CardTitle>
+                                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground mt-2">
+                                    {legendItems.map(item => (
+                                        <div key={item.status} className="flex items-center gap-1.5">
+                                            <span className={cn("h-2 w-2 rounded-full", item.color)} />
+                                            <span>{item.label} ({statusSummary[item.status as keyof typeof statusSummary] || 0})</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Button type="button" variant="outline" size="sm" onClick={() => setCurrentMonth(new Date())}>Hari Ini</Button>
+                                <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}><ChevronLeft className="h-4 w-4" /></Button>
+                                <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}><ChevronRight className="h-4 w-4" /></Button>
                             </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                            <Button type="button" variant="outline" size="sm" onClick={() => setCurrentMonth(new Date())}>Hari Ini</Button>
-                            <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}><ChevronLeft className="h-4 w-4" /></Button>
-                            <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}><ChevronRight className="h-4 w-4" /></Button>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="grid grid-cols-7 text-center text-sm font-medium text-muted-foreground border-b">
+                            {['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'].map(day => <div key={day} className="py-2">{day}</div>)}
                         </div>
-                    </div>
-                </CardHeader>
-                <CardContent>
-                    <div className="grid grid-cols-7 text-center text-sm font-medium text-muted-foreground border-b">
-                        {['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'].map(day => <div key={day} className="py-2">{day}</div>)}
-                    </div>
-                    <div className="grid grid-cols-7">
-                        {days.map(day => {
-                            const status = getDayStatus(day);
-                            const isCurrentMonthDay = isSameMonth(day, currentMonth);
-                            const isDateSelected = selectedDate && isSameDay(day, selectedDate);
-                            
-                            return (
-                                <button
-                                    key={day.toString()}
-                                    type="button"
-                                    onClick={() => status !== 'future' && status !== 'outside_period' && handleDateClick(day)}
-                                    disabled={status === 'future' || status === 'outside_period'}
-                                    className={cn(
-                                        "relative h-20 p-2 text-left align-top transition-colors rounded-lg",
-                                        isCurrentMonthDay ? "hover:bg-accent" : "text-muted-foreground/50 hover:bg-accent/50",
-                                        isDateSelected && "bg-primary/10 ring-2 ring-primary",
-                                        (status === 'future' || status === 'outside_period') && "opacity-60 cursor-not-allowed hover:bg-transparent"
-                                    )}
-                                >
-                                    <span className={cn("font-medium", isToday(day) && "bg-primary text-primary-foreground rounded-full h-6 w-6 flex items-center justify-center ring-2 ring-offset-2 ring-primary")}>
-                                        {format(day, 'd')}
-                                    </span>
-                                    {status !== 'future' && status !== 'outside_period' && <span className={cn("absolute bottom-2 left-2 h-2 w-2 rounded-full", dayStatusColors[status])} />}
-                                </button>
-                            );
-                        })}
-                    </div>
-                </CardContent>
-            </Card>
+                        <div className="grid grid-cols-7">
+                            {days.map(day => {
+                                const status = getDayStatus(day);
+                                const isCurrentMonthDay = isSameMonth(day, currentMonth);
+                                const isDateSelected = selectedDate && isSameDay(day, selectedDate);
+                                
+                                return (
+                                    <button
+                                        key={day.toString()}
+                                        type="button"
+                                        onClick={() => status !== 'future' && status !== 'outside_period' && handleDateClick(day)}
+                                        disabled={status === 'future' || status === 'outside_period'}
+                                        className={cn(
+                                            "relative h-20 p-2 text-left align-top transition-colors rounded-lg",
+                                            isCurrentMonthDay ? "hover:bg-accent" : "text-muted-foreground/50 hover:bg-accent/50",
+                                            isDateSelected && "bg-primary/10 ring-2 ring-primary",
+                                            (status === 'future' || status === 'outside_period') && "opacity-60 cursor-not-allowed hover:bg-transparent"
+                                        )}
+                                    >
+                                        <span className={cn("font-medium", isToday(day) && "bg-primary text-primary-foreground rounded-full h-6 w-6 flex items-center justify-center ring-2 ring-offset-2 ring-primary")}>
+                                            {format(day, 'd')}
+                                        </span>
+                                        {status !== 'future' && status !== 'outside_period' && <span className={cn("absolute bottom-2 left-2 h-2 w-2 rounded-full", dayStatusColors[status])} />}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
 
              <Dialog open={isDialogOpen} onOpenChange={handleCloseDialog}>
                 <DialogContent className="max-h-[90vh] flex flex-col sm:max-w-2xl">
