@@ -63,18 +63,6 @@ export function MonthlyEvaluationDialog({ open, onOpenChange, internData, onSucc
     const evaluation = internData.evaluation;
 
     const { reviewCycle, reportSummary } = internData;
-    
-    const reportsQuery = useMemoFirebase(() => {
-      if (!reviewCycle) return null;
-      return query(
-        collection(firestore, 'daily_reports'), 
-        where('uid', '==', internData.uid),
-        where('date', '>=', reviewCycle.periodStart),
-        where('date', '<=', reviewCycle.periodEnd)
-      );
-    }, [firestore, internData.uid, reviewCycle]);
-    
-    const { data: reports, isLoading: isLoadingReports } = useCollection<DailyReport>(reportsQuery);
 
     const form = useForm<FormValues>({
         resolver: zodResolver(evaluationSchema),
