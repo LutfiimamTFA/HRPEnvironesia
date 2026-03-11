@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useCollection, useFirestore, useMemoFirebase, updateDocumentNonBlocking, writeBatch, useDoc } from '@/firebase';
 import { collection, query, where, doc, serverTimestamp, Timestamp, getDoc } from 'firebase/firestore';
 import type { DailyReport, UserProfile, MonthlyEvaluation } from '@/lib/types';
@@ -20,7 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter, CardDescription } from '@/components/ui/card';
 import { SetFocusDialog } from './SetFocusDialog';
-
+import { useAuth } from '@/providers/auth-provider';
 
 type ReportWithDetails = DailyReport & { internName?: string; };
 
@@ -375,3 +375,5 @@ export function MentorDashboard({ userProfile }: { userProfile: UserProfile}) {
       </div>
     )
 }
+
+    
