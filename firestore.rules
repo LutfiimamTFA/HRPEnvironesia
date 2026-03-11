@@ -370,8 +370,9 @@ service cloud.firestore {
       // Interns can list their own evaluations (client query must enforce `where('internUid', '==', uid)`).
       allow list: if isHrd() || isSuperAdmin() || isSignedIn();
 
-      // HRD/Admins can read any evaluation. Interns can only read their own.
-      allow get: if isHrd() || isSuperAdmin() || (isSignedIn() && resource.data.internUid == request.auth.uid);
+      // HRD/Admins can read any evaluation. Interns can only read their own, based on the document ID.
+      // This is safe even if the document does not exist.
+      allow get: if isHrd() || isSuperAdmin() || (isSignedIn() && evaluationId.split('_')[0] == request.auth.uid);
 
       // Only HRD/Admins can create or update evaluations.
       allow create, update: if isHrd() || isSuperAdmin();
@@ -381,5 +382,3 @@ service cloud.firestore {
     }
   }
 }
-
-    
