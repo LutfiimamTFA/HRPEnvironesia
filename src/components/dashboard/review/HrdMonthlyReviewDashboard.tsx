@@ -58,9 +58,15 @@ export function HrdMonthlyReviewDashboard({ userProfile }: { userProfile: UserPr
     const brandMap = useMemo(() => new Map(brands?.map(b => [b.id!, b.name])), [brands]);
     const evaluationMap = useMemo(() => new Map(evaluations?.map(e => [`${e.internUid}_${format(e.evaluationMonth.toDate(), 'yyyy-MM')}`, e])), [evaluations]);
     
+    const selectedDateForCycle = useMemo(() => {
+        const [year, month] = selectedMonth.split('-');
+        // Use mid-month to avoid timezone issues with start/end of month
+        return new Date(parseInt(year), parseInt(month) - 1, 15);
+    }, [selectedMonth]);
+
     const processedInterns = useMemo((): ProcessedIntern[] => {
         if (!interns || !allDailyReports) return [];
-        const now = new Date();
+        const nowForCycle = selectedDateForCycle;
         const reportsByUid = allDailyReports.reduce((acc, report) => {
             if (!acc[report.uid]) acc[report.uid] = [];
             acc[report.uid].push(report);
@@ -68,9 +74,9 @@ export function HrdMonthlyReviewDashboard({ userProfile }: { userProfile: UserPr
         }, {} as Record<string, DailyReport[]>);
 
         return interns.map(intern => {
-            const reviewCycle = getCurrentReviewCycle(intern.internshipStartDate?.toDate(), now);
+            const reviewCycle = getCurrentReviewCycle(intern.internshipStartDate?.toDate(), nowForCycle);
             const evaluation = reviewCycle ? evaluationMap.get(`${intern.uid}_${reviewCycle.monthId}`) : undefined;
-            const reviewStatus = getReviewStatus(reviewCycle, evaluation, now);
+            const reviewStatus = getReviewStatus(reviewCycle, evaluation, new Date());
             
             const internReports = reportsByUid[intern.uid] || [];
             const summary: ReportSummary = { total: 0, submitted: 0, needs_revision: 0, approved: 0 };
@@ -99,7 +105,7 @@ export function HrdMonthlyReviewDashboard({ userProfile }: { userProfile: UserPr
                 supervisorName: intern.supervisorName || 'N/A',
             };
         });
-    }, [interns, evaluationMap, allDailyReports, brandMap]);
+    }, [interns, evaluationMap, allDailyReports, brandMap, selectedDateForCycle]);
     
     const filteredData = useMemo(() => {
         let data = processedInterns;
@@ -156,8 +162,6 @@ export function HrdMonthlyReviewDashboard({ userProfile }: { userProfile: UserPr
                 case 'Sudah Dievaluasi':
                     statusGroups.sudahDievaluasi.push(intern);
                     break;
-                default:
-                    break;
             }
         });
         return statusGroups;
@@ -191,7 +195,7 @@ export function HrdMonthlyReviewDashboard({ userProfile }: { userProfile: UserPr
     return (
         <div className="space-y-6">
             <div className="flex flex-wrap items-center gap-2">
-                <Select value={selectedMonth} onValueChange={setSelectedMonth} disabled>
+                <Select value={selectedMonth} onValueChange={setSelectedMonth}>
                     <SelectTrigger className="w-full sm:w-[180px]"><SelectValue /></SelectTrigger>
                     <SelectContent>{monthOptions.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent>
                 </Select>
