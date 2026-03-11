@@ -92,7 +92,7 @@ export function MonthlyEvaluationDialog({ open, onOpenChange, internData, onSucc
 
             const payload: Partial<MonthlyEvaluation> = {
                 internUid: internData.uid,
-                evaluationMonth: Timestamp.fromDate(reviewCycle.payrollPeriodStart),
+                evaluationMonth: Timestamp.fromDate(reviewCycle.payrollPeriodEnd), // Use payrollPeriodEnd to ensure it's in the correct month for querying
                 evaluatorUid: userProfile.uid,
                 evaluatorName: userProfile.fullName,
                 ...values,
