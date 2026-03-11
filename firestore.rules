@@ -344,33 +344,42 @@ service cloud.firestore {
 
     // --- Intern Daily Report Rules ---
     match /daily_reports/{reportId} {
-      // READ: Owner, assigned supervisor, HRD, or Super Admin can read.
-      allow read: if isSignedIn() && (
+      allow get: if isSignedIn() && (
                     isOwner(resource.data.uid) ||
                     request.auth.uid == resource.data.supervisorUid ||
                     isHrd() ||
                     isSuperAdmin()
                   );
+                  
+      allow list: if isSignedIn();
 
-      // CREATE: Owner can create a report with 'draft' or 'submitted' status.
       allow create: if isOwner(request.resource.data.uid)
                     && (request.resource.data.status == 'draft' || request.resource.data.status == 'submitted');
 
-      // UPDATE:
       allow update: if isSignedIn() && (
-                      // Intern can update their report if it needs revision or is a draft
-                      (isOwner(resource.data.uid) &&
-                       (resource.data.status == 'draft' || resource.data.status == 'needs_revision') &&
-                       // And they are not trying to approve it themselves
-                       !(request.resource.data.status == 'approved')) ||
-
-                      // Reviewer can update a submitted report
-                      ((request.auth.uid == resource.data.supervisorUid || isHrd() || isSuperAdmin()) &&
-                       resource.data.status == 'submitted')
+                      (isOwner(resource.data.uid) && resource.data.status in ['draft', 'needs_revision']) ||
+                      ((request.auth.uid == resource.data.supervisorUid || isHrd() || isSuperAdmin()) && resource.data.status == 'submitted')
                     );
 
-      // DELETE: No one can delete a report for audit trail.
       allow delete: if false;
+    }
+    
+    // --- Monthly Evaluation Rules ---
+    match /monthly_evaluations/{evaluationId} {
+      // HRD/Admins can list all evaluations for their dashboards.
+      // Interns can list their own evaluations (client query must enforce `where('internUid', '==', uid)`).
+      allow list: if isHrd() || isSuperAdmin() || isSignedIn();
+
+      // HRD/Admins can read any evaluation. Interns can only read their own.
+      allow get: if isHrd() || isSuperAdmin() || (isSignedIn() && resource.data.internUid == request.auth.uid);
+
+      // Only HRD/Admins can create or update evaluations.
+      allow create, update: if isHrd() || isSuperAdmin();
+
+      // Only Super Admins can delete evaluation records.
+      allow delete: if isSuperAdmin();
     }
   }
 }
+
+    
