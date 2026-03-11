@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth, isSameDay, isToday, isPast, addMonths, subMonths, isFuture, formatDistanceToNow } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth, isSameDay, isToday, isPast, addMonths, subMonths, isFuture, formatDistanceToNow, startOfDay, endOfDay } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { FilePlus, Send, ChevronLeft, ChevronRight, Calendar as CalendarIcon, CheckCircle, Clock, AlertCircle, Loader2, UserCheck, FileClock } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -29,6 +29,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 
 const statusConfig: Record<ReportStatus, { label: string; color: string; icon: React.ReactNode }> = {
@@ -217,7 +218,7 @@ export default function LaporanHarianPage() {
     };
 
     const statusSummary = useMemo(() => {
-        const summary: Record<DayStatus, number> = {
+        const summary: Record<string, number> = {
             approved: 0, submitted: 0, needs_revision: 0, draft: 0, 
             not_filled: 0, outside_period: 0, future: 0
         };
@@ -233,7 +234,7 @@ export default function LaporanHarianPage() {
         });
 
         return summary;
-    }, [reportsMap, currentMonth, employeeProfile]);
+    }, [reportsMap, currentMonth, employeeProfile, firstDayOfMonth]);
 
     const legendItems: { status: DayStatus, label: string; color: string }[] = [
         { status: 'approved', label: 'Disetujui', color: 'bg-green-500' },
@@ -304,7 +305,7 @@ export default function LaporanHarianPage() {
                     <DialogHeader>
                         <DialogTitle className="text-2xl">{format(selectedReport.date.toDate(), "eeee, dd MMMM yyyy", { locale: id })}</DialogTitle>
                          <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-                             <Badge variant={report.status === 'approved' ? 'default' : (report.status === 'needs_revision' ? 'destructive' : 'secondary')} className={cn(report.status === 'approved' && 'bg-green-600')}>{currentStatusInfo.label}</Badge>
+                             <Badge variant={selectedReport.status === 'approved' ? 'default' : (selectedReport.status === 'needs_revision' ? 'destructive' : 'secondary')} className={cn(selectedReport.status === 'approved' && 'bg-green-600')}>{currentStatusInfo.label}</Badge>
                             <span>Dikirim: {formatDistanceToNow(selectedReport.submittedAt?.toDate() || selectedReport.createdAt.toDate(), { addSuffix: true, locale: id })}</span>
                             {supervisorDisplayName && <span>Mentor: {supervisorDisplayName}</span>}
                         </div>
@@ -418,7 +419,7 @@ export default function LaporanHarianPage() {
                                 {legendItems.map(item => (
                                     <div key={item.status} className="flex items-center gap-1.5">
                                         <span className={cn("h-2 w-2 rounded-full", item.color)} />
-                                        <span>{item.label} ({statusSummary[item.status] || 0})</span>
+                                        <span>{item.label} ({statusSummary[item.status as keyof typeof statusSummary] || 0})</span>
                                     </div>
                                 ))}
                             </div>
