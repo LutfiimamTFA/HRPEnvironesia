@@ -114,14 +114,14 @@ export function ReviewReportDialog({ open, onOpenChange, report, onSuccess }: Re
       <DialogContent className="max-w-3xl h-[90vh] flex flex-col p-0">
         <DialogHeader className="p-6 pb-4 border-b">
           <DialogTitle className="text-2xl">{report.internName}</DialogTitle>
-          <div className="text-sm text-muted-foreground">
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-                <span>{format(report.date.toDate(), 'eeee, dd MMMM yyyy', { locale: idLocale })}</span>
-                <span className="text-muted-foreground">•</span>
-                <span>Mentor: {report.supervisorName}</span>
-                <span className="text-muted-foreground">•</span>
-                <span>Dikirim: {formatDistanceToNow(report.submittedAt?.toDate() || report.createdAt.toDate(), { addSuffix: true, locale: idLocale })}</span>
-            </div>
+           <div className="text-sm text-muted-foreground">
+             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                 <span>{format(report.date.toDate(), 'eeee, dd MMMM yyyy', { locale: idLocale })}</span>
+                 <span className="text-muted-foreground">•</span>
+                 <span>Mentor: {report.supervisorName}</span>
+                 <span className="text-muted-foreground">•</span>
+                 <span>Dikirim: {formatDistanceToNow(report.submittedAt?.toDate() || report.createdAt.toDate(), { addSuffix: true, locale: idLocale })}</span>
+             </div>
            </div>
         </DialogHeader>
         <ScrollArea className="flex-grow">
@@ -164,26 +164,29 @@ export function ReviewReportDialog({ open, onOpenChange, report, onSuccess }: Re
                 </Card>
             )}
 
-            <Separator />
-            
-            <Form {...form}>
-              <form id="review-form" className="space-y-2">
-                <FormField
-                  control={form.control}
-                  name="reviewerNotes"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-base font-semibold">Catatan Reviewer</FormLabel>
-                      <FormDescription className="text-xs">Wajib diisi saat meminta revisi.</FormDescription>
-                      <FormControl>
-                        <Textarea placeholder="Berikan feedback atau arahan untuk revisi..." {...field} rows={4} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </form>
-            </Form>
+            {report.status === 'submitted' && (
+              <>
+                <Separator />
+                <Form {...form}>
+                  <form id="review-form" className="space-y-2">
+                    <FormField
+                      control={form.control}
+                      name="reviewerNotes"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-base font-semibold">Catatan Reviewer</FormLabel>
+                          <FormDescription className="text-xs">Wajib diisi saat meminta revisi.</FormDescription>
+                          <FormControl>
+                            <Textarea placeholder="Berikan feedback atau arahan untuk revisi..." {...field} rows={4} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </form>
+                </Form>
+              </>
+            )}
         </div>
         </ScrollArea>
         <DialogFooter className="flex-shrink-0 p-6 pt-4 border-t bg-background">
