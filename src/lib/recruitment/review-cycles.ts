@@ -40,7 +40,7 @@ export interface InternWithReviewStatus extends EmployeeProfile {
  * @returns The current review cycle object, or null if the internship hasn't started.
  */
 export function getCurrentReviewCycle(
-  startDate: Date | null,
+  startDate: Date | null | undefined,
   now: Date = new Date()
 ): ReviewCycle | null {
   if (!startDate) return null;

@@ -50,42 +50,20 @@ type FormValues = z.infer<typeof evaluationSchema>;
 interface MonthlyEvaluationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  internData: InternWithReviewStatus;
-  evaluation?: MonthlyEvaluation | null;
+  internData: InternWithReviewStatus & { reportSummary: { total: number; submitted: number; needs_revision: number; approved: number; }};
   onSuccess: () => void;
 }
 
-export function MonthlyEvaluationDialog({ open, onOpenChange, internData, evaluation, onSuccess }: MonthlyEvaluationDialogProps) {
+export function MonthlyEvaluationDialog({ open, onOpenChange, internData, onSuccess }: MonthlyEvaluationDialogProps) {
     const { userProfile } = useAuth();
     const firestore = useFirestore();
     const { toast } = useToast();
     const [isSaving, setIsSaving] = useState(false);
-
-    const { reviewCycle } = internData;
-    if (!reviewCycle) return null;
-
-    const reportsQuery = useMemoFirebase(() => {
-        if (!internData.uid) return null;
-        return query(
-            collection(firestore, 'daily_reports'),
-            where('uid', '==', internData.uid),
-            where('date', '>=', reviewCycle.periodStart),
-            where('date', '<=', reviewCycle.periodEnd)
-        );
-    }, [firestore, internData.uid, reviewCycle]);
-
-    const { data: reports, isLoading: isLoadingReports } = useCollection<DailyReport>(reportsQuery);
     
-    const reportSummary = useMemo(() => {
-        const summary = { submitted: 0, needs_revision: 0, approved: 0 };
-        if (!reports) return summary;
-        reports.forEach(r => {
-            if (summary.hasOwnProperty(r.status)) {
-                summary[r.status]++;
-            }
-        });
-        return summary;
-    }, [reports]);
+    const evaluation = internData.evaluation; // Assuming this is passed within internData
+
+    const { reviewCycle, reportSummary } = internData;
+    if (!reviewCycle) return null;
 
     const form = useForm<FormValues>({
         resolver: zodResolver(evaluationSchema),
@@ -109,7 +87,6 @@ export function MonthlyEvaluationDialog({ open, onOpenChange, internData, evalua
 
             const payload: Partial<MonthlyEvaluation> = {
                 internUid: internData.uid,
-                internName: internData.fullName,
                 evaluationMonth: Timestamp.fromDate(reviewCycle.periodStart),
                 evaluatorUid: userProfile.uid,
                 evaluatorName: userProfile.fullName,
@@ -150,7 +127,7 @@ export function MonthlyEvaluationDialog({ open, onOpenChange, internData, evalua
                             <KpiCard title="Disetujui Mentor" value={reportSummary.approved} />
                             <KpiCard title="Menunggu Review" value={reportSummary.submitted} />
                             <KpiCard title="Perlu Revisi" value={reportSummary.needs_revision} deltaType="inverse" />
-                            <KpiCard title="Total Laporan" value={(reports || []).length} />
+                            <KpiCard title="Total Laporan" value={reportSummary.total} />
                         </div>
                         <Separator />
                         <Form {...form}>

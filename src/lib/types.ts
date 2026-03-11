@@ -555,7 +555,6 @@ export type EvaluationCriteria = {
 export type MonthlyEvaluation = {
   id?: string;
   internUid: string;
-  internName?: string;
   evaluationMonth: Timestamp; // The first day of the month being evaluated
   evaluatorUid?: string;
   evaluatorName?: string;

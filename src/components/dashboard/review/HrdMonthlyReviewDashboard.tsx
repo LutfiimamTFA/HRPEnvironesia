@@ -4,36 +4,38 @@ import * as React from 'react';
 import { useMemo, useState } from 'react';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, query, where, Timestamp } from 'firebase/firestore';
-import type { UserProfile, Brand, DailyReport, MonthlyEvaluation, EmployeeProfile } from '@/lib/types';
+import type { UserProfile, Brand, DailyReport, MonthlyEvaluation, EmployeeProfile, InternWithReviewStatus } from '@/lib/types';
 import { KpiCard } from '@/components/recruitment/KpiCard';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import { Search } from 'lucide-react';
+import { Search, AlertTriangle, CalendarCheck, Clock, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { MonthlyEvaluationDialog } from './MonthlyEvaluationDialog';
 import { Badge } from '@/components/ui/badge';
+import { getReviewStatus, getCurrentReviewCycle } from '@/lib/recruitment/review-cycles';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-type MonthlyInternData = {
-    internId: string;
-    internName: string;
-    brandId?: string | string[];
-    brandName?: string;
-    division?: string;
-    supervisorName?: string;
-    month: string; // YYYY-MM
-    evaluationStatus: 'pending' | 'evaluated';
-    reportCount: number;
+type ReportSummary = {
+    total: number;
+    submitted: number;
+    needs_revision: number;
+    approved: number;
 }
+
+type ProcessedIntern = InternWithReviewStatus & {
+    brandName?: string;
+    reportSummary: ReportSummary;
+};
 
 export function HrdMonthlyReviewDashboard({ userProfile }: { userProfile: UserProfile }) {
     const firestore = useFirestore();
     const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
     const [brandFilter, setBrandFilter] = useState('all');
     const [searchTerm, setSearchTerm] = useState('');
-    const [selectedInternData, setSelectedInternData] = useState<MonthlyInternData | null>(null);
+    const [selectedInternData, setSelectedInternData] = useState<ProcessedIntern | null>(null);
 
     const { data: interns, isLoading: isLoadingInterns } = useCollection<EmployeeProfile>(
         useMemoFirebase(() => query(collection(firestore, 'employee_profiles'), where('employmentType', '==', 'magang')), [firestore])
@@ -45,67 +47,95 @@ export function HrdMonthlyReviewDashboard({ userProfile }: { userProfile: UserPr
         useMemoFirebase(() => {
             const [year, month] = selectedMonth.split('-');
             const monthStart = new Date(parseInt(year), parseInt(month) - 1, 1);
-            return query(collection(firestore, 'monthly_evaluations'), where('evaluationMonth', '==', Timestamp.fromDate(monthStart)))
+            return query(collection(firestore, 'monthly_evaluations'), where('evaluationMonth', '>=', startOfMonth(monthStart)), where('evaluationMonth', '<=', endOfMonth(monthStart)));
         }, [firestore, selectedMonth])
     );
-    
-    const { data: supervisors } = useCollection<UserProfile>(
-        useMemoFirebase(() => {
-            // This query should only run for HRD/Admins
-            if (userProfile && ['hrd', 'super-admin'].includes(userProfile.role)) {
-                return query(collection(firestore, 'users'), where('role', 'in', ['manager', 'karyawan']), where('isActive', '==', true));
-            }
-            return null; // Return null for other roles to prevent the query
-        }, [firestore, userProfile])
+    const { data: allDailyReports, isLoading: isLoadingReports } = useCollection<DailyReport>(
+        useMemoFirebase(() => collection(firestore, 'daily_reports'), [firestore])
     );
 
-    const internMap = useMemo(() => new Map(interns?.map(i => [i.uid, i])), [interns]);
     const brandMap = useMemo(() => new Map(brands?.map(b => [b.id!, b.name])), [brands]);
-    const evaluationMap = useMemo(() => new Map(evaluations?.map(e => [e.internUid, e])), [evaluations]);
+    const evaluationMap = useMemo(() => new Map(evaluations?.map(e => [`${e.internUid}_${format(e.evaluationMonth.toDate(), 'yyyy-MM')}`, e])), [evaluations]);
     
-    const monthlyData = useMemo((): MonthlyInternData[] => {
-        if (!interns) return [];
+    const processedInterns = useMemo((): ProcessedIntern[] => {
+        if (!interns || !allDailyReports) return [];
+        const now = new Date();
+        const reportsByUid = allDailyReports.reduce((acc, report) => {
+            if (!acc[report.uid]) acc[report.uid] = [];
+            acc[report.uid].push(report);
+            return acc;
+        }, {} as Record<string, DailyReport[]>);
 
         return interns.map(intern => {
-            const evaluation = evaluationMap.get(intern.uid);
+            const reviewCycle = getCurrentReviewCycle(intern.internshipStartDate?.toDate(), now);
+            const evaluation = reviewCycle ? evaluationMap.get(`${intern.uid}_${reviewCycle.monthId}`) : undefined;
+            const reviewStatus = getReviewStatus(reviewCycle, evaluation, now);
+            
+            const internReports = reportsByUid[intern.uid] || [];
+            const summary: ReportSummary = { total: 0, submitted: 0, needs_revision: 0, approved: 0 };
+            
+            if (reviewCycle) {
+                internReports.forEach(report => {
+                    const reportDate = report.date.toDate();
+                    if (reportDate >= reviewCycle.periodStart && reportDate <= reviewCycle.periodEnd) {
+                        summary.total++;
+                        if ((summary as any)[report.status] !== undefined) {
+                            (summary as any)[report.status]++;
+                        }
+                    }
+                });
+            }
+
             const brandDisplay = Array.isArray(intern.brandId) ? intern.brandId.map(id => brandMap.get(id)).join(', ') : (intern.brandId ? brandMap.get(intern.brandId) : 'N/A');
 
             return {
-                internId: intern.uid,
-                internName: intern.fullName,
-                brandId: intern.brandId,
+                ...intern,
+                reviewCycle,
+                reviewStatus,
+                reportSummary: summary,
                 brandName: brandDisplay,
-                division: intern.division || 'N/A',
                 supervisorName: intern.supervisorName || 'N/A',
-                month: selectedMonth,
-                evaluationStatus: evaluation ? 'evaluated' : 'pending',
-                reportCount: 0 // This needs daily_reports to be calculated, which is too heavy to fetch all
             };
         });
-    }, [interns, evaluationMap, brandMap, selectedMonth]);
+    }, [interns, evaluationMap, allDailyReports, brandMap]);
     
     const filteredData = useMemo(() => {
-        let data = monthlyData;
+        let data = processedInterns;
         if (brandFilter !== 'all') {
             data = data.filter(d => Array.isArray(d.brandId) ? d.brandId.includes(brandFilter) : d.brandId === brandFilter);
         }
         if (searchTerm) {
             const lowercasedTerm = searchTerm.toLowerCase();
-            data = data.filter(d => d.internName.toLowerCase().includes(lowercasedTerm));
+            data = data.filter(d => d.fullName.toLowerCase().includes(lowercasedTerm));
         }
         return data;
-    }, [monthlyData, brandFilter, searchTerm]);
+    }, [processedInterns, brandFilter, searchTerm]);
 
     const kpis = useMemo(() => {
-        const total = filteredData.length;
-        const evaluated = filteredData.filter(d => d.evaluationStatus === 'evaluated').length;
-        return {
-            totalInterns: total,
-            evaluated,
-            pending: total - evaluated
-        }
+        const counts = {
+            siapDireview: 0,
+            akanJatuhTempo: 0,
+            terlambat: 0,
+        };
+        filteredData.forEach(intern => {
+            if (intern.reviewStatus === 'Siap Direview') counts.siapDireview++;
+            if (intern.reviewStatus === 'Akan Jatuh Tempo') counts.akanJatuhTempo++;
+            if (intern.reviewStatus === 'Terlambat') counts.terlambat++;
+        });
+        return counts;
     }, [filteredData]);
-
+    
+    const [activeTab, setActiveTab] = useState('siapDireview');
+    const internsForTab = useMemo(() => {
+        switch(activeTab) {
+            case 'siapDireview': return filteredData.filter(i => i.reviewStatus === 'Siap Direview');
+            case 'akanJatuhTempo': return filteredData.filter(i => i.reviewStatus === 'Akan Jatuh Tempo');
+            case 'terlambat': return filteredData.filter(i => i.reviewStatus === 'Terlambat');
+            case 'sudahDievaluasi': return filteredData.filter(i => i.reviewStatus === 'Sudah Dievaluasi');
+            default: return filteredData;
+        }
+    }, [activeTab, filteredData]);
+    
     const handleEvaluationSuccess = () => {
       mutateEvaluations();
       setSelectedInternData(null);
@@ -123,7 +153,7 @@ export function HrdMonthlyReviewDashboard({ userProfile }: { userProfile: UserPr
     return (
         <div className="space-y-6">
             <div className="flex flex-wrap items-center gap-2">
-                <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                <Select value={selectedMonth} onValueChange={setSelectedMonth} disabled>
                     <SelectTrigger className="w-full sm:w-[180px]"><SelectValue /></SelectTrigger>
                     <SelectContent>{monthOptions.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent>
                 </Select>
@@ -134,38 +164,52 @@ export function HrdMonthlyReviewDashboard({ userProfile }: { userProfile: UserPr
                 <div className="relative flex-grow min-w-[200px]"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" /><Input placeholder="Cari nama intern..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-8" /></div>
             </div>
             
-            <div className="grid gap-4 md:grid-cols-3">
-                <KpiCard title="Total Intern Bulan Ini" value={kpis.totalInterns} />
-                <KpiCard title="Sudah Dievaluasi" value={kpis.evaluated} />
-                <KpiCard title="Belum Dievaluasi" value={kpis.pending} deltaType="inverse" />
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                <KpiCard title="Siap Direview" value={kpis.siapDireview} />
+                <KpiCard title="Akan Jatuh Tempo" value={kpis.akanJatuhTempo} />
+                <KpiCard title="Terlambat Review" value={kpis.terlambat} deltaType="inverse" />
             </div>
-
-            <div className="rounded-lg border">
-                <Table>
-                    <TableHeader><TableRow><TableHead>Nama Intern</TableHead><TableHead>Brand</TableHead><TableHead>Divisi</TableHead><TableHead>Mentor</TableHead><TableHead>Status Evaluasi</TableHead><TableHead className="text-right">Aksi</TableHead></TableRow></TableHeader>
-                    <TableBody>
-                        {filteredData.length > 0 ? filteredData.map(intern => (
-                            <TableRow key={intern.internId}>
-                                <TableCell className="font-medium">{intern.internName}</TableCell>
-                                <TableCell>{intern.brandName}</TableCell>
-                                <TableCell>{intern.division}</TableCell>
-                                <TableCell>{intern.supervisorName}</TableCell>
-                                <TableCell><Badge variant={intern.evaluationStatus === 'evaluated' ? 'default' : 'secondary'}>{intern.evaluationStatus === 'evaluated' ? 'Sudah Dievaluasi' : 'Belum Dievaluasi'}</Badge></TableCell>
-                                <TableCell className="text-right"><Button variant="outline" size="sm" onClick={() => setSelectedInternData(intern)}>Review & Evaluasi</Button></TableCell>
-                            </TableRow>
-                        )) : (<TableRow><TableCell colSpan={6} className="h-24 text-center">Tidak ada data intern untuk filter ini.</TableCell></TableRow>)}
-                    </TableBody>
-                </Table>
-            </div>
+            
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+                <TabsList>
+                    <TabsTrigger value="siapDireview">Siap Direview ({internsByStatus.siapDireview.length})</TabsTrigger>
+                    <TabsTrigger value="akanJatuhTempo">Akan Jatuh Tempo ({internsByStatus.akanJatuhTempo.length})</TabsTrigger>
+                    <TabsTrigger value="terlambat">Terlambat ({internsByStatus.terlambat.length})</TabsTrigger>
+                    <TabsTrigger value="sudahDievaluasi">Sudah Dievaluasi ({internsByStatus.sudahDievaluasi.length})</TabsTrigger>
+                    <TabsTrigger value="semua">Semua Intern ({internsByStatus.semua.length})</TabsTrigger>
+                </TabsList>
+                <TabsContent value={activeTab} className="mt-4">
+                     <div className="rounded-lg border">
+                        <Table>
+                            <TableHeader><TableRow><TableHead>Nama Intern</TableHead><TableHead>Periode Review</TableHead><TableHead>Jatuh Tempo</TableHead><TableHead>Laporan Bulan Ini</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Aksi</TableHead></TableRow></TableHeader>
+                            <TableBody>
+                                {internsForTab.length > 0 ? internsForTab.map(intern => (
+                                    <TableRow key={intern.uid}>
+                                        <TableCell className="font-medium">{intern.fullName}</TableCell>
+                                        <TableCell>{intern.reviewCycle ? `${format(intern.reviewCycle.periodStart, 'dd MMM')} - ${format(intern.reviewCycle.periodEnd, 'dd MMM')}` : '-'}</TableCell>
+                                        <TableCell>{intern.reviewCycle ? format(intern.reviewCycle.reviewDueDate, 'dd MMM yyyy') : '-'}</TableCell>
+                                        <TableCell>
+                                            <div>
+                                                <p className="text-sm">Total: {intern.reportSummary.total}</p>
+                                                <p className="text-xs text-green-600">Disetujui: {intern.reportSummary.approved}</p>
+                                            </div>
+                                        </TableCell>
+                                        <TableCell><Badge variant={intern.reviewStatus === 'Terlambat' ? 'destructive' : 'secondary'}>{intern.reviewStatus}</Badge></TableCell>
+                                        <TableCell className="text-right"><Button variant="outline" size="sm" onClick={() => setSelectedInternData(intern)}>Review & Evaluasi</Button></TableCell>
+                                    </TableRow>
+                                )) : (<TableRow><TableCell colSpan={6} className="h-24 text-center">Tidak ada data intern untuk tab ini.</TableCell></TableRow>)}
+                            </TableBody>
+                        </Table>
+                    </div>
+                </TabsContent>
+            </Tabs>
+           
             {selectedInternData && (
                 <MonthlyEvaluationDialog
                     open={!!selectedInternData}
                     onOpenChange={() => setSelectedInternData(null)}
                     internData={selectedInternData}
-                    internProfile={internMap.get(selectedInternData.internId)!}
-                    evaluation={evaluationMap.get(selectedInternData.internId)}
                     onSuccess={handleEvaluationSuccess}
-                    supervisors={supervisors || []}
                 />
             )}
         </div>
