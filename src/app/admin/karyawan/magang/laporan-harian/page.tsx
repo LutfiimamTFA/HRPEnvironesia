@@ -122,7 +122,6 @@ export default function LaporanHarianPage() {
     
     const handleCloseDialog = () => {
         setIsDialogOpen(false);
-        // Delay resetting selected date to allow for fade-out animation
         setTimeout(() => {
             setSelectedDate(null);
             form.reset();
@@ -196,14 +195,53 @@ export default function LaporanHarianPage() {
             setIsConfirmOpen(false);
         }
     };
+    
+    type DayStatus = ReportStatus | 'not_filled' | 'outside_period' | 'future';
+
+    const getDayStatus = (day: Date): DayStatus => {
+        const startDate = employeeProfile?.internshipStartDate?.toDate();
+        const endDate = employeeProfile?.internshipEndDate?.toDate();
+
+        if (isFuture(day) && !isToday(day)) return 'future';
+
+        if (startDate && day < startOfDay(startDate)) return 'outside_period';
+        if (endDate && day > endOfDay(endDate)) return 'outside_period';
+        
+        const dateString = format(day, 'yyyy-MM-dd');
+        const report = reportsMap.get(dateString);
+        if (report) return report.status;
+        
+        if (isPast(day) || isToday(day)) return 'not_filled';
+
+        return 'future';
+    };
 
     const statusSummary = useMemo(() => {
-        if (!allFetchedReports) return {} as Record<ReportStatus, number>;
-        return allFetchedReports.reduce((acc, report) => {
-            acc[report.status] = (acc[report.status] || 0) + 1;
-            return acc;
-        }, {} as Record<ReportStatus, number>);
-    }, [allFetchedReports]);
+        const summary: Record<DayStatus, number> = {
+            approved: 0, submitted: 0, needs_revision: 0, draft: 0, 
+            not_filled: 0, outside_period: 0, future: 0
+        };
+        
+        const monthDays = eachDayOfInterval({
+            start: firstDayOfMonth,
+            end: endOfMonth(firstDayOfMonth)
+        });
+
+        monthDays.forEach(day => {
+            const status = getDayStatus(day);
+            summary[status]++;
+        });
+
+        return summary;
+    }, [reportsMap, currentMonth, employeeProfile]);
+
+    const legendItems: { status: DayStatus, label: string; color: string }[] = [
+        { status: 'approved', label: 'Disetujui', color: 'bg-green-500' },
+        { status: 'submitted', label: 'Menunggu Review', color: 'bg-blue-500' },
+        { status: 'needs_revision', label: 'Perlu Revisi', color: 'bg-yellow-500' },
+        { status: 'draft', label: 'Draf', color: 'bg-gray-400' },
+        { status: 'not_filled', label: 'Belum Isi', color: 'bg-red-500' },
+    ];
 
     const ContentSection = ({ title, content }: { title: string, content: string }) => (
         <div>
@@ -215,22 +253,12 @@ export default function LaporanHarianPage() {
     );
 
     const renderDialogContent = () => {
-        const isDateToday = selectedDate && isToday(selectedDate);
-        const isDateInPastCheck = selectedDate && !isToday(selectedDate) && isPast(selectedDate);
-        const isFutureDate = selectedDate && isFuture(selectedDate);
+        if (!selectedDate) return null;
         
-        const canEdit = isDateToday && (!selectedReport || selectedReport.status === 'needs_revision');
+        const dayStatus = getDayStatus(selectedDate);
         const mentorNotAssigned = !employeeProfile?.supervisorUid;
         const supervisorDisplayName = selectedReport?.supervisorName || employeeProfile?.supervisorName || 'Belum ditugaskan';
-
-
-        const statusInfo: Record<ReportStatus, { icon: React.ReactNode; title: string; description: string; variant: "default" | "destructive" | "warning"; }> = {
-            submitted: { icon: <FileClock className="h-4 w-4" />, title: 'Menunggu Review', description: 'Laporan Anda sedang menunggu tinjauan dari mentor.', variant: 'default' },
-            needs_revision: { icon: <AlertCircle className="h-4 w-4" />, title: 'Perlu Revisi', description: 'Mentor Anda memberikan catatan. Silakan perbaiki laporan Anda.', variant: 'destructive' },
-            approved: { icon: <CheckCircle className="h-4 w-4" />, title: 'Disetujui', description: 'Laporan Anda telah disetujui oleh mentor. Kerja bagus!', variant: 'default' },
-            draft: { icon: <FileClock className="h-4 w-4" />, title: 'Draf', description: 'Laporan ini belum dikirim.', variant: 'default' }
-        };
-
+        
         if (isEditing) {
             return (
                 <>
@@ -270,38 +298,19 @@ export default function LaporanHarianPage() {
         }
 
         if (selectedReport) {
-            const currentStatusInfo = statusInfo[selectedReport.status];
+            const currentStatusInfo = statusConfig[selectedReport.status];
             return (
                  <>
                     <DialogHeader>
                         <DialogTitle className="text-2xl">{format(selectedReport.date.toDate(), "eeee, dd MMMM yyyy", { locale: id })}</DialogTitle>
                          <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-                             <Badge variant={currentStatusInfo.variant === 'default' ? 'secondary' : currentStatusInfo.variant} className={cn(currentStatusInfo.variant === 'warning' && 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900/30 dark:border-yellow-800 dark:text-yellow-200')}>
-                                {currentStatusInfo.title}
-                            </Badge>
+                             <Badge variant={report.status === 'approved' ? 'default' : (report.status === 'needs_revision' ? 'destructive' : 'secondary')} className={cn(report.status === 'approved' && 'bg-green-600')}>{currentStatusInfo.label}</Badge>
                             <span>Dikirim: {formatDistanceToNow(selectedReport.submittedAt?.toDate() || selectedReport.createdAt.toDate(), { addSuffix: true, locale: id })}</span>
                             {supervisorDisplayName && <span>Mentor: {supervisorDisplayName}</span>}
                         </div>
                     </DialogHeader>
                     <div className="space-y-6 py-4 text-sm">
-                        <Alert variant={currentStatusInfo.variant === 'warning' ? 'default' : currentStatusInfo.variant} className={cn(
-                            currentStatusInfo.variant === 'warning' && 'bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800',
-                            currentStatusInfo.variant === 'default' && 'bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800',
-                            currentStatusInfo.variant === 'destructive' && 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800',
-                        )}>
-                            <FileClock className={cn("h-4 w-4", currentStatusInfo.variant === 'default' && 'text-blue-600 dark:text-blue-300')} />
-                            <AlertTitle>{currentStatusInfo.title}</AlertTitle>
-                            <AlertDescription>{currentStatusInfo.description}</AlertDescription>
-                        </Alert>
-                        <div className="space-y-4">
-                            <ContentSection title="Uraian Aktivitas" content={selectedReport.activity} />
-                            <ContentSection title="Pembelajaran yang Diperoleh" content={selectedReport.learning} />
-                            <ContentSection title="Kendala yang Dialami" content={selectedReport.obstacle} />
-                        </div>
-                        
                         {(selectedReport.status === 'needs_revision' || selectedReport.status === 'approved') && selectedReport.reviewerNotes && (
-                            <>
-                                <Separator />
                                 <Card>
                                     <CardHeader className="pb-2">
                                         <CardTitle className="text-base flex items-center gap-2">
@@ -316,8 +325,12 @@ export default function LaporanHarianPage() {
                                         </blockquote>
                                     </CardContent>
                                 </Card>
-                            </>
                         )}
+                        <div className="space-y-4">
+                            <ContentSection title="Uraian Aktivitas" content={selectedReport.activity} />
+                            <ContentSection title="Pembelajaran yang Diperoleh" content={selectedReport.learning} />
+                            <ContentSection title="Kendala yang Dialami" content={selectedReport.obstacle} />
+                        </div>
                     </div>
                      <DialogFooter className="flex-col sm:flex-row sm:justify-end items-stretch sm:items-center">
                         <Button type="button" variant="outline" onClick={handleCloseDialog}>Tutup</Button>
@@ -331,20 +344,24 @@ export default function LaporanHarianPage() {
         
         let emptyStateTitle = "Belum ada laporan";
         let emptyStateDescription = "Tidak ada laporan yang dibuat pada tanggal ini.";
-        if (isDateInPastCheck) {
-            emptyStateTitle = "Periode Terlewat";
+        if (dayStatus === 'not_filled') {
+            emptyStateTitle = "Anda Belum Mengisi Laporan";
             emptyStateDescription = "Periode input untuk tanggal ini telah lewat.";
-        } else if (isFutureDate) {
+        } else if (dayStatus === 'future') {
             emptyStateTitle = "Tanggal Akan Datang";
             emptyStateDescription = "Laporan hanya dapat dibuat pada hari berjalan.";
+        } else if (dayStatus === 'outside_period') {
+            emptyStateTitle = "Di Luar Periode Magang";
+            emptyStateDescription = "Tanggal ini berada di luar periode magang Anda.";
         }
+
 
         return (
              <>
                 <DialogHeader>
                     <DialogTitle>{selectedDate ? format(selectedDate, "eeee, dd MMMM", { locale: id }) : 'Pilih Tanggal'}</DialogTitle>
                 </DialogHeader>
-                 {isDateToday && mentorNotAssigned && (
+                 {dayStatus === 'not_filled' && isToday(selectedDate) && mentorNotAssigned && (
                     <Alert variant="destructive">
                         <AlertCircle className="h-4 w-4" />
                         <AlertTitle>Mentor Belum Ditugaskan</AlertTitle>
@@ -360,7 +377,7 @@ export default function LaporanHarianPage() {
                     <div></div>
                      <div className="flex gap-2 self-end">
                         <Button type="button" variant="outline" onClick={handleCloseDialog}>Tutup</Button>
-                        {isDateToday && (
+                        {dayStatus === 'not_filled' && isToday(selectedDate) && (
                             <Button type="button" onClick={(e) => { e.preventDefault(); setIsEditing(true); }} disabled={mentorNotAssigned}>
                                 <FilePlus className="mr-2 h-4 w-4" /> Buat Laporan
                             </Button>
@@ -380,6 +397,16 @@ export default function LaporanHarianPage() {
       );
     }
 
+    const dayStatusColors: Record<DayStatus, string> = {
+        approved: 'bg-green-500',
+        submitted: 'bg-blue-500',
+        needs_revision: 'bg-yellow-500',
+        draft: 'bg-gray-400',
+        not_filled: 'bg-red-500',
+        outside_period: 'bg-transparent',
+        future: 'bg-transparent',
+    };
+
     return (
         <>
             <Card>
@@ -387,11 +414,11 @@ export default function LaporanHarianPage() {
                     <div className="flex flex-wrap items-center justify-between gap-4">
                         <div>
                             <CardTitle className="text-2xl">{format(currentMonth, 'MMMM yyyy', { locale: id })}</CardTitle>
-                             <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground mt-2">
-                                {Object.entries(statusConfig).map(([status, config]) => (
-                                    <div key={status} className="flex items-center gap-1.5">
-                                        <span className={cn("h-2 w-2 rounded-full", config.color)} />
-                                        <span>{statusSummary[status as ReportStatus] || 0} {config.label}</span>
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground mt-2">
+                                {legendItems.map(item => (
+                                    <div key={item.status} className="flex items-center gap-1.5">
+                                        <span className={cn("h-2 w-2 rounded-full", item.color)} />
+                                        <span>{item.label} ({statusSummary[item.status] || 0})</span>
                                     </div>
                                 ))}
                             </div>
@@ -409,30 +436,27 @@ export default function LaporanHarianPage() {
                     </div>
                     <div className="grid grid-cols-7">
                         {days.map(day => {
-                            const dateString = format(day, 'yyyy-MM-dd');
-                            const report = reportsMap.get(dateString);
+                            const status = getDayStatus(day);
                             const isCurrentMonthDay = isSameMonth(day, currentMonth);
                             const isDateSelected = selectedDate && isSameDay(day, selectedDate);
-                            const isFutureDate = isFuture(day) && !isToday(day);
                             
                             return (
                                 <button
                                     key={day.toString()}
                                     type="button"
-                                    onClick={() => !isFutureDate && handleDateClick(day)}
-                                    disabled={isFutureDate}
+                                    onClick={() => status !== 'future' && status !== 'outside_period' && handleDateClick(day)}
+                                    disabled={status === 'future' || status === 'outside_period'}
                                     className={cn(
                                         "relative h-20 p-2 text-left align-top transition-colors rounded-lg",
                                         isCurrentMonthDay ? "hover:bg-accent" : "text-muted-foreground/50 hover:bg-accent/50",
-                                        isPast(day) && !isToday(day) && "opacity-75",
                                         isDateSelected && "bg-primary/10 ring-2 ring-primary",
-                                        isFutureDate && "opacity-50 cursor-not-allowed hover:bg-transparent"
+                                        (status === 'future' || status === 'outside_period') && "opacity-60 cursor-not-allowed hover:bg-transparent"
                                     )}
                                 >
                                     <span className={cn("font-medium", isToday(day) && "bg-primary text-primary-foreground rounded-full h-6 w-6 flex items-center justify-center ring-2 ring-offset-2 ring-primary")}>
                                         {format(day, 'd')}
                                     </span>
-                                    {report && <span className={cn("absolute bottom-2 left-2 h-2 w-2 rounded-full", statusConfig[report.status]?.color)} />}
+                                    {status !== 'future' && status !== 'outside_period' && <span className={cn("absolute bottom-2 left-2 h-2 w-2 rounded-full", dayStatusColors[status])} />}
                                 </button>
                             );
                         })}
@@ -442,9 +466,9 @@ export default function LaporanHarianPage() {
 
              <Dialog open={isDialogOpen} onOpenChange={handleCloseDialog}>
                 <DialogContent className="max-h-[90vh] flex flex-col sm:max-w-2xl">
-                    <div className="flex-grow overflow-y-auto -mx-6 px-6">
+                    <ScrollArea className="flex-grow -mx-6 px-6">
                         {renderDialogContent()}
-                    </div>
+                    </ScrollArea>
                 </DialogContent>
             </Dialog>
             <Dialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
