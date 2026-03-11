@@ -1,10 +1,11 @@
+
 'use client';
 import { useState, useMemo, useRef, useEffect, ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth, isSameDay, isToday, isPast, addMonths, subMonths, isFuture, formatDistanceToNow, getDaysInMonth, isValid } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth, isSameDay, isToday, isPast, addMonths, subMonths, isFuture, formatDistanceToNow, getDaysInMonth, isValid, startOfDay, endOfDay } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { FilePlus, Send, ChevronLeft, ChevronRight, Calendar as CalendarIcon, CheckCircle, Clock, AlertCircle, Loader2, UserCheck, FileClock, ThumbsUp, MessageSquareWarning, FileText, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -25,7 +26,7 @@ import { doc, collection, query, where, Timestamp, serverTimestamp } from 'fireb
 import type { DailyReport, EmployeeProfile, ReportStatus } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -325,7 +326,7 @@ export default function LaporanHarianPage() {
         }
 
         if (selectedReport) {
-            const currentStatusInfo = statusInfo[selectedReport.status];
+            const currentStatusInfo = statusConfig[selectedReport.status];
             return (
                  <>
                     <DialogHeader>
@@ -538,3 +539,5 @@ export default function LaporanHarianPage() {
         </>
     );
 }
+
+    
