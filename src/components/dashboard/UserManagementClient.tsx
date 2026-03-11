@@ -33,6 +33,7 @@ import { UserFormDialog } from './UserFormDialog';
 import { DeleteConfirmationDialog } from './DeleteConfirmationDialog';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/providers/auth-provider';
+import { useRouter } from 'next/navigation';
 
 function UserTableSkeleton() {
   return (
@@ -55,7 +56,9 @@ const roleDisplayNames: Record<UserRole, string> = {
 export function UserManagementClient() {
   const firestore = useFirestore();
   const { toast } = useToast();
-  const { firebaseUser } = useAuth();
+  const { firebaseUser, auth } = useAuth();
+  const router = useRouter();
+
   const [isFormDialogOpen, setIsFormDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
@@ -107,9 +110,25 @@ export function UserManagementClient() {
                 'Authorization': `Bearer ${idToken}`,
             },
         });
+
+        if (res.status === 401) {
+            toast({ variant: 'destructive', title: 'Sesi Habis', description: "Sesi Anda telah berakhir. Silakan login kembali." });
+            if (auth) await auth.signOut();
+            router.push('/admin/login');
+            return;
+        }
+        
         if (!res.ok) {
-            const errorData = await res.json();
-            throw new Error(errorData.error || 'Failed to delete user.');
+            let errorMsg = 'Failed to delete user.';
+            try {
+                // Try to parse a JSON error response first
+                const errorData = await res.json();
+                errorMsg = errorData.error || errorMsg;
+            } catch (e) {
+                // If it's not JSON, use the status text as a fallback
+                errorMsg = res.statusText || 'An unknown server error occurred.';
+            }
+            throw new Error(errorMsg);
         }
 
         toast({ title: 'User Deleted', description: `User account for ${userToDelete.fullName} has been deleted.` });
