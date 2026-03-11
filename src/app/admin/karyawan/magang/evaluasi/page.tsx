@@ -55,12 +55,16 @@ export default function EvaluasiPage() {
         if (!userProfile?.uid) return null;
         return query(
             collection(firestore, 'monthly_evaluations'), 
-            where('internUid', '==', userProfile.uid),
-            orderBy('evaluationMonth', 'desc')
+            where('internUid', '==', userProfile.uid)
         );
     }, [userProfile?.uid, firestore]);
 
-    const { data: evaluations, isLoading: evalsLoading } = useCollection<MonthlyEvaluation>(evaluationsQuery);
+    const { data: rawEvaluations, isLoading: evalsLoading } = useCollection<MonthlyEvaluation>(evaluationsQuery);
+    
+    const evaluations = useMemo(() => {
+        if (!rawEvaluations) return null;
+        return [...rawEvaluations].sort((a, b) => b.evaluationMonth.toDate().getTime() - a.evaluationMonth.toDate().getTime());
+    }, [rawEvaluations]);
     
     const isLoading = authLoading || evalsLoading;
 
