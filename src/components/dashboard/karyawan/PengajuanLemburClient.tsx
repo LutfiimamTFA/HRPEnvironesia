@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { useCollection, useFirestore, useMemoFirebase, deleteDocumentNonBlocking } from '@/firebase';
+import { useCollection, useFirestore, useMemoFirebase, deleteDocumentNonBlocking, useDoc } from '@/firebase';
 import { collection, query, where, doc } from 'firebase/firestore';
-import type { OvertimeSubmission } from '@/lib/types';
+import type { OvertimeSubmission, EmployeeProfile, Brand } from '@/lib/types';
 import { useAuth } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -51,6 +51,14 @@ export function PengajuanLemburClient() {
   
   const { data: submissions, isLoading, mutate } = useCollection<OvertimeSubmission>(submissionsQuery);
 
+  const { data: employeeProfile, isLoading: isLoadingProfile } = useDoc<EmployeeProfile>(
+    useMemoFirebase(() => (userProfile ? doc(firestore, 'employee_profiles', userProfile.uid) : null), [userProfile, firestore])
+  );
+  
+  const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(
+    useMemoFirebase(() => collection(firestore, 'brands'), [firestore])
+  );
+
   const summary = useMemo(() => {
     const kpis = { total: 0, pending: 0, approved: 0, rejected: 0 };
     if (!submissions) return kpis;
@@ -96,7 +104,7 @@ export function PengajuanLemburClient() {
     }
   };
 
-  if (isLoading) {
+  if (isLoading || isLoadingProfile || isLoadingBrands) {
     return <div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin" /></div>;
   }
 
@@ -154,6 +162,8 @@ export function PengajuanLemburClient() {
         open={isFormOpen}
         onOpenChange={setIsFormOpen}
         submission={selectedSubmission}
+        employeeProfile={employeeProfile}
+        brands={brands || []}
         onSuccess={mutate}
       />
       

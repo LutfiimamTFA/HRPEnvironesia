@@ -15,9 +15,9 @@ import { Loader2, PlusCircle, Trash2, Send } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { useFirestore, setDocumentNonBlocking } from '@/firebase';
 import { doc, serverTimestamp, Timestamp, collection } from 'firebase/firestore';
-import type { OvertimeSubmission, UserProfile } from '@/lib/types';
+import type { OvertimeSubmission, UserProfile, EmployeeProfile, Brand } from '@/lib/types';
 import { GoogleDatePicker } from '@/components/ui/google-date-picker';
-import { format, differenceInMinutes, set } from 'date-fns';
+import { format, differenceInMinutes, set, addDays } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 
 const taskSchema = z.object({
@@ -44,10 +44,12 @@ interface OvertimeSubmissionFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   submission: OvertimeSubmission | null;
+  employeeProfile: EmployeeProfile | null;
+  brands: Brand[];
   onSuccess: () => void;
 }
 
-export function OvertimeSubmissionForm({ open, onOpenChange, submission, onSuccess }: OvertimeSubmissionFormProps) {
+export function OvertimeSubmissionForm({ open, onOpenChange, submission, employeeProfile, brands, onSuccess }: OvertimeSubmissionFormProps) {
   const [isSaving, setIsSaving] = useState(false);
   const { userProfile } = useAuth();
   const firestore = useFirestore();
@@ -68,6 +70,37 @@ export function OvertimeSubmissionForm({ open, onOpenChange, submission, onSucce
   const startTimeStr = watch('startTime');
   const endTimeStr = watch('endTime');
 
+  const displayInfo = useMemo(() => {
+    const brandMap = new Map(brands.map(b => [b.id!, b.name]));
+    
+    let statusLabel = 'Karyawan';
+    const empType = userProfile?.employmentType;
+    const empStage = userProfile?.employmentStage;
+    
+    if (empType === 'magang') {
+        if (empStage === 'intern_education') statusLabel = 'Magang (Pendidikan)';
+        else if (empStage === 'intern_pre_probation') statusLabel = 'Magang (Pra-Probation)';
+        else statusLabel = 'Magang';
+    } else if (empType === 'training') {
+        statusLabel = 'Karyawan (Training)';
+    } else if (empStage === 'probation') {
+        statusLabel = 'Karyawan (Probation)';
+    } else if (empType === 'karyawan') {
+        statusLabel = 'Karyawan Aktif';
+    }
+
+    const brandId = employeeProfile?.brandId || userProfile?.brandId;
+    const singleBrandId = Array.isArray(brandId) ? brandId[0] : brandId;
+    
+    return {
+        fullName: userProfile?.fullName || '',
+        employmentStatus: statusLabel,
+        brandName: employeeProfile?.brandName || (singleBrandId ? brandMap.get(singleBrandId) : 'N/A'),
+        division: employeeProfile?.division || userProfile?.managedDivision || 'N/A',
+        positionTitle: employeeProfile?.positionTitle || userProfile?.positionTitle || '-',
+    }
+  }, [userProfile, employeeProfile, brands]);
+
   const totalDuration = useMemo(() => {
     if (!startTimeStr || !endTimeStr) return 0;
     try {
@@ -76,9 +109,8 @@ export function OvertimeSubmissionForm({ open, onOpenChange, submission, onSucce
         const start = set(new Date(), { hours: startH, minutes: startM });
         let end = set(new Date(), { hours: endH, minutes: endM });
 
-        // Handle overnight case
         if (end < start) {
-            end = set(addDays(new Date(), 1), { hours: endH, minutes: endM });
+            end = addDays(end, 1);
         }
 
         return differenceInMinutes(end, start);
@@ -132,10 +164,10 @@ export function OvertimeSubmissionForm({ open, onOpenChange, submission, onSucce
       if (mode === 'create') {
         payload.uid = userProfile.uid;
         payload.fullName = userProfile.fullName;
-        payload.brandId = userProfile.brandId as string;
-        payload.division = userProfile.managedDivision || 'N/A';
-        payload.positionTitle = userProfile.positionTitle || userProfile.role;
-        payload.managerUid = userProfile.supervisorUid || 'NO_MANAGER_ASSIGNED'; // Fallback
+        payload.brandId = Array.isArray(userProfile.brandId) ? userProfile.brandId[0] : userProfile.brandId as string;
+        payload.division = displayInfo.division;
+        payload.positionTitle = displayInfo.positionTitle;
+        payload.managerUid = employeeProfile?.supervisorUid || 'NO_MANAGER_ASSIGNED'; // Fallback
         payload.createdAt = serverTimestamp() as Timestamp;
       }
       
@@ -164,9 +196,11 @@ export function OvertimeSubmissionForm({ open, onOpenChange, submission, onSucce
           <form id="overtime-form" onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6 pr-4 py-4">
             <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="p-4 border rounded-lg space-y-2 text-sm">
-                    <p className="text-muted-foreground">Nama: <span className="font-semibold text-foreground">{userProfile?.fullName}</span></p>
-                    <p className="text-muted-foreground">Divisi: <span className="font-semibold text-foreground">{userProfile?.managedDivision || 'N/A'}</span></p>
-                    <p className="text-muted-foreground">Jabatan: <span className="font-semibold text-foreground">{userProfile?.positionTitle || userProfile?.role}</span></p>
+                    <p className="text-muted-foreground">Nama: <span className="font-semibold text-foreground">{displayInfo.fullName}</span></p>
+                    <p className="text-muted-foreground">Status: <span className="font-semibold text-foreground">{displayInfo.employmentStatus}</span></p>
+                    <p className="text-muted-foreground">Brand: <span className="font-semibold text-foreground">{displayInfo.brandName}</span></p>
+                    <p className="text-muted-foreground">Divisi: <span className="font-semibold text-foreground">{displayInfo.division}</span></p>
+                    <p className="text-muted-foreground">Jabatan: <span className="font-semibold text-foreground">{displayInfo.positionTitle}</span></p>
                 </div>
                 <div className="p-4 border rounded-lg space-y-2 text-sm">
                     <p className="text-muted-foreground">Total Durasi:</p>
