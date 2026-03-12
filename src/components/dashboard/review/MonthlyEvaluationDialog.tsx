@@ -10,8 +10,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/providers/auth-provider';
-import { useFirestore, useCollection, useMemoFirebase, setDocumentNonBlocking } from '@/firebase';
-import { collection, query, where, doc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { useFirestore, setDocumentNonBlocking } from '@/firebase';
+import { collection, query, where, doc, serverTimestamp, Timestamp, writeBatch, getDocs } from 'firebase/firestore';
 import type { EmployeeProfile, DailyReport, MonthlyEvaluation, EvaluationCriteria, UserProfile, RatingScale, InternWithReviewStatus } from '@/lib/types';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
@@ -87,12 +87,13 @@ export function MonthlyEvaluationDialog({ open, onOpenChange, internData, onSucc
         if (!userProfile || !reviewCycle) return;
         setIsSaving(true);
         try {
+            const batch = writeBatch(firestore);
             const docId = `${internData.uid}_${reviewCycle.monthId}`;
             const evalRef = doc(firestore, 'monthly_evaluations', docId);
 
             const payload: Partial<MonthlyEvaluation> = {
                 internUid: internData.uid,
-                evaluationMonth: Timestamp.fromDate(reviewCycle.payrollPeriodEnd), // Use payrollPeriodEnd to ensure it's in the correct month for querying
+                evaluationMonth: Timestamp.fromDate(reviewCycle.payrollPeriodEnd),
                 evaluatorUid: userProfile.uid,
                 evaluatorName: userProfile.fullName,
                 ...values,
@@ -103,8 +104,34 @@ export function MonthlyEvaluationDialog({ open, onOpenChange, internData, onSucc
                 payload.createdAt = serverTimestamp();
             }
             
-            await setDocumentNonBlocking(evalRef, payload, { merge: true });
-            toast({ title: 'Evaluasi Disimpan', description: `Evaluasi untuk ${internData.fullName} pada periode ini telah disimpan.` });
+            const reportsToApproveQuery = query(
+                collection(firestore, 'daily_reports'),
+                where('uid', '==', internData.uid),
+                where('date', '>=', reviewCycle.activePeriodStart),
+                where('date', '<=', reviewCycle.activePeriodEnd),
+                where('status', 'in', ['submitted', 'needs_revision'])
+            );
+            const reportsSnapshot = await getDocs(reportsToApproveQuery);
+            
+            let approvedCount = 0;
+            reportsSnapshot.forEach(reportDoc => {
+                batch.update(reportDoc.ref, {
+                    status: 'approved',
+                    reviewerNotes: 'Disetujui secara otomatis melalui evaluasi bulanan oleh HRD.',
+                    reviewedAt: serverTimestamp(),
+                    reviewedByUid: userProfile.uid,
+                    reviewedByName: userProfile.fullName,
+                });
+                approvedCount++;
+            });
+
+            batch.set(evalRef, payload, { merge: true });
+            
+            await batch.commit();
+            toast({ 
+                title: 'Evaluasi Disimpan', 
+                description: `Evaluasi untuk ${internData.fullName} disimpan. ${approvedCount} laporan harian otomatis disetujui.` 
+            });
             onSuccess();
             onOpenChange(false);
         } catch (e: any) {

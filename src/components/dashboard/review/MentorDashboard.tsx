@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { useCollection, useFirestore, useMemoFirebase, updateDocumentNonBlocking, writeBatch, useDoc } from '@/firebase';
-import { collection, query, where, doc, serverTimestamp, Timestamp, getDoc } from 'firebase/firestore';
+import { useCollection, useFirestore, useMemoFirebase, updateDocumentNonBlocking, useDoc } from '@/firebase';
+import { collection, query, where, doc, serverTimestamp, Timestamp, getDoc, writeBatch } from 'firebase/firestore';
 import type { DailyReport, UserProfile, MonthlyEvaluation } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -375,5 +375,3 @@ export function MentorDashboard({ userProfile }: { userProfile: UserProfile}) {
       </div>
     )
 }
-
-    
