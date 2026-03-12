@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Button } from '@/components/ui/button';
@@ -40,7 +40,6 @@ import { Checkbox } from '../ui/checkbox';
 import { collection, doc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { ScrollArea } from '../ui/scroll-area';
 import { Separator } from '../ui/separator';
-import { Textarea } from '../ui/textarea';
 
 // --- Zod Schemas for Validation ---
 const brandSchema = z.union([z.string(), z.array(z.string())]).optional();
@@ -231,161 +230,161 @@ export function UserFormDialog({ user, open, onOpenChange }: UserFormDialogProps
             {mode === 'edit' ? "Ubah detail pengguna di bawah ini." : "Isi detail untuk akun pengguna baru."}
           </DialogDescription>
         </DialogHeader>
-        <ScrollArea className="flex-grow">
-          <Form {...form}>
-            <form id="user-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-8 px-6 py-4">
+        <div className="flex-grow overflow-y-auto">
+            <Form {...form}>
+              <form id="user-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-8 px-6 py-4">
 
-              <section className="space-y-4">
-                <h3 className="text-lg font-semibold border-b pb-2 mb-4">Informasi Akun</h3>
-                <FormField control={form.control} name="fullName" render={({ field }) => (<FormItem><FormLabel>Nama Lengkap</FormLabel><FormControl><Input placeholder="John Doe" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                <FormField control={form.control} name="email" render={({ field }) => (<FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" placeholder="user@example.com" {...field} readOnly={mode === 'edit'} /></FormControl><FormMessage /></FormItem>)} />
-                {mode === 'create' && (<FormField control={form.control} name="password" render={({ field }) => (<FormItem><FormLabel>Password</FormLabel><div className="relative"><FormControl><Input type={showPassword ? 'text' : 'password'} placeholder="********" className="pr-10" autoComplete="new-password" {...field} /></FormControl><button type="button" onClick={() => setShowPassword((p) => !p)} className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground" aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}</button></div><FormMessage /></FormItem>)} />)}
-              </section>
+                <section className="space-y-4">
+                  <h3 className="text-lg font-semibold border-b pb-2 mb-4">Informasi Akun</h3>
+                  <FormField control={form.control} name="fullName" render={({ field }) => (<FormItem><FormLabel>Nama Lengkap</FormLabel><FormControl><Input placeholder="John Doe" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                  <FormField control={form.control} name="email" render={({ field }) => (<FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" placeholder="user@example.com" {...field} readOnly={mode === 'edit'} /></FormControl><FormMessage /></FormItem>)} />
+                  {mode === 'create' && (<FormField control={form.control} name="password" render={({ field }) => (<FormItem><FormLabel>Password</FormLabel><div className="relative"><FormControl><Input type={showPassword ? 'text' : 'password'} placeholder="********" className="pr-10" autoComplete="new-password" {...field} /></FormControl><button type="button" onClick={() => setShowPassword((p) => !p)} className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground" aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}</button></div><FormMessage /></FormItem>)} />)}
+                </section>
 
-              <Separator />
+                <Separator />
 
-              <section className="space-y-4">
-                <h3 className="text-lg font-semibold border-b pb-2 mb-4">Hak Akses & Penempatan</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="role"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Role</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value} disabled={mode === 'edit' && user?.role === 'super-admin'}>
-                          <FormControl>
-                            <SelectTrigger><SelectValue placeholder="Select a role" /></SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {(mode === 'create' ? creatableRoles : allRolesForEdit).map((r) => (
-                              <SelectItem key={r} value={r} className="capitalize">{r.replace(/[-_]/g, ' ')}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="employmentType"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Jenis Pekerja</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl>
-                            <SelectTrigger><SelectValue placeholder="Pilih jenis pekerja" /></SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {EMPLOYMENT_TYPES.map((r) => (
-                              <SelectItem key={r} value={r} className="capitalize">{r}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-                
-                {role && role !== 'super-admin' && (
-                  role === 'hrd' ? (
-                     <FormField
-                        control={form.control}
-                        name="brandId"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Akses Brand HRD</FormLabel>
-                            <FormDescription>Pilih satu atau lebih brand yang akan dikelola oleh HRD ini.</FormDescription>
-                            <div className="max-h-32 w-full rounded-md border p-4 overflow-y-auto space-y-2">
-                               {brandsLoading ? (
-                                <p className="text-sm text-muted-foreground">Loading brands...</p>
-                               ) : (
-                                brands?.map((brand) => (
-                                  <FormItem key={brand.id} className="flex flex-row items-center space-x-3 space-y-0">
-                                      <FormControl>
-                                          <Checkbox
-                                              checked={Array.isArray(field.value) && field.value.includes(brand.id!)}
-                                              onCheckedChange={(checked) => {
-                                                  const currentValues = Array.isArray(field.value) ? field.value : [];
-                                                  const newBrandIds = checked
-                                                      ? [...currentValues, brand.id!]
-                                                      : currentValues.filter((value) => value !== brand.id!);
-                                                  field.onChange(newBrandIds);
-                                              }}
-                                          />
-                                      </FormControl>
-                                      <FormLabel className="font-normal cursor-pointer">{brand.name}</FormLabel>
-                                  </FormItem>
-                                ))
-                               )}
-                            </div>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                  ) : (
-                    <FormField control={form.control} name="brandId" render={({ field }) => (<FormItem><FormLabel>Brand Penempatan</FormLabel><Select onValueChange={(value) => field.onChange(value === 'unassigned' ? '' : value)} value={typeof field.value === 'string' ? field.value : ''} disabled={brandsLoading}><FormControl><SelectTrigger><SelectValue placeholder="Pilih brand utama user ini." /></SelectTrigger></FormControl><SelectContent><SelectItem value="unassigned">None</SelectItem>{brands?.map((brand) => (<SelectItem key={brand.id!} value={brand.id!}>{brand.name}</SelectItem>))}</SelectContent></Select><FormDescription>Pilih brand utama user ini.</FormDescription><FormMessage /></FormItem>)}/>
-                  )
-                )}
-              </section>
-
-              {currentUserProfile?.role === 'super-admin' && mode === 'edit' && user?.role !== 'super-admin' && (
-                <>
-                    <Separator />
-                    <section className="space-y-4">
-                        <h3 className="text-lg font-semibold border-b pb-2 mb-4">Penugasan Jabatan & Tanggung Jawab</h3>
-                        <FormField control={form.control} name="positionTitle" render={({ field }) => (<FormItem><FormLabel>Jabatan</FormLabel><FormControl><Input placeholder="Contoh: Kepala Divisi Creative" {...field} value={field.value || ''} /></FormControl><FormDescription>Jabatan operasional pengguna, terpisah dari role sistem.</FormDescription><FormMessage /></FormItem>)} />
-                        <FormField control={form.control} name="assignmentType" render={({ field }) => (
-                            <FormItem><FormLabel>Tipe Penugasan</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Pilih tipe penugasan" /></SelectTrigger></FormControl><SelectContent><SelectItem value="division_lead">Division Lead</SelectItem><SelectItem value="division_pic">Division PIC</SelectItem></SelectContent></Select><FormMessage /></FormItem>
-                        )} />
-                        <FormField
-                            control={form.control}
-                            name="assignedBrandIds"
-                            render={({ field }) => (
-                                <FormItem>
-                                    <FormLabel>Brand yang Ditangani</FormLabel>
-                                    <div className="max-h-32 w-full rounded-md border p-4 overflow-y-auto space-y-2">
-                                    {brands?.map(brand => (
-                                        <FormItem key={brand.id} className="flex flex-row items-start space-x-3 space-y-0">
-                                            <FormControl>
-                                                <Checkbox
-                                                    checked={field.value?.includes(brand.id!)}
-                                                    onCheckedChange={(checked) => {
-                                                        const currentValues = field.value || [];
-                                                        const newBrandIds = checked
-                                                            ? [...currentValues, brand.id!]
-                                                            : currentValues.filter((value) => value !== brand.id!);
-                                                        field.onChange(newBrandIds);
-                                                    }}
-                                                />
-                                            </FormControl>
-                                            <FormLabel className="font-normal cursor-pointer">{brand.name}</FormLabel>
-                                        </FormItem>
-                                    ))}
-                                    </div>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
+                <section className="space-y-4">
+                  <h3 className="text-lg font-semibold border-b pb-2 mb-4">Hak Akses & Penempatan</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="role"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Role</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value} disabled={mode === 'edit' && user?.role === 'super-admin'}>
+                            <FormControl>
+                              <SelectTrigger><SelectValue placeholder="Select a role" /></SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {(mode === 'create' ? creatableRoles : allRolesForEdit).map((r) => (
+                                <SelectItem key={r} value={r} className="capitalize">{r.replace(/[-_]/g, ' ')}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="employmentType"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Jenis Pekerja</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger><SelectValue placeholder="Pilih jenis pekerja" /></SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {EMPLOYMENT_TYPES.map((r) => (
+                                <SelectItem key={r} value={r} className="capitalize">{r}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  
+                  {role && role !== 'super-admin' && (
+                    role === 'hrd' ? (
+                       <FormField
+                          control={form.control}
+                          name="brandId"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Akses Brand HRD</FormLabel>
+                              <FormDescription>Pilih satu atau lebih brand yang akan dikelola oleh HRD ini.</FormDescription>
+                              <div className="max-h-32 w-full rounded-md border p-4 overflow-y-auto space-y-2">
+                                 {brandsLoading ? (
+                                  <p className="text-sm text-muted-foreground">Loading brands...</p>
+                                 ) : (
+                                  brands?.map((brand) => (
+                                    <FormItem key={brand.id} className="flex flex-row items-center space-x-3 space-y-0">
+                                        <FormControl>
+                                            <Checkbox
+                                                checked={Array.isArray(field.value) && field.value.includes(brand.id!)}
+                                                onCheckedChange={(checked) => {
+                                                    const currentValues = Array.isArray(field.value) ? field.value : [];
+                                                    const newBrandIds = checked
+                                                        ? [...currentValues, brand.id!]
+                                                        : currentValues.filter((value) => value !== brand.id!);
+                                                    field.onChange(newBrandIds);
+                                                }}
+                                            />
+                                        </FormControl>
+                                        <FormLabel className="font-normal cursor-pointer">{brand.name}</FormLabel>
+                                    </FormItem>
+                                  ))
+                                 )}
+                              </div>
+                              <FormMessage />
+                            </FormItem>
+                          )}
                         />
-                        <FormField control={form.control} name="assignedDivisions" render={({ field }) => (
-                          <FormItem><FormLabel>Divisi yang Ditangani</FormLabel><FormControl><Textarea placeholder="Contoh: Creative, Marketing, Finance" {...field} value={field.value || ''} /></FormControl><FormDescription>Pisahkan nama divisi dengan koma.</FormDescription><FormMessage /></FormItem>
-                        )} />
-                    </section>
-                </>
-              )}
-              
-              <Separator />
-              
-              <section>
-                 <h3 className="text-lg font-semibold border-b pb-2 mb-4">Status</h3>
-                <FormField control={form.control} name="isActive" render={({ field }) => (<FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Status Aktif</FormLabel><FormDescription>Nonaktifkan untuk menonaktifkan sementara akses pengguna.</FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>)} />
-              </section>
+                    ) : (
+                      <FormField control={form.control} name="brandId" render={({ field }) => (<FormItem><FormLabel>Brand Penempatan</FormLabel><Select onValueChange={(value) => field.onChange(value === 'unassigned' ? '' : value)} value={typeof field.value === 'string' ? field.value : ''} disabled={brandsLoading}><FormControl><SelectTrigger><SelectValue placeholder="Pilih brand utama user ini." /></SelectTrigger></FormControl><SelectContent><SelectItem value="unassigned">None</SelectItem>{brands?.map((brand) => (<SelectItem key={brand.id!} value={brand.id!}>{brand.name}</SelectItem>))}</SelectContent></Select><FormDescription>Pilih brand utama user ini.</FormDescription><FormMessage /></FormItem>)}/>
+                    )
+                  )}
+                </section>
 
-            </form>
-          </Form>
-        </ScrollArea>
+                {currentUserProfile?.role === 'super-admin' && mode === 'edit' && user?.role !== 'super-admin' && (
+                  <>
+                      <Separator />
+                      <section className="space-y-4">
+                          <h3 className="text-lg font-semibold border-b pb-2 mb-4">Penugasan Jabatan & Tanggung Jawab</h3>
+                          <FormField control={form.control} name="positionTitle" render={({ field }) => (<FormItem><FormLabel>Jabatan</FormLabel><FormControl><Input placeholder="Contoh: Kepala Divisi Creative" {...field} value={field.value || ''} /></FormControl><FormDescription>Jabatan operasional pengguna, terpisah dari role sistem.</FormDescription><FormMessage /></FormItem>)} />
+                          <FormField control={form.control} name="assignmentType" render={({ field }) => (
+                              <FormItem><FormLabel>Tipe Penugasan</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Pilih tipe penugasan" /></SelectTrigger></FormControl><SelectContent><SelectItem value="division_lead">Division Lead</SelectItem><SelectItem value="division_pic">Division PIC</SelectItem></SelectContent></Select><FormMessage /></FormItem>
+                          )} />
+                          <FormField
+                              control={form.control}
+                              name="assignedBrandIds"
+                              render={({ field }) => (
+                                  <FormItem>
+                                      <FormLabel>Brand yang Ditangani</FormLabel>
+                                      <div className="max-h-32 w-full rounded-md border p-4 overflow-y-auto space-y-2">
+                                      {brands?.map(brand => (
+                                          <FormItem key={brand.id} className="flex flex-row items-center space-x-3 space-y-0">
+                                              <FormControl>
+                                                  <Checkbox
+                                                      checked={field.value?.includes(brand.id!)}
+                                                      onCheckedChange={(checked) => {
+                                                          const currentValues = field.value || [];
+                                                          const newBrandIds = checked
+                                                              ? [...currentValues, brand.id!]
+                                                              : currentValues.filter((value) => value !== brand.id!);
+                                                          field.onChange(newBrandIds);
+                                                      }}
+                                                  />
+                                              </FormControl>
+                                              <FormLabel className="font-normal cursor-pointer">{brand.name}</FormLabel>
+                                          </FormItem>
+                                      ))}
+                                      </div>
+                                      <FormMessage />
+                                  </FormItem>
+                              )}
+                          />
+                          <FormField control={form.control} name="assignedDivisions" render={({ field }) => (
+                            <FormItem><FormLabel>Divisi yang Ditangani</FormLabel><FormControl><Input placeholder="Contoh: Creative, Marketing" {...field} value={field.value || ''} /></FormControl><FormDescription>Pisahkan nama divisi dengan koma.</FormDescription><FormMessage /></FormItem>
+                          )} />
+                      </section>
+                  </>
+                )}
+                
+                <Separator />
+                
+                <section>
+                   <h3 className="text-lg font-semibold border-b pb-2 mb-4">Status</h3>
+                  <FormField control={form.control} name="isActive" render={({ field }) => (<FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Status Aktif</FormLabel><FormDescription>Nonaktifkan untuk menonaktifkan sementara akses pengguna.</FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>)} />
+                </section>
+
+              </form>
+            </Form>
+        </div>
         <DialogFooter className="p-6 pt-4 border-t flex-shrink-0">
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Batal</Button>
           <Button type="submit" form="user-form" disabled={loading}>
