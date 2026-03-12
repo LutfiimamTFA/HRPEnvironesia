@@ -40,7 +40,7 @@ export default function InternDataPage() {
     const firestore = useFirestore();
     const [searchTerm, setSearchTerm] = useState('');
     const [activeTab, setActiveTab] = useState('intern_education');
-    const [selectedProfile, setSelectedProfile] = useState<EmployeeProfile | null>(null);
+    const [selectedProfile, setSelectedProfile] = useState<(UserProfile & Partial<EmployeeProfile>) | null>(null);
     const [isDetailOpen, setIsDetailOpen] = useState(false);
 
     const menuConfig = useMemo(() => {
@@ -48,20 +48,41 @@ export default function InternDataPage() {
         return MENU_CONFIG[userProfile.role] || [];
     }, [userProfile]);
 
-    const { data: profiles, isLoading: profilesLoading, mutate } = useCollection<EmployeeProfile>(
-        useMemoFirebase(() => query(collection(firestore, 'employee_profiles'), where('employmentType', '==', 'magang')), [firestore])
+    // 1. Fetch all users who are interns (Source of Truth)
+    const { data: internUsers, isLoading: usersLoading } = useCollection<UserProfile>(
+        useMemoFirebase(() => query(collection(firestore, 'users'), where('employmentType', '==', 'magang')), [firestore])
+    );
+
+    // 2. Fetch all employee profiles to merge with
+    const { data: employeeProfiles, isLoading: profilesLoading, mutate } = useCollection<EmployeeProfile>(
+        useMemoFirebase(() => collection(firestore, 'employee_profiles'), [firestore])
     );
     
+    // 3. Merge the two data sources
+    const processedProfiles = useMemo(() => {
+        if (!internUsers) return [];
+        const profilesMap = new Map(employeeProfiles?.map(p => [p.uid, p]));
+        
+        return internUsers.map(user => {
+            const profileData = profilesMap.get(user.uid);
+            return {
+                ...user, // Base data from 'users'
+                ...profileData, // Detailed data from 'employee_profiles' (overwrites if present)
+            };
+        });
+    }, [internUsers, employeeProfiles]);
+
     const filteredProfiles = useMemo(() => {
-        if (!profiles) return [];
-        return profiles.filter(profile => {
+        if (!processedProfiles) return [];
+        return processedProfiles.filter(profile => {
             const searchMatch = searchTerm === '' || profile.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || profile.email.toLowerCase().includes(searchTerm.toLowerCase());
-            const subtypeMatch = profile.internSubtype === activeTab;
+            // Use employmentStage from the user object as the primary subtype filter
+            const subtypeMatch = profile.employmentStage === activeTab;
             return searchMatch && subtypeMatch;
         });
-    }, [profiles, searchTerm, activeTab]);
+    }, [processedProfiles, searchTerm, activeTab]);
 
-    const handleViewDetails = (profile: EmployeeProfile) => {
+    const handleViewDetails = (profile: UserProfile & Partial<EmployeeProfile>) => {
         setSelectedProfile(profile);
         setIsDetailOpen(true);
     };
@@ -98,7 +119,7 @@ export default function InternDataPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {profilesLoading ? (
+                            {usersLoading || profilesLoading ? (
                                 <TableRow><TableCell colSpan={7} className="h-24 text-center">Memuat data...</TableCell></TableRow>
                             ) : filteredProfiles.length > 0 ? (
                                 filteredProfiles.map(profile => (
@@ -106,8 +127,8 @@ export default function InternDataPage() {
                                         <TableCell className="font-medium">{profile.fullName}</TableCell>
                                         <TableCell>{profile.email}</TableCell>
                                         <TableCell>
-                                            <Badge variant={profile.internSubtype === 'intern_education' ? 'default' : 'secondary'}>
-                                                {subtypeLabels[profile.internSubtype || ''] || 'N/A'}
+                                            <Badge variant={profile.employmentStage === 'intern_education' ? 'default' : 'secondary'}>
+                                                {subtypeLabels[profile.employmentStage || ''] || 'N/A'}
                                             </Badge>
                                         </TableCell>
                                         <TableCell>{profile.schoolOrCampus || '-'}</TableCell>
@@ -131,7 +152,7 @@ export default function InternDataPage() {
             </Tabs>
             {selectedProfile && (
                 <InternProfileDetailDialog
-                    profile={selectedProfile}
+                    profile={selectedProfile as EmployeeProfile} // Cast for the dialog, which expects the detailed profile
                     open={isDetailOpen}
                     onOpenChange={setIsDetailOpen}
                     onAdminDataChange={mutate}
