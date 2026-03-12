@@ -116,6 +116,31 @@
         "name"
       ]
     },
+    "Division": {
+      "title": "Division",
+      "type": "object",
+      "description": "Represents a division or department within a brand.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The name of the division."
+        },
+        "code": {
+          "type": "string",
+          "description": "An optional code for the division."
+        },
+        "isActive": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether the division is currently active."
+        },
+        "description": {
+          "type": "string",
+          "description": "A short description of the division's purpose."
+        }
+      },
+      "required": ["name", "isActive"]
+    },
     "EmployeeProfile": {
       "title": "Employee Profile",
       "type": "object",
@@ -1120,6 +1145,25 @@
         }
       },
       {
+        "path": "/brands/{brandId}/divisions/{divisionId}",
+        "definition": {
+          "schema": {
+            "$ref": "#/backend/entities/Division"
+          },
+          "description": "Stores divisions specific to a brand. Managed by super_admin.",
+          "params": [
+            {
+              "name": "brandId",
+              "description": "The ID of the parent brand."
+            },
+            {
+              "name": "divisionId",
+              "description": "The unique ID of the division."
+            }
+          ]
+        }
+      },
+      {
         "path": "/navigation_settings/{roleId}",
         "definition": {
           "entityName": "NavigationSetting",
@@ -1241,6 +1285,6 @@
         }
       }
     ],
-    "reasoning": "The Firestore structure is designed to provide a secure and scalable foundation for the HRP Starter application. It emphasizes authorization independence, clarity, and adherence to Firestore best practices.\n\nThe design leverages path-based ownership for user profiles, ensuring that only the user (or a super_admin) can access their data.  This is achieved by placing user documents at `/users/{userId}`. This structure inherently provides authorization independence; security rules can validate `request.auth.uid` against the `@{userId}` path segment without needing to perform costly and brittle `get()` operations to check ownership.\n\nThe application requirements include a seeding process that creates initial user accounts with specific roles.  The `users/{userId}` collection stores user profiles (fullName, email, role, isActive, createdAt) and facilitates role-based access control. The `super_admin` role has read/write access to all collections, which is achieved in security rules by checking for the existence of a document in a dedicated `/roles_admin/{userId}` collection.\n\nQAPs (Rules Are Not Filters): List operations are inherently safe due to the structure.  A regular user can only read their own document in `users/{userId}`, so listing the entire collection would return no documents (without super-admin privileges).  The super-admin role, indicated by membership in `/roles_admin/{userId}`, grants broad access and bypasses the filtering constraints imposed on other users.\n\nAuthorization Independence: Achieved by storing all necessary authorization information directly within the user document at `/users/{userId}` (specifically, the `role` field) and leveraging path-based ownership. The super admin role is checked for via existence of a document, avoiding document `get()` calls.\n\n"
+    "reasoning": "The Firestore structure is designed to provide a secure and scalable foundation for the HRP Starter application. It emphasizes authorization independence, clarity, and adherence to Firestore best practices.\n\nThe design leverages path-based ownership for user profiles, ensuring that only the user (or a super_admin) can access their data.  This is achieved by placing user documents at `/users/{userId}`. This structure inherently provides authorization independence; security rules can validate `request.auth.uid` against `@{userId}` path segment without needing to perform costly and brittle `get()` operations to check ownership.\n\nThe application requirements include a seeding process that creates initial user accounts with specific roles.  The `users/{userId}` collection stores user profiles (fullName, email, role, isActive, createdAt) and facilitates role-based access control. The `super_admin` role has read/write access to all collections, which is achieved in security rules by checking for the existence of a document in a dedicated `/roles_admin/{userId}` collection.\n\nQAPs (Rules Are Not Filters): List operations are inherently safe due to the structure.  A regular user can only read their own document in `users/{userId}`, so listing the entire collection would return no documents (without super-admin privileges).  The super-admin role, indicated by membership in `/roles_admin/{userId}`, grants broad access and bypasses the filtering constraints imposed on other users.\n\nAuthorization Independence: Achieved by storing all necessary authorization information directly within the user document at `/users/{userId}` (specifically, the `role` field) and leveraging path-based ownership. The super admin role is checked for via existence of a document, avoiding document `get()` calls.\n\n"
   }
 }

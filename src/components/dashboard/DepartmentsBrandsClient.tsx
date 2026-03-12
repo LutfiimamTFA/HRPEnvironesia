@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { collection, doc } from 'firebase/firestore';
 import { useCollection, useFirestore, useMemoFirebase, deleteDocumentNonBlocking } from '@/firebase';
 import type { Brand } from '@/lib/types';
@@ -8,14 +8,6 @@ import { Button } from '@/components/ui/button';
 import { MoreHorizontal, Pencil, PlusCircle, Trash2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import {
-  Table,
-  TableHeader,
-  TableRow,
-  TableHead,
-  TableBody,
-  TableCell,
-} from '@/components/ui/table';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,101 +17,18 @@ import {
 import { DeptBrandFormDialog } from './DeptBrandFormDialog';
 import { DeleteConfirmationDialog } from './DeleteConfirmationDialog';
 import { useToast } from '@/hooks/use-toast';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { DivisionTable } from './DivisionTable';
 
-function DataTableSkeleton() {
+function DataSkeleton() {
   return (
     <div className="space-y-4">
-      <Skeleton className="h-10 w-1/4" />
-      <Skeleton className="h-12 w-full" />
-      <Skeleton className="h-12 w-full" />
-      <Skeleton className="h-12 w-full" />
+      <Skeleton className="h-10 w-1/4 self-end" />
+      <Skeleton className="h-20 w-full" />
+      <Skeleton className="h-20 w-full" />
     </div>
   );
 }
-
-interface DataTableProps {
-  data: any[] | null;
-  isLoading: boolean;
-  error: Error | null;
-  onEdit: (item: any) => void;
-  onDelete: (item: any) => void;
-}
-
-function DataTable({ data, isLoading, error, onEdit, onDelete }: DataTableProps) {
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-
-  if (isLoading) {
-    return <DataTableSkeleton />;
-  }
-
-  if (error) {
-    return (
-      <Alert variant="destructive">
-        <AlertTitle>Error loading Brands</AlertTitle>
-        <AlertDescription>{error.message}</AlertDescription>
-      </Alert>
-    );
-  }
-
-  return (
-    <div className="rounded-lg border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead className="w-[100px] text-right">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {data && data.length > 0 ? (
-            data.map((item) => (
-              <TableRow key={item.id}>
-                <TableCell className="font-medium">{item.name}</TableCell>
-                <TableCell className="text-right">
-                  <DropdownMenu open={openMenuId === item.id} onOpenChange={(isOpen) => setOpenMenuId(isOpen ? item.id : null)}>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onSelect={(e) => {
-                        e.preventDefault();
-                        setOpenMenuId(null);
-                        queueMicrotask(() => onEdit(item));
-                      }}>
-                        <Pencil className="mr-2 h-4 w-4" />
-                        Edit
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="text-destructive focus:text-destructive focus:bg-destructive/10"
-                        onSelect={(e) => {
-                          e.preventDefault();
-                          setOpenMenuId(null);
-                          queueMicrotask(() => onDelete(item));
-                        }}
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
-              </TableRow>
-            ))
-          ) : (
-            <TableRow>
-              <TableCell colSpan={2} className="h-24 text-center">
-                No brands found.
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
-    </div>
-  );
-}
-
 
 export function DepartmentsBrandsClient() {
   const firestore = useFirestore();
@@ -130,7 +39,7 @@ export function DepartmentsBrandsClient() {
   const [selectedItem, setSelectedItem] = useState<Brand | null>(null);
 
   const brandsRef = useMemoFirebase(() => collection(firestore, 'brands'), [firestore]);
-  const { data: brands, isLoading: brandsLoading, error: brandsError } = useCollection<Brand>(brandsRef);
+  const { data: brands, isLoading, error } = useCollection<Brand>(brandsRef);
 
   const handleCreate = () => {
     setSelectedItem(null);
@@ -168,6 +77,24 @@ export function DepartmentsBrandsClient() {
         setSelectedItem(null);
     }
   };
+  
+  const sortedBrands = useMemo(() => {
+    if (!brands) return [];
+    return [...brands].sort((a,b) => a.name.localeCompare(b.name));
+  }, [brands]);
+
+  if (isLoading) {
+    return <DataSkeleton />;
+  }
+
+  if (error) {
+    return (
+      <Alert variant="destructive">
+        <AlertTitle>Error loading Brands</AlertTitle>
+        <AlertDescription>{error.message}</AlertDescription>
+      </Alert>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -177,13 +104,41 @@ export function DepartmentsBrandsClient() {
             Create Brand
           </Button>
       </div>
-      <DataTable
-        data={brands}
-        isLoading={brandsLoading}
-        error={brandsError}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
-      />
+
+       <Accordion type="single" collapsible className="w-full space-y-4">
+        {sortedBrands.map(brand => (
+          <AccordionItem value={brand.id!} key={brand.id!} className="border rounded-lg bg-card shadow-sm">
+            <AccordionTrigger className="px-6 py-4 hover:no-underline [&[data-state=open]>div>button]:bg-muted">
+              <div className="flex justify-between items-center w-full">
+                <div className="text-left">
+                  <p className="font-semibold text-lg">{brand.name}</p>
+                  <p className="text-sm text-muted-foreground">{brand.description || 'No description'}</p>
+                </div>
+                <div className="flex items-center gap-2 pr-4" onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onSelect={() => handleEdit(brand)}>
+                          <Pencil className="mr-2 h-4 w-4" /> Edit Brand
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => handleDelete(brand)} className="text-destructive">
+                          <Trash2 className="mr-2 h-4 w-4" /> Delete Brand
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="px-6 pb-6 border-t pt-4">
+              <DivisionTable brand={brand} />
+            </AccordionContent>
+          </AccordionItem>
+        ))}
+      </Accordion>
       
       <DeptBrandFormDialog
         open={isFormOpen}

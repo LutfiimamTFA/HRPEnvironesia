@@ -168,10 +168,16 @@ service cloud.firestore {
      * /brands/{brandId}
      * - Brands are public for anyone to read.
      * - Only super_admins can manage (create, update, delete) brands.
+     * - Subcollections are also managed by super_admins.
      */
     match /brands/{brandId} {
       allow read: if true;
       allow write: if isSuperAdmin();
+      
+      match /divisions/{divisionId} {
+        allow read: if isInternal();
+        allow write: if isSuperAdmin();
+      }
     }
     
     /**

@@ -90,6 +90,14 @@ export type Brand = {
   description?: string;
 };
 
+export type Division = {
+  id?: string;
+  name: string;
+  code?: string;
+  description?: string;
+  isActive: boolean;
+};
+
 export type NavigationSetting = {
   id?: string;
   role: UserRole;
