@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -221,48 +221,39 @@ export function UserFormDialog({ user, open, onOpenChange }: UserFormDialogProps
 
                   {role && role !== 'super-admin' && (
                     role === 'hrd' ? (
-                        <FormField
-                            control={form.control}
-                            name="brandId"
-                            render={({ field }) => (
+                       <FormField
+                          control={form.control}
+                          name="brandId"
+                          render={({ field }) => (
                             <FormItem>
-                                <div className="mb-2">
+                              <div className="mb-2">
                                 <FormLabel>Brands</FormLabel>
-                                <FormDescription>
-                                    Assign one or more brands to this HRD user.
-                                </FormDescription>
-                                </div>
-                                <ScrollArea className="h-24 w-full rounded-md border">
+                                <FormDescription>Assign one or more brands to this HRD user.</FormDescription>
+                              </div>
+                              <ScrollArea className="h-24 w-full rounded-md border">
                                 <div className="p-4 space-y-2">
-                                    {brands?.map((brand) => (
-                                    <FormItem
-                                        key={brand.id}
-                                        className="flex flex-row items-start space-x-3 space-y-0"
-                                    >
-                                        <FormControl>
-                                            <Checkbox
-                                                checked={Array.isArray(field.value) && field.value.includes(brand.id!)}
-                                                onCheckedChange={(checked) => {
-                                                const currentValue = Array.isArray(field.value) ? field.value : [];
-                                                const updatedValue = checked
-                                                    ? [...currentValue, brand.id!]
-                                                    : currentValue.filter(
-                                                        (value) => value !== brand.id!
-                                                    );
-                                                field.onChange(updatedValue);
-                                                }}
-                                            />
-                                        </FormControl>
-                                        <FormLabel className="font-normal">
-                                            {brand.name}
-                                        </FormLabel>
+                                  {brands?.map((brand) => (
+                                    <FormItem key={brand.id} className="flex flex-row items-start space-x-3 space-y-0">
+                                      <FormControl>
+                                        <Checkbox
+                                          checked={Array.isArray(field.value) && field.value.includes(brand.id!)}
+                                          onCheckedChange={(checked) => {
+                                            const currentValue = Array.isArray(field.value) ? field.value : [];
+                                            const updatedValue = checked
+                                              ? [...currentValue, brand.id!]
+                                              : currentValue.filter((value) => value !== brand.id!);
+                                            field.onChange(updatedValue);
+                                          }}
+                                        />
+                                      </FormControl>
+                                      <FormLabel className="font-normal">{brand.name}</FormLabel>
                                     </FormItem>
-                                    ))}
+                                  ))}
                                 </div>
-                                </ScrollArea>
-                                <FormMessage />
+                              </ScrollArea>
+                              <FormMessage />
                             </FormItem>
-                            )}
+                          )}
                         />
                     ) : (
                       <FormField
