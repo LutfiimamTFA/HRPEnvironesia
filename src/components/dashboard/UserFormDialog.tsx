@@ -34,7 +34,7 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { UserProfile, ROLES, UserRole, Brand, EMPLOYMENT_TYPES } from '@/lib/types';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
-import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
+import { useCollection, useFirestore } from '@/firebase';
 import { useAuth } from '@/providers/auth-provider';
 import { Checkbox } from '../ui/checkbox';
 import { collection, doc, writeBatch, serverTimestamp } from 'firebase/firestore';
@@ -214,9 +214,9 @@ export function UserFormDialog({ user, open, onOpenChange }: UserFormDialogProps
             {mode === 'edit' ? "Ubah detail pengguna di bawah ini." : "Isi detail untuk akun pengguna baru."}
           </DialogDescription>
         </DialogHeader>
-        <div className="flex-grow overflow-y-auto px-6">
+        <div className="flex-grow overflow-y-auto">
           <Form {...form}>
-            <form id="user-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-8 py-4">
+            <form id="user-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-8 px-6 py-4">
 
               <section className="space-y-4">
                 <h3 className="text-lg font-semibold border-b pb-2 mb-4">Informasi Akun</h3>
@@ -230,46 +230,46 @@ export function UserFormDialog({ user, open, onOpenChange }: UserFormDialogProps
               <section className="space-y-4">
                 <h3 className="text-lg font-semibold border-b pb-2 mb-4">Hak Akses & Penempatan</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="role"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Role</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value} disabled={mode === 'edit' && user?.role === 'super-admin'}>
-                          <FormControl>
-                            <SelectTrigger><SelectValue placeholder="Select a role" /></SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {(mode === 'create' ? creatableRoles : allRolesForEdit).map((r) => (
-                              <SelectItem key={r} value={r} className="capitalize">{r.replace(/[-_]/g, ' ')}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="employmentType"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Jenis Pekerja</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl>
-                            <SelectTrigger><SelectValue placeholder="Pilih jenis pekerja" /></SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {EMPLOYMENT_TYPES.map((r) => (
-                              <SelectItem key={r} value={r} className="capitalize">{r}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                    <FormField
+                        control={form.control}
+                        name="role"
+                        render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>Role</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value} disabled={mode === 'edit' && user?.role === 'super-admin'}>
+                            <FormControl>
+                                <SelectTrigger><SelectValue placeholder="Select a role" /></SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                                {(mode === 'create' ? creatableRoles : allRolesForEdit).map((r) => (
+                                <SelectItem key={r} value={r} className="capitalize">{r.replace(/[-_]/g, ' ')}</SelectItem>
+                                ))}
+                            </SelectContent>
+                            </Select>
+                            <FormMessage />
+                        </FormItem>
+                        )}
+                    />
+                    <FormField
+                        control={form.control}
+                        name="employmentType"
+                        render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>Jenis Pekerja</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                                <SelectTrigger><SelectValue placeholder="Pilih jenis pekerja" /></SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                                {EMPLOYMENT_TYPES.map((r) => (
+                                <SelectItem key={r} value={r} className="capitalize">{r}</SelectItem>
+                                ))}
+                            </SelectContent>
+                            </Select>
+                            <FormMessage />
+                        </FormItem>
+                        )}
+                    />
                 </div>
                 
                 {role && role !== 'super-admin' && (
@@ -286,20 +286,21 @@ export function UserFormDialog({ user, open, onOpenChange }: UserFormDialogProps
                               <p className="text-sm text-muted-foreground">Loading brands...</p>
                             ) : (
                               brands?.map((brand) => (
-                                <div key={brand.id} className="flex items-center space-x-3">
-                                  <Checkbox
-                                    id={`brand-${brand.id}`}
-                                    checked={Array.isArray(field.value) && field.value.includes(brand.id!)}
-                                    onCheckedChange={(checked) => {
-                                      const currentValues = Array.isArray(field.value) ? field.value : [];
-                                      const newBrandIds = checked
-                                        ? [...currentValues, brand.id!]
-                                        : currentValues.filter((value) => value !== brand.id!);
-                                      field.onChange(newBrandIds);
-                                    }}
-                                  />
-                                  <label htmlFor={`brand-${brand.id}`} className="text-sm font-normal cursor-pointer">{brand.name}</label>
-                                </div>
+                                <FormItem key={brand.id} className="flex flex-row items-start space-x-3 space-y-0">
+                                  <FormControl>
+                                    <Checkbox
+                                        checked={Array.isArray(field.value) && field.value.includes(brand.id!)}
+                                        onCheckedChange={(checked) => {
+                                            const currentValues = Array.isArray(field.value) ? field.value : [];
+                                            const newBrandIds = checked
+                                            ? [...currentValues, brand.id!]
+                                            : currentValues.filter((value) => value !== brand.id!);
+                                            field.onChange(newBrandIds);
+                                        }}
+                                    />
+                                  </FormControl>
+                                  <FormLabel className="font-normal cursor-pointer">{brand.name}</FormLabel>
+                                </FormItem>
                               ))
                             )}
                           </div>
