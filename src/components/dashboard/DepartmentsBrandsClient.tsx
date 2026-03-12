@@ -17,7 +17,7 @@ import {
 import { DeptBrandFormDialog } from './DeptBrandFormDialog';
 import { DeleteConfirmationDialog } from './DeleteConfirmationDialog';
 import { useToast } from '@/hooks/use-toast';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger, AccordionHeader } from '@/components/ui/accordion';
 import { DivisionTable } from './DivisionTable';
 
 function DataSkeleton() {
@@ -108,13 +108,15 @@ export function DepartmentsBrandsClient() {
        <Accordion type="single" collapsible className="w-full space-y-4">
         {sortedBrands.map(brand => (
           <AccordionItem value={brand.id!} key={brand.id!} className="border rounded-lg bg-card shadow-sm">
-            <AccordionTrigger className="px-6 py-4 hover:no-underline [&[data-state=open]>div>button]:bg-muted">
-              <div className="flex justify-between items-center w-full">
-                <div className="text-left">
-                  <p className="font-semibold text-lg">{brand.name}</p>
-                  <p className="text-sm text-muted-foreground">{brand.description || 'No description'}</p>
-                </div>
-                <div className="flex items-center gap-2 pr-4" onClick={(e) => e.stopPropagation()}>
+            <AccordionHeader>
+              <div className="flex justify-between items-center w-full px-6">
+                <AccordionTrigger className="flex-1 text-left py-0 hover:no-underline">
+                  <div>
+                    <p className="font-semibold text-lg">{brand.name}</p>
+                    <p className="text-sm text-muted-foreground">{brand.description || 'No description'}</p>
+                  </div>
+                </AccordionTrigger>
+                <div className="pl-4">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -132,7 +134,7 @@ export function DepartmentsBrandsClient() {
                     </DropdownMenu>
                 </div>
               </div>
-            </AccordionTrigger>
+            </AccordionHeader>
             <AccordionContent className="px-6 pb-6 border-t pt-4">
               <DivisionTable brand={brand} />
             </AccordionContent>
