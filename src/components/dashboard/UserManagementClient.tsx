@@ -45,13 +45,26 @@ function UserTableSkeleton() {
   );
 }
 
-const roleDisplayNames: Record<UserRole, string> = {
+const groupDisplayNames: Record<string, string> = {
   'super-admin': 'Super Admins',
   hrd: 'HRD',
   manager: 'Managers',
+  karyawan_aktif: 'Karyawan Aktif',
+  probation: 'Karyawan Probation',
+  magang: 'Magang',
   kandidat: 'Kandidat',
-  karyawan: 'Karyawan',
 };
+
+const displayOrder: string[] = [
+  'super-admin',
+  'hrd',
+  'manager',
+  'karyawan_aktif',
+  'probation',
+  'magang',
+  'kandidat'
+];
+
 
 export function UserManagementClient() {
   const firestore = useFirestore();
@@ -84,6 +97,56 @@ export function UserManagementClient() {
         return acc;
     }, {} as Record<string, string>);
   }, [brands]);
+
+  const usersByGroup = useMemo(() => {
+    if (!users) return {};
+    const groups: { [key: string]: UserProfile[] } = {
+      'super-admin': [],
+      'hrd': [],
+      'manager': [],
+      'karyawan_aktif': [],
+      'probation': [],
+      'magang': [],
+      'kandidat': [],
+    };
+
+    users.forEach((user) => {
+      switch (user.role) {
+        case 'super-admin':
+          groups['super-admin'].push(user);
+          break;
+        case 'hrd':
+          groups['hrd'].push(user);
+          break;
+        case 'manager':
+          groups['manager'].push(user);
+          break;
+        case 'kandidat':
+          groups['kandidat'].push(user);
+          break;
+        case 'karyawan':
+          if (user.employmentType === 'magang') {
+            groups['magang'].push(user);
+          } else if (user.employmentType === 'training' || user.employmentStage === 'probation') {
+            groups['probation'].push(user);
+          } else {
+            groups['karyawan_aktif'].push(user);
+          }
+          break;
+        default:
+          if (!groups.kandidat) groups.kandidat = [];
+          groups.kandidat.push(user);
+      }
+    });
+
+    Object.keys(groups).forEach(key => {
+      if (groups[key].length === 0) {
+        delete groups[key];
+      }
+    });
+
+    return groups;
+  }, [users]);
 
   const handleCreateUser = () => {
     setSelectedUser(null);
@@ -121,11 +184,9 @@ export function UserManagementClient() {
         if (!res.ok) {
             let errorMsg = 'Failed to delete user.';
             try {
-                // Try to parse a JSON error response first
                 const errorData = await res.json();
                 errorMsg = errorData.error || errorMsg;
             } catch (e) {
-                // If it's not JSON, use the status text as a fallback
                 errorMsg = res.statusText || 'An unknown server error occurred.';
             }
             throw new Error(errorMsg);
@@ -144,18 +205,6 @@ export function UserManagementClient() {
     }
   };
 
-  const usersByRole = useMemo(() => {
-    if (!users) return {};
-    return users.reduce((acc, user) => {
-      const role = user.role || 'kandidat';
-      if (!acc[role]) {
-        acc[role] = [];
-      }
-      acc[role].push(user);
-      return acc;
-    }, {} as Record<UserRole, UserProfile[]>);
-  }, [users]);
-
   if (isLoading) {
     return <UserTableSkeleton />;
   }
@@ -171,7 +220,7 @@ export function UserManagementClient() {
     );
   }
 
-  const displayRoles = ROLES.filter(role => usersByRole[role] && usersByRole[role].length > 0);
+  const displayGroups = displayOrder.filter(group => usersByGroup[group] && usersByGroup[group].length > 0);
 
   return (
     <div className="w-full space-y-4">
@@ -182,14 +231,14 @@ export function UserManagementClient() {
         </Button>
       </div>
 
-       {displayRoles.length > 0 ? (
-        <Accordion type="multiple" className="w-full space-y-4" defaultValue={displayRoles.map(role => `role-${role}`)}>
-          {displayRoles.map((role) => (
-            <AccordionItem value={`role-${role}`} key={role} className="border rounded-lg bg-card">
+       {displayGroups.length > 0 ? (
+        <Accordion type="multiple" className="w-full space-y-4" defaultValue={displayGroups.map(group => `group-${group}`)}>
+          {displayGroups.map((groupKey) => (
+            <AccordionItem value={`group-${groupKey}`} key={groupKey} className="border rounded-lg bg-card">
               <AccordionTrigger className="px-6 py-4 hover:no-underline">
                 <div className="flex items-center gap-3">
-                  <h3 className="text-lg font-semibold">{roleDisplayNames[role]}</h3>
-                  <Badge variant="secondary">{usersByRole[role]?.length || 0}</Badge>
+                  <h3 className="text-lg font-semibold">{groupDisplayNames[groupKey]}</h3>
+                  <Badge variant="secondary">{usersByGroup[groupKey]?.length || 0}</Badge>
                 </div>
               </AccordionTrigger>
               <AccordionContent className="px-1">
@@ -199,31 +248,39 @@ export function UserManagementClient() {
                       <TableRow>
                         <TableHead>Full Name</TableHead>
                         <TableHead>Email</TableHead>
-                        {role !== 'super-admin' && <TableHead>Brand</TableHead>}
+                        {groupKey !== 'super-admin' && groupKey !== 'kandidat' && <TableHead>Brand</TableHead>}
                         <TableHead>Status</TableHead>
+                        {groupKey === 'magang' && <TableHead>Sub-Type</TableHead>}
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {usersByRole[role].map((user) => (
+                      {usersByGroup[groupKey].map((user) => {
+                        const brandDisplay = user.brandId 
+                            ? (Array.isArray(user.brandId)
+                                ? user.brandId.map(id => brandMap[id] || id).join(', ')
+                                : brandMap[user.brandId as string] || '-')
+                            : '-';
+                        
+                        const employmentStageDisplay = user.employmentStage === 'intern_education' ? 'Pendidikan' : user.employmentStage === 'intern_pre_probation' ? 'Pra-Probation' : '-';
+
+                        return (
                         <TableRow key={user.uid}>
                           <TableCell className="font-medium">{user.fullName}</TableCell>
                           <TableCell>{user.email}</TableCell>
-                          {role !== 'super-admin' && (
-                            <TableCell>
-                              {user.brandId ? (
-                                Array.isArray(user.brandId)
-                                  ? user.brandId.map(id => brandMap[id] || id).join(', ')
-                                  : brandMap[user.brandId as string] || '-'
-                                ) : '-'
-                              }
-                            </TableCell>
+                          {groupKey !== 'super-admin' && groupKey !== 'kandidat' && (
+                            <TableCell>{brandDisplay}</TableCell>
                           )}
                           <TableCell>
                             <Badge variant={user.isActive ? 'default' : 'destructive'}>
                               {user.isActive ? 'Active' : 'Inactive'}
                             </Badge>
                           </TableCell>
+                          {groupKey === 'magang' && (
+                            <TableCell>
+                                {user.employmentStage ? (<Badge variant="outline">{employmentStageDisplay}</Badge>) : '-'}
+                            </TableCell>
+                          )}
                           <TableCell className="text-right">
                             <DropdownMenu
                               open={openMenuUid === user.uid}
@@ -258,7 +315,7 @@ export function UserManagementClient() {
                             </DropdownMenu>
                           </TableCell>
                         </TableRow>
-                      ))}
+                      )})}
                     </TableBody>
                   </Table>
                 </div>
