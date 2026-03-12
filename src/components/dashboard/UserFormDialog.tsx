@@ -219,24 +219,64 @@ export function UserFormDialog({ user, open, onOpenChange }: UserFormDialogProps
         <ScrollArea className="flex-grow -mx-6 px-6">
           <Form {...form}>
             <form id="user-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4">
-              <FormField control={form.control} name="fullName" render={({ field }) => (<FormItem><FormLabel>Full Name</FormLabel><FormControl><Input placeholder="John Doe" {...field} /></FormControl><FormMessage /></FormItem>)} />
-              <FormField control={form.control} name="email" render={({ field }) => (<FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" placeholder="user@example.com" {...field} readOnly={mode === 'edit'} /></FormControl><FormMessage /></FormItem>)} />
-              
-              {mode === 'create' && (
-                <FormField control={form.control} name="password" render={({ field }) => (
-                  <FormItem><FormLabel>Password</FormLabel>
-                    <div className="relative">
-                      <FormControl>
-                        <Input type={showPassword ? 'text' : 'password'} placeholder="********" className="pr-10" autoComplete="new-password" {...field} />
-                      </FormControl>
-                      <button type="button" onClick={() => setShowPassword(p => !p)} className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground" aria-label={showPassword ? 'Hide password' : 'Show password'}>
-                        {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                      </button>
-                    </div>
+              <FormField
+                control={form.control}
+                name="fullName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Full Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="John Doe" {...field} />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input type="email" placeholder="user@example.com" {...field} readOnly={mode === 'edit'} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              {mode === 'create' && (
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Password</FormLabel>
+                      <div className="relative">
+                        <FormControl>
+                          <Input
+                            type={showPassword ? 'text' : 'password'}
+                            placeholder="********"
+                            className="pr-10"
+                            autoComplete="new-password"
+                            {...field}
+                          />
+                        </FormControl>
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword((p) => !p)}
+                          className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground"
+                          aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        >
+                          {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                        </button>
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
               
               <FormField
                 control={form.control}
@@ -252,9 +292,7 @@ export function UserFormDialog({ user, open, onOpenChange }: UserFormDialogProps
                       </FormControl>
                       <SelectContent>
                         {(mode === 'create' ? creatableRoles : allRolesForEdit).map((r) => (
-                          <SelectItem key={r} value={r} className="capitalize">
-                            {r.replace(/[-_]/g, ' ')}
-                          </SelectItem>
+                          <SelectItem key={r} value={r} className="capitalize">{r.replace(/[-_]/g, ' ')}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -262,7 +300,6 @@ export function UserFormDialog({ user, open, onOpenChange }: UserFormDialogProps
                   </FormItem>
                 )}
               />
-
               <FormField
                 control={form.control}
                 name="employmentType"
@@ -277,9 +314,7 @@ export function UserFormDialog({ user, open, onOpenChange }: UserFormDialogProps
                       </FormControl>
                       <SelectContent>
                         {EMPLOYMENT_TYPES.map((r) => (
-                          <SelectItem key={r} value={r} className="capitalize">
-                            {r}
-                          </SelectItem>
+                          <SelectItem key={r} value={r} className="capitalize">{r}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -293,39 +328,39 @@ export function UserFormDialog({ user, open, onOpenChange }: UserFormDialogProps
                   <FormField
                     control={form.control}
                     name="brandId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <div className="mb-2">
-                          <FormLabel>Brands</FormLabel>
-                          <FormDescription>
-                            Assign one or more brands to this HRD user.
-                          </FormDescription>
-                        </div>
-                        <div className="h-32 w-full rounded-md border p-4 overflow-y-auto space-y-2">
-                          {brandsLoading && <p className="text-sm text-muted-foreground">Loading brands...</p>}
-                          {brands?.map((brand) => {
-                             const brandIds = Array.isArray(field.value) ? field.value : [];
-                             return (
-                                <FormItem key={brand.id} className="flex flex-row items-start space-x-3 space-y-0">
-                                    <FormControl>
-                                        <Checkbox
-                                            checked={brandIds.includes(brand.id!)}
-                                            onCheckedChange={(checked) => {
-                                                const newBrandIds = checked
-                                                ? [...brandIds, brand.id!]
-                                                : brandIds.filter((value) => value !== brand.id!);
-                                                field.onChange(newBrandIds);
-                                            }}
-                                        />
-                                    </FormControl>
-                                    <FormLabel className="font-normal">{brand.name}</FormLabel>
+                    render={({ field }) => {
+                      const brandIds = Array.isArray(field.value) ? field.value : [];
+                      return (
+                        <FormItem>
+                          <div className="mb-2">
+                            <FormLabel>Brands</FormLabel>
+                            <FormDescription>
+                              Assign one or more brands to this HRD user.
+                            </FormDescription>
+                          </div>
+                          <div className="h-32 w-full rounded-md border p-4 overflow-y-auto space-y-2">
+                            {brandsLoading && <p className="text-sm text-muted-foreground">Loading brands...</p>}
+                            {brands?.map((brand) => (
+                                <FormItem key={brand.id} className="flex flex-row items-center space-x-3 space-y-0">
+                                  <FormControl>
+                                    <Checkbox
+                                        checked={brandIds.includes(brand.id!)}
+                                        onCheckedChange={(checked) => {
+                                            const newBrandIds = checked
+                                            ? [...brandIds, brand.id!]
+                                            : brandIds.filter((value) => value !== brand.id!);
+                                            field.onChange(newBrandIds);
+                                        }}
+                                    />
+                                  </FormControl>
+                                  <FormLabel className="font-normal">{brand.name}</FormLabel>
                                 </FormItem>
-                             );
-                          })}
-                        </div>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+                            ))}
+                          </div>
+                          <FormMessage />
+                        </FormItem>
+                      )
+                    }}
                   />
                 ) : (
                   <FormField
