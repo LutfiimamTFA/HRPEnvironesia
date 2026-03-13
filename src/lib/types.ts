@@ -759,6 +759,7 @@ export const OVERTIME_SUBMISSION_STATUSES = [
   'pending_manager',
   'rejected_manager',
   'revision_manager',
+  'approved_by_manager',
   'pending_hrd',
   'rejected_hrd',
   'revision_hrd',
@@ -782,18 +783,18 @@ export type OvertimeSubmission = {
     tasks: {
         description: string;
         estimatedMinutes?: number;
-        actualMinutes?: number;
+        actualMinutes?: number | null;
     }[];
     reason: string;
     location: 'kantor' | 'remote' | 'site';
-    employeeNotes?: string;
+    employeeNotes?: string | null;
     attachments?: string[];
     status: OvertimeSubmissionStatus;
     managerUid?: string;
-    managerNotes?: string;
+    managerNotes?: string | null;
     managerDecisionAt?: Timestamp;
     hrdReviewerUid?: string;
-    hrdNotes?: string;
+    hrdNotes?: string | null;
     hrdDecisionAt?: Timestamp;
     createdAt: Timestamp;
     updatedAt: Timestamp;

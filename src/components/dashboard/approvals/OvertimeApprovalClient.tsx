@@ -2,37 +2,25 @@
 
 import { useState, useMemo } from 'react';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, query, where } from 'firebase/firestore';
+import { collection, query, where, startOfMonth } from 'firebase/firestore';
 import type { OvertimeSubmission, UserProfile, Brand } from '@/lib/types';
 import { useAuth } from '@/providers/auth-provider';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Search } from 'lucide-react';
-import { format, formatDistanceToNow, startOfMonth, endOfMonth } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { KpiCard } from '@/components/recruitment/KpiCard';
 import { ReviewOvertimeDialog } from './ReviewOvertimeDialog';
 import { OVERTIME_SUBMISSION_STATUSES } from '@/lib/types';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
+import { OvertimeApprovalStatusBadge } from './OvertimeApprovalStatusBadge';
 
 interface OvertimeApprovalClientProps {
   mode: 'manager' | 'hrd';
 }
-
-const statusDisplay: Record<string, { label: string; className: string }> = {
-    draft: { label: 'Draf', className: 'bg-gray-100 text-gray-800' },
-    pending_manager: { label: 'Menunggu Persetujuan Anda', className: 'bg-yellow-100 text-yellow-800' },
-    rejected_manager: { label: 'Ditolak', className: 'bg-red-200 text-red-900' },
-    revision_manager: { label: 'Revisi Diminta', className: 'bg-amber-100 text-amber-800' },
-    approved_by_manager: { label: 'Disetujui', className: 'bg-green-100 text-green-800' },
-    pending_hrd: { label: 'Menunggu HRD', className: 'bg-blue-100 text-blue-800' },
-    rejected_hrd: { label: 'Ditolak HRD', className: 'bg-red-200 text-red-900' },
-    revision_hrd: { label: 'Revisi dari HRD', className: 'bg-amber-100 text-amber-800' },
-    approved: { label: 'Disetujui Penuh', className: 'bg-green-200 text-green-900' },
-};
 
 export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
     const { userProfile } = useAuth();
@@ -49,9 +37,11 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
         if (mode === 'manager' && userProfile.isDivisionManager) {
             return query(q, where('division', '==', userProfile.managedDivision), where('brandId', '==', userProfile.managedBrandId));
         } else if (mode === 'hrd') {
+            // For HRD, we fetch submissions that have been approved by managers or are pending HRD action
             return query(q, where('status', 'in', ['approved_by_manager', 'pending_hrd', 'approved', 'rejected_hrd', 'revision_hrd']));
         }
         
+        // Fallback query that returns nothing if conditions are not met
         return query(collection(firestore, 'overtime_submissions'), where('uid', '==', 'NO_RESULTS'));
     }, [userProfile, firestore, mode]);
 
@@ -60,29 +50,46 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
     const filteredSubmissions = useMemo(() => {
         if (!submissions) return [];
         return submissions.filter(s => {
-            if (statusFilter !== 'all' && s.status !== statusFilter) return false;
+            let statusMatch = true;
+            if (statusFilter !== 'all') {
+                if (mode === 'hrd' && statusFilter === 'pending_hrd') {
+                    statusMatch = s.status === 'pending_hrd' || s.status === 'approved_by_manager';
+                } else {
+                    statusMatch = s.status === statusFilter;
+                }
+            }
+            if (!statusMatch) return false;
+
             if (searchTerm && !s.fullName.toLowerCase().includes(searchTerm.toLowerCase())) return false;
             return true;
         }).sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
-    }, [submissions, statusFilter, searchTerm]);
+    }, [submissions, statusFilter, searchTerm, mode]);
 
     const kpis = useMemo(() => {
       if (!submissions) return { pending: 0, revision: 0, approved: 0, rejected: 0 };
       const now = new Date();
       const monthStart = startOfMonth(now);
 
-      return submissions.reduce((acc, s) => {
-        if (s.status === 'pending_manager') acc.pending++;
-        if (s.status === 'revision_manager') acc.revision++;
+      const isManagerView = mode === 'manager';
 
-        const decisionDate = s.managerDecisionAt?.toDate();
+      return submissions.reduce((acc, s) => {
+        // Pending logic
+        if (isManagerView && s.status === 'pending_manager') acc.pending++;
+        if (!isManagerView && (s.status === 'pending_hrd' || s.status === 'approved_by_manager')) acc.pending++;
+        
+        // Revision logic
+        if (isManagerView && s.status === 'revision_manager') acc.revision++;
+        if (!isManagerView && s.status === 'revision_hrd') acc.revision++;
+
+        // Approved/Rejected this month logic
+        const decisionDate = isManagerView ? s.managerDecisionAt?.toDate() : s.hrdDecisionAt?.toDate();
         if (decisionDate && decisionDate >= monthStart) {
-          if (s.status === 'approved_by_manager') acc.approved++;
-          if (s.status === 'rejected_manager') acc.rejected++;
+          if ((isManagerView && s.status === 'approved_by_manager') || (!isManagerView && s.status === 'approved')) acc.approved++;
+          if ((isManagerView && s.status === 'rejected_manager') || (!isManagerView && s.status === 'rejected_hrd')) acc.rejected++;
         }
         return acc;
       }, { pending: 0, revision: 0, approved: 0, rejected: 0 });
-    }, [submissions]);
+    }, [submissions, mode]);
 
     return (
         <div className="space-y-6">
@@ -112,10 +119,10 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                                         <SelectItem value="revision_manager">Revisi Diminta</SelectItem>
                                     </>}
                                     {mode === 'hrd' && <>
-                                       <SelectItem value="pending_hrd">Menunggu Persetujuan HRD</SelectItem>
-                                       <SelectItem value="approved">Disetujui HRD</SelectItem>
-                                       <SelectItem value="rejected_hrd">Ditolak HRD</SelectItem>
-                                       <SelectItem value="revision_hrd">Revisi Diminta HRD</SelectItem>
+                                       <SelectItem value="pending_hrd">Menunggu Persetujuan Anda</SelectItem>
+                                       <SelectItem value="approved">Disetujui Penuh</SelectItem>
+                                       <SelectItem value="rejected_hrd">Ditolak Anda</SelectItem>
+                                       <SelectItem value="revision_hrd">Revisi Diminta</SelectItem>
                                     </>}
                                 </SelectContent>
                             </Select>
@@ -137,7 +144,7 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                                         </TableCell>
                                         <TableCell>{format(s.date.toDate(), 'eeee, dd MMM', { locale: idLocale })}</TableCell>
                                         <TableCell className="text-xs text-muted-foreground">{formatDistanceToNow(s.createdAt.toDate(), { addSuffix: true, locale: idLocale })}</TableCell>
-                                        <TableCell><Badge className={statusDisplay[s.status]?.className}>{statusDisplay[s.status]?.label}</Badge></TableCell>
+                                        <TableCell><OvertimeApprovalStatusBadge status={s.status} mode={mode} /></TableCell>
                                         <TableCell className="text-right">
                                             <Button variant="outline" size="sm" onClick={() => setSelectedSubmission(s)}>Review</Button>
                                         </TableCell>
@@ -161,4 +168,3 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
         </div>
     );
 }
-    
