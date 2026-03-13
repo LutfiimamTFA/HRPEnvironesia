@@ -23,7 +23,7 @@ import { id as idLocale } from 'date-fns/locale';
 const taskSchema = z.object({
   description: z.string().min(1, "Uraian tugas harus diisi."),
   estimatedMinutes: z.coerce.number().int().min(0, "Estimasi harus angka positif."),
-  actualMinutes: z.coerce.number().int().min(0, "Aktual harus angka positif.").optional(),
+  actualMinutes: z.coerce.number().int().min(0, "Aktual harus angka positif.").optional().nullable(),
 });
 
 const submissionSchema = z.object({
@@ -273,13 +273,52 @@ export function OvertimeSubmissionForm({ open, onOpenChange, submission, employe
                             </Button>
                             <FormField control={form.control} name={`tasks.${index}.description`} render={({ field }) => (<FormItem><FormLabel>Uraian Tugas</FormLabel><FormControl><Textarea rows={2} placeholder="Deskripsikan pekerjaan yang akan dilakukan..." {...field} /></FormControl><FormMessage /></FormItem>)}/>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <FormField control={form.control} name={`tasks.${index}.estimatedMinutes`} render={({ field }) => (<FormItem><FormLabel>Estimasi (menit)</FormLabel><FormDescription>Perkiraan waktu untuk menyelesaikan.</FormDescription><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)}/>
-                                <FormField control={form.control} name={`tasks.${index}.actualMinutes`} render={({ field }) => (<FormItem><FormLabel>Aktual (menit)</FormLabel><FormDescription>Diisi setelah lembur selesai.</FormDescription><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                                <FormField
+                                    control={form.control}
+                                    name={`tasks.${index}.estimatedMinutes`}
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Estimasi (menit)</FormLabel>
+                                            <FormDescription>Perkiraan waktu untuk menyelesaikan.</FormDescription>
+                                            <FormControl>
+                                                <Input
+                                                    type="number"
+                                                    {...field}
+                                                    value={field.value ?? ''}
+                                                    onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
+                                                />
+                                            </FormControl>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                                <FormField
+                                    control={form.control}
+                                    name={`tasks.${index}.actualMinutes`}
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Aktual (menit)</FormLabel>
+                                            <FormDescription>Diisi setelah lembur selesai.</FormDescription>
+                                            <FormControl>
+                                                <Input
+                                                    type="number"
+                                                    {...field}
+                                                    value={field.value ?? ''}
+                                                    onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
+                                                />
+                                            </FormControl>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
                             </div>
                         </div>
                     ))}
                 </div>
-                 <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => append({ description: '', estimatedMinutes: 60 })}><PlusCircle className="mr-2 h-4 w-4"/>Tambah Tugas</Button>
+                 <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => append({ description: '', estimatedMinutes: 60 })}>
+                    <PlusCircle className="mr-2 h-4 w-4"/>
+                    Tambah Tugas
+                </Button>
              </section>
              
              <section>
