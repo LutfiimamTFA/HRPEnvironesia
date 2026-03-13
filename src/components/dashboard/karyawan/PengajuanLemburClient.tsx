@@ -82,7 +82,7 @@ const LatestSubmissionCard = ({ submission, supervisorName, onActionClick }: { s
                     <div>
                         <CardTitle>Pengajuan Terakhir</CardTitle>
                         <CardDescription>
-                            Diajukan {formatDistanceToNow(submission.createdAt.toDate(), { addSuffix: true, locale: idLocale })}
+                            Diajukan {submission.createdAt?.toDate ? formatDistanceToNow(submission.createdAt.toDate(), { addSuffix: true, locale: idLocale }) : 'baru saja'}
                         </CardDescription>
                     </div>
                      <OvertimeStatusBadge status={submission.status} />
@@ -167,7 +167,7 @@ export function PengajuanLemburClient() {
     const kpis = { draft: 0, pending: 0, approved: 0, revision: 0, rejected: 0 };
     if (!submissions) return kpis;
     submissions.forEach(s => {
-        if (s.status.startsWith('pending')) kpis.pending++;
+        if (s.status.startsWith('pending') || s.status === 'approved_by_manager') kpis.pending++;
         else if (s.status.startsWith('revision')) kpis.revision++;
         else if (s.status.startsWith('rejected')) kpis.rejected++;
         else if (s.status === 'approved') kpis.approved++;
@@ -232,7 +232,7 @@ export function PengajuanLemburClient() {
 
         <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
             <KpiCard title="Draft" value={summary.draft} />
-            <KpiCard title="Menunggu" value={summary.pending} />
+            <KpiCard title="Menunggu Persetujuan" value={summary.pending} />
             <KpiCard title="Perlu Revisi" value={summary.revision} deltaType="inverse" />
             <KpiCard title="Disetujui" value={summary.approved} />
             <KpiCard title="Ditolak" value={summary.rejected} deltaType="inverse" />
@@ -261,7 +261,7 @@ export function PengajuanLemburClient() {
                                 <TableCell>{s.totalDurationMinutes} menit</TableCell>
                                 <TableCell className="capitalize">{s.overtimeType.replace('_', ' ')}</TableCell>
                                 <TableCell>{employeeProfile?.supervisorName || '-'}</TableCell>
-                                <TableCell>{formatDistanceToNow(s.updatedAt.toDate(), { addSuffix: true, locale: idLocale })}</TableCell>
+                                <TableCell>{s.updatedAt?.toDate ? formatDistanceToNow(s.updatedAt.toDate(), { addSuffix: true, locale: idLocale }) : 'Baru saja'}</TableCell>
                                 <TableCell><OvertimeStatusBadge status={s.status} /></TableCell>
                                 <TableCell className="text-right">
                                      <DropdownMenu>
