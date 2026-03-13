@@ -25,8 +25,8 @@ export const useRoleGuard = (allowedRoles: UserRole | UserRole[]) => {
 
     if (!roles.includes(userProfile.role)) {
       // User does not have the required role, redirect them.
-      // If internal role was required, send to admin home. Otherwise, careers home.
-      const targetHome = ROLES_INTERNAL.includes(userProfile.role) ? '/admin' : '/careers/me';
+      // If internal role was required, send to admin home. Otherwise, careers portal.
+      const targetHome = ROLES_INTERNAL.includes(userProfile.role) ? '/admin' : '/careers/portal';
       router.replace(targetHome);
     }
   }, [userProfile, loading, router, roles]);

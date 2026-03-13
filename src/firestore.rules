@@ -85,6 +85,26 @@ service cloud.firestore {
       return request.resource.data.uid == resource.data.uid;
     }
 
+    /**
+     * WARNING: NOT SAFE FOR LIST QUERIES.
+     * Checks if the requesting user is the supervisor of the given intern.
+     */
+    function isSupervisor(internUid) {
+      let employeeProfile = get(/databases/$(database)/documents/employee_profiles/$(internUid)).data;
+      return employeeProfile.supervisorUid == request.auth.uid;
+    }
+    
+    /**
+     * WARNING: NOT SAFE FOR LIST QUERIES.
+     * Checks if the requesting user is the assigned division manager for a specific submission.
+     */
+    function isAssignedManager(submission) {
+      let managerData = getUserData();
+      return managerData.isDivisionManager == true && 
+             managerData.managedDivision == submission.division &&
+             managerData.managedBrandId == submission.brandId;
+    }
+
 
     // --- Collection Rules ---
 
@@ -118,10 +138,12 @@ service cloud.firestore {
     /**
      * /employee_profiles/{uid} (Intern/Employee Profile)
      * - An employee can read/write their own profile.
-     * - HRD and Super Admins can view any profile for monitoring.
+     * - Internal users (hrd, super_admin, managers, other employees) can view any profile.
+     * - This broad read access for internal users is necessary to allow supervisors
+     *   to check their interns' profiles without causing security rule deadlocks.
      */
     match /employee_profiles/{uid} {
-      allow get: if isOwner(uid) || isHrd() || isSuperAdmin();
+      allow get: if isOwner(uid) || isInternal();
       allow create, update: if (isOwner(uid) && request.resource.data.uid == uid) || isHrd() || isSuperAdmin();
       allow list: if isHrd() || isSuperAdmin();
       allow delete: if false;
@@ -157,10 +179,16 @@ service cloud.firestore {
      * /brands/{brandId}
      * - Brands are public for anyone to read.
      * - Only super_admins can manage (create, update, delete) brands.
+     * - Subcollections are also managed by super_admins.
      */
     match /brands/{brandId} {
       allow read: if true;
       allow write: if isSuperAdmin();
+      
+      match /divisions/{divisionId} {
+        allow read: if isInternal();
+        allow write: if isSuperAdmin();
+      }
     }
     
     /**
@@ -286,6 +314,36 @@ service cloud.firestore {
       allow delete: if isHrd() || isSuperAdmin();
     }
     
+    match /overtime_submissions/{submissionId} {
+      function isSubmissionOwner() {
+        return request.auth.uid == resource.data.uid;
+      }
+      function isRequester() {
+        return request.auth.uid == request.resource.data.uid;
+      }
+      
+      // Allow read by owner, their manager, HR, or Super Admin
+      allow get: if isSignedIn() && (isSubmissionOwner() || isAssignedManager(resource.data) || isHrd() || isSuperAdmin());
+      allow list: if isSignedIn(); // Queries must be filtered on client-side
+
+      // Allow create by an internal user for themselves
+      allow create: if isInternal() && isRequester();
+
+      // Allow update logic
+      allow update: if isSignedIn() && (
+        // Owner can update their draft or revision request
+        (isSubmissionOwner() && (resource.data.status == 'draft' || resource.data.status.startsWith('revision_'))) ||
+        // Manager can act on pending_manager requests
+        (isAssignedManager(resource.data) && resource.data.status == 'pending_manager') ||
+        // HRD can act on pending_hrd requests
+        (isHrd() && resource.data.status == 'pending_hrd') ||
+        // Super Admin can always update
+        isSuperAdmin()
+      );
+      
+      allow delete: if isSuperAdmin() || (isSubmissionOwner() && resource.data.status == 'draft');
+    }
+    
     // --- Assessment Rules ---
 
     match /assessment_config/{configId} {
@@ -362,6 +420,14 @@ service cloud.firestore {
                     );
 
       allow delete: if false;
+    }
+    
+    // --- Monthly Evaluation Rules ---
+    match /monthly_evaluations/{evaluationId} {
+      allow list: if isHrd() || isSuperAdmin() || isSignedIn();
+      allow get: if isHrd() || isSuperAdmin() || (isSignedIn() && evaluationId.split('_')[0] == request.auth.uid) || (isSignedIn() && isSupervisor(evaluationId.split('_')[0]));
+      allow create, update: if isHrd() || isSuperAdmin() || (isSignedIn() && isSupervisor(request.resource.data.internUid));
+      allow delete: if isSuperAdmin();
     }
   }
 }
