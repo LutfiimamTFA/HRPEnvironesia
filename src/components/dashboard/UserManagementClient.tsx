@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect } from 'react';
 import { collection, doc } from 'firebase/firestore';
-import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
+import { useCollection, useFirestore, useMemoFirebase, deleteDocumentNonBlocking } from '@/firebase';
 import { UserProfile, ROLES, UserRole, Brand, EmployeeProfile } from '@/lib/types';
 import {
   Table,
@@ -255,7 +255,9 @@ export function UserManagementClient() {
                         const userEmployeeProfile = employeeProfileMap.get(user.uid);
                         let positionTitleDisplay = '-';
 
-                        if (userEmployeeProfile?.positionTitle) {
+                        if (user.role === 'kandidat') {
+                            positionTitleDisplay = 'Pelamar';
+                        } else if (userEmployeeProfile?.positionTitle) {
                             positionTitleDisplay = userEmployeeProfile.positionTitle;
                         } else if (user.isDivisionManager && user.managedDivision) {
                             positionTitleDisplay = `Manager Divisi ${user.managedDivision}`;
@@ -273,6 +275,9 @@ export function UserManagementClient() {
                                     baseTitle = 'Staf'; break;
                                 case 'magang':
                                     baseTitle = 'Peserta Magang'; break;
+                                default:
+                                    if (user.role === 'manager') baseTitle = 'Manager';
+                                    break;
                             }
                             const divisionName = userEmployeeProfile?.division;
                             positionTitleDisplay = divisionName ? `${baseTitle} ${divisionName}` : baseTitle;
@@ -285,7 +290,7 @@ export function UserManagementClient() {
                           <TableCell><Badge variant="outline" className="capitalize">{user.role.replace('_', ' ')}</Badge></TableCell>
                           <TableCell>
                              {positionTitleDisplay !== '-' ? (
-                                <Badge variant="secondary">{positionTitleDisplay}</Badge>
+                                <Badge variant={user.role === 'kandidat' ? 'outline' : 'secondary'}>{positionTitleDisplay}</Badge>
                             ) : (
                                 '-'
                             )}
