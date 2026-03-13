@@ -11,7 +11,7 @@ import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { doc } from 'firebase/firestore';
 import type { NavigationSetting } from '@/lib/types';
 import { MENU_CONFIG, ALL_MENU_GROUPS } from '@/lib/menu-config';
-import { CheckSquare } from 'lucide-react';
+import { CheckSquare, FileHeart } from 'lucide-react';
 
 type DashboardLayoutProps = {
   children: React.ReactNode;
@@ -53,11 +53,17 @@ export function DashboardLayout({
     }));
 
     if (userProfile?.isDivisionManager) {
-        const managerApprovalMenu: MenuItem = {
+        const overtimeApprovalMenu: MenuItem = {
             key: 'manager.overtime_approval',
             href: '/admin/manager/persetujuan-lembur',
             label: 'Persetujuan Lembur Tim',
             icon: createElement(CheckSquare),
+        };
+        const permissionApprovalMenu: MenuItem = {
+            key: 'manager.permission_approval',
+            href: '/admin/manager/persetujuan-izin',
+            label: 'Persetujuan Izin Tim',
+            icon: createElement(FileHeart),
         };
 
         let reviewGroup = finalConfig.find((g: MenuGroup) => g.title === 'Review');
@@ -65,9 +71,14 @@ export function DashboardLayout({
             reviewGroup = { title: 'Review', items: [] };
             finalConfig.push(reviewGroup);
         }
-
-        if (!reviewGroup.items.some((item: MenuItem) => item.key === managerApprovalMenu.key)) {
-            reviewGroup.items.push(managerApprovalMenu);
+        
+        // Add overtime menu if it doesn't exist
+        if (!reviewGroup.items.some((item: MenuItem) => item.key === overtimeApprovalMenu.key)) {
+            reviewGroup.items.push(overtimeApprovalMenu);
+        }
+        // Add permission menu if it doesn't exist
+        if (!reviewGroup.items.some((item: MenuItem) => item.key === permissionApprovalMenu.key)) {
+            reviewGroup.items.push(permissionApprovalMenu);
         }
     }
     
@@ -77,10 +88,11 @@ export function DashboardLayout({
     
     const visibleKeys = new Set(navSettings.visibleMenuItems);
 
-    // If the user is a division manager, ensure their approval menu is always visible,
-    // overriding any database setting for this specific, conditional menu item.
+    // If the user is a division manager, ensure their approval menus are always visible,
+    // overriding any database setting for these specific, conditional menu items.
     if (userProfile?.isDivisionManager) {
         visibleKeys.add('manager.overtime_approval');
+        visibleKeys.add('manager.permission_approval');
     }
     
     return finalConfig.map((group: MenuGroup) => ({

@@ -799,3 +799,51 @@ export type OvertimeSubmission = {
     createdAt: Timestamp;
     updatedAt: Timestamp;
 }
+
+export const PERMISSION_REQUEST_STATUSES = [
+  'draft',
+  'pending_manager',
+  'rejected_manager',
+  'revision_manager',
+  'approved_by_manager',
+  'pending_hrd',
+  'rejected_hrd',
+  'revision_hrd',
+  'approved',
+] as const;
+export type PermissionRequestStatus = (typeof PERMISSION_REQUEST_STATUSES)[number];
+
+export const PERMISSION_TYPES = ["izin_keluar", "sakit", "keperluan_mendesak", "duka", "akademik", "lainnya"] as const;
+export type PermissionType = (typeof PERMISSION_TYPES)[number];
+
+
+export type PermissionRequest = {
+    id?: string;
+    uid: string;
+    fullName: string;
+    brandId: string;
+    division: string;
+    positionTitle: string;
+    type: PermissionType;
+    reason: string;
+    startDate: Timestamp;
+    endDate: Timestamp;
+    totalDurationMinutes: number;
+    attachments?: string[];
+    status: PermissionRequestStatus;
+    managerUid?: string;
+    managerNotes?: string | null;
+    managerDecisionAt?: Timestamp;
+    hrdReviewerUid?: string;
+    hrdNotes?: string | null;
+    hrdDecisionAt?: Timestamp;
+    createdAt: Timestamp;
+    updatedAt: Timestamp;
+
+    // Specific fields based on type
+    destination?: string; // For 'izin_keluar'
+    sicknessDescription?: string; // For 'sakit'
+    familyRelation?: string; // For 'duka'
+    academicActivityName?: string; // For 'akademik'
+    otherLeaveTitle?: string; // For 'lainnya'
+};

@@ -344,6 +344,29 @@ service cloud.firestore {
       allow delete: if isSuperAdmin() || (isSubmissionOwner() && resource.data.status == 'draft');
     }
     
+     match /permission_requests/{requestId} {
+      function isSubmissionOwner() {
+        return request.auth.uid == resource.data.uid;
+      }
+      function isRequester() {
+        return request.auth.uid == request.resource.data.uid;
+      }
+      
+      allow get: if isSignedIn() && (isSubmissionOwner() || isAssignedManager(resource.data) || isHrd() || isSuperAdmin());
+      allow list: if isSignedIn();
+
+      allow create: if isInternal() && isRequester();
+
+      allow update: if isSignedIn() && (
+        (isSubmissionOwner() && (resource.data.status == 'draft' || resource.data.status.startsWith('revision_'))) ||
+        (isAssignedManager(resource.data) && resource.data.status == 'pending_manager') ||
+        (isHrd() && (resource.data.status == 'pending_hrd' || resource.data.status == 'approved_by_manager')) ||
+        isSuperAdmin()
+      );
+      
+      allow delete: if isSuperAdmin() || (isSubmissionOwner() && resource.data.status == 'draft');
+    }
+    
     // --- Assessment Rules ---
 
     match /assessment_config/{configId} {
@@ -431,5 +454,3 @@ service cloud.firestore {
     }
   }
 }
-
-    

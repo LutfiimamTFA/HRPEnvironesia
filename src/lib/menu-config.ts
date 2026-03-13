@@ -46,9 +46,9 @@ const EMPLOYEE_MONITORING_ITEMS: MenuGroup = {
         { key: 'monitoring.interns', href: '/admin/hrd/profil-magang', label: 'Profil Magang', icon: createElement(BookUser) },
         { key: 'monitoring.attendance', href: '/admin/hrd/monitoring/absen', label: 'Monitoring Absen', icon: createElement(FileClock) },
         { key: 'hrd.overtime_approval', href: '/admin/hrd/persetujuan-lembur', label: 'Persetujuan Lembur', icon: createElement(Timer) },
+        { key: 'hrd.permission_approval', href: '/admin/hrd/persetujuan-izin', label: 'Persetujuan Izin', icon: createElement(FileHeart) },
         { key: 'monitoring.field_duty', href: '/admin/hrd/monitoring/dinas', label: 'Dinas (Tracking)', icon: createElement(MapPin) },
         { key: 'monitoring.leave', href: '/admin/hrd/monitoring/cuti', label: 'Cuti', icon: createElement(CalendarOff) },
-        { key: 'monitoring.permission', href: '/admin/hrd/monitoring/izin', label: 'Izin', icon: createElement(FileHeart) },
         { key: 'monitoring.training', href: '/admin/hrd/monitoring/pelatihan', label: 'Pengembangan SDM', icon: createElement(GraduationCap) },
         { key: 'monitoring.settings', href: '/admin/hrd/monitoring/settings', label: 'Pengaturan Absensi', icon: createElement(Settings) },
     ]
@@ -59,6 +59,7 @@ const REVIEW_ITEMS: MenuGroup = {
     items: [
         { key: 'review.reports', href: '/admin/review/laporan-magang', label: 'Review Laporan Magang', icon: createElement(PenSquare) },
         { key: 'manager.overtime_approval', href: '/admin/manager/persetujuan-lembur', label: 'Persetujuan Lembur Tim', icon: createElement(CheckSquare) },
+        { key: 'manager.permission_approval', href: '/admin/manager/persetujuan-izin', label: 'Persetujuan Izin Tim', icon: createElement(FileHeart) },
     ]
 };
 
@@ -91,6 +92,7 @@ export const ALL_MENU_GROUPS: MenuGroup[] = [
             { key: 'employee.laporan.evaluasi', href: '/admin/karyawan/magang/evaluasi', label: 'Evaluasi & Feedback', icon: createElement(CheckSquare) },
             { key: 'employee.profile.magang', href: '/admin/karyawan/magang/profile', label: 'Profil Magang', icon: createElement(User) },
             { key: 'employee.overtime', href: '/admin/karyawan/pengajuan-lembur', label: 'Pengajuan Lembur', icon: createElement(FileClock) },
+            { key: 'employee.permission', href: '/admin/karyawan/pengajuan-izin', label: 'Pengajuan Izin', icon: createElement(FileHeart) },
             { key: 'employee.dashboard.training', href: '/admin/karyawan/dashboard-training', label: 'Dashboard Training', icon: createElement(LayoutDashboard) },
         ]
     },
@@ -152,11 +154,10 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
             { key: 'manager.team', href: '/admin/manager', label: 'My Team', icon: createElement(Users) },
         ]
     },
+    REVIEW_ITEMS,
     {
-        title: "Review",
+        title: "Personal",
         items: [
-            { key: 'review.reports', href: '/admin/review/laporan-magang', label: 'Review Laporan Magang', icon: createElement(PenSquare) },
-            { key: 'manager.overtime_approval', href: '/admin/manager/persetujuan-lembur', label: 'Persetujuan Lembur Tim', icon: createElement(CheckSquare) },
             { key: 'personal.interviews.manager', href: '/admin/interviews', label: 'My Interviews', icon: createElement(Video) },
         ]
     }
@@ -167,14 +168,10 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
         items: [
             { key: 'employee.dashboard', href: '/admin/karyawan/dashboard', label: 'Dashboard', icon: createElement(LayoutDashboard) },
             { key: 'employee.overtime', href: '/admin/karyawan/pengajuan-lembur', label: 'Pengajuan Lembur', icon: createElement(FileClock) },
+            { key: 'employee.permission', href: '/admin/karyawan/pengajuan-izin', label: 'Pengajuan Izin', icon: createElement(FileHeart) },
         ]
     },
-    {
-        title: "Review",
-        items: [
-            { key: 'review.reports', href: '/admin/review/laporan-magang', label: 'Review Laporan Magang', icon: createElement(PenSquare) },
-        ]
-    }
+    REVIEW_ITEMS,
   ],
   'karyawan-magang': [
       {
@@ -183,6 +180,7 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
             { key: 'employee.dashboard.magang', href: '/admin/karyawan/dashboard-magang', label: 'Dashboard Magang', icon: createElement(LayoutDashboard) },
             { key: 'employee.profile.magang', href: '/admin/karyawan/magang/profile', label: 'Profil Magang', icon: createElement(User) },
             { key: 'employee.overtime', href: '/admin/karyawan/pengajuan-lembur', label: 'Pengajuan Lembur', icon: createElement(FileClock) },
+            { key: 'employee.permission', href: '/admin/karyawan/pengajuan-izin', label: 'Pengajuan Izin', icon: createElement(FileHeart) },
         ]
       },
       {
@@ -200,6 +198,7 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
         items: [
             { key: 'employee.dashboard.training', href: '/admin/karyawan/dashboard-training', label: 'Dashboard Training', icon: createElement(LayoutDashboard) },
             { key: 'employee.overtime', href: '/admin/karyawan/pengajuan-lembur', label: 'Pengajuan Lembur', icon: createElement(FileClock) },
+            { key: 'employee.permission', href: '/admin/karyawan/pengajuan-izin', label: 'Pengajuan Izin', icon: createElement(FileHeart) },
         ]
     }
   ],

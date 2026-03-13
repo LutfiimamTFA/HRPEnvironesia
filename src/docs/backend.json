@@ -52,6 +52,27 @@
         "inviteBatchId": {
           "type": "string",
           "description": "The ID of the invite batch used to create this user account."
+        },
+        "isDivisionManager": {
+          "type": "boolean",
+          "description": "Indicates if the user is designated as a division manager.",
+          "default": false
+        },
+        "managedBrandId": {
+          "type": "string",
+          "description": "The ID of the brand for the division this user manages."
+        },
+        "managedDivision": {
+          "type": "string",
+          "description": "The name of the division this user manages."
+        },
+        "division": {
+          "type": "string",
+          "description": "The name of the division the user belongs to."
+        },
+        "positionTitle": {
+          "type": "string",
+          "description": "The user's specific job title, e.g., 'Kepala Divisi Creative' or 'Staf Keuangan'."
         }
       },
       "required": [
@@ -97,6 +118,31 @@
         "name"
       ]
     },
+    "Division": {
+      "title": "Division",
+      "type": "object",
+      "description": "Represents a division or department within a brand.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The name of the division."
+        },
+        "code": {
+          "type": "string",
+          "description": "An optional code for the division."
+        },
+        "isActive": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether the division is currently active."
+        },
+        "description": {
+          "type": "string",
+          "description": "A short description of the division's purpose."
+        }
+      },
+      "required": ["name", "isActive"]
+    },
     "EmployeeProfile": {
       "title": "Employee Profile",
       "type": "object",
@@ -140,7 +186,8 @@
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" },
         "supervisorUid": { "type": "string", "description": "UID of the assigned supervisor/mentor." },
-        "supervisorName": { "type": "string", "description": "Denormalized name of the supervisor." }
+        "supervisorName": { "type": "string", "description": "Denormalized name of the supervisor." },
+        "positionTitle": { "type": "string" }
       },
       "required": ["uid", "employmentType", "fullName", "phone", "email", "addressCurrent", "schoolOrCampus", "educationLevel", "internSubtype", "emergencyContactName", "emergencyContactRelation", "emergencyContactPhone"]
     },
@@ -821,6 +868,92 @@
         },
         "required": ["uid", "date", "minutes", "source", "createdAt"]
     },
+    "OvertimeSubmission": {
+      "title": "Overtime Submission",
+      "description": "Represents an employee's request to work overtime, including details and an approval workflow.",
+      "properties": {
+        "uid": { "type": "string", "description": "UID of the user submitting the request." },
+        "fullName": { "type": "string" },
+        "brandId": { "type": "string" },
+        "division": { "type": "string" },
+        "positionTitle": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "startTime": { "type": "string", "format": "date-time" },
+        "endTime": { "type": "string", "format": "date-time" },
+        "totalDurationMinutes": { "type": "number" },
+        "overtimeType": { "type": "string", "enum": ["hari_kerja", "hari_libur", "urgent"] },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "description": { "type": "string" },
+              "estimatedMinutes": { "type": "number" },
+              "actualMinutes": { "type": "number" },
+              "output": { "type": "string" }
+            },
+            "required": ["description"]
+          }
+        },
+        "reason": { "type": "string" },
+        "location": { "type": "string", "enum": ["kantor", "remote", "site"] },
+        "employeeNotes": { "type": "string" },
+        "attachments": { "type": "array", "items": { "type": "string", "format": "uri" } },
+        "status": {
+          "type": "string",
+          "enum": ["draft", "pending_manager", "rejected_manager", "revision_manager", "approved_by_manager", "pending_hrd", "rejected_hrd", "revision_hrd", "approved"]
+        },
+        "managerUid": { "type": "string", "description": "UID of the manager responsible for approval." },
+        "managerNotes": { "type": "string" },
+        "managerDecisionAt": { "type": "string", "format": "date-time" },
+        "hrdReviewerUid": { "type": "string" },
+        "hrdNotes": { "type": "string" },
+        "hrdDecisionAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "fullName", "brandId", "division", "date", "startTime", "endTime", "overtimeType", "tasks", "reason", "location", "status", "createdAt", "updatedAt"]
+    },
+    "PermissionRequest": {
+        "title": "Permission Request",
+        "description": "Represents an employee's request for various types of leave or permission.",
+        "type": "object",
+        "properties": {
+            "uid": { "type": "string" },
+            "fullName": { "type": "string" },
+            "brandId": { "type": "string" },
+            "division": { "type": "string" },
+            "positionTitle": { "type": "string" },
+            "type": {
+                "type": "string",
+                "enum": ["izin_keluar", "sakit", "keperluan_mendesak", "duka", "akademik", "lainnya"]
+            },
+            "reason": { "type": "string", "description": "The main reason/description for the permission request." },
+            "startDate": { "type": "string", "format": "date-time" },
+            "endDate": { "type": "string", "format": "date-time" },
+            "totalDurationMinutes": { "type": "number" },
+            "attachments": { "type": "array", "items": { "type": "string", "format": "uri" } },
+            "status": {
+              "type": "string",
+              "enum": ["draft", "pending_manager", "rejected_manager", "revision_manager", "approved_by_manager", "pending_hrd", "rejected_hrd", "revision_hrd", "approved"]
+            },
+            "managerUid": { "type": "string" },
+            "managerNotes": { "type": "string" },
+            "managerDecisionAt": { "type": "string", "format": "date-time" },
+            "hrdReviewerUid": { "type": "string" },
+            "hrdNotes": { "type": "string" },
+            "hrdDecisionAt": { "type": "string", "format": "date-time" },
+            "createdAt": { "type": "string", "format": "date-time" },
+            "updatedAt": { "type": "string", "format": "date-time" },
+            
+            "destination": { "type": "string", "description": "For 'izin_keluar': The location/destination." },
+            "sicknessDescription": { "type": "string", "description": "For 'sakit': A brief description of the illness." },
+            "familyRelation": { "type": "string", "description": "For 'duka': The relationship to the deceased." },
+            "academicActivityName": { "type": "string", "description": "For 'akademik': The name of the academic event." },
+            "otherLeaveTitle": { "type": "string", "description": "For 'lainnya': The custom title for the leave." }
+        },
+        "required": ["uid", "fullName", "brandId", "division", "type", "reason", "startDate", "endDate", "totalDurationMinutes", "status", "createdAt", "updatedAt"]
+    },
     "FieldTrackingEntry": {
         "title": "Field Tracking Entry",
         "description": "Represents a location update from an employee on field duty.",
@@ -835,42 +968,6 @@
             "updatedAt": { "type": "string", "format": "date-time" }
         },
         "required": ["uid", "lat", "lng", "status", "updatedAt"]
-    },
-    "LeaveRequest": {
-        "title": "Leave Request",
-        "description": "Represents an employee's request for leave.",
-        "type": "object",
-        "properties": {
-            "uid": { "type": "string" },
-            "brandId": { "type": "string" },
-            "type": { "type": "string", "enum": ["annual", "sick", "unpaid", "maternity", "paternity"] },
-            "startDate": { "type": "string", "format": "date" },
-            "endDate": { "type": "string", "format": "date" },
-            "days": { "type": "number" },
-            "reason": { "type": "string" },
-            "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
-            "requestedAt": { "type": "string", "format": "date-time" },
-            "decidedAt": { "type": "string", "format": "date-time" },
-            "decidedBy": { "type": "string", "description": "UID of the decider" }
-        },
-        "required": ["uid", "type", "startDate", "endDate", "days", "reason", "status", "requestedAt"]
-    },
-    "PermissionRequest": {
-        "title": "Permission Request",
-        "description": "Represents an employee's request for a short permission (e.g., leaving early).",
-        "type": "object",
-        "properties": {
-            "uid": { "type": "string" },
-            "brandId": { "type": "string" },
-            "date": { "type": "string", "format": "date" },
-            "startTime": { "type": "string", "format": "time" },
-            "endTime": { "type": "string", "format": "time" },
-            "reason": { "type": "string" },
-            "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
-            "requestedAt": { "type": "string", "format": "date-time" },
-            "decidedBy": { "type": "string", "description": "UID of the decider" }
-        },
-        "required": ["uid", "date", "startTime", "endTime", "reason", "status", "requestedAt"]
     },
     "TrainingVideo": {
         "title": "Training Video",
@@ -926,7 +1023,6 @@
     "MonthlyEvaluation": {
       "title": "Monthly Evaluation",
       "description": "An HRD's or Mentor's monthly evaluation of an intern's performance.",
-      "type": "object",
       "properties": {
         "internUid": { "type": "string", "description": "The UID of the intern being evaluated." },
         "evaluationMonth": { "type": "string", "format": "date", "description": "The first day of the month being evaluated (e.g., '2024-07-01')." },
@@ -1101,6 +1197,25 @@
         }
       },
       {
+        "path": "/brands/{brandId}/divisions/{divisionId}",
+        "definition": {
+          "schema": {
+            "$ref": "#/backend/entities/Division"
+          },
+          "description": "Stores divisions specific to a brand. Managed by super_admin.",
+          "params": [
+            {
+              "name": "brandId",
+              "description": "The ID of the parent brand."
+            },
+            {
+              "name": "divisionId",
+              "description": "The unique ID of the division."
+            }
+          ]
+        }
+      },
+      {
         "path": "/navigation_settings/{roleId}",
         "definition": {
           "entityName": "NavigationSetting",
@@ -1184,20 +1299,22 @@
         "definition": { "schema": { "$ref": "#/backend/entities/AttendanceEvent" }, "description": "Employee attendance events (tap in/out)." }
       },
       {
-        "path": "/overtime_logs/{logId}",
-        "definition": { "schema": { "$ref": "#/backend/entities/OvertimeLog" }, "description": "Employee overtime logs." }
+        "path": "/overtime_submissions/{submissionId}",
+        "definition": {
+          "schema": { "$ref": "#/backend/entities/OvertimeSubmission" },
+          "description": "Stores all employee overtime requests and their approval history."
+        }
+      },
+      {
+        "path": "/permission_requests/{requestId}",
+        "definition": {
+          "schema": { "$ref": "#/backend/entities/PermissionRequest" },
+          "description": "Stores all employee permission/leave requests and their approval history."
+        }
       },
       {
         "path": "/field_tracking/{uid}/entries/{entryId}",
         "definition": { "schema": { "$ref": "#/backend/entities/FieldTrackingEntry" }, "description": "Location entries for an employee on field duty." }
-      },
-      {
-        "path": "/leave_requests/{requestId}",
-        "definition": { "schema": { "$ref": "#/backend/entities/LeaveRequest" }, "description": "Employee leave requests." }
-      },
-      {
-        "path": "/permission_requests/{requestId}",
-        "definition": { "schema": { "$ref": "#/backend/entities/PermissionRequest" }, "description": "Employee permission requests (short leave)." }
       },
       {
         "path": "/training_videos/{videoId}",
