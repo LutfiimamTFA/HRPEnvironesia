@@ -16,7 +16,7 @@ import { id as idLocale } from 'date-fns/locale';
 import { KpiCard } from '@/components/recruitment/KpiCard';
 import { ReviewOvertimeDialog } from './ReviewOvertimeDialog';
 import { OVERTIME_SUBMISSION_STATUSES } from '@/lib/types';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 
 interface OvertimeApprovalClientProps {
   mode: 'manager' | 'hrd';
