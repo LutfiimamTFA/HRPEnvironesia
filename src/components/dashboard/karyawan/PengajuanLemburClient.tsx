@@ -6,34 +6,133 @@ import { collection, query, where, doc } from 'firebase/firestore';
 import type { OvertimeSubmission, EmployeeProfile, Brand } from '@/lib/types';
 import { useAuth } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Loader2, PlusCircle, MoreHorizontal, Eye, Edit, Trash2 } from 'lucide-react';
-import { format } from 'date-fns';
+import { Loader2, PlusCircle, MoreHorizontal, Eye, Edit, Trash2, Clock, UserCheck, Building, Calendar, Info } from 'lucide-react';
+import { format, formatDistanceToNow } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { OvertimeSubmissionForm } from './OvertimeSubmissionForm';
 import { DeleteConfirmationDialog } from '../DeleteConfirmationDialog';
 import { useToast } from '@/hooks/use-toast';
 import { KpiCard } from '@/components/recruitment/KpiCard';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { OvertimeStatusBadge } from './OvertimeStatusBadge';
+import { Separator } from '@/components/ui/separator';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
-const statusDisplay: Record<OvertimeSubmission['status'], { label: string; className: string }> = {
-    draft: { label: 'Draf', className: 'bg-gray-100 text-gray-800' },
-    pending_manager: { label: 'Menunggu Manager', className: 'bg-yellow-100 text-yellow-800' },
-    rejected_manager: { label: 'Ditolak Manager', className: 'bg-red-100 text-red-800' },
-    revision_manager: { label: 'Revisi dari Manager', className: 'bg-amber-100 text-amber-800' },
-    pending_hrd: { label: 'Menunggu HRD', className: 'bg-blue-100 text-blue-800' },
-    rejected_hrd: { label: 'Ditolak HRD', className: 'bg-red-100 text-red-800' },
-    revision_hrd: { label: 'Revisi dari HRD', className: 'bg-amber-100 text-amber-800' },
-    approved: { label: 'Disetujui', className: 'bg-green-100 text-green-800' },
-};
+const LatestSubmissionCard = ({ submission, supervisorName, onActionClick }: { submission: OvertimeSubmission | null, supervisorName: string, onActionClick: (action: 'view' | 'edit', sub: OvertimeSubmission) => void }) => {
+    if (!submission) {
+        return (
+            <Card>
+                <CardHeader>
+                    <CardTitle>Belum Ada Pengajuan Lembur</CardTitle>
+                    <CardDescription>Buat pengajuan lembur pertama Anda untuk memulai.</CardDescription>
+                </CardHeader>
+            </Card>
+        );
+    }
 
+    let waitingFor = '-';
+    let nextStep = '-';
+    let alertVariant: 'default' | 'destructive' | 'warning' = 'default';
+
+    switch (submission.status) {
+        case 'pending_manager':
+            waitingFor = supervisorName;
+            nextStep = 'Menunggu persetujuan Manajer Divisi.';
+            alertVariant = 'default';
+            break;
+        case 'approved_by_manager':
+        case 'pending_hrd':
+            waitingFor = 'Tim HRD';
+            nextStep = 'Menunggu verifikasi dan persetujuan final dari HRD.';
+            alertVariant = 'default';
+            break;
+        case 'revision_manager':
+            waitingFor = 'Anda';
+            nextStep = `Revisi diperlukan sesuai catatan dari ${submission.managerNotes ? 'Manajer Divisi' : 'Approver'}.`;
+            alertVariant = 'warning';
+            break;
+        case 'revision_hrd':
+            waitingFor = 'Anda';
+            nextStep = `Revisi diperlukan sesuai catatan dari HRD.`;
+            alertVariant = 'warning';
+            break;
+        case 'approved':
+             waitingFor = 'Selesai';
+             nextStep = 'Pengajuan lembur Anda telah disetujui sepenuhnya.';
+             break;
+        case 'rejected_manager':
+        case 'rejected_hrd':
+            waitingFor = 'Selesai';
+            nextStep = `Pengajuan lembur Anda ditolak oleh ${submission.status === 'rejected_manager' ? 'Manajer Divisi' : 'HRD'}.`;
+            alertVariant = 'destructive';
+            break;
+        case 'draft':
+            waitingFor = 'Anda';
+            nextStep = 'Pengajuan masih dalam bentuk draf dan belum dikirim.';
+            alertVariant = 'warning';
+            break;
+    }
+
+    return (
+        <Card>
+            <CardHeader>
+                <div className="flex justify-between items-start">
+                    <div>
+                        <CardTitle>Pengajuan Terakhir</CardTitle>
+                        <CardDescription>
+                            Diajukan {formatDistanceToNow(submission.createdAt.toDate(), { addSuffix: true, locale: idLocale })}
+                        </CardDescription>
+                    </div>
+                     <OvertimeStatusBadge status={submission.status} />
+                </div>
+            </CardHeader>
+            <CardContent className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+                 <div className="flex items-center gap-3">
+                    <Calendar className="h-8 w-8 text-primary" />
+                    <div>
+                        <p className="text-xs text-muted-foreground">Tanggal Lembur</p>
+                        <p className="font-semibold">{format(submission.date.toDate(), 'eeee, dd MMM yyyy', { locale: idLocale })}</p>
+                    </div>
+                </div>
+                 <div className="flex items-center gap-3">
+                    <Clock className="h-8 w-8 text-primary" />
+                    <div>
+                        <p className="text-xs text-muted-foreground">Durasi</p>
+                        <p className="font-semibold">{submission.totalDurationMinutes} menit</p>
+                    </div>
+                </div>
+                 <div className="flex items-center gap-3">
+                    <Building className="h-8 w-8 text-primary" />
+                    <div>
+                        <p className="text-xs text-muted-foreground">Manajer Anda</p>
+                        <p className="font-semibold">{supervisorName}</p>
+                    </div>
+                </div>
+                 <div className="flex items-center gap-3">
+                    <UserCheck className="h-8 w-8 text-primary" />
+                    <div>
+                        <p className="text-xs text-muted-foreground">Menunggu</p>
+                        <p className="font-semibold">{waitingFor}</p>
+                    </div>
+                </div>
+            </CardContent>
+            <CardFooter>
+                 <Alert variant={alertVariant} className="w-full">
+                    <Info className="h-4 w-4" />
+                    <AlertTitle className="font-semibold">Langkah Selanjutnya</AlertTitle>
+                    <AlertDescription>
+                        <div className="flex justify-between items-center">
+                            <span>{nextStep}</span>
+                             <Button size="sm" variant="secondary" onClick={() => onActionClick('view', submission)}>Lihat Detail</Button>
+                        </div>
+                    </AlertDescription>
+                </Alert>
+            </CardFooter>
+        </Card>
+    );
+}
 
 export function PengajuanLemburClient() {
   const { userProfile } = useAuth();
@@ -59,14 +158,20 @@ export function PengajuanLemburClient() {
     useMemoFirebase(() => collection(firestore, 'brands'), [firestore])
   );
 
+  const latestSubmission = useMemo(() => {
+    if (!submissions || submissions.length === 0) return null;
+    return [...submissions].sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis())[0];
+  }, [submissions]);
+
   const summary = useMemo(() => {
-    const kpis = { total: 0, pending: 0, approved: 0, rejected: 0 };
+    const kpis = { draft: 0, pending: 0, approved: 0, revision: 0, rejected: 0 };
     if (!submissions) return kpis;
-    kpis.total = submissions.length;
     submissions.forEach(s => {
         if (s.status.startsWith('pending')) kpis.pending++;
-        else if (s.status === 'approved') kpis.approved++;
+        else if (s.status.startsWith('revision')) kpis.revision++;
         else if (s.status.startsWith('rejected')) kpis.rejected++;
+        else if (s.status === 'approved') kpis.approved++;
+        else if (s.status === 'draft') kpis.draft++;
     });
     return kpis;
   }, [submissions]);
@@ -81,7 +186,7 @@ export function PengajuanLemburClient() {
     setIsFormOpen(true);
   };
   
-  const handleEdit = (submission: OvertimeSubmission) => {
+  const handleAction = (action: 'view' | 'edit', submission: OvertimeSubmission) => {
     setSelectedSubmission(submission);
     setIsFormOpen(true);
   };
@@ -119,9 +224,16 @@ export function PengajuanLemburClient() {
           <Button onClick={handleCreate}><PlusCircle className="mr-2 h-4 w-4"/> Buat Pengajuan</Button>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <KpiCard title="Total Pengajuan" value={summary.total} />
-            <KpiCard title="Menunggu Persetujuan" value={summary.pending} />
+        <LatestSubmissionCard 
+            submission={latestSubmission} 
+            supervisorName={employeeProfile?.supervisorName || 'Manajer Divisi'}
+            onActionClick={handleAction}
+        />
+
+        <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
+            <KpiCard title="Draft" value={summary.draft} />
+            <KpiCard title="Menunggu" value={summary.pending} />
+            <KpiCard title="Perlu Revisi" value={summary.revision} deltaType="inverse" />
             <KpiCard title="Disetujui" value={summary.approved} />
             <KpiCard title="Ditolak" value={summary.rejected} deltaType="inverse" />
         </div>
@@ -131,26 +243,38 @@ export function PengajuanLemburClient() {
             <CardContent>
                 <div className="rounded-lg border">
                 <Table>
-                    <TableHeader><TableRow><TableHead>Tanggal Lembur</TableHead><TableHead>Durasi</TableHead><TableHead>Tipe</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Aksi</TableHead></TableRow></TableHeader>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead>Tanggal Lembur</TableHead>
+                            <TableHead>Durasi</TableHead>
+                            <TableHead>Tipe</TableHead>
+                            <TableHead>Manajer Divisi</TableHead>
+                            <TableHead>Update Terakhir</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="text-right">Aksi</TableHead>
+                        </TableRow>
+                    </TableHeader>
                     <TableBody>
                         {sortedSubmissions.length > 0 ? sortedSubmissions.map(s => (
                             <TableRow key={s.id}>
-                                <TableCell className="font-medium">{format(s.date.toDate(), 'eeee, dd MMM yyyy', { locale: idLocale })}</TableCell>
+                                <TableCell className="font-medium">{format(s.date.toDate(), 'dd MMM yyyy', { locale: idLocale })}</TableCell>
                                 <TableCell>{s.totalDurationMinutes} menit</TableCell>
                                 <TableCell className="capitalize">{s.overtimeType.replace('_', ' ')}</TableCell>
-                                <TableCell><Badge className={statusDisplay[s.status]?.className}>{statusDisplay[s.status]?.label}</Badge></TableCell>
+                                <TableCell>{employeeProfile?.supervisorName || '-'}</TableCell>
+                                <TableCell>{formatDistanceToNow(s.updatedAt.toDate(), { addSuffix: true, locale: idLocale })}</TableCell>
+                                <TableCell><OvertimeStatusBadge status={s.status} /></TableCell>
                                 <TableCell className="text-right">
                                      <DropdownMenu>
                                         <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                                         <DropdownMenuContent align="end">
-                                            <DropdownMenuItem onSelect={() => handleEdit(s)}><Eye className="mr-2 h-4 w-4"/> Lihat Detail</DropdownMenuItem>
-                                            {(s.status === 'draft' || s.status.startsWith('revisi')) && <DropdownMenuItem onSelect={() => handleEdit(s)}><Edit className="mr-2 h-4 w-4"/> Edit</DropdownMenuItem>}
+                                            <DropdownMenuItem onSelect={() => handleAction('view', s)}><Eye className="mr-2 h-4 w-4"/> Lihat Detail</DropdownMenuItem>
+                                            {(s.status === 'draft' || s.status.startsWith('revision')) && <DropdownMenuItem onSelect={() => handleAction('edit', s)}><Edit className="mr-2 h-4 w-4"/> Edit</DropdownMenuItem>}
                                             {s.status === 'draft' && <DropdownMenuItem onSelect={() => handleCancel(s)} className="text-destructive"><Trash2 className="mr-2 h-4 w-4"/> Batalkan</DropdownMenuItem>}
                                         </DropdownMenuContent>
                                     </DropdownMenu>
                                 </TableCell>
                             </TableRow>
-                        )) : (<TableRow><TableCell colSpan={5} className="h-24 text-center">Belum ada pengajuan lembur.</TableCell></TableRow>)}
+                        )) : (<TableRow><TableCell colSpan={7} className="h-24 text-center">Belum ada pengajuan lembur.</TableCell></TableRow>)}
                     </TableBody>
                 </Table>
                 </div>

@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, PlusCircle, Trash2, Send } from 'lucide-react';
+import { Loader2, PlusCircle, Trash2, Send, UserCheck, Mail } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { useFirestore, setDocumentNonBlocking } from '@/firebase';
 import { doc, serverTimestamp, Timestamp, collection } from 'firebase/firestore';
@@ -19,6 +19,10 @@ import type { OvertimeSubmission, UserProfile, EmployeeProfile, Brand } from '@/
 import { GoogleDatePicker } from '@/components/ui/google-date-picker';
 import { format, differenceInMinutes, set, addDays } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { OvertimeStatusBadge } from './OvertimeStatusBadge';
 
 const taskSchema = z.object({
   description: z.string().min(1, "Uraian tugas harus diisi."),
@@ -47,6 +51,30 @@ interface OvertimeSubmissionFormProps {
   brands: Brand[];
   onSuccess: () => void;
 }
+
+const InfoRow = ({ label, value }: { label: string, value: string | number }) => (
+    <div className="flex justify-between text-sm">
+        <p className="text-muted-foreground">{label}</p>
+        <p className="font-medium text-right">{value}</p>
+    </div>
+);
+
+const ReviewCard = ({ title, decisionAt, notes }: { title: string, decisionAt?: Timestamp | null, notes?: string | null }) => (
+    <Card>
+        <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <UserCheck className="h-4 w-4" /> {title}
+            </CardTitle>
+            <p className="text-xs text-muted-foreground pt-1">
+                {decisionAt ? format(decisionAt.toDate(), 'dd MMM yyyy, HH:mm', { locale: idLocale }) : 'Belum direview'}
+            </p>
+        </CardHeader>
+        <CardContent>
+            {notes ? <p className="text-sm italic text-muted-foreground">"{notes}"</p> : <p className="text-sm text-muted-foreground">Tidak ada catatan.</p>}
+        </CardContent>
+    </Card>
+);
+
 
 export function OvertimeSubmissionForm({ open, onOpenChange, submission, employeeProfile, brands, onSuccess }: OvertimeSubmissionFormProps) {
   const [isSaving, setIsSaving] = useState(false);
@@ -132,7 +160,7 @@ export function OvertimeSubmissionForm({ open, onOpenChange, submission, employe
   
   const approvalFlow = useMemo(() => {
       if (userProfile?.isDivisionManager) return "Langsung ke HRD";
-      return "Manager Divisi -> HRD";
+      return "Manager Divisi → HRD";
   }, [userProfile]);
 
   const totalDuration = useMemo(() => {
@@ -161,7 +189,7 @@ export function OvertimeSubmissionForm({ open, onOpenChange, submission, employe
           startTime: submission.startTime,
           endTime: submission.endTime,
           overtimeType: submission.overtimeType,
-          tasks: submission.tasks || [{ description: '', estimatedMinutes: 60, actualMinutes: null }],
+          tasks: submission.tasks.map(t => ({ ...t, actualMinutes: t.actualMinutes ?? null })) || [{ description: '', estimatedMinutes: 60, actualMinutes: null }],
           reason: submission.reason,
           location: submission.location,
           employeeNotes: submission.employeeNotes || '',
@@ -198,11 +226,11 @@ export function OvertimeSubmissionForm({ open, onOpenChange, submission, employe
         tasks: values.tasks.map(task => ({
             description: task.description,
             estimatedMinutes: task.estimatedMinutes,
-            actualMinutes: task.actualMinutes ?? null, // Ensure null instead of undefined
+            actualMinutes: task.actualMinutes ?? null,
         })),
         reason: values.reason,
         location: values.location,
-        employeeNotes: values.employeeNotes || null, // Ensure null instead of undefined
+        employeeNotes: values.employeeNotes || null,
         totalDurationMinutes: totalDuration,
         status: userProfile.isDivisionManager ? 'pending_hrd' : 'pending_manager',
         updatedAt: serverTimestamp(),
@@ -234,126 +262,102 @@ export function OvertimeSubmissionForm({ open, onOpenChange, submission, employe
     }
   };
 
+  const isReadOnly = submission && submission.status !== 'draft' && !submission.status.startsWith('revision');
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-5xl h-[90vh] flex flex-col p-0">
         <DialogHeader className="p-6 pb-2">
-          <DialogTitle>{mode} Pengajuan Lembur</DialogTitle>
+          <DialogTitle>{submission ? (isReadOnly ? 'Detail Pengajuan Lembur' : 'Edit Pengajuan Lembur') : 'Form Pengajuan Lembur'}</DialogTitle>
           <DialogDescription>
-            Lengkapi informasi berikut untuk mengajukan lembur. Pengajuan akan diteruskan sesuai alur persetujuan yang berlaku.
+            {isReadOnly ? 'Detail pengajuan lembur Anda.' : 'Lengkapi informasi berikut untuk mengajukan lembur. Pengajuan akan diteruskan sesuai alur persetujuan yang berlaku.'}
           </DialogDescription>
         </DialogHeader>
-        <div className="flex-grow overflow-y-auto px-6">
-        <Form {...form}>
-          <form id="overtime-form" onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8 py-4">
+        <ScrollArea className="flex-grow">
+          <div className="space-y-8 px-6 py-4">
             <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="p-4 border rounded-lg space-y-2 text-sm">
+                <Card className="p-4 space-y-2 text-sm">
                     <p className="font-semibold mb-2">Profil Anda</p>
-                    <p className="text-muted-foreground">Nama: <span className="font-medium text-foreground">{displayInfo.fullName}</span></p>
-                    <p className="text-muted-foreground">Status: <span className="font-medium text-foreground">{displayInfo.employmentStatus}</span></p>
-                    <p className="text-muted-foreground">Brand: <span className="font-medium text-foreground">{displayInfo.brandName}</span></p>
-                    <p className="text-muted-foreground">Divisi: <span className="font-medium text-foreground">{displayInfo.division}</span></p>
-                    <p className="text-muted-foreground">Jabatan: <span className="font-medium text-foreground">{displayInfo.positionTitle}</span></p>
-                </div>
-                 <div className="p-4 border rounded-lg space-y-2 text-sm">
+                    <InfoRow label="Nama" value={displayInfo.fullName} />
+                    <InfoRow label="Status" value={displayInfo.employmentStatus} />
+                    <InfoRow label="Brand" value={displayInfo.brandName} />
+                    <InfoRow label="Jabatan" value={displayInfo.positionTitle} />
+                </Card>
+                <Card className="p-4 space-y-2 text-sm">
                     <p className="font-semibold mb-2">Alur Persetujuan</p>
-                    <p className="text-muted-foreground">Manager Divisi:</p>
-                    <p className="font-medium text-foreground">{employeeProfile?.supervisorName || 'Belum Ditentukan'}</p>
-                    <p className="text-muted-foreground mt-2">Divisi Approval Awal:</p>
-                    <p className="font-medium text-foreground">{displayInfo.division}</p>
-                     <p className="text-muted-foreground mt-2">Alur Persetujuan:</p>
-                    <p className="font-medium text-foreground">{approvalFlow}</p>
-                </div>
-                <div className="p-4 border rounded-lg space-y-2 text-sm flex flex-col items-center justify-center">
+                    <InfoRow label="Manager Divisi" value={employeeProfile?.supervisorName || 'Belum Ditentukan'} />
+                    <InfoRow label="Divisi Approval" value={displayInfo.division} />
+                     <div className="flex justify-between text-sm pt-2 border-t mt-2">
+                        <p className="text-muted-foreground">Alur</p>
+                        <p className="font-medium text-right">{approvalFlow}</p>
+                    </div>
+                </Card>
+                <Card className="p-4 space-y-2 text-sm flex flex-col items-center justify-center">
                     <p className="text-muted-foreground">Total Estimasi Durasi:</p>
                     <p className="font-bold text-5xl">{totalDuration > 0 ? `${totalDuration}` : '-'}</p>
                      <p className="font-semibold text-muted-foreground">menit</p>
-                </div>
+                </Card>
             </section>
             
-             <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <FormField control={form.control} name="date" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>Tanggal Lembur</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>)}/>
-                <FormField control={form.control} name="startTime" render={({ field }) => (<FormItem><FormLabel>Jam Mulai</FormLabel><FormControl><Input type="time" {...field} /></FormControl><FormMessage /></FormItem>)}/>
-                <FormField control={form.control} name="endTime" render={({ field }) => (<FormItem><FormLabel>Jam Selesai</FormLabel><FormControl><Input type="time" {...field} /></FormControl><FormMessage /></FormItem>)}/>
-             </section>
-             <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                 <FormField control={form.control} name="overtimeType" render={({ field }) => (<FormItem><FormLabel>Tipe Lembur</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Pilih tipe" /></SelectTrigger></FormControl><SelectContent><SelectItem value="hari_kerja">Hari Kerja</SelectItem><SelectItem value="hari_libur">Hari Libur</SelectItem><SelectItem value="urgent">Urgent</SelectItem></SelectContent></Select><FormMessage /></FormItem>)}/>
-                 <FormField control={form.control} name="location" render={({ field }) => (<FormItem><FormLabel>Lokasi Kerja</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Pilih lokasi" /></SelectTrigger></FormControl><SelectContent><SelectItem value="kantor">Kantor</SelectItem><SelectItem value="remote">Remote</SelectItem><SelectItem value="site">Site/Lokasi Klien</SelectItem></SelectContent></Select><FormMessage /></FormItem>)}/>
-             </section>
+            {submission && submission.status !== 'draft' && (
+                <section>
+                    <h3 className="text-lg font-semibold border-b pb-2 mb-4">Jejak Persetujuan</h3>
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <ReviewCard title="Review Manajer Divisi" decisionAt={submission.managerDecisionAt} notes={submission.managerNotes} />
+                        <ReviewCard title="Review HRD" decisionAt={submission.hrdDecisionAt} notes={submission.hrdNotes} />
+                    </div>
+                </section>
+            )}
 
-             <section className="space-y-4">
-                <FormLabel>Rincian Pekerjaan</FormLabel>
-                <div className="space-y-6">
-                    {fields.map((field, index) => (
-                        <div key={field.id} className="p-4 border rounded-md relative space-y-4">
-                            <Button type="button" variant="ghost" size="icon" className="absolute top-2 right-2 text-destructive hover:bg-destructive/10" onClick={() => remove(index)}>
-                                <Trash2 className="h-4 w-4" />
-                            </Button>
-                            <FormField control={form.control} name={`tasks.${index}.description`} render={({ field }) => (<FormItem><FormLabel>Uraian Tugas</FormLabel><FormControl><Textarea rows={2} placeholder="Deskripsikan pekerjaan yang akan dilakukan..." {...field} /></FormControl><FormMessage /></FormItem>)}/>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <FormField
-                                    control={form.control}
-                                    name={`tasks.${index}.estimatedMinutes`}
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>Estimasi (menit)</FormLabel>
-                                            <FormDescription>Perkiraan waktu untuk menyelesaikan.</FormDescription>
-                                            <FormControl>
-                                                <Input
-                                                    type="number"
-                                                    {...field}
-                                                    value={field.value ?? ''}
-                                                    onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
-                                                />
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={form.control}
-                                    name={`tasks.${index}.actualMinutes`}
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>Aktual (menit)</FormLabel>
-                                            <FormDescription>Diisi setelah lembur selesai.</FormDescription>
-                                            <FormControl>
-                                                <Input
-                                                    type="number"
-                                                    {...field}
-                                                    value={field.value ?? ''}
-                                                    onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
-                                                />
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                            </div>
-                        </div>
-                    ))}
-                </div>
-                 <Button type="button" variant="outline" size="sm" className="mt-4" onClick={() => append({ description: '', estimatedMinutes: 60, actualMinutes: null })}>
-                    <PlusCircle className="mr-2 h-4 w-4"/>
-                    Tambah Tugas
-                </Button>
-             </section>
-             
-             <section>
-                <FormField control={form.control} name="reason" render={({ field }) => (<FormItem><FormLabel>Alasan Lembur</FormLabel><FormControl><Textarea rows={3} placeholder="Jelaskan kenapa pekerjaan ini perlu dilemburkan..." {...field} /></FormControl><FormMessage /></FormItem>)}/>
-             </section>
-             <section>
-                <FormField control={form.control} name="employeeNotes" render={({ field }) => (<FormItem><FormLabel>Catatan (Opsional)</FormLabel><FormControl><Textarea rows={2} placeholder="Catatan tambahan jika ada..." {...field} /></FormControl><FormMessage /></FormItem>)}/>
-             </section>
-          </form>
-        </Form>
-        </div>
-        <DialogFooter className="p-6 pt-6 border-t flex-shrink-0">
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Batal</Button>
+            <Form {...form}>
+              <form id="overtime-form" onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8">
+                <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <FormField control={form.control} name="date" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>Tanggal Lembur</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} disabled={isReadOnly} /></FormControl><FormMessage /></FormItem>)}/>
+                    <FormField control={form.control} name="startTime" render={({ field }) => (<FormItem><FormLabel>Jam Mulai</FormLabel><FormControl><Input type="time" {...field} readOnly={isReadOnly} /></FormControl><FormMessage /></FormItem>)}/>
+                    <FormField control={form.control} name="endTime" render={({ field }) => (<FormItem><FormLabel>Jam Selesai</FormLabel><FormControl><Input type="time" {...field} readOnly={isReadOnly} /></FormControl><FormMessage /></FormItem>)}/>
+                </section>
+                <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <FormField control={form.control} name="overtimeType" render={({ field }) => (<FormItem><FormLabel>Tipe Lembur</FormLabel><Select onValueChange={field.onChange} value={field.value} disabled={isReadOnly}><FormControl><SelectTrigger><SelectValue placeholder="Pilih tipe" /></SelectTrigger></FormControl><SelectContent><SelectItem value="hari_kerja">Hari Kerja</SelectItem><SelectItem value="hari_libur">Hari Libur</SelectItem><SelectItem value="urgent">Urgent</SelectItem></SelectContent></Select><FormMessage /></FormItem>)}/>
+                    <FormField control={form.control} name="location" render={({ field }) => (<FormItem><FormLabel>Lokasi Kerja</FormLabel><Select onValueChange={field.onChange} value={field.value} disabled={isReadOnly}><FormControl><SelectTrigger><SelectValue placeholder="Pilih lokasi" /></SelectTrigger></FormControl><SelectContent><SelectItem value="kantor">Kantor</SelectItem><SelectItem value="remote">Remote</SelectItem><SelectItem value="site">Site/Lokasi Klien</SelectItem></SelectContent></Select><FormMessage /></FormItem>)}/>
+                </section>
+
+                <section className="space-y-4">
+                    <FormLabel>Rincian Pekerjaan</FormLabel>
+                    <div className="space-y-6">
+                        {fields.map((field, index) => (
+                            <Card key={field.id} className="p-4 relative">
+                                {!isReadOnly && <Button type="button" variant="ghost" size="icon" className="absolute top-2 right-2 text-destructive hover:bg-destructive/10" onClick={() => remove(index)}><Trash2 className="h-4 w-4" /></Button>}
+                                <div className="space-y-4">
+                                <FormField control={form.control} name={`tasks.${index}.description`} render={({ field }) => (<FormItem><FormLabel>Uraian Tugas</FormLabel><FormControl><Textarea rows={2} placeholder="Deskripsikan pekerjaan yang akan dilakukan..." {...field} readOnly={isReadOnly} /></FormControl><FormMessage /></FormItem>)}/>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <FormField control={form.control} name={`tasks.${index}.estimatedMinutes`} render={({ field }) => (<FormItem><FormLabel>Estimasi (menit)</FormLabel><FormDescription>Perkiraan waktu untuk menyelesaikan.</FormDescription><FormControl><Input type="number" {...field} readOnly={isReadOnly} value={field.value ?? ''} onChange={e => field.onChange(e.target.value === '' ? null : Number(e.target.value))} /></FormControl><FormMessage /></FormItem>)} />
+                                    <FormField control={form.control} name={`tasks.${index}.actualMinutes`} render={({ field }) => (<FormItem><FormLabel>Aktual (menit)</FormLabel><FormDescription>Diisi setelah lembur selesai.</FormDescription><FormControl><Input type="number" {...field} readOnly={isReadOnly} value={field.value ?? ''} onChange={e => field.onChange(e.target.value === '' ? null : Number(e.target.value))} /></FormControl><FormMessage /></FormItem>)} />
+                                </div>
+                                </div>
+                            </Card>
+                        ))}
+                    </div>
+                    {!isReadOnly && <Button type="button" variant="outline" size="sm" className="mt-4" onClick={() => append({ description: '', estimatedMinutes: 60, actualMinutes: null })}><PlusCircle className="mr-2 h-4 w-4"/> Tambah Tugas</Button>}
+                </section>
+                
+                <section>
+                    <FormField control={form.control} name="reason" render={({ field }) => (<FormItem><FormLabel>Alasan Lembur</FormLabel><FormControl><Textarea rows={3} placeholder="Jelaskan kenapa pekerjaan ini perlu dilemburkan..." {...field} readOnly={isReadOnly} /></FormControl><FormMessage /></FormItem>)}/>
+                </section>
+                <section>
+                    <FormField control={form.control} name="employeeNotes" render={({ field }) => (<FormItem><FormLabel>Catatan (Opsional)</FormLabel><FormControl><Textarea rows={2} placeholder="Catatan tambahan jika ada..." {...field} readOnly={isReadOnly} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)}/>
+                </section>
+              </form>
+            </Form>
+          </div>
+        </ScrollArea>
+        <DialogFooter className="p-6 pt-4 border-t flex-shrink-0">
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>Tutup</Button>
+          {!isReadOnly && (
           <Button type="submit" form="overtime-form" disabled={isSaving}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             <Send className="mr-2 h-4 w-4"/> Kirim Pengajuan
           </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
