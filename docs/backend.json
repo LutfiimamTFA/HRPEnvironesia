@@ -1019,7 +1019,6 @@
     "MonthlyEvaluation": {
       "title": "Monthly Evaluation",
       "description": "An HRD's or Mentor's monthly evaluation of an intern's performance.",
-      "type": "object",
       "properties": {
         "internUid": { "type": "string", "description": "The UID of the intern being evaluated." },
         "evaluationMonth": { "type": "string", "format": "date", "description": "The first day of the month being evaluated (e.g., '2024-07-01')." },

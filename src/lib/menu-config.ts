@@ -45,7 +45,7 @@ const EMPLOYEE_MONITORING_ITEMS: MenuGroup = {
         { key: 'monitoring.invites', href: '/admin/hrd/invites', label: 'Employee Invites', icon: createElement(UserPlus) },
         { key: 'monitoring.interns', href: '/admin/hrd/profil-magang', label: 'Profil Magang', icon: createElement(BookUser) },
         { key: 'monitoring.attendance', href: '/admin/hrd/monitoring/absen', label: 'Monitoring Absen', icon: createElement(FileClock) },
-        { key: 'monitoring.overtime', href: '/admin/hrd/monitoring/lembur', label: 'Lembur', icon: createElement(Timer) },
+        { key: 'hrd.overtime_approval', href: '/admin/hrd/persetujuan-lembur', label: 'Persetujuan Lembur', icon: createElement(Timer) },
         { key: 'monitoring.field_duty', href: '/admin/hrd/monitoring/dinas', label: 'Dinas (Tracking)', icon: createElement(MapPin) },
         { key: 'monitoring.leave', href: '/admin/hrd/monitoring/cuti', label: 'Cuti', icon: createElement(CalendarOff) },
         { key: 'monitoring.permission', href: '/admin/hrd/monitoring/izin', label: 'Izin', icon: createElement(FileHeart) },
@@ -58,7 +58,7 @@ const REVIEW_ITEMS: MenuGroup = {
     title: "Review",
     items: [
         { key: 'review.reports', href: '/admin/review/laporan-magang', label: 'Review Laporan Magang', icon: createElement(PenSquare) },
-        { key: 'manager.overtime', href: '/admin/manager/persetujuan-lembur', label: 'Persetujuan Lembur', icon: createElement(CheckSquare) },
+        { key: 'manager.overtime_approval', href: '/admin/manager/persetujuan-lembur', label: 'Persetujuan Lembur Tim', icon: createElement(CheckSquare) },
     ]
 };
 
@@ -138,7 +138,6 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
     RECRUITMENT_MENU_ITEMS,
     EMPLOYEE_MANAGEMENT_ITEMS,
     EMPLOYEE_MONITORING_ITEMS,
-    REVIEW_ITEMS,
     {
         title: "Personal",
         items: [
@@ -152,7 +151,7 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
         items: [
             { key: 'manager.team', href: '/admin/manager', label: 'My Team', icon: createElement(Users) },
             { key: 'review.reports', href: '/admin/review/laporan-magang', label: 'Review Laporan Magang', icon: createElement(PenSquare) },
-            { key: 'manager.overtime', href: '/admin/manager/persetujuan-lembur', label: 'Persetujuan Lembur', icon: createElement(CheckSquare) },
+            { key: 'manager.overtime_approval', href: '/admin/manager/persetujuan-lembur', label: 'Persetujuan Lembur Tim', icon: createElement(CheckSquare) },
             { key: 'personal.interviews.manager', href: '/admin/interviews', label: 'My Interviews', icon: createElement(Video) },
         ]
     }

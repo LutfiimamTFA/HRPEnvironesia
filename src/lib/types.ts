@@ -32,7 +32,7 @@ export type UserProfile = {
   photoUrl?: string;
   inviteBatchId?: string;
 
-  // Simplified manager fields
+  // Division Manager fields
   isDivisionManager?: boolean;
   managedBrandId?: string | null;
   managedDivision?: string | null;
@@ -754,6 +754,18 @@ export type DailyReport = {
   reviewerNotes?: string | null;
 };
 
+export const OVERTIME_SUBMISSION_STATUSES = [
+  'draft',
+  'pending_manager',
+  'rejected_manager',
+  'revision_manager',
+  'pending_hrd',
+  'rejected_hrd',
+  'revision_hrd',
+  'approved',
+] as const;
+export type OvertimeSubmissionStatus = (typeof OVERTIME_SUBMISSION_STATUSES)[number];
+
 
 export type OvertimeSubmission = {
     id?: string;
@@ -777,15 +789,7 @@ export type OvertimeSubmission = {
     location: 'kantor' | 'remote' | 'site';
     employeeNotes?: string;
     attachments?: string[];
-    status:
-      | 'draft'
-      | 'pending_manager'
-      | 'rejected_manager'
-      | 'revision_manager'
-      | 'pending_hrd'
-      | 'rejected_hrd'
-      | 'revision_hrd'
-      | 'approved';
+    status: OvertimeSubmissionStatus;
     managerUid?: string;
     managerNotes?: string;
     managerDecisionAt?: Timestamp;

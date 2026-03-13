@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import React, { useMemo } from 'react';
+import React, { useMemo, createElement } from 'react';
 import type { MenuGroup, MenuItem } from '@/lib/menu-config';
 import { SidebarNav } from './SidebarNav';
 import { Topbar } from './Topbar';
@@ -11,6 +11,7 @@ import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { doc } from 'firebase/firestore';
 import type { NavigationSetting } from '@/lib/types';
 import { MENU_CONFIG, ALL_MENU_GROUPS } from '@/lib/menu-config';
+import { CheckSquare } from 'lucide-react';
 
 type DashboardLayoutProps = {
   children: React.ReactNode;
@@ -28,8 +29,6 @@ export function DashboardLayout({
 
   const roleKey = useMemo(() => {
     if (!userProfile) return null;
-    // For 'karyawan' role, only create a specific key if employmentType is a sub-type like 'magang' or 'training'.
-    // A regular 'karyawan' (full-time) will just use the 'karyawan' role key.
     if (userProfile.role === 'karyawan' && userProfile.employmentType && userProfile.employmentType !== 'karyawan') {
         return `karyawan-${userProfile.employmentType}`;
     }
@@ -46,25 +45,40 @@ export function DashboardLayout({
   const menuConfig = useMemo(() => {
     if (!roleKey) return [];
     
-    // While loading or if no settings are found, fall back to default role config.
-    if (isLoadingSettings || !navSettings?.visibleMenuItems) {
-      return MENU_CONFIG[roleKey] || [];
+    let baseConfig = MENU_CONFIG[roleKey] || [];
+    let finalConfig = JSON.parse(JSON.stringify(baseConfig));
+
+    if (userProfile?.isDivisionManager) {
+        const managerApprovalMenu: MenuItem = {
+            key: 'review.overtime.manager',
+            href: '/admin/manager/persetujuan-lembur',
+            label: 'Persetujuan Lembur Tim',
+            icon: createElement(CheckSquare),
+        };
+
+        let reviewGroup = finalConfig.find((g: MenuGroup) => g.title === 'Review');
+        if (!reviewGroup) {
+            reviewGroup = { title: 'Review', items: [] };
+            finalConfig.push(reviewGroup);
+        }
+
+        if (!reviewGroup.items.some((item: MenuItem) => item.key === managerApprovalMenu.key)) {
+            reviewGroup.items.push(managerApprovalMenu);
+        }
     }
     
-    // If settings are found, filter the master list of all menus.
+    if (isLoadingSettings || !navSettings?.visibleMenuItems) {
+      return finalConfig;
+    }
+    
     const visibleKeys = new Set(navSettings.visibleMenuItems);
     
-    const filteredMenuConfig = ALL_MENU_GROUPS.map(group => {
-      const visibleItems = group.items.filter(item => visibleKeys.has(item.key));
-      return {
-        ...group,
-        items: visibleItems,
-      };
-    }).filter(group => group.items.length > 0); // Remove groups that become empty after filtering
+    return finalConfig.map((group: MenuGroup) => ({
+      ...group,
+      items: group.items.filter(item => visibleKeys.has(item.key))
+    })).filter((group: MenuGroup) => group.items.length > 0);
 
-    return filteredMenuConfig;
-
-  }, [roleKey, navSettings, isLoadingSettings]);
+  }, [roleKey, userProfile, navSettings, isLoadingSettings]);
 
   return (
     <SidebarProvider>
