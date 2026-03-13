@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useMemo } from 'react';
@@ -19,6 +20,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { OvertimeStatusBadge } from './OvertimeStatusBadge';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import Link from 'next/link';
 
 const LatestSubmissionCard = ({ submission, supervisorName, onActionClick }: { submission: OvertimeSubmission | null, supervisorName: string, onActionClick: (action: 'view' | 'edit', sub: OvertimeSubmission) => void }) => {
     if (!submission) {
@@ -160,7 +162,7 @@ export function PengajuanLemburClient() {
 
   const latestSubmission = useMemo(() => {
     if (!submissions || submissions.length === 0) return null;
-    return [...submissions].sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis())[0];
+    return [...submissions].sort((a,b) => (b.createdAt?.toMillis() || Date.now()) - (a.createdAt?.toMillis() || Date.now()))[0];
   }, [submissions]);
 
   const summary = useMemo(() => {
@@ -178,7 +180,7 @@ export function PengajuanLemburClient() {
   
   const sortedSubmissions = useMemo(() => {
     if (!submissions) return [];
-    return [...submissions].sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+    return [...submissions].sort((a,b) => (b.createdAt?.toMillis() || Date.now()) - (a.createdAt?.toMillis() || Date.now()));
   }, [submissions]);
   
   const handleCreate = () => {
