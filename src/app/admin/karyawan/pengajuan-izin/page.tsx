@@ -5,7 +5,7 @@ import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/providers/auth-provider';
 import { MENU_CONFIG } from '@/lib/menu-config';
-import { PengajuanIzinClient } from '@/components/dashboard/karyawan/PengajuanIzinClient';
+import { PermissionSubmissionClient } from '@/components/dashboard/karyawan/PermissionSubmissionClient';
 
 export default function PengajuanIzinPage() {
   const { userProfile } = useAuth();
@@ -24,7 +24,7 @@ export default function PengajuanIzinPage() {
 
   return (
     <DashboardLayout pageTitle="Pengajuan Izin" menuConfig={menuConfig}>
-      <PengajuanIzinClient />
+      <PermissionSubmissionClient />
     </DashboardLayout>
   );
 }
