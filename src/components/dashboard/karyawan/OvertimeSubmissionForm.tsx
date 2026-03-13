@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, PlusCircle, Trash2, Send, ArrowRight } from 'lucide-react';
+import { Loader2, PlusCircle, Trash2, Send } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { useFirestore, setDocumentNonBlocking } from '@/firebase';
 import { doc, serverTimestamp, Timestamp, collection } from 'firebase/firestore';
@@ -89,9 +89,7 @@ export function OvertimeSubmissionForm({ open, onOpenChange, submission, employe
     }
 
     let finalPositionTitle = '-';
-    if (employeeProfile?.positionTitle) {
-      finalPositionTitle = employeeProfile.positionTitle;
-    } else if (userProfile?.positionTitle) {
+    if (userProfile?.positionTitle) {
       finalPositionTitle = userProfile.positionTitle;
     } else if (userProfile?.isDivisionManager && userProfile.managedDivision) {
       finalPositionTitle = `Manager Divisi ${userProfile.managedDivision}`;
@@ -271,10 +269,10 @@ export function OvertimeSubmissionForm({ open, onOpenChange, submission, employe
                 <div className="space-y-3">
                     {fields.map((field, index) => (
                         <div key={field.id} className="grid grid-cols-12 gap-2 items-start">
-                            <FormField control={form.control} name={`tasks.${index}.description`} render={({ field }) => (<FormItem className="col-span-12 md:col-span-6"><FormControl><Textarea rows={1} placeholder="Uraian tugas..." {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                            <FormField control={form.control} name={`tasks.${index}.description`} render={({ field }) => (<FormItem className="col-span-12 md:col-span-5"><FormControl><Textarea rows={1} placeholder="Uraian tugas..." {...field} /></FormControl><FormMessage /></FormItem>)}/>
                             <FormField control={form.control} name={`tasks.${index}.estimatedMinutes`} render={({ field }) => (<FormItem className="col-span-5 md:col-span-2"><FormControl><Input type="number" placeholder="Estimasi (mnt)" {...field} /></FormControl><FormMessage /></FormItem>)}/>
                             <FormField control={form.control} name={`tasks.${index}.actualMinutes`} render={({ field }) => (<FormItem className="col-span-4 md:col-span-2"><FormControl><Input type="number" placeholder="Aktual (mnt)" {...field} /></FormControl><FormMessage /></FormItem>)}/>
-                            <FormField control={form.control} name={`tasks.${index}.output`} render={({ field }) => (<FormItem className="col-span-11 md:col-span-1"><FormControl><Input placeholder="Hasil/Link" {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                            <FormField control={form.control} name={`tasks.${index}.output`} render={({ field }) => (<FormItem className="col-span-11 md:col-span-2"><FormControl><Input placeholder="Hasil/Link" {...field} /></FormControl><FormMessage /></FormItem>)}/>
                             <Button type="button" variant="ghost" size="icon" className="col-span-1" onClick={() => remove(index)}><Trash2 className="h-4 w-4" /></Button>
                         </div>
                     ))}
@@ -291,7 +289,7 @@ export function OvertimeSubmissionForm({ open, onOpenChange, submission, employe
           </form>
         </Form>
         </div>
-        <DialogFooter className="flex-shrink-0 p-6 pt-6 border-t">
+        <DialogFooter className="p-6 pt-6 border-t flex-shrink-0">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Batal</Button>
           <Button type="submit" form="overtime-form" disabled={isSaving}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
