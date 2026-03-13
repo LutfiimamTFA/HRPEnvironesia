@@ -91,13 +91,10 @@ export function useCollection<T = any>(
 
     setIsLoading(true);
     setError(null);
-    let isListenerActive = true;
 
-    // Directly use memoizedTargetRefOrQuery as it's assumed to be the final query
     const unsubscribe = onSnapshot(
       memoizedTargetRefOrQuery,
       (snapshot: QuerySnapshot<DocumentData>) => {
-        if (!isListenerActive) return;
         const results: ResultItemType[] = [];
         for (const doc of snapshot.docs) {
           results.push({ ...(doc.data() as T), id: doc.id });
@@ -107,9 +104,6 @@ export function useCollection<T = any>(
         setIsLoading(false);
       },
       (error: FirestoreError) => {
-        if (!isListenerActive) return;
-        isListenerActive = false;
-
         const path: string =
           memoizedTargetRefOrQuery.type === 'collection'
             ? (memoizedTargetRefOrQuery as CollectionReference).path
@@ -136,12 +130,7 @@ export function useCollection<T = any>(
       }
     );
 
-    return () => {
-      if (isListenerActive) {
-        unsubscribe();
-      }
-      isListenerActive = false;
-    };
+    return () => unsubscribe();
   }, [memoizedTargetRefOrQuery]); // Re-run if the target query/reference changes.
   
   if(memoizedTargetRefOrQuery && (memoizedTargetRefOrQuery as any).__memo !== true) {
