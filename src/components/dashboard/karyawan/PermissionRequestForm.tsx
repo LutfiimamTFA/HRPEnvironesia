@@ -15,7 +15,7 @@ import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { useFirestore, setDocumentNonBlocking } from '@/firebase';
 import { doc, serverTimestamp, Timestamp, collection, writeBatch } from 'firebase/firestore';
-import type { PermissionRequest, UserProfile, EmployeeProfile, Brand, PermissionType, PERMISSION_TYPES } from '@/lib/types';
+import { PERMISSION_TYPES, type PermissionRequest, type UserProfile, type EmployeeProfile, type Brand, type PermissionType } from '@/lib/types';
 import { GoogleDatePicker } from '@/components/ui/google-date-picker';
 import { format, differenceInMinutes, set, addDays, startOfDay, endOfDay } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
@@ -172,6 +172,8 @@ export function PermissionRequestForm({ open, onOpenChange, submission, employee
         setIsSaving(false);
     }
   };
+
+  const isReadOnly = submission && submission.status !== 'draft' && !submission.status.startsWith('revision');
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
