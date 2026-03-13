@@ -113,7 +113,7 @@ export function OvertimeSubmissionForm({ open, onOpenChange, submission, employe
           break;
       }
       
-      const divisionName = employeeProfile?.division || userProfile?.division;
+      const divisionName = employeeProfile?.division || userProfile?.managedDivision || userProfile?.division;
       if (divisionName) {
         finalPositionTitle = `${baseTitle} ${divisionName}`;
       } else {
@@ -128,7 +128,7 @@ export function OvertimeSubmissionForm({ open, onOpenChange, submission, employe
         fullName: userProfile?.fullName || '',
         employmentStatus: statusLabel,
         brandName: employeeProfile?.brandName || (singleBrandId ? brandMap.get(singleBrandId) : 'N/A'),
-        division: employeeProfile?.division || userProfile?.managedDivision || 'N/A',
+        division: employeeProfile?.division || userProfile?.managedDivision || userProfile?.division || 'N/A',
         positionTitle: finalPositionTitle,
     }
   }, [userProfile, employeeProfile, brands]);
@@ -189,7 +189,7 @@ export function OvertimeSubmissionForm({ open, onOpenChange, submission, employe
         ...values,
         date: Timestamp.fromDate(values.date),
         totalDurationMinutes: totalDuration,
-        status: 'pending_manager',
+        status: userProfile.isDivisionManager ? 'pending_hrd' : 'pending_manager',
         updatedAt: serverTimestamp() as Timestamp,
       };
 
@@ -216,17 +216,17 @@ export function OvertimeSubmissionForm({ open, onOpenChange, submission, employe
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle>{mode} Pengajuan Lembur</DialogTitle>
+      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0">
+        <DialogHeader className="p-6 pb-2">
+          <DialogTitle>{mode === 'create' ? 'Buat Pengajuan Lembur' : 'Edit Pengajuan Lembur'}</DialogTitle>
           <DialogDescription>
-            Isi semua detail yang diperlukan untuk pengajuan lembur.
+            Lengkapi informasi berikut untuk mengajukan lembur.
           </DialogDescription>
         </DialogHeader>
-        <div className="flex-grow overflow-y-auto pr-2 -mr-6 pl-1">
+        <div className="flex-grow overflow-y-auto px-6">
         <Form {...form}>
-          <form id="overtime-form" onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6 pr-4 py-4">
-            <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <form id="overtime-form" onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8 py-4">
+            <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="p-4 border rounded-lg space-y-2 text-sm">
                     <p className="text-muted-foreground">Nama: <span className="font-semibold text-foreground">{displayInfo.fullName}</span></p>
                     <p className="text-muted-foreground">Status: <span className="font-semibold text-foreground">{displayInfo.employmentStatus}</span></p>
@@ -234,31 +234,31 @@ export function OvertimeSubmissionForm({ open, onOpenChange, submission, employe
                     <p className="text-muted-foreground">Divisi: <span className="font-semibold text-foreground">{displayInfo.division}</span></p>
                     <p className="text-muted-foreground">Jabatan: <span className="font-semibold text-foreground">{displayInfo.positionTitle}</span></p>
                 </div>
-                <div className="p-4 border rounded-lg space-y-2 text-sm">
-                    <p className="text-muted-foreground">Total Durasi:</p>
-                    <p className="font-bold text-2xl">{totalDuration > 0 ? `${totalDuration} menit` : '-'}</p>
+                <div className="p-4 border rounded-lg space-y-2 text-sm flex flex-col items-center justify-center">
+                    <p className="text-muted-foreground">Total Estimasi Durasi:</p>
+                    <p className="font-bold text-4xl">{totalDuration > 0 ? `${totalDuration} menit` : '-'}</p>
                 </div>
             </section>
             
-             <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+             <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <FormField control={form.control} name="date" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>Tanggal Lembur</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>)}/>
                 <FormField control={form.control} name="startTime" render={({ field }) => (<FormItem><FormLabel>Jam Mulai</FormLabel><FormControl><Input type="time" {...field} /></FormControl><FormMessage /></FormItem>)}/>
                 <FormField control={form.control} name="endTime" render={({ field }) => (<FormItem><FormLabel>Jam Selesai</FormLabel><FormControl><Input type="time" {...field} /></FormControl><FormMessage /></FormItem>)}/>
              </section>
-             <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+             <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
                  <FormField control={form.control} name="overtimeType" render={({ field }) => (<FormItem><FormLabel>Tipe Lembur</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Pilih tipe" /></SelectTrigger></FormControl><SelectContent><SelectItem value="hari_kerja">Hari Kerja</SelectItem><SelectItem value="hari_libur">Hari Libur</SelectItem><SelectItem value="urgent">Urgent</SelectItem></SelectContent></Select><FormMessage /></FormItem>)}/>
                  <FormField control={form.control} name="location" render={({ field }) => (<FormItem><FormLabel>Lokasi Kerja</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Pilih lokasi" /></SelectTrigger></FormControl><SelectContent><SelectItem value="kantor">Kantor</SelectItem><SelectItem value="remote">Remote</SelectItem><SelectItem value="site">Site/Lokasi Klien</SelectItem></SelectContent></Select><FormMessage /></FormItem>)}/>
              </section>
 
-             <section>
+             <section className="space-y-4">
                 <FormLabel>Rincian Pekerjaan</FormLabel>
-                <div className="mt-2 space-y-2">
+                <div className="space-y-3">
                     {fields.map((field, index) => (
                         <div key={field.id} className="grid grid-cols-12 gap-2 items-start">
-                            <FormField control={form.control} name={`tasks.${index}.description`} render={({ field }) => (<FormItem className="col-span-6"><FormControl><Textarea rows={1} placeholder="Uraian tugas..." {...field} /></FormControl><FormMessage /></FormItem>)}/>
-                            <FormField control={form.control} name={`tasks.${index}.estimatedMinutes`} render={({ field }) => (<FormItem className="col-span-2"><FormControl><Input type="number" placeholder="Estimasi" {...field} /></FormControl><FormMessage /></FormItem>)}/>
-                            <FormField control={form.control} name={`tasks.${index}.actualMinutes`} render={({ field }) => (<FormItem className="col-span-2"><FormControl><Input type="number" placeholder="Aktual" {...field} /></FormControl><FormMessage /></FormItem>)}/>
-                            <FormField control={form.control} name={`tasks.${index}.output`} render={({ field }) => (<FormItem className="col-span-1"><FormControl><Input placeholder="Hasil/Link" {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                            <FormField control={form.control} name={`tasks.${index}.description`} render={({ field }) => (<FormItem className="col-span-12 md:col-span-6"><FormControl><Textarea rows={1} placeholder="Uraian tugas..." {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                            <FormField control={form.control} name={`tasks.${index}.estimatedMinutes`} render={({ field }) => (<FormItem className="col-span-5 md:col-span-2"><FormControl><Input type="number" placeholder="Estimasi (mnt)" {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                            <FormField control={form.control} name={`tasks.${index}.actualMinutes`} render={({ field }) => (<FormItem className="col-span-4 md:col-span-2"><FormControl><Input type="number" placeholder="Aktual (mnt)" {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                            <FormField control={form.control} name={`tasks.${index}.output`} render={({ field }) => (<FormItem className="col-span-11 md:col-span-1"><FormControl><Input placeholder="Hasil/Link" {...field} /></FormControl><FormMessage /></FormItem>)}/>
                             <Button type="button" variant="ghost" size="icon" className="col-span-1" onClick={() => remove(index)}><Trash2 className="h-4 w-4" /></Button>
                         </div>
                     ))}
@@ -275,7 +275,7 @@ export function OvertimeSubmissionForm({ open, onOpenChange, submission, employe
           </form>
         </Form>
         </div>
-        <DialogFooter className="border-t p-6">
+        <DialogFooter className="flex-shrink-0 p-6 pt-6 border-t">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Batal</Button>
           <Button type="submit" form="overtime-form" disabled={isSaving}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
