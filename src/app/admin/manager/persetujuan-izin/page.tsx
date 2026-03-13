@@ -5,7 +5,7 @@ import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/providers/auth-provider';
 import { MENU_CONFIG } from '@/lib/menu-config';
-import { PersetujuanIzinClient } from '@/components/dashboard/approvals/PersetujuanIzinClient';
+import { PermissionApprovalClient } from '@/components/dashboard/approvals/PermissionApprovalClient';
 import { useRouter } from 'next/navigation';
 
 export default function PersetujuanIzinManagerPage() {
@@ -48,7 +48,7 @@ export default function PersetujuanIzinManagerPage() {
 
   return (
     <DashboardLayout pageTitle="Persetujuan Izin Tim" menuConfig={menuConfig}>
-      <PersetujuanIzinClient mode="manager" />
+      <PermissionApprovalClient mode="manager" />
     </DashboardLayout>
   );
 }

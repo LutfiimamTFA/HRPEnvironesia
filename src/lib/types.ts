@@ -830,6 +830,7 @@ export type PermissionRequest = {
     endDate: Timestamp;
     totalDurationMinutes: number;
     attachments?: string[];
+    attachmentStatus?: 'provided' | 'not_provided' | 'verification_needed';
     status: PermissionRequestStatus;
     managerUid?: string;
     managerNotes?: string | null;

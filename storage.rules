@@ -9,6 +9,12 @@ service firebase.storage {
       allow delete: if false;
     }
     
+    // Allow user to write their own permission attachments. Any authenticated user can read.
+    match /permission-attachments/{userId}/{permissionId}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
     // Rules for job-related files
     match /jobs/{jobId}/{allPaths=**} {
       // Allow public read for job cover images
