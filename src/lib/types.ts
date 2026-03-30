@@ -45,48 +45,79 @@ export type UserProfile = {
 export type EmployeeProfile = {
   id?: string;
   uid: string;
+  
+  // --- Kepegawaian (HR Managed) ---
   employmentType: 'magang' | 'training' | 'karyawan';
-  internSubtype?: 'intern_education' | 'intern_pre_probation';
+  employmentStatus?: 'active' | 'probation' | 'resigned' | 'terminated';
+  employeeNumber?: string;
+  joinDate?: Timestamp;
+  positionTitle: string;
+  division: string;
+  brandId: string;
+  brandName: string;
+  workLocation?: string; // Office Site ID or 'Remote'
+  managerUid?: string;
+  managerName?: string;
+  
+  // --- Identitas (User Managed) ---
   fullName: string;
   nickName?: string;
   phone: string;
   email: string;
+  nik?: string;
   gender?: 'Laki-laki' | 'Perempuan' | 'Lainnya';
   birthPlace?: string;
   birthDate?: string; // YYYY-MM-DD
-  addressCurrent: string;
-  schoolOrCampus: string;
-  major?: string;
-  educationLevel: 'SMA/SMK' | 'D3' | 'S1' | 'S2' | 'Lainnya';
-  expectedEndDate?: string; // YYYY-MM-DD
-  internshipStartDate?: Timestamp | null;
-  internshipEndDate?: Timestamp | null;
+  maritalStatus?: 'Belum Kawin' | 'Kawin' | 'Cerai Hidup' | 'Cerai Mati';
+  religion?: string;
+  address?: Address;
+
+  // --- Administrasi (User Managed) ---
+  bankName?: string;
+  bankAccountNumber?: string;
+  bankAccountHolderName?: string;
+  npwp?: string;
+  bpjsKesehatan?: string;
+  bpjsKetenagakerjaan?: string;
   emergencyContactName: string;
   emergencyContactRelation: string;
   emergencyContactPhone: string;
+  
+  // --- Dokumen ---
   documents?: {
-    idCardUrl?: string;
-    studentCardUrl?: string;
+    photoUrl?: string;
+    ktpUrl?: string;
+    kkUrl?: string;
+    npwpUrl?: string;
+    bankProofUrl?: string;
+    ijazahUrl?: string;
     cvUrl?: string;
+    certificateUrls?: string[];
   };
+
+  // --- Legacy Intern Fields (To be integrated or phased out) ---
+  internSubtype?: 'intern_education' | 'intern_pre_probation';
+  schoolOrCampus?: string;
+  major?: string;
+  educationLevel?: 'SMA/SMK' | 'D3' | 'S1' | 'S2' | 'Lainnya';
+  expectedEndDate?: string;
+  internshipStartDate?: Timestamp | null;
+  internshipEndDate?: Timestamp | null;
+
+  // --- Metadata ---
   completeness?: {
     isComplete: boolean;
     completedAt?: Timestamp;
   };
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
-
-  // Fields managed by HR
-  division?: string;
   supervisorUid?: string;
   supervisorName?: string;
   hrdNotes?: string;
   compensationAmount?: number;
   contractDurationMonths?: number;
-  brandId?: string | string[];
-  brandName?: string;
-  positionTitle?: string;
 };
+
 
 export type Brand = {
   id?: string;
@@ -820,7 +851,7 @@ export const PERMISSION_REQUEST_STATUSES = [
 ] as const;
 export type PermissionRequestStatus = (typeof PERMISSION_REQUEST_STATUSES)[number];
 
-export const PERMISSION_TYPES = ["tidak_masuk", "keluar_kantor", "sakit", "cuti"] as const;
+export const PERMISSION_TYPES = ["tidak_masuk", "keluar_kantor", "sakit", "cuti", "duka", "akademik", "lainnya"] as const;
 export type PermissionType = (typeof PERMISSION_TYPES)[number];
 
 
@@ -872,13 +903,27 @@ export type PermissionRequest = {
     // Review Notes
     managerReviewNote?: string | null;
     hrdReviewNote?: string | null;
+
+    // --- Jenis Izin Spesifik ---
+    // Izin Sakit
+    sicknessDescription?: string;
+
+    // Izin Duka
+    familyRelation?: string;
+    
+    // Izin Akademik
+    academicActivityName?: string;
+    academicInstitution?: string;
+
+    // Izin Lainnya
+    otherLeaveTitle?: string;
 };
 
 /**
  * Helper to check if a submission (Overtime or Permission) is in a final status.
  */
 export function isFinalStatus(status: string): boolean {
-  return ['approved', 'rejected_manager', 'rejected_hrd', 'verified_manager'].includes(status);
+  return ['approved', 'rejected_manager', 'rejected_hrd', 'verified_manager', 'closed'].includes(status);
 }
 
 /**
@@ -899,11 +944,8 @@ export function isActionableStatus(status: string, mode: 'manager' | 'hrd'): boo
   
   if (mode === 'hrd') {
     // HRD can act on items approved by manager or pending hrd review
-    // Office exits DO NOT go to HRD, so we don't handle reported/returned/verified_manager here
-    return status === 'pending_hrd' || status === 'approved_by_manager' || status === 'revision_hrd';
+    return status === 'pending_hrd' || status === 'approved_by_manager' || status === 'revision_hrd' || status === 'verified_manager';
   }
   
   return false;
 }
-
-
