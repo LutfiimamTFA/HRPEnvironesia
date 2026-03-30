@@ -373,7 +373,7 @@ service cloud.firestore {
 
       allow create: if isInternal() && isRequester();
 
-      allow update: if isSignedIn() && isSubmissionOwner() && (resource.data.status in ['draft'] || resource.data.status.startsWith('revision_'));
+      allow update: if isSignedIn() && isSubmissionOwner();
       allow update: if isSignedIn() && isReportingReturn();
       allow update: if isSignedIn() && isAssignedManager(resource.data) && (resource.data.status in ['pending_manager', 'reported', 'returned']);
       allow update: if isSignedIn() && isHrd() && (resource.data.status in ['pending_hrd', 'approved_by_manager', 'verified_manager']);

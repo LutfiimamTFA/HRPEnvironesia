@@ -5,25 +5,19 @@ import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/providers/auth-provider';
 import { MENU_CONFIG } from '@/lib/menu-config';
-import { PersetujuanIzinClient } from '@/components/dashboard/approvals/PersetujuanIzinClient';
+import { PermissionApprovalClient } from '@/components/dashboard/approvals/PermissionApprovalClient';
 
 export default function PersetujuanIzinHrdPage() {
   const { userProfile } = useAuth();
   const hasAccess = useRoleGuard(['hrd', 'super-admin']);
 
-  const menuConfig = useMemo(() => {
-    if (userProfile?.role === 'super-admin') return MENU_CONFIG['super-admin'];
-    if (userProfile?.role === 'hrd') return MENU_CONFIG['hrd'];
-    return [];
-  }, [userProfile]);
-
   if (!hasAccess) {
-    return <DashboardLayout pageTitle="Persetujuan Izin" menuConfig={menuConfig}><Skeleton className="h-[600px] w-full" /></DashboardLayout>;
+    return <DashboardLayout pageTitle="Persetujuan Izin"><Skeleton className="h-[600px] w-full" /></DashboardLayout>;
   }
 
   return (
-    <DashboardLayout pageTitle="Persetujuan & Monitoring Izin" menuConfig={menuConfig}>
-      <PersetujuanIzinClient mode="hrd" />
+    <DashboardLayout pageTitle="Persetujuan & Monitoring Izin">
+      <PermissionApprovalClient mode="hrd" />
     </DashboardLayout>
   );
 }

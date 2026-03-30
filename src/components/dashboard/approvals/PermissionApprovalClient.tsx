@@ -26,8 +26,10 @@ export function PermissionApprovalClient({ mode }: PermissionApprovalClientProps
     const { userProfile } = useAuth();
     const firestore = useFirestore();
 
-    const [statusFilter, setStatusFilter] = useState<PermissionRequest['status'] | 'all' | 'pending'>(mode === 'manager' ? 'pending' : 'pending_hrd');
+    const [statusFilter, setStatusFilter] = useState<PermissionRequest['status'] | 'all' | 'pending'>(mode === 'manager' ? 'pending' : 'pending');
     const [searchTerm, setSearchTerm] = useState('');
+    const [brandFilter, setBrandFilter] = useState<string>('all');
+    const [divisionFilter, setDivisionFilter] = useState<string>('all');
     const [selectedSubmission, setSelectedSubmission] = useState<PermissionRequest | null>(null);
 
     const submissionsQuery = useMemoFirebase(() => {
@@ -44,6 +46,19 @@ export function PermissionApprovalClient({ mode }: PermissionApprovalClientProps
     }, [userProfile, firestore, mode]);
 
     const { data: submissions, isLoading, mutate } = useCollection<PermissionRequest>(submissionsQuery);
+
+    const { data: brandsList } = useCollection<Brand>(
+        useMemoFirebase(() => collection(firestore, 'brands'), [firestore])
+    );
+
+    const availableDivisions = useMemo(() => {
+        if (!submissions) return [];
+        const divisions = new Set<string>();
+        submissions.forEach(s => {
+            if (s.division) divisions.add(s.division);
+        });
+        return Array.from(divisions).sort();
+    }, [submissions]);
     
     const filteredSubmissions = useMemo(() => {
         if (!submissions) return [];
@@ -54,7 +69,7 @@ export function PermissionApprovalClient({ mode }: PermissionApprovalClientProps
                     if (mode === 'manager') {
                         statusMatch = s.status === 'pending_manager' || s.status === 'reported' || s.status === 'returned';
                     } else {
-                        statusMatch = s.status === 'pending_hrd' || s.status === 'approved_by_manager';
+                        statusMatch = s.status === 'pending_hrd' || s.status === 'approved_by_manager' || s.status === 'verified_manager';
                     }
                 } else if (mode === 'hrd' && statusFilter === 'pending_hrd') {
                     statusMatch = s.status === 'pending_hrd' || s.status === 'approved_by_manager';
@@ -64,10 +79,13 @@ export function PermissionApprovalClient({ mode }: PermissionApprovalClientProps
             }
             if (!statusMatch) return false;
 
+            if (brandFilter !== 'all' && s.brandId !== brandFilter) return false;
+            if (divisionFilter !== 'all' && s.division !== divisionFilter) return false;
+
             if (searchTerm && !s.fullName.toLowerCase().includes(searchTerm.toLowerCase())) return false;
             return true;
         }).sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
-    }, [submissions, statusFilter, searchTerm, mode]);
+    }, [submissions, statusFilter, searchTerm, mode, brandFilter, divisionFilter]);
 
     const kpis = useMemo(() => {
       if (!submissions) return { pending: 0, revision: 0, approved: 0, rejected: 0 };
@@ -123,10 +141,32 @@ export function PermissionApprovalClient({ mode }: PermissionApprovalClientProps
                             <CardTitle>Antrian Persetujuan Izin</CardTitle>
                             <CardDescription>Tinjau pengajuan izin dari tim Anda.</CardDescription>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                            {mode === 'hrd' && (
+                                <>
+                                    <Select value={brandFilter} onValueChange={setBrandFilter}>
+                                        <SelectTrigger className="w-full sm:w-[150px]"><SelectValue placeholder="Semua Brand" /></SelectTrigger>
+                                        <SelectContent side="bottom" avoidCollisions={false}>
+                                            <SelectItem value="all">Semua Brand</SelectItem>
+                                            {brandsList?.map((b: Brand) => (
+                                                <SelectItem key={b.id} value={b.id!}>{b.name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <Select value={divisionFilter} onValueChange={setDivisionFilter}>
+                                        <SelectTrigger className="w-full sm:w-[150px]"><SelectValue placeholder="Semua Divisi" /></SelectTrigger>
+                                        <SelectContent side="bottom" avoidCollisions={false}>
+                                            <SelectItem value="all">Semua Divisi</SelectItem>
+                                            {availableDivisions.map(d => (
+                                                <SelectItem key={d} value={d}>{d}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </>
+                            )}
                            <Select value={statusFilter} onValueChange={(val) => setStatusFilter(val as any)}>
-                                <SelectTrigger className="w-full sm:w-[220px]"><SelectValue placeholder="All Statuses" /></SelectTrigger>
-                                <SelectContent>
+                                <SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="All Statuses" /></SelectTrigger>
+                                <SelectContent side="bottom" avoidCollisions={false}>
                                     <SelectItem value="all">Semua Status</SelectItem>
                                     <SelectItem value="pending" className="font-bold">Butuh Tindakan</SelectItem>
                                     {PERMISSION_REQUEST_STATUSES.map(s => (
@@ -134,7 +174,7 @@ export function PermissionApprovalClient({ mode }: PermissionApprovalClientProps
                                     ))}
                                 </SelectContent>
                             </Select>
-                            <div className="relative flex-grow min-w-[200px]"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" /><Input placeholder="Cari nama..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-8" /></div>
+                            <div className="relative flex-grow min-w-[150px]"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" /><Input placeholder="Cari nama..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-8" /></div>
                         </div>
                     </div>
                 </CardHeader>
@@ -148,7 +188,7 @@ export function PermissionApprovalClient({ mode }: PermissionApprovalClientProps
                                     <TableRow key={s.id}>
                                         <TableCell>
                                             <div className="font-medium">{s.fullName}</div>
-                                            <div className="text-xs text-muted-foreground">{s.positionTitle}</div>
+                                            <div className="text-xs text-muted-foreground">{s.positionTitle === 'N/A' ? 'Anggota Tim' : s.positionTitle}</div>
                                         </TableCell>
                                         <TableCell className="capitalize">{s.type.replace(/_/g, ' ')}</TableCell>
                                         <TableCell>{format(s.startDate.toDate(), 'dd MMM yyyy', { locale: idLocale })}</TableCell>

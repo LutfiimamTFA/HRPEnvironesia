@@ -128,9 +128,25 @@ export function PermissionRequestForm({ open, onOpenChange, submission, employee
   const isCreating = !submission;
   const mode = isCreating ? 'Buat' : (isEditing ? 'Edit' : 'Detail');
 
+  const defaultTimes = useMemo(() => {
+    const now = new Date();
+    const fourHoursLater = new Date(now.getTime() + 4 * 60 * 60 * 1000);
+    return {
+        start: format(now, 'HH:mm'),
+        end: format(fourHoursLater, 'HH:mm')
+    };
+  }, []);
+
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: { type: 'tidak_masuk', reason: '', startDate: new Date(), endDate: new Date(), startTime: '09:00', endTime: '17:00' }
+    defaultValues: { 
+        type: 'tidak_masuk', 
+        reason: '', 
+        startDate: new Date(), 
+        endDate: new Date(), 
+        startTime: defaultTimes.start, 
+        endTime: defaultTimes.end 
+    }
   });
 
   const selectedType = form.watch('type');
@@ -174,8 +190,8 @@ export function PermissionRequestForm({ open, onOpenChange, submission, employee
                 type: 'tidak_masuk',
                 startDate: new Date(),
                 endDate: new Date(),
-                startTime: '09:00',
-                endTime: '17:00',
+                startTime: defaultTimes.start,
+                endTime: defaultTimes.end,
                 reason: '',
             });
         } else {
@@ -228,7 +244,7 @@ export function PermissionRequestForm({ open, onOpenChange, submission, employee
             fullName: userProfile.fullName,
             brandId: Array.isArray(employeeProfile.brandId) ? employeeProfile.brandId[0] : (employeeProfile.brandId || ''),
             division: employeeProfile.division || 'N/A',
-            positionTitle: employeeProfile.positionTitle || 'N/A',
+            positionTitle: employeeProfile.positionTitle || (userProfile.employmentType === 'magang' ? 'Magang' : 'Karyawan'),
             type: values.type,
             reason: values.reason,
             startDate: Timestamp.fromDate(startDate),
@@ -236,8 +252,8 @@ export function PermissionRequestForm({ open, onOpenChange, submission, employee
             totalDurationMinutes: totalDurationMinutes,
             attachments: attachmentUrl ? [attachmentUrl] : [],
             status: initialStatus,
-            managerUid: employeeProfile.supervisorUid || undefined,
-            reportedExitAt: isOfficeExit ? serverTimestamp() as any : undefined,
+            managerUid: employeeProfile.supervisorUid || null,
+            reportedExitAt: isOfficeExit ? serverTimestamp() as any : null,
         };
 
         await setDocumentNonBlocking(docRef, { ...payload, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }, { merge: true });

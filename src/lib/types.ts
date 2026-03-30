@@ -791,12 +791,12 @@ export type OvertimeSubmission = {
     employeeNotes?: string | null;
     attachments?: string[];
     status: OvertimeSubmissionStatus;
-    managerUid?: string;
+    managerUid?: string | null;
     managerNotes?: string | null;
-    managerDecisionAt?: Timestamp;
-    hrdReviewerUid?: string;
+    managerDecisionAt?: Timestamp | null;
+    hrdReviewerUid?: string | null;
     hrdNotes?: string | null;
-    hrdDecisionAt?: Timestamp;
+    hrdDecisionAt?: Timestamp | null;
     createdAt: Timestamp;
     updatedAt: Timestamp;
 }
@@ -839,19 +839,19 @@ export type PermissionRequest = {
     attachments?: string[];
     attachmentStatus?: 'provided' | 'not_provided' | 'verification_needed';
     status: PermissionRequestStatus;
-    managerUid?: string;
+    managerUid?: string | null;
     managerNotes?: string | null;
-    managerDecisionAt?: Timestamp;
-    hrdReviewerUid?: string;
+    managerDecisionAt?: Timestamp | null;
+    hrdReviewerUid?: string | null;
     hrdNotes?: string | null;
-    hrdDecisionAt?: Timestamp;
+    hrdDecisionAt?: Timestamp | null;
     createdAt: Timestamp;
     updatedAt: Timestamp;
 
     // Specific to 'keluar_kantor'
-    reportedExitAt?: Timestamp; // timestamp when they click "Report Exit"
-    returnTapInAt?: Timestamp; // timestamp from the next tap_in event
-    expectedReturnAt?: Timestamp; // optional estimation
+    reportedExitAt?: Timestamp | null; // timestamp when they click "Report Exit"
+    returnTapInAt?: Timestamp | null; // timestamp from the next tap_in event
+    expectedReturnAt?: Timestamp | null; // optional estimation
 };
 
 /**
