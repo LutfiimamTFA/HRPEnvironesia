@@ -80,8 +80,11 @@ export type EmployeeProfile = {
   bankName?: string;
   bankAccountNumber?: string;
   bankAccountHolderName?: string;
+  hasNpwp?: boolean;
   npwp?: string;
+  hasBpjsKesehatan?: boolean;
   bpjsKesehatan?: string;
+  hasBpjsKetenagakerjaan?: boolean;
   bpjsKetenagakerjaan?: string;
   emergencyContactName: string;
   emergencyContactRelation: string;
@@ -398,7 +401,7 @@ export type Certification = {
     organization: string;
     issueDate: string; // Storing as YYYY-MM
     expirationDate?: string; // Storing as YYYY-MM
-}
+};
 
 export type Address = {
     street: string;
@@ -946,5 +949,3 @@ export function isActionableStatus(status: string, mode: 'manager' | 'hrd'): boo
   
   return false;
 }
-
-    
