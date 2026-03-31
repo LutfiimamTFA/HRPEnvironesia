@@ -171,6 +171,20 @@ export function EmployeeSelfProfileForm({ initialProfile, onSaveSuccess, onCance
         setIsSaving(false);
     }
   }
+  
+  const onInvalid: (errors: FieldErrors<FormValues>) => void = (errors) => {
+    console.error("Form validation errors:", errors);
+    const firstErrorKey = Object.keys(errors)[0] as keyof FormValues | undefined;
+    if (firstErrorKey) {
+        const readableFieldName = firstErrorKey.replace(/([A-Z])/g, ' $1').replace(/\./g, ' -> ').replace(/^./, str => str.toUpperCase());
+        toast({
+            variant: 'destructive',
+            title: 'Validasi Gagal',
+            description: `Harap periksa kembali isian Anda. Kolom "${readableFieldName}" sepertinya belum valid.`,
+        });
+        form.setFocus(firstErrorKey as any);
+    }
+  };
 
   return (
       <Card>
@@ -180,7 +194,7 @@ export function EmployeeSelfProfileForm({ initialProfile, onSaveSuccess, onCance
         </CardHeader>
         <CardContent>
             <Form {...form}>
-                <form id="employee-self-form" onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8">
+                <form id="employee-self-form" onSubmit={form.handleSubmit(handleSubmit, onInvalid)} className="space-y-8">
                     <section>
                         <h3 className="text-lg font-semibold border-b pb-2 mb-4">Identitas Pribadi</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -197,7 +211,7 @@ export function EmployeeSelfProfileForm({ initialProfile, onSaveSuccess, onCance
                     <Separator/>
 
                     <section className="space-y-4">
-                        <h3 className="text-lg font-semibold border-b pb-2 mb-4">Alamat</h3>
+                        <h3 className="text-lg font-semibold border-b pb-2 mb-4">Alamat Sesuai KTP</h3>
                         <FormField control={form.control} name="address.street" render={({ field }) => (<FormItem><FormLabel>Alamat Lengkap (Jalan, Nomor, Blok)</FormLabel><FormControl><Textarea {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                             <FormField control={form.control} name="address.rt" render={({ field }) => (<FormItem><FormLabel>RT</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
@@ -214,19 +228,22 @@ export function EmployeeSelfProfileForm({ initialProfile, onSaveSuccess, onCance
 
                     <section className="space-y-4">
                         <h3 className="text-lg font-semibold border-b pb-2 mb-4">Administrasi Personal</h3>
-                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <FormField control={form.control} name="nik" render={({ field }) => (<FormItem><FormLabel>Nomor KTP (NIK)*</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
-                            <div className="space-y-4">
+                         <div className="space-y-6">
+                            <FormField control={form.control} name="nik" render={({ field }) => (<FormItem><FormLabel>Nomor KTP (NIK)*</FormLabel><FormControl><Input {...field} maxLength={16} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                            
+                            <div className="space-y-2 p-4 border rounded-md">
                                 <FormField control={form.control} name="hasNpwp" render={({ field }) => (<FormItem className="flex flex-row items-center space-x-3"><FormControl><Checkbox checked={!!field.value} onCheckedChange={field.onChange} /></FormControl><FormLabel>Saya memiliki NPWP</FormLabel></FormItem>)} />
-                                {hasNpwp && <FormField control={form.control} name="npwp" render={({ field }) => (<FormItem><FormControl><Input {...field} placeholder="Nomor NPWP" value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />}
+                                {hasNpwp && <FormField control={form.control} name="npwp" render={({ field }) => (<FormItem><FormLabel>Nomor NPWP*</FormLabel><FormControl><Input {...field} placeholder="Masukkan nomor NPWP Anda" value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />}
                             </div>
-                            <div className="space-y-4">
+                            
+                            <div className="space-y-2 p-4 border rounded-md">
                                 <FormField control={form.control} name="hasBpjsKesehatan" render={({ field }) => (<FormItem className="flex flex-row items-center space-x-3"><FormControl><Checkbox checked={!!field.value} onCheckedChange={field.onChange} /></FormControl><FormLabel>Saya memiliki BPJS Kesehatan</FormLabel></FormItem>)} />
-                                {hasBpjsKesehatan && <FormField control={form.control} name="bpjsKesehatan" render={({ field }) => (<FormItem><FormControl><Input {...field} placeholder="Nomor BPJS Kesehatan" value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />}
+                                {hasBpjsKesehatan && <FormField control={form.control} name="bpjsKesehatan" render={({ field }) => (<FormItem><FormLabel>Nomor BPJS Kesehatan*</FormLabel><FormControl><Input {...field} placeholder="Nomor BPJS Kesehatan" value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />}
                             </div>
-                             <div className="space-y-4">
+                            
+                            <div className="space-y-2 p-4 border rounded-md">
                                 <FormField control={form.control} name="hasBpjsKetenagakerjaan" render={({ field }) => (<FormItem className="flex flex-row items-center space-x-3"><FormControl><Checkbox checked={!!field.value} onCheckedChange={field.onChange} /></FormControl><FormLabel>Saya memiliki BPJS Ketenagakerjaan</FormLabel></FormItem>)} />
-                                {hasBpjsKetenagakerjaan && <FormField control={form.control} name="bpjsKetenagakerjaan" render={({ field }) => (<FormItem><FormControl><Input {...field} placeholder="Nomor BPJS Ketenagakerjaan" value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />}
+                                {hasBpjsKetenagakerjaan && <FormField control={form.control} name="bpjsKetenagakerjaan" render={({ field }) => (<FormItem><FormLabel>Nomor BPJS Ketenagakerjaan*</FormLabel><FormControl><Input {...field} placeholder="Nomor BPJS Ketenagakerjaan" value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />}
                             </div>
                         </div>
                         <Separator />
@@ -247,7 +264,6 @@ export function EmployeeSelfProfileForm({ initialProfile, onSaveSuccess, onCance
                             <FormField control={form.control} name="emergencyContactPhone" render={({ field }) => (<FormItem><FormLabel>Telepon*</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                         </div>
                     </section>
-
                 </form>
             </Form>
         </CardContent>

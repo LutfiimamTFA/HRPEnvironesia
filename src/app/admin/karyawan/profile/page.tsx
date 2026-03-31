@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { useAuth } from '@/providers/auth-provider';
 import { MENU_CONFIG } from '@/lib/menu-config';
@@ -42,10 +42,29 @@ export default function EmployeeProfilePage() {
   
   const isLoading = authLoading || profileLoading;
 
+  useEffect(() => {
+    // If the profile is still loading, do nothing.
+    if (isLoading) return;
+    
+    // If profile data exists and completeness is false, force edit mode.
+    // If there's no profile data at all, also force edit mode to create it.
+    if (!employeeProfile || !employeeProfile.completeness?.isComplete) {
+      setEditMode(true);
+    }
+  }, [employeeProfile, isLoading]);
+
+
   const handleSaveSuccess = () => {
     setEditMode(false);
     mutate(); // Re-fetch the employee profile data
     refreshUserProfile(); // Re-fetch the user profile in auth context
+  };
+  
+  const handleCancelEdit = () => {
+    // Only allow canceling if the profile was already complete
+    if (employeeProfile?.completeness?.isComplete) {
+      setEditMode(false);
+    }
   };
   
   const initialProfileData = useMemo(() => {
@@ -69,8 +88,8 @@ export default function EmployeeProfilePage() {
       </DashboardLayout>
     );
   }
-
-  // If the employee profile is incomplete, force edit mode.
+  
+  // If the profile is incomplete, force edit mode and don't show display component
   const isProfileIncomplete = !employeeProfile?.completeness?.isComplete;
 
   return (
@@ -79,7 +98,7 @@ export default function EmployeeProfilePage() {
         <EmployeeSelfProfileForm 
           initialProfile={initialProfileData} 
           onSaveSuccess={handleSaveSuccess}
-          onCancel={() => setEditMode(false)}
+          onCancel={handleCancelEdit}
         />
       ) : (
         <EmployeeProfileDisplay

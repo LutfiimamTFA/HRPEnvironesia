@@ -147,10 +147,9 @@ service cloud.firestore {
           let allowedFields = [
             'nickName', 'phone', 'birthPlace', 'birthDate', 'gender', 'maritalStatus', 'religion',
             'address', 'bankName', 'bankAccountNumber', 'bankAccountHolderName',
-            'npwp', 'bpjsKesehatan', 'bpjsKetenagakerjaan',
+            'hasNpwp', 'npwp', 'hasBpjsKesehatan', 'bpjsKesehatan', 'hasBpjsKetenagakerjaan', 'bpjsKetenagakerjaan',
             'emergencyContactName', 'emergencyContactRelation', 'emergencyContactPhone',
-            'documents', 'updatedAt', 'completeness', 'hasNpwp', 'hasBpjsKesehatan', 'hasBpjsKetenagakerjaan',
-            'nik'
+            'documents', 'updatedAt', 'completeness', 'nik'
           ];
           return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedFields);
         }
