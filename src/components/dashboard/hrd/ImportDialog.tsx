@@ -3,44 +3,61 @@
 import { useState, useCallback, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { UploadCloud, Loader2, ArrowRight, Info } from 'lucide-react';
+import { UploadCloud, Loader2, ArrowRight, Info, Edit, FileQuestion } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { FormControl } from '@/components/ui/form';
 
 interface ImportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onImportSuccess: () => void;
 }
 
-const HRP_FIELDS = [
-    { group: "Data Pribadi", value: "fullName", label: "Nama Lengkap", required: true },
-    { group: "Data Pribadi", value: "birthPlace", label: "Tempat Lahir", required: false },
-    { group: "Data Pribadi", value: "birthDate", label: "Tanggal Lahir", required: false },
-    { group: "Data Pribadi", value: "gender", label: "Jenis Kelamin", required: false },
-    { group: "Data Pribadi", value: "maritalStatus", label: "Status Pernikahan", required: false },
-    { group: "Data Pribadi", value: "address", label: "Alamat", required: false },
-    { group: "Data Pribadi", value: "phone", label: "Kontak (No. HP)", required: false },
-    { group: "Data Pribadi", value: "email", label: "Kontak (Email)", required: true },
-    
-    { group: "Informasi Pekerjaan", value: "employeeNumber", label: "Nomor Induk Karyawan (NIK)", required: false },
-    { group: "Informasi Pekerjaan", value: "positionTitle", label: "Jabatan/Posisi", required: true },
-    { group: "Informasi Pekerjaan", value: "division", label: "Departemen/Bagian", required: true },
-    { group: "Informasi Pekerjaan", value: "joinDate", label: "Tanggal Mulai Bekerja (YYYY-MM-DD)", required: false },
-    { group: "Informasi Pekerjaan", value: "employmentType", label: "Jenis Kontrak Kerja", required: true },
-    
-    { group: "Data Administratif", value: "nik", label: "Nomor KTP/SIM", required: false },
-    { group: "Data Administratif", value: "npwp", label: "NPWP", required: false },
-    { group: "Data Administratif", value: "bpjsKesehatan", label: "BPJS Kesehatan", required: false },
-    { group: "Data Administratif", value: "bpjsKetenagakerjaan", label: "BPJS Ketenagakerjaan", required: false },
-    { group: "Data Administratif", value: "bankAccountNumber", label: "Nomor Rekening Bank", required: false },
+type HRPField = {
+    value: string;
+    label: string;
+    required?: boolean;
+};
 
-    // The other sections are likely system-generated or managed elsewhere, so not included in bulk import mapping for now.
-];
+const HRP_FIELD_GROUPS: Record<string, HRPField[]> = {
+    "Data Pribadi": [
+        { value: "fullName", label: "Nama Lengkap", required: true },
+        { value: "birthPlace", label: "Tempat Lahir" },
+        { value: "birthDate", label: "Tanggal Lahir" },
+        { value: "gender", label: "Jenis Kelamin" },
+        { value: "maritalStatus", label: "Status Pernikahan" },
+        { value: "address", label: "Alamat" },
+        { value: "phone", label: "Kontak (No. HP)" },
+        { value: "email", label: "Kontak (Email)", required: true },
+    ],
+    "Informasi Pekerjaan": [
+        { value: "employeeNumber", label: "Nomor Induk Karyawan (NIK)" },
+        { value: "positionTitle", label: "Jabatan/Posisi", required: true },
+        { value: "division", label: "Departemen/Bagian", required: true },
+        { value: "joinDate", label: "Tanggal Mulai Bekerja (YYYY-MM-DD)" },
+        { value: "employmentType", label: "Jenis Kontrak Kerja", required: true },
+        { value: "managerName", label: "Nama Manajer Divisi" },
+    ],
+    "Data Administratif": [
+        { value: "nik", label: "Nomor KTP/SIM", required: false },
+        { value: "npwp", label: "NPWP", required: false },
+        { value: "bpjsKesehatan", label: "Nomor BPJS Kesehatan", required: false },
+        { value: "bpjsKetenagakerjaan", label: "Nomor BPJS Ketenagakerjaan", required: false },
+        { value: "bankAccountNumber", label: "Nomor Rekening Bank", required: false },
+    ],
+    "Pendidikan & Riwayat": [
+        { value: "education", label: "Pendidikan Terakhir" },
+        { value: "certification", label: "Sertifikasi" },
+        { value: "workHistory", label: "Riwayat Karier" },
+    ],
+};
 
+const HRP_FIELDS: HRPField[] = Object.values(HRP_FIELD_GROUPS).flat();
 const REQUIRED_HRP_FIELDS = HRP_FIELDS.filter(f => f.required).map(f => f.value);
 
 const normalizeHeader = (header: string) => header.toLowerCase().replace(/[\s_]+/g, '');
@@ -53,18 +70,19 @@ const suggestMapping = (header: string): string => {
         fullName: ['nama', 'namalengkap', 'fullname'],
         email: ['email', 'emailkantor', 'emailaddress'],
         phone: ['telepon', 'hp', 'nohp', 'phone', 'kontak'],
-        employeeNumber: ['nik', 'nomorinduk', 'nomorkaryawan'],
+        employeeNumber: ['nik', 'nomorinduk', 'nomorkaryawan', 'employeeid'],
         brandName: ['brand', 'perusahaan', 'company'],
         division: ['divisi', 'division', 'departemen', 'department'],
         positionTitle: ['jabatan', 'posisi', 'jabatandikantor', 'position'],
-        managerName: ['manager', 'atasan', 'supervisor'],
-        joinDate: ['join', 'masuk', 'tanggalbergabung', 'joindate'],
+        managerName: ['manager', 'atasan', 'supervisor', 'pic'],
+        joinDate: ['join', 'masuk', 'tanggalbergabung', 'joindate', 'hiredate'],
         employmentStatus: ['status', 'employmentstatus', 'statuskerja'],
-        nik: ['ktp', 'noktp', 'nomorktp'],
+        nik: ['ktp', 'noktp', 'nomorktp', 'identitynumber'],
         npwp: ['npwp', 'nomornpwp'],
         bpjsKesehatan: ['bpjskesehatan'],
         bpjsKetenagakerjaan: ['bpjsketenagakerjaan', 'bpjstk'],
         bankAccountNumber: ['rekening', 'norek', 'bankaccount'],
+        employmentType: ['jenis', 'tipe', 'kontrak', 'type'],
     };
 
     for (const hrpField in keywordMap) {
@@ -78,12 +96,12 @@ const suggestMapping = (header: string): string => {
 };
 
 
-export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
+export function ImportDialog({ open, onOpenChange, onImportSuccess }: ImportDialogProps) {
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [isDragging, setIsDragging] = useState(false);
     const [step, setStep] = useState(1);
     const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
-    const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
+    const [columnMapping, setColumnMapping] = useState<Record<string, string | undefined>>({});
     const { toast } = useToast();
 
     const resetState = () => {
@@ -130,9 +148,10 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
             const headers = firstLine.split(',').map(h => h.trim().replace(/"/g, ''));
             setCsvHeaders(headers);
             
-            const initialMapping: Record<string, string> = {};
+            const initialMapping: Record<string, string | undefined> = {};
             headers.forEach(header => {
-              initialMapping[header] = suggestMapping(header);
+              const suggestion = suggestMapping(header);
+              initialMapping[header] = suggestion || undefined;
             });
             setColumnMapping(initialMapping);
 
@@ -142,7 +161,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
     };
     
     const { mappedRequiredFields, isMappingComplete, mappingSummary } = useMemo(() => {
-        const mappedValues = new Set(Object.values(columnMapping).filter(Boolean));
+        const mappedValues = new Set(Object.values(columnMapping).filter((v): v is string => !!v));
         const requiredCount = REQUIRED_HRP_FIELDS.length;
         const mappedRequiredCount = REQUIRED_HRP_FIELDS.filter(field => mappedValues.has(field)).length;
         const complete = mappedRequiredCount === requiredCount;
@@ -152,7 +171,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
             return suggestion && columnMapping[header] === suggestion;
         }).length;
         
-        const unmappedCount = Object.values(columnMapping).filter(v => !v).length;
+        const unmappedCount = csvHeaders.filter(header => !columnMapping[header]).length;
 
         return {
             mappedRequiredFields: mappedRequiredCount,
@@ -165,7 +184,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
         };
     }, [columnMapping, csvHeaders]);
 
-    const handleMappingChange = (csvHeader: string, hrpField: string) => {
+    const handleMappingChange = (csvHeader: string, hrpField: string | undefined) => {
         setColumnMapping(prev => ({...prev, [csvHeader]: hrpField}));
     }
 
@@ -209,7 +228,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
                     <div className="py-4 space-y-4">
                         <Alert>
                            <Info className="h-4 w-4" />
-                            <AlertTitle>Instruksi Pemetaan</AlertTitle>
+                            <AlertTitle>Petunjuk Pemetaan</AlertTitle>
                             <AlertDescription>
                                 Kolom di kiri adalah header dari file Anda. Pilih field tujuan yang sesuai di sistem HRP pada dropdown di kanan. Field dengan tanda <span className="text-destructive font-bold">*</span> wajib untuk dipetakan.
                             </AlertDescription>
@@ -218,9 +237,9 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
                             <Table>
                                 <TableHeader className="sticky top-0 bg-muted z-10">
                                     <TableRow>
-                                        <TableHead className="w-[45%]">Kolom dari File Anda</TableHead>
-                                        <TableHead className="w-[45%]">Petakan ke Field Sistem HRP</TableHead>
-                                        <TableHead className="w-[10%] text-center">Status</TableHead>
+                                        <TableHead className="w-[45%] font-bold">Kolom dari File Anda</TableHead>
+                                        <TableHead className="w-[45%] font-bold">Petakan ke Field Sistem HRP</TableHead>
+                                        <TableHead className="w-[10%] text-center font-bold">Status</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -231,18 +250,24 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
                                         <TableRow key={header}>
                                             <TableCell className="font-medium text-muted-foreground">{header}</TableCell>
                                             <TableCell>
-                                                <Select value={mappedValue || ''} onValueChange={(value) => handleMappingChange(header, value)}>
-                                                    <SelectTrigger><SelectValue placeholder="Pilih field..." /></SelectTrigger>
+                                                <Select value={mappedValue} onValueChange={(value) => handleMappingChange(header, value === '__skip__' ? undefined : value)}>
+                                                    <FormControl>
+                                                        <SelectTrigger>
+                                                            <SelectValue placeholder="Pilih field tujuan..." />
+                                                        </SelectTrigger>
+                                                    </FormControl>
                                                     <SelectContent>
-                                                        <SelectItem value="">Jangan Impor Kolom Ini</SelectItem>
-                                                        {HRP_FIELDS.reduce((acc, field) => {
-                                                            const groupKey = field.group || 'Lainnya';
-                                                            if (!acc.find(g => (g as React.ReactElement).key === groupKey)) {
-                                                                acc.push(<SelectGroup key={groupKey}><SelectLabel>{groupKey}</SelectLabel></SelectGroup>);
-                                                            }
-                                                            acc.push(<SelectItem key={field.value} value={field.value}>{field.label} {field.required && <span className="text-destructive">*</span>}</SelectItem>);
-                                                            return acc;
-                                                        }, [] as React.ReactNode[])}
+                                                        <SelectItem value="__skip__">(Jangan Impor Kolom Ini)</SelectItem>
+                                                        {Object.entries(HRP_FIELD_GROUPS).map(([group, fields]) => (
+                                                            <SelectGroup key={group}>
+                                                                <SelectLabel>{group}</SelectLabel>
+                                                                {fields.map(field => (
+                                                                    <SelectItem key={field.value} value={field.value}>
+                                                                        {field.label} {field.required && <span className="text-destructive">*</span>}
+                                                                    </SelectItem>
+                                                                ))}
+                                                            </SelectGroup>
+                                                        ))}
                                                     </SelectContent>
                                                 </Select>
                                             </TableCell>
