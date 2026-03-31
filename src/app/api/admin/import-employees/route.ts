@@ -20,19 +20,16 @@ async function verifyAdmin(req: NextRequest) {
         }
         return { uid: decodedToken.uid };
     } catch (error: any) {
-        // --- THIS IS THE FIX ---
-        // Catch common token-related errors and provide a clear, user-friendly message.
+        console.error("Authentication error during import:", error);
         const tokenErrorCodes = [
             'auth/id-token-expired',
             'auth/invalid-id-token',
             'auth/id-token-revoked'
         ];
         if (tokenErrorCodes.includes(error.code)) {
-            return { error: 'Sesi Anda telah berakhir, silakan muat ulang halaman dan coba lagi.', status: 401 };
+            return { error: 'Sesi Anda telah berakhir. Silakan muat ulang halaman dan coba lagi.', status: 401 };
         }
-        // Log the actual unknown error for server-side debugging
-        console.error("Unknown error in verifyAdmin:", error);
-        return { error: 'Terjadi kesalahan otentikasi yang tidak diketahui.', status: 401 };
+        return { error: `Verifikasi token gagal: ${error.message}`, status: 401 };
     }
 }
 
