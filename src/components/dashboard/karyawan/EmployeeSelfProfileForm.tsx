@@ -233,15 +233,15 @@ export function EmployeeSelfProfileForm({ initialProfile, onSaveSuccess, onCance
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <FormField control={form.control} name="nik" render={({ field }) => (<FormItem><FormLabel>Nomor KTP (NIK)*</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                             <div className="space-y-4">
-                                <FormField control={form.control} name="hasNpwp" render={({ field }) => (<FormItem className="flex flex-row items-center space-x-3"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><FormLabel>Saya memiliki NPWP</FormLabel></FormItem>)} />
+                                <FormField control={form.control} name="hasNpwp" render={({ field }) => (<FormItem className="flex flex-row items-center space-x-3"><FormControl><Checkbox checked={!!field.value} onCheckedChange={field.onChange} /></FormControl><FormLabel>Saya memiliki NPWP</FormLabel></FormItem>)} />
                                 {hasNpwp && <FormField control={form.control} name="npwp" render={({ field }) => (<FormItem><FormControl><Input {...field} placeholder="Nomor NPWP" value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />}
                             </div>
                             <div className="space-y-4">
-                                <FormField control={form.control} name="hasBpjsKesehatan" render={({ field }) => (<FormItem className="flex flex-row items-center space-x-3"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><FormLabel>Saya memiliki BPJS Kesehatan</FormLabel></FormItem>)} />
+                                <FormField control={form.control} name="hasBpjsKesehatan" render={({ field }) => (<FormItem className="flex flex-row items-center space-x-3"><FormControl><Checkbox checked={!!field.value} onCheckedChange={field.onChange} /></FormControl><FormLabel>Saya memiliki BPJS Kesehatan</FormLabel></FormItem>)} />
                                 {hasBpjsKesehatan && <FormField control={form.control} name="bpjsKesehatan" render={({ field }) => (<FormItem><FormControl><Input {...field} placeholder="Nomor BPJS Kesehatan" value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />}
                             </div>
                              <div className="space-y-4">
-                                <FormField control={form.control} name="hasBpjsKetenagakerjaan" render={({ field }) => (<FormItem className="flex flex-row items-center space-x-3"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><FormLabel>Saya memiliki BPJS Ketenagakerjaan</FormLabel></FormItem>)} />
+                                <FormField control={form.control} name="hasBpjsKetenagakerjaan" render={({ field }) => (<FormItem className="flex flex-row items-center space-x-3"><FormControl><Checkbox checked={!!field.value} onCheckedChange={field.onChange} /></FormControl><FormLabel>Saya memiliki BPJS Ketenagakerjaan</FormLabel></FormItem>)} />
                                 {hasBpjsKetenagakerjaan && <FormField control={form.control} name="bpjsKetenagakerjaan" render={({ field }) => (<FormItem><FormControl><Input {...field} placeholder="Nomor BPJS Ketenagakerjaan" value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />}
                             </div>
                         </div>

@@ -149,7 +149,8 @@ service cloud.firestore {
             'address', 'bankName', 'bankAccountNumber', 'bankAccountHolderName',
             'npwp', 'bpjsKesehatan', 'bpjsKetenagakerjaan',
             'emergencyContactName', 'emergencyContactRelation', 'emergencyContactPhone',
-            'documents', 'updatedAt'
+            'documents', 'updatedAt', 'completeness', 'hasNpwp', 'hasBpjsKesehatan', 'hasBpjsKetenagakerjaan',
+            'nik'
           ];
           return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedFields);
         }
@@ -478,5 +479,3 @@ service cloud.firestore {
     }
   }
 }
-
-    
