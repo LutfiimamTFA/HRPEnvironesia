@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useAuth } from '@/providers/auth-provider';
@@ -9,7 +9,7 @@ import { useFirestore, setDocumentNonBlocking } from '@/firebase';
 import { doc, serverTimestamp, writeBatch, Timestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -94,7 +94,29 @@ export function EmployeeSelfProfileForm({ initialProfile, onSaveSuccess, onCance
 
   const form = useForm<FormValues>({
     resolver: zodResolver(selfFormSchema),
-    defaultValues: {},
+    defaultValues: {
+      nickName: '',
+      phone: '',
+      gender: 'Laki-laki',
+      birthPlace: '',
+      birthDate: '',
+      nik: '',
+      maritalStatus: 'Belum Kawin',
+      religion: '',
+      address: { ...addressDefaultValues },
+      bankName: '',
+      bankAccountNumber: '',
+      bankAccountHolderName: '',
+      hasNpwp: false,
+      npwp: '',
+      hasBpjsKesehatan: false,
+      bpjsKesehatan: '',
+      hasBpjsKetenagakerjaan: false,
+      bpjsKetenagakerjaan: '',
+      emergencyContactName: '',
+      emergencyContactRelation: '',
+      emergencyContactPhone: '',
+    },
   });
   
   const hasNpwp = form.watch('hasNpwp');
@@ -209,25 +231,25 @@ export function EmployeeSelfProfileForm({ initialProfile, onSaveSuccess, onCance
                     <section className="space-y-4">
                         <h3 className="text-lg font-semibold border-b pb-2 mb-4">Administrasi Personal</h3>
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <FormField control={form.control} name="nik" render={({ field }) => (<FormItem><FormLabel>Nomor KTP (NIK)*</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="nik" render={({ field }) => (<FormItem><FormLabel>Nomor KTP (NIK)*</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
                             <div className="space-y-4">
                                 <FormField control={form.control} name="hasNpwp" render={({ field }) => (<FormItem className="flex flex-row items-center space-x-3"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><FormLabel>Saya memiliki NPWP</FormLabel></FormItem>)} />
-                                {hasNpwp && <FormField control={form.control} name="npwp" render={({ field }) => (<FormItem><FormControl><Input {...field} value={field.value ?? ''} placeholder="Nomor NPWP" /></FormControl><FormMessage /></FormItem>)} />}
+                                {hasNpwp && <FormField control={form.control} name="npwp" render={({ field }) => (<FormItem><FormControl><Input {...field} placeholder="Nomor NPWP" /></FormControl><FormMessage /></FormItem>)} />}
                             </div>
                             <div className="space-y-4">
                                 <FormField control={form.control} name="hasBpjsKesehatan" render={({ field }) => (<FormItem className="flex flex-row items-center space-x-3"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><FormLabel>Saya memiliki BPJS Kesehatan</FormLabel></FormItem>)} />
-                                {hasBpjsKesehatan && <FormField control={form.control} name="bpjsKesehatan" render={({ field }) => (<FormItem><FormControl><Input {...field} value={field.value ?? ''} placeholder="Nomor BPJS Kesehatan" /></FormControl><FormMessage /></FormItem>)} />}
+                                {hasBpjsKesehatan && <FormField control={form.control} name="bpjsKesehatan" render={({ field }) => (<FormItem><FormControl><Input {...field} placeholder="Nomor BPJS Kesehatan" /></FormControl><FormMessage /></FormItem>)} />}
                             </div>
                              <div className="space-y-4">
                                 <FormField control={form.control} name="hasBpjsKetenagakerjaan" render={({ field }) => (<FormItem className="flex flex-row items-center space-x-3"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><FormLabel>Saya memiliki BPJS Ketenagakerjaan</FormLabel></FormItem>)} />
-                                {hasBpjsKetenagakerjaan && <FormField control={form.control} name="bpjsKetenagakerjaan" render={({ field }) => (<FormItem><FormControl><Input {...field} value={field.value ?? ''} placeholder="Nomor BPJS Ketenagakerjaan" /></FormControl><FormMessage /></FormItem>)} />}
+                                {hasBpjsKetenagakerjaan && <FormField control={form.control} name="bpjsKetenagakerjaan" render={({ field }) => (<FormItem><FormControl><Input {...field} placeholder="Nomor BPJS Ketenagakerjaan" /></FormControl><FormMessage /></FormItem>)} />}
                             </div>
                         </div>
                         <Separator />
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
-                            <FormField control={form.control} name="bankName" render={({ field }) => (<FormItem><FormLabel>Nama Bank</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
-                            <FormField control={form.control} name="bankAccountNumber" render={({ field }) => (<FormItem><FormLabel>Nomor Rekening</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
-                            <FormField control={form.control} name="bankAccountHolderName" render={({ field }) => (<FormItem><FormLabel>Nama Pemilik Rekening</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="bankName" render={({ field }) => (<FormItem><FormLabel>Nama Bank</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="bankAccountNumber" render={({ field }) => (<FormItem><FormLabel>Nomor Rekening</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="bankAccountHolderName" render={({ field }) => (<FormItem><FormLabel>Nama Pemilik Rekening</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
                         </div>
                     </section>
 
