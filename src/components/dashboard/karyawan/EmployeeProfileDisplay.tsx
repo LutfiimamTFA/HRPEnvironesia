@@ -86,7 +86,24 @@ export function EmployeeProfileDisplay({
       
       <div className="grid lg:grid-cols-3 gap-6 items-start">
         <div className="lg:col-span-2 space-y-6">
-             <Card>
+             <Card className="border-primary/20 bg-primary/5">
+                <CardHeader>
+                    <SectionTitle icon={<Briefcase className="h-5 w-5" />}>Informasi Kepegawaian (Dikelola HRD)</SectionTitle>
+                </CardHeader>
+                <CardContent className="space-y-1">
+                    <InfoRow label="Nomor Induk" value={employeeProfile.employeeNumber} />
+                    <InfoRow label="Jabatan" value={employeeProfile.positionTitle} />
+                    <InfoRow label="Divisi" value={employeeProfile.division} />
+                    <InfoRow label="Brand" value={employeeProfile.brandName} />
+                    <InfoRow label="Atasan Langsung" value={employeeProfile.managerName} />
+                    <Separator className="my-3"/>
+                    <InfoRow label="Tanggal Bergabung" value={employeeProfile.joinDate ? format(employeeProfile.joinDate.toDate(), 'dd MMMM yyyy') : '-'} />
+                    <InfoRow label="Tipe Karyawan" value={employeeProfile.employmentType} />
+                    <InfoRow label="Status" value={employeeProfile.employmentStatus} />
+                </CardContent>
+            </Card>
+
+            <Card>
                 <CardHeader>
                     <SectionTitle icon={<User className="h-5 w-5" />}>Identitas Pribadi</SectionTitle>
                      <CardDescription>Dapat diubah oleh Anda melalui tombol "Edit Profil".</CardDescription>
@@ -99,16 +116,6 @@ export function EmployeeProfileDisplay({
                     <InfoRow label="Agama" value={employeeProfile.religion} />
                 </CardContent>
             </Card>
-
-             <Card>
-                <CardHeader>
-                    <SectionTitle icon={<Home className="h-5 w-5" />}>Alamat</SectionTitle>
-                    <CardDescription>Dapat diubah oleh Anda melalui tombol "Edit Profil".</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <AddressView title="Alamat Sesuai KTP & Domisili" address={employeeProfile.address} />
-                </CardContent>
-            </Card>
             
             <Card>
                 <CardHeader>
@@ -118,9 +125,9 @@ export function EmployeeProfileDisplay({
                 <CardContent className="space-y-1">
                     <InfoRow label="Nomor KTP (NIK)" value={employeeProfile.nik} />
                     <Separator className="my-3"/>
-                    <InfoRow label="NPWP" value={employeeProfile.npwp} />
-                    <InfoRow label="BPJS Kesehatan" value={employeeProfile.bpjsKesehatan} />
-                    <InfoRow label="BPJS Ketenagakerjaan" value={employeeProfile.bpjsKetenagakerjaan} />
+                    <InfoRow label="NPWP" value={employeeProfile.npwp || (employeeProfile.hasNpwp ? 'Belum diisi' : 'Tidak memiliki')} />
+                    <InfoRow label="BPJS Kesehatan" value={employeeProfile.bpjsKesehatan || (employeeProfile.hasBpjsKesehatan ? 'Belum diisi' : 'Tidak memiliki')} />
+                    <InfoRow label="BPJS Ketenagakerjaan" value={employeeProfile.bpjsKetenagakerjaan || (employeeProfile.hasBpjsKetenagakerjaan ? 'Belum diisi' : 'Tidak memiliki')} />
                     <Separator className="my-3"/>
                     <InfoRow label="Nama Bank" value={employeeProfile.bankName} />
                     <InfoRow label="No. Rekening" value={employeeProfile.bankAccountNumber} />
@@ -128,6 +135,18 @@ export function EmployeeProfileDisplay({
                 </CardContent>
             </Card>
 
+        </div>
+
+        <div className="lg:sticky lg:top-24 space-y-6">
+            <Card>
+                <CardHeader>
+                    <SectionTitle icon={<Home className="h-5 w-5" />}>Alamat</SectionTitle>
+                    <CardDescription>Dapat diubah oleh Anda melalui tombol "Edit Profil".</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <AddressView title="Alamat Sesuai KTP & Domisili" address={employeeProfile.address} />
+                </CardContent>
+            </Card>
             <Card>
                 <CardHeader>
                     <SectionTitle icon={<ShieldAlert className="h-5 w-5" />}>Kontak Darurat</SectionTitle>
@@ -137,26 +156,6 @@ export function EmployeeProfileDisplay({
                     <InfoRow label="Nama" value={employeeProfile.emergencyContactName} />
                     <InfoRow label="Hubungan" value={employeeProfile.emergencyContactRelation} />
                     <InfoRow label="Telepon" value={employeeProfile.emergencyContactPhone} />
-                </CardContent>
-            </Card>
-        </div>
-
-        <div className="lg:sticky lg:top-24 space-y-6">
-             <Card className="border-primary/20 bg-primary/5">
-                <CardHeader>
-                    <SectionTitle icon={<Briefcase className="h-5 w-5" />}>Informasi Kepegawaian</SectionTitle>
-                    <CardDescription>Dikelola oleh tim HRD.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-1">
-                    <InfoRow label="Nomor Induk" value={employeeProfile.employeeNumber} />
-                    <InfoRow label="Jabatan" value={employeeProfile.positionTitle} />
-                    <InfoRow label="Divisi" value={employeeProfile.division} />
-                    <InfoRow label="Brand" value={employeeProfile.brandName} />
-                    <InfoRow label="Atasan Langsung" value={employeeProfile.managerName} />
-                    <Separator className="my-3"/>
-                    <InfoRow label="Tanggal Bergabung" value={employeeProfile.joinDate ? format(employeeProfile.joinDate.toDate(), 'dd MMMM yyyy') : '-'} />
-                    <InfoRow label="Tipe Karyawan" value={employeeProfile.employmentType} />
-                    <InfoRow label="Status" value={employeeProfile.employmentStatus} />
                 </CardContent>
             </Card>
         </div>
