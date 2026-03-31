@@ -40,16 +40,19 @@ export async function POST(req: NextRequest) {
 
     const results = {
         created: { 
+            assessment: false,
             template_likert: false, 
             template_forced_choice: false, 
             questions_likert: 0,
             questions_forced_choice: 0 
         },
         updated: { 
+            assessment: false,
             template_likert: false, 
             template_forced_choice: false 
         },
         existing: { 
+            assessment: true,
             template_likert: true, 
             template_forced_choice: true, 
             questions_likert: 'Not Checked',
@@ -297,5 +300,3 @@ export async function POST(req: NextRequest) {
         ...results
     });
 }
-
-  

@@ -31,8 +31,8 @@ export async function POST(req: NextRequest) {
     
     // Check authority from the main 'users' collection
     const userDoc = await db.collection('users').doc(decodedToken.uid).get();
-    // Using exists() to be consistent with other routes in this project
-    if (typeof (userDoc as any).exists === 'function' ? !(userDoc as any).exists() : !userDoc.exists) {
+
+    if (!userDoc.exists) {
         console.error(`User doc not found for UID: ${decodedToken.uid}`);
         return NextResponse.json({ error: 'User profile not found.' }, { status: 403 });
     }
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
     const { brandId, employmentType, quantity } = parseResult.data;
     
     const brandDoc = await db.collection('brands').doc(brandId).get();
-    if (typeof (brandDoc as any).exists === 'function' ? !(brandDoc as any).exists() : !brandDoc.exists) {
+    if (!brandDoc.exists) {
         return NextResponse.json({ error: `Brand ${brandId} not found.` }, { status: 404 });
     }
     const brandName = brandDoc.data()?.name || 'Unknown Brand';
@@ -115,7 +115,3 @@ export async function POST(req: NextRequest) {
     }, { status: 500 });
   }
 }
-
-
-
-    
