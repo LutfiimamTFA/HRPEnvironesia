@@ -8,7 +8,7 @@ import { useAuth } from '@/providers/auth-provider';
 import { useFirestore, setDocumentNonBlocking } from '@/firebase';
 import { doc, serverTimestamp, writeBatch, Timestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -67,6 +67,11 @@ const addressDefaultValues: Address = {
     street: '', rt: '', rw: '', village: '', district: '', city: '', province: '', postalCode: '',
 };
 
+const getAddressObject = (address: any): Address => {
+    if (typeof address === 'string') return { ...addressDefaultValues, street: address };
+    return address ? { ...addressDefaultValues, ...address } : addressDefaultValues;
+};
+
 export function EmployeeSelfProfileForm({ initialProfile, onSaveSuccess, onCancel }: EmployeeSelfProfileFormProps) {
   const [isSaving, setIsSaving] = useState(false);
   const { firebaseUser, refreshUserProfile } = useAuth();
@@ -87,7 +92,7 @@ export function EmployeeSelfProfileForm({ initialProfile, onSaveSuccess, onCance
       birthDate: initialProfile.birthDate ? format(new Date(initialProfile.birthDate), 'yyyy-MM-dd') : '',
       maritalStatus: initialProfile.maritalStatus || undefined,
       religion: initialProfile.religion || '',
-      address: typeof initialProfile.address === 'string' ? { ...addressDefaultValues, street: initialProfile.address } : (initialProfile.address || addressDefaultValues),
+      address: getAddressObject(initialProfile.address),
       bankName: initialProfile.bankName || '',
       bankAccountNumber: initialProfile.bankAccountNumber || '',
       bankAccountHolderName: initialProfile.bankAccountHolderName || '',
