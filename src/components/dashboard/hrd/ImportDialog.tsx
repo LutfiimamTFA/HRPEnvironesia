@@ -17,17 +17,28 @@ interface ImportDialogProps {
 }
 
 const HRP_FIELDS = [
-  { group: "Identitas Dasar", value: "fullName", label: "Nama Lengkap", required: true },
-  { group: "Identitas Dasar", value: "email", label: "Email", required: true },
-  { group: "Identitas Dasar", value: "phone", label: "No. HP", required: false },
-  { group: "Identitas Dasar", value: "employeeNumber", label: "NIK Internal", required: false },
+    { group: "Data Pribadi", value: "fullName", label: "Nama Lengkap", required: true },
+    { group: "Data Pribadi", value: "birthPlace", label: "Tempat Lahir", required: false },
+    { group: "Data Pribadi", value: "birthDate", label: "Tanggal Lahir", required: false },
+    { group: "Data Pribadi", value: "gender", label: "Jenis Kelamin", required: false },
+    { group: "Data Pribadi", value: "maritalStatus", label: "Status Pernikahan", required: false },
+    { group: "Data Pribadi", value: "address", label: "Alamat", required: false },
+    { group: "Data Pribadi", value: "phone", label: "Kontak (No. HP)", required: false },
+    { group: "Data Pribadi", value: "email", label: "Kontak (Email)", required: true },
+    
+    { group: "Informasi Pekerjaan", value: "employeeNumber", label: "Nomor Induk Karyawan (NIK)", required: false },
+    { group: "Informasi Pekerjaan", value: "positionTitle", label: "Jabatan/Posisi", required: true },
+    { group: "Informasi Pekerjaan", value: "division", label: "Departemen/Bagian", required: true },
+    { group: "Informasi Pekerjaan", value: "joinDate", label: "Tanggal Mulai Bekerja (YYYY-MM-DD)", required: false },
+    { group: "Informasi Pekerjaan", value: "employmentType", label: "Jenis Kontrak Kerja", required: true },
+    
+    { group: "Data Administratif", value: "nik", label: "Nomor KTP/SIM", required: false },
+    { group: "Data Administratif", value: "npwp", label: "NPWP", required: false },
+    { group: "Data Administratif", value: "bpjsKesehatan", label: "BPJS Kesehatan", required: false },
+    { group: "Data Administratif", value: "bpjsKetenagakerjaan", label: "BPJS Ketenagakerjaan", required: false },
+    { group: "Data Administratif", value: "bankAccountNumber", label: "Nomor Rekening Bank", required: false },
 
-  { group: "Informasi Kepegawaian", value: "brandName", label: "Nama Brand", required: true },
-  { group: "Informasi Kepegawaian", value: "division", label: "Divisi", required: true },
-  { group: "Informasi Kepegawaian", value: "positionTitle", label: "Jabatan", required: true },
-  { group: "Informasi Kepegawaian", value: "managerName", label: "Nama Manajer", required: false },
-  { group: "Informasi Kepegawaian", value: "joinDate", label: "Tanggal Bergabung (YYYY-MM-DD)", required: false },
-  { group: "Informasi Kepegawaian", value: "employmentStatus", label: "Status Kerja", required: true },
+    // The other sections are likely system-generated or managed elsewhere, so not included in bulk import mapping for now.
 ];
 
 const REQUIRED_HRP_FIELDS = HRP_FIELDS.filter(f => f.required).map(f => f.value);
@@ -41,14 +52,19 @@ const suggestMapping = (header: string): string => {
     const keywordMap: Record<string, string[]> = {
         fullName: ['nama', 'namalengkap', 'fullname'],
         email: ['email', 'emailkantor', 'emailaddress'],
-        phone: ['telepon', 'hp', 'nohp', 'phone'],
-        employeeNumber: ['nik', 'nomorinduk'],
+        phone: ['telepon', 'hp', 'nohp', 'phone', 'kontak'],
+        employeeNumber: ['nik', 'nomorinduk', 'nomorkaryawan'],
         brandName: ['brand', 'perusahaan', 'company'],
-        division: ['divisi', 'division'],
+        division: ['divisi', 'division', 'departemen', 'department'],
         positionTitle: ['jabatan', 'posisi', 'jabatandikantor', 'position'],
         managerName: ['manager', 'atasan', 'supervisor'],
-        joinDate: ['join', 'masuk', 'tanggalbergabung'],
+        joinDate: ['join', 'masuk', 'tanggalbergabung', 'joindate'],
         employmentStatus: ['status', 'employmentstatus', 'statuskerja'],
+        nik: ['ktp', 'noktp', 'nomorktp'],
+        npwp: ['npwp', 'nomornpwp'],
+        bpjsKesehatan: ['bpjskesehatan'],
+        bpjsKetenagakerjaan: ['bpjsketenagakerjaan', 'bpjstk'],
+        bankAccountNumber: ['rekening', 'norek', 'bankaccount'],
     };
 
     for (const hrpField in keywordMap) {
@@ -58,7 +74,6 @@ const suggestMapping = (header: string): string => {
             }
         }
     }
-
     return '';
 };
 
@@ -112,7 +127,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
         reader.onload = (e) => {
             const text = e.target?.result as string;
             const firstLine = text.split('\n')[0].trim();
-            const headers = firstLine.split(',');
+            const headers = firstLine.split(',').map(h => h.trim().replace(/"/g, ''));
             setCsvHeaders(headers);
             
             const initialMapping: Record<string, string> = {};

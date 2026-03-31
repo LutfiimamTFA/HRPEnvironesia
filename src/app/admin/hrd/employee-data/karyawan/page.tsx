@@ -236,7 +236,7 @@ export default function KaryawanDataPage() {
                                         <TableRow>
                                             <TableCell colSpan={6} className="h-48 text-center">
                                                 <div className="flex flex-col items-center gap-3 text-muted-foreground">
-                                                     <Users className="h-12 w-12" />
+                                                     <Users className="h-10 w-10" />
                                                     <p className="font-semibold">Belum ada data karyawan.</p>
                                                     <p className="text-sm">Impor data dari CSV/XLSX atau tambahkan karyawan secara manual.</p>
                                                     <div className="flex gap-2 mt-2">
