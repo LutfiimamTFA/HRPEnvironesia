@@ -116,6 +116,7 @@ export type EmployeeProfile = {
   hrdNotes?: string;
   compensationAmount?: number;
   contractDurationMonths?: number;
+  addressCurrent?: string; // To be deprecated in favor of address object
 };
 
 
@@ -941,3 +942,5 @@ export function isActionableStatus(status: string, mode: 'manager' | 'hrd'): boo
   
   return false;
 }
+
+    

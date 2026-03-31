@@ -14,6 +14,8 @@ import type { EmployeeProfile } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { InfoIcon } from 'lucide-react';
 
 export default function KaryawanDashboardPage() {
   const { userProfile, loading: authLoading } = useAuth();
@@ -35,6 +37,7 @@ export default function KaryawanDashboardPage() {
   }
   
   const isProfileComplete = employeeProfile?.completeness?.isComplete;
+  const isDataIncomplete = !employeeProfile?.managerName || !employeeProfile?.division || !employeeProfile?.positionTitle;
 
   return (
     <DashboardLayout pageTitle="Dashboard Karyawan">
@@ -45,7 +48,7 @@ export default function KaryawanDashboardPage() {
                 </CardHeader>
                 <CardContent>
                     <p>Selamat datang di dashboard karyawan.</p>
-                    <Badge className="mt-4 capitalize">{userProfile.employmentType || 'Karyawan'}</Badge>
+                    <Badge className="mt-4 capitalize">{employeeProfile?.positionTitle || userProfile.employmentType || 'Karyawan'}</Badge>
                 </CardContent>
             </Card>
 
@@ -64,7 +67,19 @@ export default function KaryawanDashboardPage() {
                     </CardContent>
                 </Card>
             )}
+
+            {isProfileComplete && isDataIncomplete && (
+                 <Alert>
+                    <InfoIcon className="h-4 w-4" />
+                    <AlertTitle>Data Kepegawaian Belum Lengkap</AlertTitle>
+                    <AlertDescription>
+                       Informasi jabatan, divisi, atau atasan Anda belum diatur. Beberapa fitur mungkin belum berfungsi. Harap hubungi HRD.
+                    </AlertDescription>
+                </Alert>
+            )}
         </div>
     </DashboardLayout>
   );
 }
+
+    

@@ -46,6 +46,20 @@ export default function EmployeeProfilePage() {
     setEditMode(false);
     mutate(); // Re-fetch the employee profile data
   };
+  
+  const initialProfileData = useMemo(() => {
+    if (!userProfile) return {};
+    // Combine auth data with profile data for the form's initial state
+    return {
+        ...(employeeProfile || {}),
+        fullName: userProfile.fullName,
+        email: userProfile.email,
+        role: userProfile.role,
+        employmentType: userProfile.employmentType,
+        employmentStage: userProfile.employmentStage,
+    };
+  }, [userProfile, employeeProfile]);
+
 
   if (isLoading) {
     return (
@@ -55,30 +69,20 @@ export default function EmployeeProfilePage() {
     );
   }
 
-  if (!employeeProfile) {
-    // If the main profile doesn't exist, force edit mode to create it.
-    return (
-      <DashboardLayout pageTitle="Lengkapi Data Diri Anda" menuConfig={menuConfig}>
-        <EmployeeSelfProfileForm 
-          initialProfile={userProfile as Partial<EmployeeProfile>} 
-          onSaveSuccess={handleSaveSuccess} 
-          onCancel={() => {}}
-        />
-      </DashboardLayout>
-    );
-  }
+  // If the employee profile document doesn't exist at all, force edit mode.
+  const isProfileIncomplete = !employeeProfile?.completeness?.isComplete;
 
   return (
     <DashboardLayout pageTitle="Data Diri Karyawan" menuConfig={menuConfig}>
-      {editMode ? (
+      {editMode || isProfileIncomplete ? (
         <EmployeeSelfProfileForm 
-          initialProfile={employeeProfile} 
+          initialProfile={initialProfileData} 
           onSaveSuccess={handleSaveSuccess}
           onCancel={() => setEditMode(false)}
         />
       ) : (
         <EmployeeProfileDisplay
-          employeeProfile={employeeProfile}
+          employeeProfile={employeeProfile!}
           userProfile={userProfile!}
           onEdit={() => setEditMode(true)}
         />
@@ -86,3 +90,5 @@ export default function EmployeeProfilePage() {
     </DashboardLayout>
   );
 }
+
+    

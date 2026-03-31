@@ -214,7 +214,7 @@ export function PengajuanLemburClient() {
   if (isLoading || isLoadingProfile || isLoadingBrands) {
     return <div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin" /></div>;
   }
-
+  
   return (
     <>
       <div className="space-y-6">
@@ -250,7 +250,6 @@ export function PengajuanLemburClient() {
                             <TableHead>Tanggal Lembur</TableHead>
                             <TableHead>Durasi</TableHead>
                             <TableHead>Tipe</TableHead>
-                            <TableHead>Manajer Divisi</TableHead>
                             <TableHead>Update Terakhir</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead className="text-right">Aksi</TableHead>
@@ -262,7 +261,6 @@ export function PengajuanLemburClient() {
                                 <TableCell className="font-medium">{format(s.date.toDate(), 'dd MMM yyyy', { locale: idLocale })}</TableCell>
                                 <TableCell>{s.totalDurationMinutes} menit</TableCell>
                                 <TableCell className="capitalize">{s.overtimeType.replace('_', ' ')}</TableCell>
-                                <TableCell>{employeeProfile?.supervisorName || '-'}</TableCell>
                                 <TableCell>{s.updatedAt?.toDate ? formatDistanceToNow(s.updatedAt.toDate(), { addSuffix: true, locale: idLocale }) : 'Baru saja'}</TableCell>
                                 <TableCell><OvertimeStatusBadge status={s.status} /></TableCell>
                                 <TableCell className="text-right">
@@ -276,7 +274,7 @@ export function PengajuanLemburClient() {
                                     </DropdownMenu>
                                 </TableCell>
                             </TableRow>
-                        )) : (<TableRow><TableCell colSpan={7} className="h-24 text-center">Belum ada pengajuan lembur.</TableCell></TableRow>)}
+                        )) : (<TableRow><TableCell colSpan={6} className="h-24 text-center">Belum ada pengajuan lembur.</TableCell></TableRow>)}
                     </TableBody>
                 </Table>
                 </div>
@@ -303,3 +301,5 @@ export function PengajuanLemburClient() {
     </>
   );
 }
+
+    
