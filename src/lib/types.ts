@@ -42,13 +42,17 @@ export type UserProfile = {
   updatedAt?: Timestamp;
 };
 
+export const EMPLOYMENT_STATUSES = ['active', 'probation', 'resigned', 'terminated'] as const;
+export type EmploymentStatus = (typeof EMPLOYMENT_STATUSES)[number];
+
+
 export type EmployeeProfile = {
   id?: string;
   uid: string;
   
   // --- Kepegawaian (HR Managed) ---
   employmentType: 'magang' | 'training' | 'karyawan';
-  employmentStatus?: 'active' | 'probation' | 'resigned' | 'terminated';
+  employmentStatus?: EmploymentStatus;
   employeeNumber?: string;
   joinDate?: Timestamp;
   positionTitle?: string;
