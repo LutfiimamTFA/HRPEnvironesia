@@ -49,8 +49,8 @@ export async function POST(req: NextRequest) {
     const findHeaderByHrpField = (field: string) => Object.keys(headerToHrpField).find(h => headerToHrpField[h] === field);
 
     const employeeProfilesRef = db.collection('employee_profiles');
-    const usersRef = db.collection('users');
-
+    
+    // Use Promise.all to process rows concurrently for better performance
     const processingPromises = rows.map(async (row: Record<string, any>, index: number) => {
         try {
             const fullNameHeader = findHeaderByHrpField('fullName');
@@ -67,14 +67,12 @@ export async function POST(req: NextRequest) {
 
             let existingProfileSnap: admin.firestore.DocumentSnapshot | null = null;
             let userRecord: admin.auth.UserRecord | null = null;
-            let foundBy: 'nik' | 'email' | 'none' = 'none';
-
+            
             // 1. Try to find by Employee Number (NIK)
             if (employeeNumber) {
                 const querySnapshot = await employeeProfilesRef.where('employeeNumber', '==', employeeNumber).limit(1).get();
                 if (!querySnapshot.empty) {
                     existingProfileSnap = querySnapshot.docs[0];
-                    foundBy = 'nik';
                 }
             }
 
@@ -85,28 +83,20 @@ export async function POST(req: NextRequest) {
                     const profileByUid = await employeeProfilesRef.doc(userRecord.uid).get();
                     if (profileByUid.exists) {
                         existingProfileSnap = profileByUid;
-                        foundBy = 'email';
                     }
                 }
             }
             
-            const payload: Partial<EmployeeProfile> & { additionalFields: Record<string, any> } = { additionalFields: {} };
+            const payload: Partial<EmployeeProfile> = {};
             let hasData = false;
 
             for (const header in row) {
                 const hrpFieldKey = headerToHrpField[header];
-                if (hrpFieldKey) {
+                if (hrpFieldKey && hrpFieldKey !== '__custom__') { // Ignore custom for now
                     const value = row[header];
                     if (value !== undefined && value !== null && value !== '') {
                         hasData = true;
-                        if (hrpFieldKey === '__custom__') {
-                           const customFieldName = customFields[header];
-                           if (customFieldName) {
-                               payload.additionalFields[customFieldName] = value;
-                           }
-                        } else {
-                           (payload as any)[hrpFieldKey] = value;
-                        }
+                        (payload as any)[hrpFieldKey] = value;
                     }
                 }
             }
@@ -123,8 +113,8 @@ export async function POST(req: NextRequest) {
                 batch.set(docRef, { ...payload, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
                 results.updated++;
             } else { // --- CREATE ---
-                const newDocRef = employeeProfilesRef.doc(userRecord ? userRecord.uid : undefined); // Use UID if found, else generate new ID
-                const uid = userRecord ? userRecord.uid : newDocRef.id;
+                const uid = userRecord ? userRecord.uid : doc(collection(firestore, 'employee_profiles')).id;
+                const newDocRef = employeeProfilesRef.doc(uid);
                 batch.set(newDocRef, { 
                     ...payload, 
                     uid: uid,
@@ -146,4 +136,3 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(results);
 }
-```
