@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { HRP_FIELD_GROUPS, RECOMMENDED_HRP_FIELDS } from '@/lib/hrp-fields';
 import { useAuth } from '@/providers/auth-provider';
 
@@ -165,17 +166,21 @@ export function ImportDialog({ open, onOpenChange, onImportSuccess }: ImportDial
         const mappedRecommended = RECOMMENDED_HRP_FIELDS.filter(field => mappedValues.has(field.value));
         const unmappedRecommended = RECOMMENDED_HRP_FIELDS.filter(field => !mappedValues.has(field.value));
         const autoDetectedCount = csvData.headers.filter(header => suggestMapping(header) && columnMapping[header] === suggestMapping(header)).length;
-        const skippedCount = Object.values(columnMapping).filter(v => v === undefined || v === '__skip__').length;
-        const mappedManuallyCount = Object.values(columnMapping).filter(v => v && v !== '__skip__' && v !== '__custom__' && !suggestMapping(Object.keys(columnMapping).find(k => columnMapping[k] === v) || '')).length;
-
+        
+        const manualAndCustom = Object.keys(columnMapping).filter(header => {
+            const val = columnMapping[header];
+            if (!val || val === '__skip__') return false;
+            // It's manual if it has a value but doesn't match the suggestion
+            return suggestMapping(header) !== val;
+        });
 
         return {
             unmappedRequiredFields: unmappedRecommended,
             mappingSummary: {
                 autoDetected: autoDetectedCount,
-                mappedManually: mappedManuallyCount,
-                unmapped: Object.keys(columnMapping).filter(k => !columnMapping[k]).length,
-                skipped: skippedCount,
+                mappedManually: manualAndCustom.length,
+                unmapped: Object.keys(columnMapping).length - Object.values(columnMapping).filter(Boolean).length,
+                skipped: Object.values(columnMapping).filter(v => v === '__skip__' || v === undefined).length,
                 requiredProgress: `${mappedRecommended.length}/${RECOMMENDED_HRP_FIELDS.length}`,
             }
         };
@@ -282,7 +287,7 @@ export function ImportDialog({ open, onOpenChange, onImportSuccess }: ImportDial
                                 <Info className="h-4 w-4" />
                                 <AlertTitle>Petunjuk Pemetaan</AlertTitle>
                                 <AlertDescription>
-                                    Kolom di kiri adalah header dari file Anda. Pilih field tujuan yang sesuai di HRP pada dropdown di kanan. Field yang ditandai <strong className="text-destructive">*</strong> disarankan untuk dipetakan.
+                                    Kolom di kiri adalah header dari file Anda. Pilih field tujuan yang sesuai di sistem HRP pada dropdown di kanan. Field yang ditandai <strong className="text-destructive">*</strong> disarankan untuk dipetakan.
                                 </AlertDescription>
                             </Alert>
                              <div className="rounded-md border max-h-[55vh]">
@@ -424,12 +429,16 @@ export function ImportDialog({ open, onOpenChange, onImportSuccess }: ImportDial
                         <div className="text-xs text-muted-foreground">
                             {step === 2 && (
                                 !isMappingComplete ? (
-                                    <Alert variant="warning" className="text-xs">
-                                        <AlertCircle className="h-4 w-4" />
-                                        <AlertTitle>Rekomendasi Belum Lengkap</AlertTitle>
-                                        <AlertDescription>
-                                            Harap petakan: {unmappedRequiredFields.map(f => `"${f.label}"`).join(', ')}.
-                                        </AlertDescription>
+                                    <Alert variant="warning" className="text-xs p-2">
+                                        <div className="flex items-start gap-2">
+                                            <AlertCircle className="h-4 w-4" />
+                                            <div>
+                                                <AlertTitle className="text-xs font-semibold">Saran</AlertTitle>
+                                                <AlertDescription>
+                                                    Petakan field: {unmappedRequiredFields.map(f => `"${f.label}"`).join(', ')}.
+                                                </AlertDescription>
+                                            </div>
+                                        </div>
                                     </Alert>
                                 ) : (
                                     <div className="flex items-center gap-2 text-green-600">
@@ -444,7 +453,23 @@ export function ImportDialog({ open, onOpenChange, onImportSuccess }: ImportDial
                         {step > 1 && step < 4 && <Button variant="ghost" onClick={() => setStep(s => s - 1)}><ArrowLeft className="mr-2 h-4 w-4" /> Kembali</Button>}
                         {step < 4 && <DialogClose asChild><Button variant="outline">Batal</Button></DialogClose>}
                         {step === 1 && <Button onClick={handleNextStep} disabled={!selectedFile}>Lanjut ke Pemetaan Kolom <ArrowRight className="ml-2 h-4 w-4" /></Button>}
-                        {step === 2 && <Button onClick={() => setStep(3)}>Lanjut ke Preview <ArrowRight className="ml-2 h-4 w-4" /></Button>}
+                        {step === 2 && (
+                            <TooltipProvider>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <Button onClick={() => setStep(3)}>
+                                            Lanjut ke Preview
+                                            <ArrowRight className="ml-2 h-4 w-4" />
+                                        </Button>
+                                    </TooltipTrigger>
+                                    {!isMappingComplete && (
+                                        <TooltipContent>
+                                            <p>Beberapa field penting belum dipetakan. Anda tetap bisa lanjut.</p>
+                                        </TooltipContent>
+                                    )}
+                                </Tooltip>
+                            </TooltipProvider>
+                        )}
                         {step === 3 && <Button onClick={handleImportFinal} disabled={isProcessing}>{isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Import Final</Button>}
                         {step === 4 && <Button onClick={() => handleClose(false)}>Selesai</Button>}
                     </div>
