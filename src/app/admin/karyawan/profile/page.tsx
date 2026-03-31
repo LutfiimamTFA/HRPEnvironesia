@@ -49,7 +49,7 @@ export default function EmployeeProfilePage() {
 
   if (isLoading) {
     return (
-      <DashboardLayout pageTitle="Profil Saya" menuConfig={menuConfig}>
+      <DashboardLayout pageTitle="Data Diri Karyawan" menuConfig={menuConfig}>
         <ProfileSkeleton />
       </DashboardLayout>
     );
@@ -58,7 +58,7 @@ export default function EmployeeProfilePage() {
   if (!employeeProfile) {
     // If the main profile doesn't exist, force edit mode to create it.
     return (
-      <DashboardLayout pageTitle="Lengkapi Profil Anda" menuConfig={menuConfig}>
+      <DashboardLayout pageTitle="Lengkapi Data Diri Anda" menuConfig={menuConfig}>
         <EmployeeSelfProfileForm 
           initialProfile={userProfile as Partial<EmployeeProfile>} 
           onSaveSuccess={handleSaveSuccess} 
@@ -69,7 +69,7 @@ export default function EmployeeProfilePage() {
   }
 
   return (
-    <DashboardLayout pageTitle="Profil Saya" menuConfig={menuConfig}>
+    <DashboardLayout pageTitle="Data Diri Karyawan" menuConfig={menuConfig}>
       {editMode ? (
         <EmployeeSelfProfileForm 
           initialProfile={employeeProfile} 
@@ -86,5 +86,3 @@ export default function EmployeeProfilePage() {
     </DashboardLayout>
   );
 }
-
-    
