@@ -17,7 +17,7 @@ import { useAuth } from '@/providers/auth-provider';
 import { useFirestore, useCollection, useMemoFirebase, setDocumentNonBlocking, useDoc } from '@/firebase';
 import { doc, serverTimestamp, Timestamp, writeBatch, query, collection, where } from 'firebase/firestore';
 import type { EmployeeProfile, Brand, UserProfile, JobApplication, Job, Division, EmploymentStatus } from '@/lib/types';
-import { EMPLOYMENT_TYPES, EMPLOYMENT_STAGES, ROLES } from '@/lib/types';
+import { EMPLOYMENT_TYPES, EMPLOYMENT_STAGES, ROLES, EMPLOYMENT_STATUSES } from '@/lib/types';
 import { Separator } from '@/components/ui/separator';
 
 const adminFormSchema = z.object({
@@ -25,8 +25,9 @@ const adminFormSchema = z.object({
   email: z.string().email(),
   role: z.enum(ROLES),
   employmentType: z.enum(EMPLOYMENT_TYPES),
-  employmentStage: z.enum(EMPLOYMENT_STAGES),
-  employmentStatus: z.enum(['active', 'probation', 'resigned', 'terminated']).optional(),
+  employmentStage: z.enum(EMPLOYMENT_STAGES).optional(),
+  employmentStatus: z.enum(EMPLOYMENT_STATUSES).optional(),
+  employeeNumber: z.string().optional(),
   positionTitle: z.string().min(3, "Jabatan wajib diisi."),
   division: z.string().min(2, "Divisi wajib diisi."),
   brandId: z.string().min(1, "Brand wajib dipilih."),
@@ -37,21 +38,22 @@ const adminFormSchema = z.object({
 type AdminFormValues = z.infer<typeof adminFormSchema>;
 
 interface EmployeeAdminFormDialogProps {
-  user: UserProfile;
+  profile: EmployeeProfile;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
 }
 
-export function EmployeeAdminFormDialog({ open, onOpenChange, user, onSuccess }: EmployeeAdminFormDialogProps) {
+export function EmployeeAdminFormDialog({ open, onOpenChange, profile, onSuccess }: EmployeeAdminFormDialogProps) {
   const { userProfile: hrdProfile } = useAuth();
   const firestore = useFirestore();
   const [isSaving, setIsSaving] = useState(false);
+  const { toast } = useToast();
 
-  const { data: employeeProfile } = useDoc<EmployeeProfile>(
-    useMemoFirebase(() => user ? doc(firestore, 'employee_profiles', user.uid) : null, [firestore, user])
+  const { data: user, isLoading: isLoadingUser } = useDoc<UserProfile>(
+    useMemoFirebase(() => profile ? doc(firestore, 'users', profile.uid) : null, [firestore, profile])
   );
-
+  
   const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(
     useMemoFirebase(() => collection(firestore, 'brands'), [firestore])
   );
@@ -65,31 +67,30 @@ export function EmployeeAdminFormDialog({ open, onOpenChange, user, onSuccess }:
   );
 
   const { data: divisions, isLoading: isLoadingDivisions } = useCollection<Division>(
-    useMemoFirebase(() => selectedBrandId ? collection(firestore, 'brands', selectedBrandId, 'divisions') : null, [selectedBrandId, firestore])
+    useMemoFirebase(() => selectedBrandId ? query(collection(firestore, 'brands', selectedBrandId, 'divisions'), where('isActive', '==', true)) : null, [selectedBrandId, firestore])
   );
 
   useEffect(() => {
-    if (open) {
-      const singleBrandId = employeeProfile?.brandId || (Array.isArray(user.brandId) ? user.brandId[0] : user.brandId) || '';
-
+    if (open && profile) {
       form.reset({
-        fullName: employeeProfile?.fullName || user.fullName,
-        email: employeeProfile?.email || user.email,
-        role: user.role,
-        employmentType: employeeProfile?.employmentType || user.employmentType,
-        employmentStage: user.employmentStage,
-        employmentStatus: employeeProfile?.employmentStatus,
-        positionTitle: employeeProfile?.positionTitle,
-        division: employeeProfile?.division,
-        brandId: singleBrandId,
-        joinDate: employeeProfile?.joinDate?.toDate(),
-        managerUid: employeeProfile?.managerUid,
+        fullName: profile.fullName,
+        email: profile.email,
+        role: user?.role || 'karyawan',
+        employmentType: profile.employmentType || user?.employmentType || 'karyawan',
+        employmentStage: user?.employmentStage || 'active',
+        employmentStatus: profile.employmentStatus || 'active',
+        employeeNumber: profile.employeeNumber || '',
+        positionTitle: profile.positionTitle || '',
+        division: profile.division || '',
+        brandId: profile.brandId || user?.brandId as string || '',
+        joinDate: profile.joinDate?.toDate(),
+        managerUid: profile.managerUid || '',
       });
     }
-  }, [open, user, employeeProfile, form]);
+  }, [open, profile, user, form]);
 
   const onSubmit = async (values: AdminFormValues) => {
-    if (!hrdProfile) return;
+    if (!hrdProfile || !user) return;
     setIsSaving(true);
     
     const batch = writeBatch(firestore);
@@ -100,14 +101,21 @@ export function EmployeeAdminFormDialog({ open, onOpenChange, user, onSuccess }:
     const brand = brands?.find(b => b.id === values.brandId);
 
     const employeePayload = {
-      ...values,
       uid: user.uid,
       fullName: values.fullName,
       email: values.email,
+      employmentType: values.employmentType,
+      employmentStatus: values.employmentStatus,
+      employeeNumber: values.employeeNumber,
+      positionTitle: values.positionTitle,
+      division: values.division,
+      brandId: values.brandId,
       brandName: brand?.name || '',
+      joinDate: values.joinDate ? Timestamp.fromDate(values.joinDate) : null,
+      managerUid: supervisor?.uid || null,
       managerName: supervisor?.fullName || null,
       updatedAt: serverTimestamp(),
-      createdAt: employeeProfile?.createdAt || serverTimestamp(), // Preserve original creation date
+      createdAt: profile?.createdAt || serverTimestamp(),
     };
     batch.set(employeeProfileRef, employeePayload, { merge: true });
 
@@ -138,7 +146,7 @@ export function EmployeeAdminFormDialog({ open, onOpenChange, user, onSuccess }:
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Edit Data Administrasi: {user.fullName}</DialogTitle>
+          <DialogTitle>Edit Data Administrasi: {profile?.fullName}</DialogTitle>
           <DialogDescription>
             Ubah data kepegawaian dan administrasi untuk pengguna ini. Perubahan akan disimpan di profil karyawan.
           </DialogDescription>
@@ -154,10 +162,11 @@ export function EmployeeAdminFormDialog({ open, onOpenChange, user, onSuccess }:
             <Separator className="my-6" />
             <h3 className="text-lg font-semibold border-b pb-2">Informasi Kepegawaian</h3>
             <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="employeeNumber" render={({ field }) => (<FormItem><FormLabel>NIK (Internal)</FormLabel><FormControl><Input {...field} value={field.value || ''} placeholder="Contoh: 202407001" /></FormControl><FormMessage /></FormItem>)} />
               <FormField control={form.control} name="positionTitle" render={({ field }) => (<FormItem><FormLabel>Jabatan</FormLabel><FormControl><Input {...field} value={field.value || ''} placeholder="Contoh: Staff Keuangan" /></FormControl><FormMessage /></FormItem>)} />
               <FormField control={form.control} name="joinDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>Tanggal Bergabung</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>)} />
               <FormField control={form.control} name="employmentType" render={({ field }) => (<FormItem><FormLabel>Tipe Karyawan</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent>{EMPLOYMENT_TYPES.map(t => <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem>)} />
-              <FormField control={form.control} name="employmentStage" render={({ field }) => (<FormItem><FormLabel>Tahap Karyawan</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent>{EMPLOYMENT_STAGES.map(s => <SelectItem key={s} value={s} className="capitalize">{s.replace('_', ' ')}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem>)} />
+              <FormField control={form.control} name="employmentStatus" render={({ field }) => (<FormItem><FormLabel>Status Kerja</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent>{EMPLOYMENT_STATUSES.map(s => <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem>)} />
             </div>
 
             <Separator className="my-6" />

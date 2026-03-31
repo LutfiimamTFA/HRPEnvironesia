@@ -7,7 +7,7 @@ import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
-import type { UserProfile, Brand } from '@/lib/types';
+import type { UserProfile, Brand, EmployeeProfile } from '@/lib/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from '@/components/ui/input';
@@ -43,38 +43,33 @@ export default function KaryawanDataPage() {
     const [activeTab, setActiveTab] = useState('active');
     const [brandFilter, setBrandFilter] = useState('all');
     const [searchTerm, setSearchTerm] = useState('');
-    const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
+    const [selectedUser, setSelectedUser] = useState<EmployeeProfile | null>(null);
 
     const menuConfig = useMemo(() => {
         if (!userProfile) return [];
         return MENU_CONFIG[userProfile.role] || [];
     }, [userProfile]);
 
-    const { data: users, isLoading: usersLoading, mutate } = useCollection<UserProfile>(
-        useMemoFirebase(() => query(collection(firestore, 'users'), where('employmentType', '==', 'karyawan')), [firestore])
+    const { data: employeeProfiles, isLoading: profilesLoading, mutate } = useCollection<EmployeeProfile>(
+        useMemoFirebase(() => query(collection(firestore, 'employee_profiles'), where('employmentType', '==', 'karyawan')), [firestore])
     );
     
     const { data: brands, isLoading: brandsLoading } = useCollection<Brand>(
         useMemoFirebase(() => collection(firestore, 'brands'), [firestore])
     );
 
-    const brandMap = useMemo(() => {
-        if (!brands) return new Map<string, string>();
-        return new Map(brands.map(b => [b.id!, b.name]));
-    }, [brands]);
-
-    const filteredUsers = useMemo(() => {
-        if (!users) return [];
-        return users.filter(user => {
-            const userStage = user.employmentStage || 'active';
-            const brandMatch = brandFilter === 'all' || (Array.isArray(user.brandId) ? user.brandId.includes(brandFilter) : user.brandId === brandFilter);
-            const searchMatch = searchTerm === '' || user.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || user.email.toLowerCase().includes(searchTerm.toLowerCase());
-            return userStage === activeTab && brandMatch && searchMatch;
+    const filteredProfiles = useMemo(() => {
+        if (!employeeProfiles) return [];
+        return employeeProfiles.filter(profile => {
+            const profileStatus = profile.employmentStatus || 'active';
+            const brandMatch = brandFilter === 'all' || profile.brandId === brandFilter;
+            const searchMatch = searchTerm === '' || profile.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || profile.email.toLowerCase().includes(searchTerm.toLowerCase());
+            return profileStatus === activeTab && brandMatch && searchMatch;
         });
-    }, [users, activeTab, brandFilter, searchTerm]);
+    }, [employeeProfiles, activeTab, brandFilter, searchTerm]);
 
-    const handleEditClick = (user: UserProfile) => {
-        setSelectedUser(user);
+    const handleEditClick = (profile: EmployeeProfile) => {
+        setSelectedUser(profile);
     }
     
     const handleFormSuccess = () => {
@@ -94,6 +89,7 @@ export default function KaryawanDataPage() {
                         <TabsList>
                             <TabsTrigger value="active">Karyawan Aktif</TabsTrigger>
                             <TabsTrigger value="probation">Masa Percobaan</TabsTrigger>
+                            <TabsTrigger value="resigned">Resigned/Terminated</TabsTrigger>
                         </TabsList>
                         <div className="flex items-center gap-2">
                             <div className="relative">
@@ -122,29 +118,22 @@ export default function KaryawanDataPage() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {usersLoading ? (
+                                {profilesLoading ? (
                                     <TableRow><TableCell colSpan={5} className="h-24 text-center">Memuat data...</TableCell></TableRow>
-                                ) : filteredUsers.length > 0 ? (
-                                    filteredUsers.map(user => {
-                                        const brandDisplay = user.brandId
-                                            ? (Array.isArray(user.brandId)
-                                                ? user.brandId.map(id => brandMap.get(id)).filter(Boolean).join(', ')
-                                                : brandMap.get(user.brandId as string)) || '-'
-                                            : '-';
-                                        return (
-                                            <TableRow key={user.uid}>
-                                                <TableCell className="font-medium">{user.fullName}</TableCell>
-                                                <TableCell>{user.email}</TableCell>
-                                                <TableCell>{brandDisplay}</TableCell>
-                                                <TableCell>{user.positionTitle || '-'}</TableCell>
-                                                <TableCell className="text-right">
-                                                    <Button variant="ghost" size="sm" onClick={() => handleEditClick(user)}>
-                                                        <Edit className="mr-2 h-4 w-4" /> Edit
-                                                    </Button>
-                                                </TableCell>
-                                            </TableRow>
-                                        )
-                                    })
+                                ) : filteredProfiles.length > 0 ? (
+                                    filteredProfiles.map(profile => (
+                                        <TableRow key={profile.uid}>
+                                            <TableCell className="font-medium">{profile.fullName}</TableCell>
+                                            <TableCell>{profile.email}</TableCell>
+                                            <TableCell>{profile.brandName || '-'}</TableCell>
+                                            <TableCell>{profile.positionTitle || '-'}</TableCell>
+                                            <TableCell className="text-right">
+                                                <Button variant="ghost" size="sm" onClick={() => handleEditClick(profile)}>
+                                                    <Edit className="mr-2 h-4 w-4" /> Edit
+                                                </Button>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))
                                 ) : (
                                     <TableRow><TableCell colSpan={5} className="h-24 text-center">Tidak ada data untuk filter ini.</TableCell></TableRow>
                                 )}
@@ -155,7 +144,7 @@ export default function KaryawanDataPage() {
             </DashboardLayout>
             {selectedUser && (
                 <EmployeeAdminFormDialog
-                    user={selectedUser}
+                    profile={selectedUser}
                     open={!!selectedUser}
                     onOpenChange={(open) => !open && setSelectedUser(null)}
                     onSuccess={handleFormSuccess}

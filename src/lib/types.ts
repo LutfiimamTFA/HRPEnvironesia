@@ -60,8 +60,8 @@ export type EmployeeProfile = {
   brandId?: string;
   brandName?: string;
   workLocation?: string; // Office Site ID or 'Remote'
-  managerUid?: string;
-  managerName?: string;
+  supervisorUid?: string;
+  supervisorName?: string;
   
   // --- Identitas (User Managed) ---
   fullName: string;
@@ -118,8 +118,7 @@ export type EmployeeProfile = {
   };
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
-  supervisorUid?: string;
-  supervisorName?: string;
+  managerUid?: string | null; // Atasan langsung
   hrdNotes?: string;
   compensationAmount?: number;
   contractDurationMonths?: number;
@@ -949,5 +948,3 @@ export function isActionableStatus(status: string, mode: 'manager' | 'hrd'): boo
   
   return false;
 }
-
-    
