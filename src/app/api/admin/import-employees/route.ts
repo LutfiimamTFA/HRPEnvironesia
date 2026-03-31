@@ -19,7 +19,10 @@ async function verifyAdmin(req: NextRequest) {
             return { error: 'Forbidden.', status: 403 };
         }
         return { uid: decodedToken.uid };
-    } catch (error) {
+    } catch (error: any) {
+        if (error.code === 'auth/id-token-expired') {
+            return { error: 'Sesi Anda telah berakhir, silakan muat ulang halaman dan coba lagi.', status: 401 };
+        }
         return { error: 'Invalid token.', status: 401 };
     }
 }
