@@ -6,6 +6,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // Do not run the middleware on API routes, Next.js build files, or static files
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  matcher: [],
 };
