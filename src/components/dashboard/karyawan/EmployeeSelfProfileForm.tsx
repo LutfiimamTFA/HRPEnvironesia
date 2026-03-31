@@ -17,7 +17,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Loader2, Save, Undo } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import type { EmployeeProfile, Address } from '@/lib/types';
-import { GoogleDatePicker } from '@/components/ui/google-date-picker';
+import { Checkbox } from '@/components/ui/checkbox';
 import { format } from 'date-fns';
 
 const addressObjectSchema = z.object({
@@ -37,6 +37,7 @@ const selfFormSchema = z.object({
   gender: z.enum(['Laki-laki', 'Perempuan', 'Lainnya']),
   birthPlace: z.string().min(2, "Tempat lahir harus diisi."),
   birthDate: z.string().refine((val) => val, { message: "Tanggal lahir harus diisi." }),
+  nik: z.string().length(16, "NIK harus 16 digit."),
   maritalStatus: z.enum(['Belum Kawin', 'Kawin', 'Cerai Hidup', 'Cerai Mati']),
   religion: z.string().min(3, "Agama harus diisi."),
   address: addressObjectSchema,
@@ -45,14 +46,27 @@ const selfFormSchema = z.object({
   bankName: z.string().optional(),
   bankAccountNumber: z.string().optional(),
   bankAccountHolderName: z.string().optional(),
+  
+  hasNpwp: z.boolean().default(false),
   npwp: z.string().optional(),
+  hasBpjsKesehatan: z.boolean().default(false),
   bpjsKesehatan: z.string().optional(),
+  hasBpjsKetenagakerjaan: z.boolean().default(false),
   bpjsKetenagakerjaan: z.string().optional(),
 
   // Kontak Darurat
   emergencyContactName: z.string().min(2, "Nama kontak darurat harus diisi."),
   emergencyContactRelation: z.string().min(2, "Hubungan kontak darurat harus diisi."),
   emergencyContactPhone: z.string().min(10, "Nomor telepon darurat tidak valid."),
+}).refine(data => !data.hasNpwp || (data.npwp && data.npwp.length > 0), {
+    message: "Nomor NPWP harus diisi jika Anda memilikinya.",
+    path: ["npwp"],
+}).refine(data => !data.hasBpjsKesehatan || (data.bpjsKesehatan && data.bpjsKesehatan.length > 0), {
+    message: "Nomor BPJS Kesehatan harus diisi jika Anda memilikinya.",
+    path: ["bpjsKesehatan"],
+}).refine(data => !data.hasBpjsKetenagakerjaan || (data.bpjsKetenagakerjaan && data.bpjsKetenagakerjaan.length > 0), {
+    message: "Nomor BPJS Ketenagakerjaan harus diisi jika Anda memilikinya.",
+    path: ["bpjsKetenagakerjaan"],
 });
 
 type FormValues = z.infer<typeof selfFormSchema>;
@@ -80,42 +94,36 @@ export function EmployeeSelfProfileForm({ initialProfile, onSaveSuccess, onCance
 
   const form = useForm<FormValues>({
     resolver: zodResolver(selfFormSchema),
-    defaultValues: {
-      nickName: '',
-      phone: '',
-      gender: undefined,
-      birthPlace: '',
-      birthDate: '',
-      maritalStatus: undefined,
-      religion: '',
-      address: addressDefaultValues,
-      bankName: '',
-      bankAccountNumber: '',
-      bankAccountHolderName: '',
-      npwp: '',
-      bpjsKesehatan: '',
-      bpjsKetenagakerjaan: '',
-      emergencyContactName: '',
-      emergencyContactRelation: '',
-      emergencyContactPhone: '',
-    },
+    defaultValues: {},
   });
   
+  const hasNpwp = form.watch('hasNpwp');
+  const hasBpjsKesehatan = form.watch('hasBpjsKesehatan');
+  const hasBpjsKetenagakerjaan = form.watch('hasBpjsKetenagakerjaan');
+
   useEffect(() => {
+    const formattedBirthDate = initialProfile.birthDate
+      ? format(new Date(initialProfile.birthDate), 'yyyy-MM-dd')
+      : '';
+      
     form.reset({
       nickName: initialProfile.nickName || '',
       phone: initialProfile.phone || '',
-      gender: initialProfile.gender || undefined,
+      gender: initialProfile.gender || 'Laki-laki',
       birthPlace: initialProfile.birthPlace || '',
-      birthDate: initialProfile.birthDate ? format(new Date(initialProfile.birthDate), 'yyyy-MM-dd') : '',
-      maritalStatus: initialProfile.maritalStatus || undefined,
+      birthDate: formattedBirthDate,
+      nik: initialProfile.nik || '',
+      maritalStatus: initialProfile.maritalStatus || 'Belum Kawin',
       religion: initialProfile.religion || '',
       address: getAddressObject(initialProfile.address),
       bankName: initialProfile.bankName || '',
       bankAccountNumber: initialProfile.bankAccountNumber || '',
       bankAccountHolderName: initialProfile.bankAccountHolderName || '',
+      hasNpwp: initialProfile.hasNpwp || false,
       npwp: initialProfile.npwp || '',
+      hasBpjsKesehatan: initialProfile.hasBpjsKesehatan || false,
       bpjsKesehatan: initialProfile.bpjsKesehatan || '',
+      hasBpjsKetenagakerjaan: initialProfile.hasBpjsKetenagakerjaan || false,
       bpjsKetenagakerjaan: initialProfile.bpjsKetenagakerjaan || '',
       emergencyContactName: initialProfile.emergencyContactName || '',
       emergencyContactRelation: initialProfile.emergencyContactRelation || '',
@@ -199,14 +207,27 @@ export function EmployeeSelfProfileForm({ initialProfile, onSaveSuccess, onCance
                     <Separator/>
 
                     <section className="space-y-4">
-                        <h3 className="text-lg font-semibold border-b pb-2 mb-4">Administrasi Finansial</h3>
+                        <h3 className="text-lg font-semibold border-b pb-2 mb-4">Administrasi Personal</h3>
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <FormField control={form.control} name="nik" render={({ field }) => (<FormItem><FormLabel>Nomor KTP (NIK)*</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                            <div className="space-y-4">
+                                <FormField control={form.control} name="hasNpwp" render={({ field }) => (<FormItem className="flex flex-row items-center space-x-3"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><FormLabel>Saya memiliki NPWP</FormLabel></FormItem>)} />
+                                {hasNpwp && <FormField control={form.control} name="npwp" render={({ field }) => (<FormItem><FormControl><Input {...field} value={field.value ?? ''} placeholder="Nomor NPWP" /></FormControl><FormMessage /></FormItem>)} />}
+                            </div>
+                            <div className="space-y-4">
+                                <FormField control={form.control} name="hasBpjsKesehatan" render={({ field }) => (<FormItem className="flex flex-row items-center space-x-3"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><FormLabel>Saya memiliki BPJS Kesehatan</FormLabel></FormItem>)} />
+                                {hasBpjsKesehatan && <FormField control={form.control} name="bpjsKesehatan" render={({ field }) => (<FormItem><FormControl><Input {...field} value={field.value ?? ''} placeholder="Nomor BPJS Kesehatan" /></FormControl><FormMessage /></FormItem>)} />}
+                            </div>
+                             <div className="space-y-4">
+                                <FormField control={form.control} name="hasBpjsKetenagakerjaan" render={({ field }) => (<FormItem className="flex flex-row items-center space-x-3"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><FormLabel>Saya memiliki BPJS Ketenagakerjaan</FormLabel></FormItem>)} />
+                                {hasBpjsKetenagakerjaan && <FormField control={form.control} name="bpjsKetenagakerjaan" render={({ field }) => (<FormItem><FormControl><Input {...field} value={field.value ?? ''} placeholder="Nomor BPJS Ketenagakerjaan" /></FormControl><FormMessage /></FormItem>)} />}
+                            </div>
+                        </div>
+                        <Separator />
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
                             <FormField control={form.control} name="bankName" render={({ field }) => (<FormItem><FormLabel>Nama Bank</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                             <FormField control={form.control} name="bankAccountNumber" render={({ field }) => (<FormItem><FormLabel>Nomor Rekening</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
-                            <FormField control={form.control} name="bankAccountHolderName" render={({ field }) => (<FormItem className="md:col-span-2"><FormLabel>Nama Pemilik Rekening</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
-                            <FormField control={form.control} name="npwp" render={({ field }) => (<FormItem><FormLabel>NPWP</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
-                            <FormField control={form.control} name="bpjsKesehatan" render={({ field }) => (<FormItem><FormLabel>BPJS Kesehatan</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
-                            <FormField control={form.control} name="bpjsKetenagakerjaan" render={({ field }) => (<FormItem><FormLabel>BPJS Ketenagakerjaan</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="bankAccountHolderName" render={({ field }) => (<FormItem><FormLabel>Nama Pemilik Rekening</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                         </div>
                     </section>
 

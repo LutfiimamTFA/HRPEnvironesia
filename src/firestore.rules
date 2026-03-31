@@ -143,8 +143,21 @@ service cloud.firestore {
      *   to check their interns' profiles without causing security rule deadlocks.
      */
     match /employee_profiles/{uid} {
+        function isUpdatingOwnAllowedFields() {
+          let allowedFields = [
+            'nickName', 'phone', 'birthPlace', 'birthDate', 'gender', 'maritalStatus', 'religion',
+            'address', 'bankName', 'bankAccountNumber', 'bankAccountHolderName',
+            'npwp', 'bpjsKesehatan', 'bpjsKetenagakerjaan',
+            'emergencyContactName', 'emergencyContactRelation', 'emergencyContactPhone',
+            'documents', 'updatedAt', 'completeness', 'hasNpwp', 'hasBpjsKesehatan', 'hasBpjsKetenagakerjaan',
+            'nik'
+          ];
+          return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedFields);
+        }
+
       allow get: if isOwner(uid) || isInternal();
-      allow create, update: if (isOwner(uid) && request.resource.data.uid == uid) || isHrd() || isSuperAdmin();
+      allow create: if isOwner(uid) || isHrd() || isSuperAdmin();
+      allow update: if (isOwner(uid) && isUpdatingOwnAllowedFields()) || isHrd() || isSuperAdmin();
       allow list: if isHrd() || isSuperAdmin();
       allow delete: if false;
     }
@@ -335,11 +348,46 @@ service cloud.firestore {
         (isSubmissionOwner() && (resource.data.status == 'draft' || resource.data.status.startsWith('revision_'))) ||
         // Manager can act on pending_manager requests
         (isAssignedManager(resource.data) && resource.data.status == 'pending_manager') ||
-        // HRD can act on pending_hrd requests
-        (isHrd() && resource.data.status == 'pending_hrd') ||
+        // HRD can act on pending_hrd or approved_by_manager requests
+        (isHrd() && (resource.data.status == 'pending_hrd' || resource.data.status == 'approved_by_manager')) ||
         // Super Admin can always update
         isSuperAdmin()
       );
+      
+      allow delete: if isSuperAdmin() || (isSubmissionOwner() && resource.data.status == 'draft');
+    }
+    
+     match /permission_requests/{requestId} {
+      function isSubmissionOwner() {
+        return request.auth.uid == resource.data.uid;
+      }
+      function isRequester() {
+        return request.auth.uid == request.resource.data.uid;
+      }
+      
+      function isReportingReturn() {
+        let isOwner = request.auth.uid == resource.data.uid;
+        let isTransitionValid = resource.data.status == 'reported' && request.resource.data.status == 'returned';
+        let allowedKeys = [
+            'status', 'actualReturnAt', 'returnSource', 'returnDetectedFromAttendance',
+            'actualDurationMinutes', 'exceededEstimatedReturn', 'exceededFourHours',
+            'overtimeReturnMinutes', 'needsManagerAttention', 'updatedAt'
+        ];
+        let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
+        return isOwner && isTransitionValid && changedKeys.hasOnly(allowedKeys);
+      }
+      
+      allow get: if isSignedIn() && (isSubmissionOwner() || isAssignedManager(resource.data) || isHrd() || isSuperAdmin());
+      allow list: if isSignedIn();
+
+      allow create: if isInternal() && isRequester();
+
+      allow update: if isSignedIn() && isSubmissionOwner() && (resource.data.status in ['draft', 'revision_manager', 'revision_hrd']);
+      allow update: if isSignedIn() && isReportingReturn();
+      allow update: if isSignedIn() && isAssignedManager(resource.data) && (resource.data.status in ['pending_manager', 'reported', 'returned']);
+      allow update: if isSignedIn() && isHrd() && (resource.data.status in ['pending_hrd', 'approved_by_manager', 'verified_manager']);
+      allow update: if isSignedIn() && isSuperAdmin();
+
       
       allow delete: if isSuperAdmin() || (isSubmissionOwner() && resource.data.status == 'draft');
     }
