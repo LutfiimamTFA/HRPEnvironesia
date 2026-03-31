@@ -125,19 +125,26 @@ export default function KaryawanDataPage() {
                                 {usersLoading ? (
                                     <TableRow><TableCell colSpan={5} className="h-24 text-center">Memuat data...</TableCell></TableRow>
                                 ) : filteredUsers.length > 0 ? (
-                                    filteredUsers.map(user => (
-                                        <TableRow key={user.uid}>
-                                            <TableCell className="font-medium">{user.fullName}</TableCell>
-                                            <TableCell>{user.email}</TableCell>
-                                            <TableCell>{Array.isArray(user.brandId) ? user.brandId.map(id => brandMap.get(id)).join(', ') : brandMap.get(user.brandId as string) || '-'}</TableCell>
-                                            <TableCell>{user.positionTitle || '-'}</TableCell>
-                                            <TableCell className="text-right">
-                                                <Button variant="ghost" size="sm" onClick={() => handleEditClick(user)}>
-                                                    <Edit className="mr-2 h-4 w-4" /> Edit
-                                                </Button>
-                                            </TableCell>
-                                        </TableRow>
-                                    ))
+                                    filteredUsers.map(user => {
+                                        const brandDisplay = user.brandId
+                                            ? (Array.isArray(user.brandId)
+                                                ? user.brandId.map(id => brandMap.get(id)).filter(Boolean).join(', ')
+                                                : brandMap.get(user.brandId as string)) || '-'
+                                            : '-';
+                                        return (
+                                            <TableRow key={user.uid}>
+                                                <TableCell className="font-medium">{user.fullName}</TableCell>
+                                                <TableCell>{user.email}</TableCell>
+                                                <TableCell>{brandDisplay}</TableCell>
+                                                <TableCell>{user.positionTitle || '-'}</TableCell>
+                                                <TableCell className="text-right">
+                                                    <Button variant="ghost" size="sm" onClick={() => handleEditClick(user)}>
+                                                        <Edit className="mr-2 h-4 w-4" /> Edit
+                                                    </Button>
+                                                </TableCell>
+                                            </TableRow>
+                                        )
+                                    })
                                 ) : (
                                     <TableRow><TableCell colSpan={5} className="h-24 text-center">Tidak ada data untuk filter ini.</TableCell></TableRow>
                                 )}
@@ -157,5 +164,3 @@ export default function KaryawanDataPage() {
         </>
     );
 }
-
-    

@@ -53,7 +53,7 @@ export type EmployeeProfile = {
   joinDate?: Timestamp;
   positionTitle?: string;
   division?: string;
-  brandId?: string | string[];
+  brandId?: string;
   brandName?: string;
   workLocation?: string; // Office Site ID or 'Remote'
   managerUid?: string;
@@ -71,8 +71,7 @@ export type EmployeeProfile = {
   maritalStatus?: 'Belum Kawin' | 'Kawin' | 'Cerai Hidup' | 'Cerai Mati';
   religion?: string;
   address?: Address;
-  addressCurrent?: string; // Legacy
-
+  
   // --- Administrasi (User Managed) ---
   bankName?: string;
   bankAccountNumber?: string;
@@ -942,5 +941,3 @@ export function isActionableStatus(status: string, mode: 'manager' | 'hrd'): boo
   
   return false;
 }
-
-    

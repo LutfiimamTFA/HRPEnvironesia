@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
-import { useForm } from 'react-hook-form';
+import { useEffect, useState, useMemo, useRef } from 'react';
+import { useForm, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGr
 import { Textarea } from '@/components/ui/textarea';
 import { GoogleDatePicker } from '@/components/ui/google-date-picker';
 import { useAuth } from '@/providers/auth-provider';
-import { useFirestore, useCollection, useMemoFirebase, setDocumentNonBlocking } from '@/firebase';
+import { useFirestore, useCollection, useMemoFirebase, setDocumentNonBlocking, useDoc } from '@/firebase';
 import { doc, serverTimestamp, Timestamp, writeBatch, query, collection, where } from 'firebase/firestore';
 import type { EmployeeProfile, Brand, UserProfile, JobApplication, Job, Division, EmploymentStatus } from '@/lib/types';
 import { EMPLOYMENT_TYPES, EMPLOYMENT_STAGES, ROLES } from '@/lib/types';
@@ -70,6 +70,8 @@ export function EmployeeAdminFormDialog({ open, onOpenChange, user, onSuccess }:
 
   useEffect(() => {
     if (open) {
+      const singleBrandId = employeeProfile?.brandId || (Array.isArray(user.brandId) ? user.brandId[0] : user.brandId) || '';
+
       form.reset({
         fullName: employeeProfile?.fullName || user.fullName,
         email: employeeProfile?.email || user.email,
@@ -79,7 +81,7 @@ export function EmployeeAdminFormDialog({ open, onOpenChange, user, onSuccess }:
         employmentStatus: employeeProfile?.employmentStatus,
         positionTitle: employeeProfile?.positionTitle,
         division: employeeProfile?.division,
-        brandId: employeeProfile?.brandId || (Array.isArray(user.brandId) ? user.brandId[0] : user.brandId),
+        brandId: singleBrandId,
         joinDate: employeeProfile?.joinDate?.toDate(),
         managerUid: employeeProfile?.managerUid,
       });
@@ -178,5 +180,3 @@ export function EmployeeAdminFormDialog({ open, onOpenChange, user, onSuccess }:
     </Dialog>
   );
 }
-
-    
