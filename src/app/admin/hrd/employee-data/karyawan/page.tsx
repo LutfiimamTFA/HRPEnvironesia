@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { EmployeeAdminFormDialog } from '@/components/dashboard/hrd/EmployeeAdminFormDialog';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 function EmployeeTableSkeleton() {
     return (
@@ -32,12 +33,23 @@ function EmployeeTableSkeleton() {
     )
 }
 
-const statusLabels: Record<string, string> = {
-    active: 'Karyawan Aktif',
-    probation: 'Masa Percobaan',
-    resigned: 'Resigned',
-    terminated: 'Terminated',
-};
+function ImportDialog({ open, onOpenChange }: { open: boolean, onOpenChange: (open: boolean) => void }) {
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Import Data Karyawan</DialogTitle>
+                    <DialogDescription>
+                        Unggah file CSV atau XLSX untuk menambah atau memperbarui data karyawan secara massal.
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="py-4 text-center">
+                    <p className="text-muted-foreground">Fitur import sedang dalam pengembangan.</p>
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+}
 
 export default function KaryawanDataPage() {
     const { userProfile } = useAuth();
@@ -50,6 +62,7 @@ export default function KaryawanDataPage() {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedUser, setSelectedUser] = useState<EmployeeProfile | null>(null);
     const [isFormOpen, setIsFormOpen] = useState(false);
+    const [isImportOpen, setIsImportOpen] = useState(false);
 
     const menuConfig = useMemo(() => {
         if (!userProfile) return [];
@@ -89,11 +102,55 @@ export default function KaryawanDataPage() {
       mutate();
     };
 
-    const handleComingSoon = () => {
-        toast({
-            title: "Segera Hadir",
-            description: "Fitur ini sedang dalam pengembangan.",
-        });
+    const handleExport = () => {
+        if (!filteredProfiles || filteredProfiles.length === 0) {
+            toast({
+                title: "Tidak Ada Data",
+                description: "Tidak ada data untuk diekspor pada filter saat ini.",
+            });
+            return;
+        }
+
+        const headers = ["fullName", "email", "phone", "employeeNumber", "brandName", "division", "positionTitle", "managerName", "employmentStatus", "joinDate"];
+        const csvContent = [
+            headers.join(','),
+            ...filteredProfiles.map(p => headers.map(header => {
+                let value = (p as any)[header];
+                if (header === 'joinDate' && value && value.toDate) {
+                    value = value.toDate().toISOString().split('T')[0];
+                }
+                // Escape commas and quotes
+                value = value ? `"${String(value).replace(/"/g, '""')}"` : '""';
+                return value;
+            }).join(','))
+        ].join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        if (link.download !== undefined) {
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `karyawan-${activeTab}-${new Date().toISOString().split('T')[0]}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    };
+    
+    const handleDownloadTemplate = () => {
+        const headers = "fullName,email,phone,employeeNumber,positionTitle,division,brandName,joinDate(YYYY-MM-DD),employmentStatus(active/probation/resigned/terminated)";
+        const blob = new Blob([headers], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        if (link.download !== undefined) {
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'template-karyawan.csv');
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
     };
 
     if (!hasAccess) {
@@ -109,10 +166,10 @@ export default function KaryawanDataPage() {
                             Kelola data administrasi karyawan perusahaan. Data di sini terpisah dari manajemen akun pengguna. Gunakan tombol import untuk mengunggah data dari CSV/XLSX.
                         </p>
                         <div className="flex items-center gap-2 flex-shrink-0">
-                             <Button variant="outline" onClick={handleComingSoon}><Upload className="mr-2" /> Import</Button>
-                             <Button variant="outline" onClick={handleComingSoon}><Download className="mr-2" /> Export</Button>
-                             <Button variant="outline" onClick={handleComingSoon}><FileSpreadsheet className="mr-2" /> Template</Button>
-                             <Button onClick={handleCreateClick}><PlusCircle className="mr-2" /> Tambah Manual</Button>
+                             <Button variant="outline" onClick={() => setIsImportOpen(true)}><Upload className="mr-2 h-4 w-4" /> Import</Button>
+                             <Button variant="outline" onClick={handleExport}><Download className="mr-2 h-4 w-4" /> Export</Button>
+                             <Button variant="outline" onClick={handleDownloadTemplate}><FileSpreadsheet className="mr-2 h-4 w-4" /> Template</Button>
+                             <Button onClick={handleCreateClick}><PlusCircle className="mr-2 h-4 w-4" /> Tambah Manual</Button>
                         </div>
                     </div>
                 <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -193,6 +250,10 @@ export default function KaryawanDataPage() {
                 open={isFormOpen}
                 onOpenChange={setIsFormOpen}
                 onSuccess={handleFormSuccess}
+            />
+            <ImportDialog
+                open={isImportOpen}
+                onOpenChange={setIsImportOpen}
             />
         </>
     );
