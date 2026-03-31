@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
-import { useForm, type FieldErrors } from 'react-hook-form';
+import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { UploadCloud, Loader2, ArrowRight, Info, Edit, FileQuestion, HelpCircle, Sparkles } from 'lucide-react';
+import { UploadCloud, Loader2, ArrowRight, Info, Edit, FileQuestion, HelpCircle, Sparkles, ArrowLeft } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel, SelectSeparator } from '@/components/ui/select';
@@ -31,46 +31,38 @@ type HRPField = {
 
 const HRP_FIELD_GROUPS: Record<string, HRPField[]> = {
     "Data Pribadi": [
-        { value: "fullName", label: "Nama Lengkap", required: true },
-        { value: "birthPlace", label: "Tempat Lahir" },
-        { value: "birthDate", label: "Tanggal Lahir" },
-        { value: "gender", label: "Jenis Kelamin" },
+        { value: "fullName", label: "Nama Lengkap", required: true, description: "Nama lengkap karyawan sesuai KTP." },
+        { value: "birthPlace", label: "Tempat Lahir", description: "Kota tempat karyawan dilahirkan." },
+        { value: "birthDate", label: "Tanggal Lahir", description: "Format: YYYY-MM-DD" },
+        { value: "gender", label: "Jenis Kelamin", description: "Laki-laki atau Perempuan." },
         { value: "maritalStatus", label: "Status Pernikahan" },
-        { value: "address", label: "Alamat" },
+        { value: "address", label: "Alamat", description: "Alamat lengkap saat ini." },
         { value: "phone", label: "Kontak (No. HP)" },
         { value: "email", label: "Kontak (Email)", required: true },
     ],
     "Informasi Pekerjaan": [
-        { value: "employeeNumber", label: "Nomor Induk Karyawan (NIK)", required: true },
+        { value: "employeeNumber", label: "Nomor Induk Karyawan (NIK)", required: true, description: "Nomor identifikasi unik internal perusahaan." },
         { value: "positionTitle", label: "Jabatan/Posisi", required: true },
         { value: "division", label: "Departemen/Bagian", required: true },
-        { value: "joinDate", label: "Tanggal Mulai Bekerja", required: true },
-        { value: "employmentType", label: "Jenis Kontrak Kerja", required: true },
-        { value: "employmentStatus", label: "Status Kerja", required: true },
+        { value: "joinDate", label: "Tanggal Mulai Bekerja", required: true, description: "Format: YYYY-MM-DD" },
+        { value: "employmentType", label: "Jenis Kontrak Kerja", description: "Contoh: Tetap, Kontrak, Harian." },
+        { value: "employmentStatus", label: "Status Kerja", required: true, description: "Contoh: active, probation, resigned." },
         { value: "brandName", label: "Nama Brand", required: true },
         { value: "managerName", label: "Nama Manajer Divisi" },
     ],
     "Data Administratif": [
-        { value: "nik", label: "No. KTP/SIM" },
+        { value: "nik", label: "No. KTP/SIM", required: true },
         { value: "npwp", label: "NPWP" },
         { value: "bpjsKesehatan", label: "No. BPJS Kesehatan" },
         { value: "bpjsKetenagakerjaan", label: "No. BPJS Ketenagakerjaan" },
         { value: "bankAccountNumber", label: "No. Rekening Bank" },
     ],
-    "Riwayat Pendidikan & Pelatihan": [
-        { value: "education", label: "Pendidikan Terakhir" },
-        { value: "certification", label: "Sertifikasi" },
-    ],
-    "Lainnya": [
-        { value: "additionalInfo", label: "Info Tambahan (Teks)" },
-    ]
 };
 
-
 const HRP_FIELDS: HRPField[] = Object.values(HRP_FIELD_GROUPS).flat();
-const REQUIRED_HRP_FIELDS = HRP_FIELDS.filter(f => f.required).map(f => f.value);
+const REQUIRED_HRP_FIELDS = HRP_FIELDS.filter(f => f.required);
 
-const normalizeHeader = (header: string) => header.toLowerCase().replace(/[\s_]+/g, '');
+const normalizeHeader = (header: string) => header ? header.toLowerCase().replace(/[\s_]+/g, '') : '';
 
 const suggestMapping = (header: string): string => {
     const normalizedHeader = normalizeHeader(header);
@@ -104,11 +96,11 @@ const suggestMapping = (header: string): string => {
     return '';
 };
 
-
 export function ImportDialog({ open, onOpenChange, onImportSuccess }: ImportDialogProps) {
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [isDragging, setIsDragging] = useState(false);
     const [step, setStep] = useState(1);
+    const [isSaving, setIsSaving] = useState(false);
     const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
     const [columnMapping, setColumnMapping] = useState<Record<string, string | undefined>>({});
     const [customFieldNames, setCustomFieldNames] = useState<Record<string, string>>({});
@@ -171,10 +163,13 @@ export function ImportDialog({ open, onOpenChange, onImportSuccess }: ImportDial
         reader.readAsText(selectedFile);
     };
     
-    const { mappedRequiredFields, isMappingComplete, mappingSummary } = useMemo(() => {
+    const { isMappingComplete, unmappedRequiredFields, mappingSummary } = useMemo(() => {
         const mappedValues = new Set(Object.values(columnMapping).filter((v): v is string => !!v && !v.startsWith('__custom__')));
+        const mappedRequired = REQUIRED_HRP_FIELDS.filter(field => mappedValues.has(field.value));
+        const unmappedRequired = REQUIRED_HRP_FIELDS.filter(field => !mappedValues.has(field.value));
+
         const requiredCount = REQUIRED_HRP_FIELDS.length;
-        const mappedRequiredCount = REQUIRED_HRP_FIELDS.filter(field => mappedValues.has(field)).length;
+        const mappedRequiredCount = mappedRequired.length;
         const complete = mappedRequiredCount === requiredCount;
         
         const autoDetectedCount = csvHeaders.filter(header => {
@@ -185,8 +180,8 @@ export function ImportDialog({ open, onOpenChange, onImportSuccess }: ImportDial
         const unmappedCount = csvHeaders.filter(header => !columnMapping[header]).length;
 
         return {
-            mappedRequiredFields: mappedRequiredCount,
             isMappingComplete: complete,
+            unmappedRequiredFields: unmappedRequired,
             mappingSummary: {
                 autoDetected: autoDetectedCount,
                 unmapped: unmappedCount,
@@ -275,11 +270,11 @@ export function ImportDialog({ open, onOpenChange, onImportSuccess }: ImportDial
                                             <TableCell className="font-semibold bg-slate-50 dark:bg-slate-900">{header}</TableCell>
                                             <TableCell>
                                                 <div className="space-y-2">
-                                                    <Select onValueChange={(value) => handleMappingChange(header, value === '__skip__' ? undefined : value)} value={mappedValue || ''}>
+                                                    <Select onValueChange={(value) => handleMappingChange(header, value === '__skip__' ? undefined : value)} value={mappedValue || '__skip__'}>
                                                         <SelectTrigger>
                                                             <SelectValue placeholder="Pilih field tujuan..." />
                                                         </SelectTrigger>
-                                                        <SelectContent portalled={true}>
+                                                        <SelectContent>
                                                             <SelectItem value="__skip__">(Jangan Impor Kolom Ini)</SelectItem>
                                                             <SelectSeparator />
                                                             {Object.entries(HRP_FIELD_GROUPS).map(([group, fields]) => (
@@ -313,6 +308,7 @@ export function ImportDialog({ open, onOpenChange, onImportSuccess }: ImportDial
                                 </TableBody>
                             </Table>
                         </div>
+                        
                         <div className="flex justify-between items-center text-sm text-muted-foreground pt-2">
                             <span className={cn("font-semibold", isMappingComplete ? 'text-green-600' : 'text-amber-600')}>
                                 Field Wajib Terpenuhi: <strong>{mappingSummary.requiredProgress}</strong>
@@ -322,35 +318,76 @@ export function ImportDialog({ open, onOpenChange, onImportSuccess }: ImportDial
                                 <span>Belum Dipetakan: <strong>{mappingSummary.unmapped}</strong></span>
                             </div>
                         </div>
+                        
+                        {!isMappingComplete && (
+                            <Alert variant="destructive" className="text-xs">
+                                <AlertCircle className="h-4 w-4" />
+                                <AlertTitle>Field Wajib Belum Lengkap</AlertTitle>
+                                <AlertDescription>
+                                    Harap petakan field berikut: {unmappedRequiredFields.map(f => `"${f.label}"`).join(', ')}.
+                                </AlertDescription>
+                            </Alert>
+                        )}
+                    </div>
+                )}
+                
+                {step === 3 && (
+                    <div className="py-4 space-y-4">
+                        <Alert>
+                           <Info className="h-4 w-4" />
+                            <AlertTitle>Pratinjau & Validasi Data</AlertTitle>
+                            <AlertDescription>
+                                Fitur pratinjau data dan validasi sebelum import final sedang dalam pengembangan.
+                            </AlertDescription>
+                        </Alert>
                     </div>
                 )}
 
-                <DialogFooter>
-                    {step === 1 && (
-                        <>
-                           <Button variant="ghost" onClick={() => handleClose(false)}>Batal</Button>
-                           <Button onClick={handleNextStep} disabled={!selectedFile}>
+                <DialogFooter className="justify-between items-center">
+                    {step > 1 ? (
+                        <Button variant="ghost" onClick={() => setStep(step - 1)}>
+                            <ArrowLeft className="mr-2 h-4 w-4" />
+                            Kembali
+                        </Button>
+                    ) : <div />}
+
+                    <div className="flex items-center gap-2">
+                        <DialogClose asChild><Button variant="outline">Batal</Button></DialogClose>
+                        {step === 1 && (
+                            <Button onClick={handleNextStep} disabled={!selectedFile}>
                                 Lanjut ke Pemetaan Kolom <ArrowRight className="ml-2 h-4 w-4" />
                             </Button>
-                        </>
-                    )}
-                    {step === 2 && (
-                        <>
-                           <Button variant="ghost" onClick={() => setStep(1)}>Kembali</Button>
-                           <TooltipProvider>
-                             <Tooltip>
-                               <TooltipTrigger asChild>
-                                 <div className="inline-block"> {/* Wrapper div for tooltip on disabled button */}
-                                   <Button disabled={!isMappingComplete} onClick={() => toast({ title: "Fitur dalam pengembangan", description: "Pratinjau dan validasi data akan muncul di sini." })}>
-                                       Lanjut ke Preview <ArrowRight className="ml-2 h-4 w-4" />
-                                   </Button>
-                                 </div>
-                               </TooltipTrigger>
-                               {!isMappingComplete && <TooltipContent><p>Harap petakan semua field wajib (*).</p></TooltipContent>}
-                             </Tooltip>
-                           </TooltipProvider>
-                        </>
-                    )}
+                        )}
+                        {step === 2 && (
+                            !isMappingComplete ? (
+                                <TooltipProvider>
+                                    <Tooltip delayDuration={100}>
+                                        <TooltipTrigger asChild>
+                                            <div className="inline-block">
+                                                <Button disabled={true}>
+                                                    Lanjut ke Preview <ArrowRight className="ml-2 h-4 w-4" />
+                                                </Button>
+                                            </div>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                            <p>Harap petakan semua field wajib (*).</p>
+                                            <p className="font-medium text-destructive">Belum dipetakan: {unmappedRequiredFields.map(f => `"${f.label}"`).join(', ')}</p>
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
+                            ) : (
+                                <Button onClick={() => setStep(3)}>
+                                    Lanjut ke Preview <ArrowRight className="ml-2 h-4 w-4" />
+                                </Button>
+                            )
+                        )}
+                        {step === 3 && (
+                            <Button onClick={() => alert('Importing...')} disabled={isSaving}>
+                                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                Import Final
+                            </Button>
+                        )}
+                    </div>
                 </DialogFooter>
             </DialogContent>
         </Dialog>

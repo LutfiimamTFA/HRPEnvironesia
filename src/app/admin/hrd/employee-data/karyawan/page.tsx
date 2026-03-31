@@ -21,6 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { useToast } from '@/hooks/use-toast';
 import { ImportDialog } from '@/components/dashboard/hrd/ImportDialog';
 import { DeleteConfirmationDialog } from '@/components/dashboard/DeleteConfirmationDialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 function EmployeeTableSkeleton() {
     return (
@@ -158,7 +159,7 @@ export default function KaryawanDataPage() {
                  <div className="space-y-4">
                     <div className="flex flex-col sm:flex-row gap-2 justify-between">
                          <p className="text-sm text-muted-foreground max-w-2xl">
-                            Kelola data administrasi karyawan perusahaan. Data di sini terpisah dari manajemen akun pengguna. Gunakan tombol import untuk mengunggah data dari CSV/XLSX.
+                            Kelola data administrasi karyawan perusahaan. Data di sini terpisah dari manajemen akun pengguna. Gunakan tombol import untuk mengunggah data dari CSV.
                         </p>
                         <div className="flex items-center gap-2 flex-shrink-0">
                              <Button variant="outline" onClick={() => setIsImportOpen(true)}><Upload className="mr-2 h-4 w-4" /> Import</Button>
@@ -263,6 +264,7 @@ export default function KaryawanDataPage() {
             <ImportDialog
                 open={isImportOpen}
                 onOpenChange={setIsImportOpen}
+                onImportSuccess={mutate}
             />
             <DeleteConfirmationDialog 
                 open={isDeleteOpen}
@@ -274,3 +276,6 @@ export default function KaryawanDataPage() {
         </>
     );
 }
+```
+</change>
+```
