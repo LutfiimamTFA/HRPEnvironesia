@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
@@ -16,6 +15,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface ImportDialogProps {
   open: boolean;
@@ -70,7 +70,7 @@ const HRP_FIELD_GROUPS: Record<string, HRPField[]> = {
 
 
 const HRP_FIELDS: HRPField[] = Object.values(HRP_FIELD_GROUPS).flat();
-const REQUIRED_HRP_FIELDS = HRP_FIELDS.filter(f => f.required);
+const RECOMMENDED_HRP_FIELDS = HRP_FIELDS.filter(f => f.required);
 
 const normalizeHeader = (header: string) => header ? header.toLowerCase().replace(/[\s_]+/g, '') : '';
 
@@ -173,29 +173,30 @@ export function ImportDialog({ open, onOpenChange, onImportSuccess }: ImportDial
         reader.readAsText(selectedFile);
     };
     
-    const { isMappingComplete, unmappedRequiredFields, mappingSummary } = useMemo(() => {
+    const { recommendedFieldsMet, unmappedRecommendedFields, mappingSummary } = useMemo(() => {
         const mappedValues = new Set(Object.values(columnMapping).filter((v): v is string => !!v && !v.startsWith('__custom__')));
-        const mappedRequired = REQUIRED_HRP_FIELDS.filter(field => mappedValues.has(field.value));
-        const unmappedRequired = REQUIRED_HRP_FIELDS.filter(field => !mappedValues.has(field.value));
+        const mappedRecommended = RECOMMENDED_HRP_FIELDS.filter(field => mappedValues.has(field.value));
+        const unmappedRecommended = RECOMMENDED_HRP_FIELDS.filter(field => !mappedValues.has(field.value));
 
-        const requiredCount = REQUIRED_HRP_FIELDS.length;
-        const mappedRequiredCount = mappedRequired.length;
-        const complete = mappedRequiredCount === requiredCount;
+        const requiredCount = RECOMMENDED_HRP_FIELDS.length;
+        const mappedRequiredCount = mappedRecommended.length;
         
         const autoDetectedCount = csvHeaders.filter(header => {
             const suggestion = suggestMapping(header);
             return suggestion && columnMapping[header] === suggestion;
         }).length;
         
-        const unmappedCount = csvHeaders.filter(header => !columnMapping[header]).length;
+        const unmappedCount = csvHeaders.filter(header => !columnMapping[header] || columnMapping[header] === '__skip__').length;
+        const skippedCount = csvHeaders.filter(header => columnMapping[header] === '__skip__').length;
 
         return {
-            isMappingComplete: complete,
-            unmappedRequiredFields: unmappedRequired,
+            recommendedFieldsMet: unmappedRecommended.length === 0,
+            unmappedRecommendedFields: unmappedRecommended,
             mappingSummary: {
                 autoDetected: autoDetectedCount,
                 unmapped: unmappedCount,
-                requiredProgress: `${mappedRequiredCount}/${requiredCount}`,
+                skipped: skippedCount,
+                recommendedProgress: `${mappedRequiredCount}/${requiredCount}`,
             }
         };
     }, [columnMapping, csvHeaders]);
@@ -217,8 +218,8 @@ export function ImportDialog({ open, onOpenChange, onImportSuccess }: ImportDial
 
     return (
         <Dialog open={open} onOpenChange={handleClose}>
-            <DialogContent className={cn("sm:max-w-xl transition-all duration-300", step === 2 && "sm:max-w-5xl")}>
-                <DialogHeader>
+            <DialogContent className={cn("max-w-xl transition-all duration-300", step === 2 && "sm:max-w-5xl h-[90vh] flex flex-col p-0")}>
+                <DialogHeader className="p-6 pb-2 border-b">
                     <DialogTitle>
                       {step === 1 ? 'Import Data Karyawan' : 'Tahap 2: Pemetaan Kolom'}
                     </DialogTitle>
@@ -231,7 +232,7 @@ export function ImportDialog({ open, onOpenChange, onImportSuccess }: ImportDial
                 </DialogHeader>
                 
                 {step === 1 && (
-                     <div className="py-6">
+                     <div className="p-6">
                        <label 
                             htmlFor="dropzone-file"
                             className={cn( "flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-lg cursor-pointer bg-muted transition-colors", isDragging ? "border-primary bg-primary/10" : "hover:bg-muted/80" )}
@@ -252,97 +253,93 @@ export function ImportDialog({ open, onOpenChange, onImportSuccess }: ImportDial
                 )}
                 
                 {step === 2 && (
-                    <div className="py-4 space-y-4">
-                        <Alert>
-                           <Info className="h-4 w-4" />
-                            <AlertTitle>Petunjuk Pemetaan</AlertTitle>
-                            <AlertDescription>
-                                Kolom di kiri adalah header dari file Anda. Pilih field tujuan yang sesuai di HRP pada dropdown di kanan. Field dengan tanda <span className="text-destructive font-bold">*</span> wajib untuk dipetakan.
-                            </AlertDescription>
-                        </Alert>
-                        <div className="rounded-md border h-96 overflow-y-auto">
-                            <Table>
-                                <TableHeader className="sticky top-0 bg-muted z-10">
-                                    <TableRow>
-                                        <TableHead className="w-[40%] font-bold">Kolom dari File Anda</TableHead>
-                                        <TableHead className="w-[45%] font-bold">Petakan ke Field Sistem HRP</TableHead>
-                                        <TableHead className="w-[15%] text-center font-bold">Status</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {csvHeaders.map(header => {
-                                        const mappedValue = columnMapping[header];
-                                        const isAutoSuggested = !!suggestMapping(header) && mappedValue === suggestMapping(header);
-                                        const isCustom = mappedValue === '__custom__';
-
-                                        return (
-                                        <TableRow key={header}>
-                                            <TableCell className="font-semibold bg-slate-50 dark:bg-slate-900">{header}</TableCell>
-                                            <TableCell>
-                                                <div className="space-y-2">
-                                                    <Select onValueChange={(value) => handleMappingChange(header, value === '__skip__' ? undefined : value)} value={mappedValue || '__skip__'}>
-                                                        <SelectTrigger>
-                                                            <SelectValue placeholder="Pilih field tujuan..." />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            <SelectItem value="__skip__">(Jangan Impor Kolom Ini)</SelectItem>
-                                                            <SelectSeparator />
-                                                            {Object.entries(HRP_FIELD_GROUPS).map(([group, fields]) => (
-                                                                <SelectGroup key={group}>
-                                                                    <SelectLabel>{group}</SelectLabel>
-                                                                    {fields.map(field => (
-                                                                        <SelectItem key={field.value} value={field.value}>
-                                                                            {field.label} {field.required && <span className="text-destructive">*</span>}
-                                                                        </SelectItem>
-                                                                    ))}
-                                                                </SelectGroup>
-                                                            ))}
-                                                             <SelectSeparator />
-                                                             <SelectItem value="__custom__">Buat Field Baru...</SelectItem>
-                                                        </SelectContent>
-                                                    </Select>
-                                                     {isCustom && (
-                                                        <Input 
-                                                            placeholder="Masukkan nama field baru..."
-                                                            value={customFieldNames[header] || ''}
-                                                            onChange={(e) => handleCustomFieldNameChange(header, e.target.value)}
-                                                        />
-                                                     )}
-                                                </div>
-                                            </TableCell>
-                                            <TableCell className="text-center">
-                                                {isAutoSuggested ? <Badge variant="secondary" className="bg-green-100 text-green-800 border-green-200">Otomatis</Badge> : (mappedValue ? <Badge variant="default">Dipilih</Badge> : <Badge variant="outline">Belum</Badge>)}
-                                            </TableCell>
-                                        </TableRow>
-                                    )})}
-                                </TableBody>
-                            </Table>
-                        </div>
-                        
-                        <div className="flex justify-between items-center text-sm text-muted-foreground pt-2">
-                            <span className={cn("font-semibold", isMappingComplete ? 'text-green-600' : 'text-amber-600')}>
-                                Field Wajib Terpenuhi: <strong>{mappingSummary.requiredProgress}</strong>
-                            </span>
-                            <div className="flex items-center gap-4">
-                                <span>Otomatis Terdeteksi: <strong>{mappingSummary.autoDetected}</strong></span>
-                                <span>Belum Dipetakan: <strong>{mappingSummary.unmapped}</strong></span>
-                            </div>
-                        </div>
-                        
-                        {!isMappingComplete && (
-                            <Alert variant="destructive" className="text-xs">
-                                <AlertCircle className="h-4 w-4" />
-                                <AlertTitle>Field Wajib Belum Lengkap</AlertTitle>
+                    <>
+                    <div className="flex-grow overflow-y-auto px-6">
+                        <div className="py-4 space-y-4">
+                            <Alert>
+                               <Info className="h-4 w-4" />
+                                <AlertTitle>Petunjuk Pemetaan</AlertTitle>
                                 <AlertDescription>
-                                    Harap petakan field berikut: {unmappedRequiredFields.map(f => `"${f.label}"`).join(', ')}.
+                                    Kolom di kiri adalah header dari file Anda. Pilih field tujuan yang sesuai di HRP pada dropdown di kanan. Field dengan tanda <span className="text-destructive font-bold">*</span> disarankan untuk dipetakan.
                                 </AlertDescription>
                             </Alert>
-                        )}
+                            <div className="rounded-md border h-96">
+                                <ScrollArea className="h-full">
+                                <Table>
+                                    <TableHeader className="sticky top-0 bg-muted z-10">
+                                        <TableRow>
+                                            <TableHead className="w-[40%] font-bold">Kolom dari File Anda</TableHead>
+                                            <TableHead className="w-[45%] font-bold">Petakan ke Field Sistem HRP</TableHead>
+                                            <TableHead className="w-[15%] text-center font-bold">Status</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {csvHeaders.map(header => {
+                                            const mappedValue = columnMapping[header];
+                                            const isAutoSuggested = !!suggestMapping(header) && mappedValue === suggestMapping(header);
+                                            const isCustom = mappedValue === '__custom__';
+
+                                            return (
+                                            <TableRow key={header}>
+                                                <TableCell className="font-semibold bg-slate-50 dark:bg-slate-900">{header}</TableCell>
+                                                <TableCell>
+                                                    <div className="space-y-2">
+                                                        <Select onValueChange={(value) => handleMappingChange(header, value === '__skip__' ? undefined : value)} value={mappedValue || '__skip__'}>
+                                                            <SelectTrigger>
+                                                                <SelectValue placeholder="(Jangan Impor Kolom Ini)" />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="__skip__">(Jangan Impor Kolom Ini)</SelectItem>
+                                                                <SelectSeparator />
+                                                                {Object.entries(HRP_FIELD_GROUPS).map(([group, fields]) => (
+                                                                    <SelectGroup key={group}>
+                                                                        <SelectLabel>{group}</SelectLabel>
+                                                                        {fields.map(field => (
+                                                                            <SelectItem key={field.value} value={field.value}>
+                                                                                {field.label} {field.required && <span className="text-destructive">*</span>}
+                                                                            </SelectItem>
+                                                                        ))}
+                                                                    </SelectGroup>
+                                                                ))}
+                                                                 <SelectSeparator />
+                                                                 <SelectItem value="__custom__">Buat Field Baru...</SelectItem>
+                                                            </SelectContent>
+                                                        </Select>
+                                                         {isCustom && (
+                                                            <Input 
+                                                                placeholder="Masukkan nama field baru..."
+                                                                value={customFieldNames[header] || ''}
+                                                                onChange={(e) => handleCustomFieldNameChange(header, e.target.value)}
+                                                            />
+                                                         )}
+                                                    </div>
+                                                </TableCell>
+                                                <TableCell className="text-center">
+                                                    {isAutoSuggested ? <Badge variant="secondary" className="bg-green-100 text-green-800 border-green-200">Otomatis</Badge> : (mappedValue ? (mappedValue === '__skip__' ? <Badge variant="outline">Diabaikan</Badge> : <Badge variant="default">Dipilih</Badge>) : <Badge variant="outline">Belum</Badge>)}
+                                                </TableCell>
+                                            </TableRow>
+                                        )})}
+                                    </TableBody>
+                                </Table>
+                                </ScrollArea>
+                            </div>
+                            
+                            {!recommendedFieldsMet && (
+                                <Alert variant="default" className="text-xs bg-amber-50 border-amber-200 dark:bg-amber-950/50 dark:border-amber-800">
+                                    <AlertCircle className="h-4 w-4 text-amber-600" />
+                                    <AlertTitle className="text-amber-700 dark:text-amber-300">Rekomendasi Belum Lengkap</AlertTitle>
+                                    <AlertDescription className="text-amber-600 dark:text-amber-400">
+                                        Anda dapat melanjutkan, namun sebaiknya petakan field berikut: {unmappedRecommendedFields.map(f => `"${f.label}"`).join(', ')}.
+                                    </AlertDescription>
+                                </Alert>
+                            )}
+                        </div>
                     </div>
+                    </>
                 )}
                 
                 {step === 3 && (
-                    <div className="py-4 space-y-4">
+                    <div className="p-6">
                         <Alert>
                            <Info className="h-4 w-4" />
                             <AlertTitle>Pratinjau & Validasi Data</AlertTitle>
@@ -352,16 +349,24 @@ export function ImportDialog({ open, onOpenChange, onImportSuccess }: ImportDial
                         </Alert>
                     </div>
                 )}
-
-                <DialogFooter className="justify-between items-center">
-                    {step > 1 ? (
-                        <Button variant="ghost" onClick={() => setStep(step - 1)}>
-                            <ArrowLeft className="mr-2 h-4 w-4" />
-                            Kembali
-                        </Button>
-                    ) : <div />}
-
+                
+                <DialogFooter className="justify-between items-center p-6 pt-2 border-t flex-shrink-0">
+                    <div className="text-xs text-muted-foreground">
+                        {step === 2 && (
+                            <div className="flex items-center gap-4">
+                                <span>Field Disarankan Terpenuhi: <strong>{mappingSummary.requiredProgress}</strong></span>
+                                <span>Otomatis: <strong>{mappingSummary.autoDetected}</strong></span>
+                                <span>Diabaikan: <strong>{mappingSummary.skipped}</strong></span>
+                            </div>
+                        )}
+                    </div>
                     <div className="flex items-center gap-2">
+                        {step > 1 && (
+                            <Button variant="ghost" onClick={() => setStep(step - 1)}>
+                                <ArrowLeft className="mr-2 h-4 w-4" />
+                                Kembali
+                            </Button>
+                        )}
                         <DialogClose asChild><Button variant="outline">Batal</Button></DialogClose>
                         {step === 1 && (
                             <Button onClick={handleNextStep} disabled={!selectedFile}>
@@ -369,26 +374,9 @@ export function ImportDialog({ open, onOpenChange, onImportSuccess }: ImportDial
                             </Button>
                         )}
                         {step === 2 && (
-                            !isMappingComplete ? (
-                                <TooltipProvider>
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <div className="inline-block">
-                                                <Button disabled={true}>
-                                                    Lanjut ke Preview <ArrowRight className="ml-2 h-4 w-4" />
-                                                </Button>
-                                            </div>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                            <p>Harap petakan semua field wajib (*).</p>
-                                        </TooltipContent>
-                                    </Tooltip>
-                                </TooltipProvider>
-                            ) : (
-                                <Button onClick={() => setStep(3)}>
-                                    Lanjut ke Preview <ArrowRight className="ml-2 h-4 w-4" />
-                                </Button>
-                            )
+                            <Button onClick={() => setStep(3)}>
+                                Lanjut ke Preview <ArrowRight className="ml-2 h-4 w-4" />
+                            </Button>
                         )}
                         {step === 3 && (
                             <Button onClick={() => alert('Importing...')} disabled={isSaving}>
