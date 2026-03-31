@@ -128,4 +128,3 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Gagal menyimpan data ke database.', details: e.message }, { status: 500 });
     }
 }
-```
