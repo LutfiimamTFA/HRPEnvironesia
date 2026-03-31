@@ -18,6 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { EmployeeAdminFormDialog } from '@/components/dashboard/hrd/EmployeeAdminFormDialog';
 import { Card, CardContent } from '@/components/ui/card';
+import { useToast } from '@/hooks/use-toast';
 
 function EmployeeTableSkeleton() {
     return (
@@ -42,6 +43,7 @@ export default function KaryawanDataPage() {
     const { userProfile } = useAuth();
     const hasAccess = useRoleGuard(['hrd', 'super-admin']);
     const firestore = useFirestore();
+    const { toast } = useToast();
     
     const [activeTab, setActiveTab] = useState('active');
     const [brandFilter, setBrandFilter] = useState('all');
@@ -87,6 +89,13 @@ export default function KaryawanDataPage() {
       mutate();
     };
 
+    const handleComingSoon = () => {
+        toast({
+            title: "Segera Hadir",
+            description: "Fitur ini sedang dalam pengembangan.",
+        });
+    };
+
     if (!hasAccess) {
         return <DashboardLayout pageTitle="Data Karyawan" menuConfig={menuConfig}><EmployeeTableSkeleton/></DashboardLayout>;
     }
@@ -96,13 +105,13 @@ export default function KaryawanDataPage() {
             <DashboardLayout pageTitle="Data Karyawan" menuConfig={menuConfig}>
                  <div className="space-y-4">
                     <div className="flex flex-col sm:flex-row gap-2 justify-between">
-                         <p className="text-sm text-muted-foreground">
-                            Kelola data administrasi karyawan perusahaan. Data di sini terpisah dari manajemen akun pengguna.
+                         <p className="text-sm text-muted-foreground max-w-2xl">
+                            Kelola data administrasi karyawan perusahaan. Data di sini terpisah dari manajemen akun pengguna. Gunakan tombol import untuk mengunggah data dari CSV/XLSX.
                         </p>
-                        <div className="flex items-center gap-2">
-                             <Button variant="outline"><Upload className="mr-2" /> Import</Button>
-                             <Button variant="outline"><Download className="mr-2" /> Export</Button>
-                             <Button variant="outline"><FileSpreadsheet className="mr-2" /> Template</Button>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                             <Button variant="outline" onClick={handleComingSoon}><Upload className="mr-2" /> Import</Button>
+                             <Button variant="outline" onClick={handleComingSoon}><Download className="mr-2" /> Export</Button>
+                             <Button variant="outline" onClick={handleComingSoon}><FileSpreadsheet className="mr-2" /> Template</Button>
                              <Button onClick={handleCreateClick}><PlusCircle className="mr-2" /> Tambah Manual</Button>
                         </div>
                     </div>
