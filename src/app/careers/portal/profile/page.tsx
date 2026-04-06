@@ -24,7 +24,7 @@ const steps = [
     { id: 2, name: 'Pendidikan' },
     { id: 3, name: 'Pengalaman Kerja' },
     { id: 4, name: 'Pengalaman Organisasi' },
-    { id: 5, name: 'Keahlian & Sertifikasi' },
+    { id: 5, name: 'Dokumen & Sertifikasi' },
     { id: 6, name: 'Deskripsi & Pernyataan' },
 ];
 
@@ -193,6 +193,8 @@ function ProfileWizardContent() {
                     initialData={{
                         skills: initialProfileData.skills || [],
                         certifications: initialProfileData.certifications || [],
+                        cvUrl: initialProfileData.cvUrl,
+                        ijazahUrl: initialProfileData.ijazahUrl,
                     }}
                     onSaveSuccess={handleSaveSuccess}
                     onBack={handleBack}

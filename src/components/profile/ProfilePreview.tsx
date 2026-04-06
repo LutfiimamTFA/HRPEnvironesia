@@ -98,10 +98,19 @@ const OrgExperienceView = ({ item }: { item: OrganizationalExperience }) => (
 );
 
 const CertificationView = ({ item }: { item: Certification }) => (
-    <div className="text-sm">
-        <p className="font-semibold">{item.name}</p>
-        <p className="text-muted-foreground text-xs">Penerbit: {item.organization}</p>
-        <p className="text-muted-foreground text-xs">Tanggal: {item.issueDate} {item.expirationDate ? ` - ${item.expirationDate}` : ''}</p>
+    <div className="text-sm flex justify-between items-start gap-2">
+        <div>
+            <p className="font-semibold">{item.name}</p>
+            <p className="text-muted-foreground text-xs">Penerbit: {item.organization}</p>
+            <p className="text-muted-foreground text-xs">Tanggal: {item.issueDate} {item.expirationDate ? ` - ${item.expirationDate}` : ''}</p>
+        </div>
+        {item.imageUrl && (
+            <Button variant="outline" size="icon" className="h-8 w-8 flex-shrink-0" asChild>
+                <a href={item.imageUrl} target="_blank" rel="noopener noreferrer" title="Lihat Sertifikat">
+                    <Eye className="h-4 w-4" />
+                </a>
+            </Button>
+        )}
     </div>
 );
 
@@ -109,7 +118,7 @@ export function ProfilePreview({
   profile,
   onEditRequest,
 }: {
-  profile: Profile & Partial<EmployeeProfile>;
+  profile: Profile & Partial<Omit<EmployeeProfile, 'birthDate'>>;
   onEditRequest: (step: number) => void;
 }) {
   const isProfileComplete = profile.profileStatus === 'completed' || profile.completeness?.isComplete === true;
@@ -231,33 +240,60 @@ export function ProfilePreview({
         <Card>
             <CardHeader><CardTitle className="text-lg flex items-center gap-3"><Briefcase className="h-5 w-5 text-primary" />Pengalaman Kerja</CardTitle></CardHeader>
             <CardContent>
-                 {profile.workExperience?.length > 0 ? `${profile.workExperience.length} item pengalaman kerja` : <p className="text-sm text-muted-foreground">Belum diisi.</p>}
+                 {profile.workExperience && profile.workExperience.length > 0 ? `${profile.workExperience.length} item pengalaman kerja` : <p className="text-sm text-muted-foreground">Belum diisi.</p>}
             </CardContent>
         </Card>
         <Card>
             <CardHeader><CardTitle className="text-lg flex items-center gap-3"><Building className="h-5 w-5 text-primary" />Pengalaman Organisasi</CardTitle></CardHeader>
             <CardContent>
-                 {profile.organizationalExperience?.length > 0 ? `${profile.organizationalExperience.length} item pengalaman organisasi` : <p className="text-sm text-muted-foreground">Belum diisi.</p>}
+                 {profile.organizationalExperience && profile.organizationalExperience.length > 0 ? `${profile.organizationalExperience.length} item pengalaman organisasi` : <p className="text-sm text-muted-foreground">Belum diisi.</p>}
             </CardContent>
         </Card>
         <Card>
-            <CardHeader><CardTitle className="text-lg flex items-center gap-3"><Sparkles className="h-5 w-5 text-primary" />Keahlian & Sertifikasi</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-lg flex items-center gap-3"><Sparkles className="h-5 w-5 text-primary" />Dokumen & Sertifikasi</CardTitle></CardHeader>
             <CardContent className="space-y-4">
-                 <div>
-                    <h4 className="font-semibold text-sm mb-2">Keahlian</h4>
-                    <div className="flex flex-wrap gap-2">
-                        {profile.skills?.length > 0 ? (
-                            <>
-                                {profile.skills.slice(0, 8).map(skill => <Badge key={skill} variant="secondary">{skill}</Badge>)}
-                                {profile.skills.length > 8 && <Badge variant="outline">+{profile.skills.length - 8}</Badge>}
-                            </>
-                        ) : <p className="text-sm text-muted-foreground">Belum diisi.</p>}
+                 <div className="grid grid-cols-2 gap-4">
+                    <div className="p-3 border rounded-lg bg-muted/20">
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase mb-2">Curriculum Vitae</p>
+                        {profile.cvUrl ? (
+                            <Button variant="outline" size="sm" className="w-full h-8 text-xs" asChild>
+                                <a href={profile.cvUrl} target="_blank" rel="noopener noreferrer"><Eye className="mr-2 h-3 w-3" /> Lihat CV</a>
+                            </Button>
+                        ) : <p className="text-xs text-muted-foreground">Belum diunggah</p>}
+                    </div>
+                    <div className="p-3 border rounded-lg bg-muted/20">
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase mb-2">Ijazah / SKL</p>
+                        {profile.ijazahUrl ? (
+                            <Button variant="outline" size="sm" className="w-full h-8 text-xs" asChild>
+                                <a href={profile.ijazahUrl} target="_blank" rel="noopener noreferrer"><Eye className="mr-2 h-3 w-3" /> Lihat Ijazah</a>
+                            </Button>
+                        ) : <p className="text-xs text-muted-foreground">Belum diunggah</p>}
                     </div>
                 </div>
+                 
+                 {profile.skills && profile.skills.length > 0 && (
+                     <>
+                        <Separator/>
+                        <div>
+                            <h4 className="font-semibold text-sm mb-2">Keahlian</h4>
+                            <div className="flex flex-wrap gap-2">
+                                {profile.skills.slice(0, 8).map(skill => <Badge key={skill} variant="secondary">{skill}</Badge>)}
+                                {profile.skills.length > 8 && <Badge variant="outline">+{profile.skills.length - 8}</Badge>}
+                            </div>
+                        </div>
+                     </>
+                 )}
+                 
                  <Separator/>
-                 <div>
-                    <h4 className="font-semibold text-sm mb-2">Sertifikasi</h4>
-                     {profile.certifications?.length > 0 ? `${profile.certifications.length} sertifikasi` : <p className="text-sm text-muted-foreground">Belum diisi.</p>}
+                 <div className="space-y-3">
+                    <h4 className="font-semibold text-sm">Sertifikasi</h4>
+                     {profile.certifications && profile.certifications.length > 0 ? (
+                         <div className="space-y-4">
+                             {profile.certifications.map((cert, i) => (
+                                 <CertificationView key={i} item={cert} />
+                             ))}
+                         </div>
+                     ) : <p className="text-sm text-muted-foreground">Belum diisi.</p>}
                 </div>
             </CardContent>
         </Card>
