@@ -366,8 +366,8 @@ const MemberCompaniesSection = () => {
                         <Image
                             src={company.data.src}
                             alt={company.data.alt}
-                            width={140}
-                            height={70}
+                            width={company.data.width}
+                            height={company.data.height}
                             className="object-contain filter grayscale opacity-60 hover:grayscale-0 hover:opacity-100 transition-all duration-300"
                             data-ai-hint={company.data.ai_hint}
                         />
