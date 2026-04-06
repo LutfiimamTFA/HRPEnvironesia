@@ -6,8 +6,8 @@
 import { useMemo, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
-import { useCollection, useFirestore, useMemoFirebase, setDocumentNonBlocking, getDoc } from '@/firebase';
-import { collection, query, where, limit, doc, getDocs, serverTimestamp } from 'firebase/firestore';
+import { useCollection, useFirestore, useMemoFirebase, setDocumentNonBlocking } from '@/firebase';
+import { collection, query, where, limit, doc, getDocs, serverTimestamp, getDoc } from 'firebase/firestore';
 import type { Job, JobApplication, JobApplicationStatus } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -82,7 +82,7 @@ export default function JobApplyPage() {
         const userApplications = userAppsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as JobApplication));
 
         // 1. Check for another active application
-        const ACTIVE_STATUSES: JobApplicationStatus[] = ['submitted', 'screening', 'tes_kepribadian', 'verification', 'document_submission', 'interview'];
+        const ACTIVE_STATUSES: JobApplicationStatus[] = ['screening', 'tes_kepribadian', 'verification', 'document_submission', 'interview'];
         const activeApp = userApplications.find(app => ACTIVE_STATUSES.includes(app.status));
 
         if (activeApp) {
