@@ -88,33 +88,6 @@ export function AttendanceSiteFormDialog({ open, onOpenChange, site, brands }: A
   
   const mapId = useMemo(() => `attendance-site-map-${site?.id ?? 'new'}`, [site]);
   
-  const initializeMap = useCallback((lat: number, lng: number, radius: number) => {
-    const mapContainer = document.getElementById(mapId);
-    if (mapContainer && !mapRef.current) {
-        const initialCoords: [number, number] = [lat, lng];
-        const map = L.map(mapId).setView(initialCoords, 16);
-        mapRef.current = map;
-
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        }).addTo(map);
-
-        const marker = L.marker(initialCoords, { draggable: true }).addTo(map);
-        markerRef.current = marker;
-
-        const circle = L.circle(initialCoords, { radius: radius }).addTo(map);
-        circleRef.current = circle;
-
-        marker.on('dragend', (e) => {
-            const { lat, lng } = e.target.getLatLng();
-            form.setValue('office', { lat, lng }, { shouldValidate: true });
-        });
-        
-        // This is crucial for maps inside modals/tabs
-        setTimeout(() => map.invalidateSize(), 400); 
-    }
-  }, [mapId, form]);
-
   useEffect(() => {
     if (open) {
       const initialValues = site ? { 
@@ -129,16 +102,44 @@ export function AttendanceSiteFormDialog({ open, onOpenChange, site, brands }: A
       };
       form.reset(initialValues as any);
       
-      setTimeout(() => {
-          initializeMap(initialValues.office.lat, initialValues.office.lng, initialValues.radiusM);
+      const timer = setTimeout(() => {
+        const mapContainer = document.getElementById(mapId);
+        if (mapContainer && !mapRef.current) {
+            const map = L.map(mapId).setView([initialValues.office.lat, initialValues.office.lng], 16);
+            mapRef.current = map;
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+
+            const marker = L.marker([initialValues.office.lat, initialValues.office.lng], { draggable: true }).addTo(map);
+            markerRef.current = marker;
+
+            const circle = L.circle([initialValues.office.lat, initialValues.office.lng], { radius: initialValues.radiusM }).addTo(map);
+            circleRef.current = circle;
+
+            marker.on('dragend', (e) => {
+                const { lat, lng } = e.target.getLatLng();
+                form.setValue('office', { lat, lng }, { shouldValidate: true });
+            });
+            
+            setTimeout(() => map.invalidateSize(), 400); 
+        }
       }, 100);
-    } else if (!open && mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-        markerRef.current = null;
-        circleRef.current = null;
+
+      // Return the cleanup function
+      return () => {
+        clearTimeout(timer);
+        if (mapRef.current) {
+            mapRef.current.remove();
+            mapRef.current = null;
+            markerRef.current = null;
+            circleRef.current = null;
+        }
+      };
     }
-  }, [open, site, form, initializeMap]);
+  }, [open, site, form, mapId]);
+
 
   useEffect(() => {
     if (mapRef.current && markerRef.current) {
