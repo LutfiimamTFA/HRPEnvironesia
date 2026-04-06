@@ -242,7 +242,7 @@ function ApplicationCard({ application, assessmentSessionStatus }: { application
               const stepStatusIndex = ORDERED_RECRUITMENT_STAGES.indexOf(step.status as JobApplicationStatus);
               const isCurrentRejectedStep = isRejected && step.status === 'rejected';
 
-              let isCompleted = !isRejected && currentStepIndex > stepStatusIndex;
+              let isCompleted = !isRejected && currentStatusIndex > stepStatusIndex;
               if (step.status === 'tes_kepribadian') {
                   isCompleted = assessmentSessionStatus === 'submitted';
               }
@@ -250,7 +250,7 @@ function ApplicationCard({ application, assessmentSessionStatus }: { application
                   isCompleted = true;
               }
 
-              const isActive = !isRejected && currentStepIndex === stepStatusIndex && !isCompleted;
+              const isActive = !isRejected && currentStatusIndex === stepStatusIndex && !isCompleted;
 
               return (
                 <React.Fragment key={step.status}>

@@ -142,7 +142,7 @@ function ApplicationCard({ application, assessmentSessionStatus }: { application
               if (step.status === 'tes_kepribadian') {
                   isCompleted = assessmentSessionStatus === 'submitted';
               }
-              const isActive = !isRejected && currentStatusIndex === stepStatusIndex;
+              const isActive = !isRejected && currentStatusIndex === stepStatusIndex && !isCompleted;
 
               return (
                 <React.Fragment key={step.status}>
