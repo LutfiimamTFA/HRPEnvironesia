@@ -181,7 +181,7 @@ const Header = () => {
         { href: '#lowongan', label: t.Header.jobs },
         { href: '#proses', label: t.Header.process },
         { href: '#faq', label: t.Header.faq },
-        { href: 'https://environesia.co.id/', label: t.Header.companyProfile, external: true },
+        { href: '#member-companies', label: t.Header.companyProfile },
     ];
 
     return (
@@ -194,7 +194,7 @@ const Header = () => {
                     </Link>
                     <nav className="hidden items-center gap-8 text-sm font-medium md:flex">
                         {menuItems.map((item) => (
-                           <a key={item.label} href={item.href} target={item.external ? '_blank' : '_self'} rel={item.external ? 'noopener noreferrer' : ''} className="text-muted-foreground transition-colors hover:text-primary">
+                           <a key={item.label} href={item.href} className="text-muted-foreground transition-colors hover:text-primary">
                                 {item.label}
                            </a>
                         ))}
@@ -226,7 +226,7 @@ const Header = () => {
                                     </div>
                                     <nav className="flex flex-col gap-4 p-4">
                                         {menuItems.map((item) => (
-                                           <a key={item.label} href={item.href} target={item.external ? '_blank' : '_self'} rel={item.external ? 'noopener noreferrer' : ''} className="text-lg font-medium text-foreground transition-colors hover:text-primary" onClick={() => setMobileMenuOpen(false)}>
+                                           <a key={item.label} href={item.href} className="text-lg font-medium text-foreground transition-colors hover:text-primary" onClick={() => setMobileMenuOpen(false)}>
                                                 {item.label}
                                            </a>
                                         ))}
@@ -352,7 +352,7 @@ const MemberCompaniesSection = () => {
     ];
   
     return (
-        <section className="py-16 lg:py-24 bg-background">
+        <section id="member-companies" className="py-16 lg:py-24 bg-background scroll-mt-14">
             <div className="mx-auto w-full max-w-5xl px-4 sm:px-6 lg:px-8">
                 <div className="text-center">
                     <h2 className="text-3xl font-bold tracking-tight">Perusahaan dalam Ekosistem Kami</h2>
@@ -516,7 +516,7 @@ const Footer = () => {
                      <div>
                         <h4 className="font-semibold">{t.Footer.company}</h4>
                         <ul className="mt-4 space-y-2 text-sm">
-                             <li><a href="https://environesia.co.id/" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary">{t.Header.companyProfile}</a></li>
+                             <li><a href="#member-companies" className="text-muted-foreground hover:text-primary">{t.Header.companyProfile}</a></li>
                              <li><a href="/admin/login" className="text-muted-foreground hover:text-primary">{t.Footer.internalAccess}</a></li>
                         </ul>
                     </div>
