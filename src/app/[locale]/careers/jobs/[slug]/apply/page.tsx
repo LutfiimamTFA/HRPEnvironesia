@@ -6,7 +6,7 @@ import { useRouter } from '@/navigation';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase, setDocumentNonBlocking } from '@/firebase';
-import { collection, query, where, limit, doc, getDocs, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, limit, doc, getDocs, getDoc, serverTimestamp } from 'firebase/firestore';
 import type { Job, JobApplication, JobApplicationStatus } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
