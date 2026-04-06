@@ -18,6 +18,8 @@ import { Loader2, Save, Undo } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import type { EmployeeProfile, Address } from '@/lib/types';
 import { format } from 'date-fns';
+import { GoogleDatePicker } from '@/components/ui/google-date-picker';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 
 const selfFormSchema = z.object({
   nickName: z.string().min(1, "Nama panggilan harus diisi."),
@@ -46,11 +48,23 @@ interface EmployeeSelfProfileFormProps {
   onCancel: () => void;
 }
 
-const getAddressString = (address: any): string => {
-    if (!address) return '';
-    if (typeof address === 'string') return address;
-    return [address.street, address.village, address.city].filter(Boolean).join(', ');
-};
+const INDONESIAN_BANKS = [
+    "Bank Central Asia (BCA)",
+    "Bank Mandiri",
+    "Bank Rakyat Indonesia (BRI)",
+    "Bank Negara Indonesia (BNI)",
+    "Bank Tabungan Negara (BTN)",
+    "CIMB Niaga",
+    "Bank Syariah Indonesia (BSI)",
+    "Bank Danamon",
+    "PermataBank",
+    "OCBC NISP",
+    "Panin Bank",
+    "Bank BTPN",
+    "Maybank Indonesia",
+    "Bank Sinarmas",
+    "Bank Muamalat",
+];
 
 export function EmployeeSelfProfileForm({ initialProfile, onSaveSuccess, onCancel }: EmployeeSelfProfileFormProps) {
   const [isSaving, setIsSaving] = useState(false);
@@ -169,7 +183,30 @@ export function EmployeeSelfProfileForm({ initialProfile, onSaveSuccess, onCance
                     <section className="space-y-4">
                         <h3 className="text-lg font-semibold border-b pb-2 mb-4">Informasi Finansial (Uang Saku)</h3>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <FormField control={form.control} name="bankName" render={({ field }) => (<FormItem><FormLabel>Nama Bank</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField
+                                control={form.control}
+                                name="bankName"
+                                render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Nama Bank</FormLabel>
+                                    <Select onValueChange={field.onChange} value={field.value}>
+                                    <FormControl>
+                                        <SelectTrigger>
+                                        <SelectValue placeholder="Pilih bank" />
+                                        </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                        {INDONESIAN_BANKS.map((bank) => (
+                                        <SelectItem key={bank} value={bank}>
+                                            {bank}
+                                        </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                    </Select>
+                                    <FormMessage />
+                                </FormItem>
+                                )}
+                            />
                             <FormField control={form.control} name="bankAccountNumber" render={({ field }) => (<FormItem><FormLabel>Nomor Rekening</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                             <FormField control={form.control} name="bankAccountHolderName" render={({ field }) => (<FormItem><FormLabel>Nama Pemilik Rekening</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
                         </div>
