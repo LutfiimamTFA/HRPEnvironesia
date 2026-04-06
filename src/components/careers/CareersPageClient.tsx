@@ -181,7 +181,7 @@ const Header = () => {
         { href: '#lowongan', label: t.Header.jobs },
         { href: '#proses', label: t.Header.process },
         { href: '#faq', label: t.Header.faq },
-        { href: '#member-companies', label: t.Header.companyProfile },
+        { href: '#member-of-environesia', label: t.Header.companyProfile },
     ];
 
     return (
@@ -352,7 +352,7 @@ const MemberCompaniesSection = () => {
     ];
   
     return (
-        <section id="member-companies" className="py-16 lg:py-24 bg-background scroll-mt-14">
+        <section id="member-of-environesia" className="py-16 lg:py-24 bg-background scroll-mt-14">
             <div className="mx-auto w-full max-w-5xl px-4 sm:px-6 lg:px-8">
                 <div className="text-center">
                     <h2 className="text-3xl font-bold tracking-tight">Perusahaan dalam Ekosistem Kami</h2>
@@ -516,7 +516,7 @@ const Footer = () => {
                      <div>
                         <h4 className="font-semibold">{t.Footer.company}</h4>
                         <ul className="mt-4 space-y-2 text-sm">
-                             <li><a href="#member-companies" className="text-muted-foreground hover:text-primary">{t.Header.companyProfile}</a></li>
+                             <li><a href="#member-of-environesia" className="text-muted-foreground hover:text-primary">{t.Header.companyProfile}</a></li>
                              <li><a href="/admin/login" className="text-muted-foreground hover:text-primary">{t.Footer.internalAccess}</a></li>
                         </ul>
                     </div>
