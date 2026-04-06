@@ -340,6 +340,45 @@ const ValuePropsSection = () => {
     );
 }
 
+// --- Member Companies Section ---
+const MemberCompaniesSection = () => {
+    const companies = [
+        { name: "Logo 1", data: imagePlaceholders.logo_1 },
+        { name: "Logo 2", data: imagePlaceholders.logo_2 },
+        { name: "Logo 3", data: imagePlaceholders.logo_3 },
+        { name: "Logo 4", data: imagePlaceholders.logo_4 },
+        { name: "Logo 5", data: imagePlaceholders.logo_5 },
+        { name: "Logo 6", data: imagePlaceholders.logo_6 },
+    ];
+  
+    return (
+        <section className="py-16 lg:py-24 bg-background">
+            <div className="mx-auto w-full max-w-5xl px-4 sm:px-6 lg:px-8">
+                <div className="text-center">
+                    <h2 className="text-3xl font-bold tracking-tight">Perusahaan dalam Ekosistem Kami</h2>
+                    <p className="mt-4 text-lg text-muted-foreground max-w-2xl mx-auto">
+                        Kami adalah bagian dari keluarga besar yang berdedikasi pada inovasi, keberlanjutan, dan pertumbuhan bersama.
+                    </p>
+                </div>
+                <div className="mt-12 grid grid-cols-2 gap-8 md:grid-cols-3 items-center">
+                    {companies.map((company) => (
+                    <div key={company.name} className="flex justify-center">
+                        <Image
+                            src={company.data.src}
+                            alt={company.data.alt}
+                            width={140}
+                            height={70}
+                            className="object-contain filter grayscale opacity-60 hover:grayscale-0 hover:opacity-100 transition-all duration-300"
+                            data-ai-hint={company.data.ai_hint}
+                        />
+                    </div>
+                    ))}
+                </div>
+            </div>
+      </section>
+    );
+  };
+
 // --- Recruitment Process Section ---
 const RecruitmentProcessSection = () => {
     const steps = t.RecruitmentProcess.steps;
@@ -501,6 +540,7 @@ export function CareersPageClient() {
         <HeroSection />
         <JobExplorerSection />
         <ValuePropsSection />
+        <MemberCompaniesSection />
         <RecruitmentProcessSection />
         <OfficeSpotlightSection />
         <HowToApplySection />
