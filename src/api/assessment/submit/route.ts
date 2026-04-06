@@ -228,8 +228,8 @@ export async function POST(req: NextRequest) {
       // Check if application is in the personality test stage
       if (appDoc.exists && appDoc.data()?.status === 'tes_kepribadian') {
         await appRef.update({
-          status: 'verification',
-          updatedAt: serverTimestamp(),
+          status: 'screening',
+          updatedAt: Timestamp.now(),
         });
       }
     }
