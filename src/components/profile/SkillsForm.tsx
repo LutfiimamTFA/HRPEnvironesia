@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useCallback, ChangeEvent, useEffect, useRef } from 'react';
@@ -38,7 +37,7 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
-const FILE_SIZE_LIMIT = 2 * 1024 * 1024; // 2MB
+const FILE_SIZE_LIMIT = 5 * 1024 * 1024; // 5MB
 
 interface FileUploadFieldProps {
   label: string;
@@ -83,7 +82,7 @@ function FileUploadField({ label, value, onChange, userId, pathPrefix, required 
             toast({
                 variant: 'destructive',
                 title: 'File Terlalu Besar',
-                description: `Maksimal ukuran file adalah 2MB. Untuk file lebih besar, gunakan link external.`,
+                description: `Maksimal ukuran file adalah 5MB. Untuk file lebih besar, gunakan link external.`,
             });
             return;
         }
@@ -124,20 +123,17 @@ function FileUploadField({ label, value, onChange, userId, pathPrefix, required 
             ) : (
                 <div className="space-y-2">
                     <div className="flex items-center gap-2">
-                        <label htmlFor={`${pathPrefix}-upload`} className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), "h-9 cursor-pointer")}>
-                            Choose File
+                        <label htmlFor={`${pathPrefix}-upload`} className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), "h-9 cursor-pointer border-primary text-primary hover:bg-primary/10")}>
+                           <FileUp className="mr-2 h-4 w-4" /> Unggah File
                         </label>
-                        <div className="flex-1 text-sm text-muted-foreground truncate border rounded-md h-9 px-3 flex items-center bg-muted/50">
-                            {fileName || 'No file chosen'}
+                        <div className="flex-1 text-sm text-muted-foreground truncate">
+                            {fileName || 'Belum ada file dipilih'}
                         </div>
                         <Input id={`${pathPrefix}-upload`} ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" disabled={isUploading}/>
                     </div>
                     {isUploading && <Progress value={progress} className="h-1" />}
                 </div>
             )}
-             <p className="text-[10px] text-muted-foreground italic">
-                {useLink ? "Pastikan izin link sudah 'siapa saja yang memiliki link'." : "Maks. 2MB. Untuk file lebih besar, gunakan link external."}
-            </p>
         </div>
     );
 }
@@ -206,7 +202,7 @@ export function SkillsForm({ initialData, onSaveSuccess, onBack }: SkillsFormPro
                 <Card>
                     <CardHeader>
                         <CardTitle>Unggah Dokumen Wajib</CardTitle>
-                        <CardDescription>Lampirkan dokumen pendukung lamaran Anda. Ukuran file maksimal 2MB per file atau lampirkan link Google Drive jika ukuran file lebih besar.</CardDescription>
+                        <CardDescription>Lampirkan dokumen pendukung lamaran Anda. Ukuran file maksimal 5MB per file atau lampirkan link external jika ukuran file lebih besar.</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-6">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-2">
@@ -257,7 +253,7 @@ export function SkillsForm({ initialData, onSaveSuccess, onBack }: SkillsFormPro
                          <Alert className="bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800">
                             <Info className="h-4 w-4 text-blue-600" />
                             <AlertDescription className="text-xs text-blue-700 dark:text-blue-300">
-                                Punya banyak sertifikat? Masukkan semua file ke dalam satu folder Google Drive, lalu bagikan link folder tersebut pada salah satu kolom "Link External".
+                                Untuk setiap sertifikat, Anda bisa mengunggah file bukti atau menempelkan link external. <strong>Penting:</strong> Jika menggunakan link, pastikan pengaturannya adalah "Siapa saja yang memiliki link dapat melihat".
                             </AlertDescription>
                         </Alert>
                         <div className="space-y-6">
