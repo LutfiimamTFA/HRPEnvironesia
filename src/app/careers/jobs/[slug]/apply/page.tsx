@@ -115,7 +115,7 @@ export default function JobApplyPage() {
             }
         }
         // --- END PRE-APPLICATION CHECKS ---
-
+        
         // 3. Check profile completeness
         if (!userProfile.isProfileComplete) {
             toast({
@@ -129,11 +129,10 @@ export default function JobApplyPage() {
         }
 
         const applicationId = `${job.id}_${userProfile.uid}`;
-        const applicationRef = doc(firestore, 'applications', applicationId);
-
-        // 4. Check for existing application for THIS job
-        const existingAppSnap = await getDoc(applicationRef);
-        if (existingAppSnap.exists()) {
+        
+        // 4. Check for existing application for THIS job using the already fetched data
+        const alreadyApplied = userApplications.find(app => app.id === applicationId);
+        if (alreadyApplied) {
             toast({
                 variant: 'destructive',
                 title: 'Lamaran Sudah Ada',
@@ -145,6 +144,7 @@ export default function JobApplyPage() {
         }
 
         // 5. Construct and submit application data
+        const applicationRef = doc(firestore, 'applications', applicationId);
         const initialStatus = 'submitted';
         const toastMessage = `Lamaran Anda untuk posisi ${job.position} telah berhasil dikirim.`;
 
