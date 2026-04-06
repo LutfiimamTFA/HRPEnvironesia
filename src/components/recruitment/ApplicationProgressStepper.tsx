@@ -3,15 +3,11 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
 import type { JobApplicationStatus } from '@/lib/types';
-import { Check, BrainCircuit, Users, Award, FileUp, FileText, Search, ClipboardCheck } from 'lucide-react';
+import { Check, Users, Award, Search } from 'lucide-react';
 import { ORDERED_RECRUITMENT_STAGES } from '@/lib/types';
 
 const applicationSteps = [
-  { status: 'submitted', label: 'Terkirim', icon: FileUp },
   { status: 'screening', label: 'Screening', icon: Search },
-  { status: 'tes_kepribadian', label: 'Tes', icon: BrainCircuit },
-  { status: 'verification', label: 'Verifikasi', icon: ClipboardCheck },
-  { status: 'document_submission', label: 'Dokumen', icon: FileText },
   { status: 'interview', label: 'Wawancara', icon: Users },
   { status: 'offered', label: 'Penawaran', icon: Award },
   { status: 'hired', label: 'Diterima', icon: Check },
@@ -31,7 +27,7 @@ export function ApplicationProgressStepper({ currentStatus }: ApplicationProgres
 
   return (
     <div className="w-full overflow-x-auto pb-4">
-      <div className="flex items-center min-w-[800px]">
+      <div className="flex items-center min-w-[500px]">
         {applicationSteps.map((step, index) => {
           const canonicalIndex = ORDERED_RECRUITMENT_STAGES.indexOf(step.status as JobApplicationStatus);
           

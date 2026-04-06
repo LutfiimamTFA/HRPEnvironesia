@@ -29,6 +29,7 @@ export type UserProfile = {
   createdBy?: string;
   brandId?: string | string[];
   isProfileComplete?: boolean;
+  isAssessmentComplete?: boolean;
   photoUrl?: string;
   inviteBatchId?: string;
 
@@ -201,7 +202,7 @@ export type Job = {
   };
 };
 
-export const ORDERED_RECRUITMENT_STAGES = ['submitted', 'screening', 'tes_kepribadian', 'verification', 'document_submission', 'interview', 'offered', 'hired', 'rejected'] as const;
+export const ORDERED_RECRUITMENT_STAGES = ['screening', 'interview', 'offered', 'hired', 'rejected', 'draft'] as const;
 export type JobApplicationStatus = (typeof ORDERED_RECRUITMENT_STAGES)[number];
 
 
@@ -451,14 +452,18 @@ export type Profile = {
     selfDescription?: string;
     salaryExpectation?: string;
     motivation?: string;
+    declaration?: boolean;
+
+    // Document URLs
+    cvUrl?: string;
+    ijazahUrl?: string;
+    otherDocumentUrls?: string[];
     
     // Wizard metadata
     profileStatus?: 'draft' | 'completed';
     profileStep?: number;
     updatedAt?: Timestamp;
     completedAt?: Timestamp | null;
-    
-    declaration?: boolean;
 };
 
 // --- ASSESSMENT TYPES ---
