@@ -8,7 +8,6 @@ import {
   signInWithEmailAndPassword,
   signInWithPopup,
   GoogleAuthProvider,
-  sendPasswordResetEmail,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { useAuth, useFirestore } from '@/firebase';
@@ -27,6 +26,8 @@ import { Loader2, LogIn, Eye, EyeOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { UserProfile, ROLES_INTERNAL } from '@/lib/types';
 import { Separator } from '../ui/separator';
+import Link from 'next/link';
+
 
 const GoogleIcon = () => (
     <svg className="mr-2 h-4 w-4" viewBox="0 0 48 48">
@@ -154,45 +155,6 @@ export function CandidateLoginForm() {
     }
   }
 
-  async function handleForgotPassword() {
-    const email = form.getValues('email');
-    if (!email) {
-      form.setError('email', {
-        type: 'manual',
-        message: 'Masukkan email Anda untuk mereset kata sandi.',
-      });
-      toast({
-        variant: 'destructive',
-        title: 'Email Diperlukan',
-        description: 'Silakan masukkan alamat email Anda terlebih dahulu.',
-      });
-      return;
-    }
-
-    setLoading(true);
-    try {
-      await sendPasswordResetEmail(auth, email);
-      toast({
-        title: 'Email Reset Terkirim',
-        description: `Silakan periksa inbox email Anda di ${email} untuk instruksi lebih lanjut.`,
-      });
-    } catch (error: any) {
-      console.error("Password reset error:", error);
-      let description = 'Terjadi kesalahan. Silakan coba lagi.';
-      if (error.code === 'auth/user-not-found') {
-        description = 'Tidak ada akun yang terdaftar dengan email ini.';
-      }
-      toast({
-        variant: 'destructive',
-        title: 'Gagal Mengirim Email',
-        description,
-      });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-
   return (
     <div className='space-y-4'>
         <Form {...form}>
@@ -241,15 +203,12 @@ export function CandidateLoginForm() {
                 />
 
                 <div className="text-right -mt-2">
-                    <Button
-                        type="button"
-                        variant="link"
-                        className="h-auto p-0 text-sm font-medium text-primary underline-offset-4 hover:underline"
-                        onClick={handleForgotPassword}
-                        disabled={loading || googleLoading}
+                    <Link
+                        href="/careers/forgot-password"
+                        className="text-sm font-medium text-primary underline-offset-4 hover:underline"
                     >
                         Lupa kata sandi?
-                    </Button>
+                    </Link>
                 </div>
 
                 <Button type="submit" className="w-full" disabled={loading || googleLoading}>
