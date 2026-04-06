@@ -149,7 +149,6 @@ export default function JobApplyPage() {
         // 5. Construct and submit application data
         const applicationRef = doc(firestore, 'applications', applicationId);
         const initialStatus = 'tes_kepribadian';
-        const toastMessage = `Lamaran Anda untuk posisi ${job.position} telah berhasil dikirim. Anda akan diarahkan untuk mengerjakan tes kepribadian.`;
 
         const applicationData: Omit<JobApplication, 'id'> = {
             candidateUid: userProfile.uid,
@@ -173,7 +172,7 @@ export default function JobApplyPage() {
 
         toast({
             title: 'Lamaran Terkirim!',
-            description: toastMessage,
+            description: "Lamaran berhasil dikirim! Langkah selanjutnya adalah tes kepribadian. Anda akan kami arahkan sekarang.",
         });
 
         router.push(`/careers/portal/assessment/personality?applicationId=${applicationId}`);
