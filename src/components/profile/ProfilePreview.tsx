@@ -124,6 +124,22 @@ export function ProfilePreview({
     }
   };
 
+  const birthDateValue = React.useMemo(() => {
+    if (!profile.birthDate) return '-';
+    // Check if it's a Firebase Timestamp-like object
+    if (typeof (profile.birthDate as any).toDate === 'function') {
+      return format((profile.birthDate as any).toDate(), 'dd MMMM yyyy', { locale: idLocale });
+    }
+    // Handle string date
+    if (typeof profile.birthDate === 'string') {
+      const date = new Date(profile.birthDate);
+      if (!isNaN(date.getTime())) {
+        return format(date, 'dd MMMM yyyy', { locale: idLocale });
+      }
+    }
+    return 'Invalid Date';
+  }, [profile.birthDate]);
+
   return (
     <div className="space-y-6">
       <Card>
@@ -171,7 +187,7 @@ export function ProfilePreview({
                         </Button>
                     </dd>
                 </div>
-                <InfoRow label="Tempat, Tanggal Lahir" value={`${profile.birthPlace}, ${profile.birthDate ? format(profile.birthDate.toDate(), 'dd MMMM yyyy', {locale: idLocale}) : '-'}`} />
+                <InfoRow label="Tempat, Tanggal Lahir" value={`${profile.birthPlace || '-'}, ${birthDateValue}`} />
                 <InfoRow label="Jenis Kelamin" value={profile.gender} />
             </dl>
         </CardContent>
