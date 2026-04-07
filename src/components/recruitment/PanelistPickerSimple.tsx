@@ -35,7 +35,7 @@ export function PanelistPickerSimple({
 
   const usersWithDetails = React.useMemo(() => {
     return allUsers.map(user => {
-      let brandDisplay = user.department || user.jobTitle || user.role;
+      let brandDisplay = user.division || user.positionTitle || user.role;
       if (user.role === 'hrd' && Array.isArray(user.brandId)) {
         brandDisplay = user.brandId.map(id => brandMap.get(id)).filter(Boolean).join(', ') || 'All Brands';
       } else if (typeof user.brandId === 'string' && user.brandId) {
@@ -86,7 +86,7 @@ export function PanelistPickerSimple({
                   <Badge key={user.uid} variant="secondary" className="gap-1">
                     {user.fullName}
                     <button type="button" aria-label={`Remove ${user.fullName}`} onMouseDown={handleMouseDown} onClick={() => handleToggle(user.uid)}>
-                      <X className="h-3 w-3" />
+                      <X className="h-3 w-3 cursor-pointer" />
                     </button>
                   </Badge>
                 ))}
