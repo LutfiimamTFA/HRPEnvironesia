@@ -49,6 +49,8 @@ const nextConfig: NextConfig = {
         fs: false,
         net: false,
         tls: false,
+        child_process: false,
+        http2: false,
       };
     }
     return config;
