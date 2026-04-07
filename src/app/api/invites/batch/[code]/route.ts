@@ -1,6 +1,3 @@
-
-'use server';
-
 import { NextRequest, NextResponse } from 'next/server';
 import admin from '@/lib/firebase/admin';
 import type { InviteBatch } from '@/lib/types';
@@ -55,6 +52,3 @@ export async function GET(
     return NextResponse.json({ error: 'Terjadi kesalahan pada server saat validasi kode.' }, { status: 500 });
   }
 }
-
-
-    
