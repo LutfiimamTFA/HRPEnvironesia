@@ -38,20 +38,20 @@ export function InternProfileDetailDialog({ profile, open, onOpenChange, onAdmin
   const firestore = useFirestore();
 
   const applicationQuery = useMemoFirebase(() => {
-    if (!profile) return null;
+    if (!profile?.uid) return null;
     return query(
       collection(firestore, 'applications'),
       where('candidateUid', '==', profile.uid),
       where('status', '==', 'hired')
     );
-  }, [firestore, profile]);
+  }, [firestore, profile?.uid]);
 
   const { data: applications, isLoading: isLoadingApplication } = useCollection<JobApplication>(applicationQuery);
   
   const userRef = useMemoFirebase(() => {
       if (!profile) return null;
       return doc(firestore, 'users', profile.uid);
-  }, [firestore, profile]);
+  }, [firestore, profile?.uid]);
   const { data: userProfile, isLoading: isLoadingUser } = useDoc<UserProfile>(userRef);
 
   const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(
@@ -71,7 +71,7 @@ export function InternProfileDetailDialog({ profile, open, onOpenChange, onAdmin
   const jobRef = useMemoFirebase(() => {
     if (!application) return null;
     return doc(firestore, 'jobs', application.jobId);
-  }, [firestore, application]);
+  }, [firestore, application?.jobId]);
   const { data: job, isLoading: isLoadingJob } = useDoc<Job>(jobRef);
   
   const brandMap = useMemo(() => {

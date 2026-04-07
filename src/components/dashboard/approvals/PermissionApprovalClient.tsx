@@ -44,7 +44,7 @@ export function PermissionApprovalClient({ mode }: PermissionApprovalClientProps
         }
         
         return query(collection(firestore, 'permission_requests'), where('uid', '==', 'NO_RESULTS'));
-    }, [userProfile, firestore, mode]);
+    }, [userProfile?.isDivisionManager, userProfile?.managedDivision, userProfile?.managedBrandId, firestore, mode]);
 
     const { data: submissions, isLoading, mutate } = useCollection<PermissionRequest>(submissionsQuery);
 
