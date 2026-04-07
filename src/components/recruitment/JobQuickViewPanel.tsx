@@ -14,6 +14,7 @@ import { id as idLocale } from 'date-fns/locale';
 import Link from 'next/link';
 import { Skeleton } from '../ui/skeleton';
 import { Loader2 } from 'lucide-react';
+import { ApplicationStatusBadge } from './ApplicationStatusBadge';
 
 interface JobQuickViewPanelProps {
   job: Job & { brandName?: string };
@@ -47,24 +48,25 @@ export function JobQuickViewPanel({ job, assignedUsers }: JobQuickViewPanelProps
 
   const summary = useMemo(() => {
     if (!applications) {
-      return { total: 0, screening: 0, interview: 0, offer: 0, latest: null };
+      return { total: 0, screening: 0, interview: 0, offer: 0 };
     }
     
     const screening = applications.filter(a => a.status === 'screening').length;
     const interview = applications.filter(a => a.status === 'interview').length;
     const offer = applications.filter(a => a.status === 'offered').length;
     
-    const sortedByDate = [...applications].sort((a, b) => 
-        (b.submittedAt?.toMillis() || 0) - (a.submittedAt?.toMillis() || 0)
-    );
-
     return {
       total: applications.length,
       screening,
       interview,
       offer,
-      latest: sortedByDate[0] || null
     };
+  }, [applications]);
+
+  const latestApplicants = useMemo(() => {
+    if (!applications) return [];
+    return [...applications]
+        .sort((a,b) => (b.submittedAt?.toMillis() || b.createdAt.toMillis()) - (a.submittedAt?.toMillis() || a.createdAt.toMillis()))
   }, [applications]);
 
   return (
@@ -97,19 +99,35 @@ export function JobQuickViewPanel({ job, assignedUsers }: JobQuickViewPanelProps
             </div>
             }
         </div>
+        
+        <Separator />
 
-        {summary.latest && (
-            <>
-            <Separator />
-            <div className="space-y-2">
-                <h4 className="font-semibold text-xs uppercase text-muted-foreground">Aktivitas Terbaru</h4>
-                <div className="text-xs text-muted-foreground">
-                    <p>Lamaran terakhir dari <span className="font-medium text-foreground">{summary.latest.candidateName}</span></p>
-                    <p>{formatDistanceToNow(summary.latest.submittedAt!.toDate(), { addSuffix: true, locale: idLocale })}</p>
+        <div className="space-y-3">
+            <h4 className="font-semibold text-xs uppercase text-muted-foreground flex items-center gap-2"><Users className="h-4 w-4" /> Kandidat Terbaru</h4>
+             {isLoading ? <div className="h-24 flex items-center justify-center"><Loader2 className="h-5 w-5 animate-spin" /></div> :
+             latestApplicants.length > 0 ? (
+                <div className="space-y-2">
+                    {latestApplicants.slice(0, 3).map(app => (
+                        <div key={app.id} className="flex items-center gap-3">
+                             <Avatar className="h-8 w-8 border">
+                                <AvatarFallback>{getInitials(app.candidateName)}</AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1 text-sm">
+                                <p className="font-medium truncate">{app.candidateName}</p>
+                            </div>
+                            <ApplicationStatusBadge status={app.status} className="text-[10px]" />
+                        </div>
+                    ))}
+                    {latestApplicants.length > 3 && (
+                        <p className="text-xs text-muted-foreground text-center pt-2">
+                            + {latestApplicants.length - 3} kandidat lainnya
+                        </p>
+                    )}
                 </div>
-            </div>
-            </>
-        )}
+            ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">Belum ada kandidat untuk lowongan ini.</p>
+            )}
+        </div>
         
         <Separator />
 
