@@ -35,6 +35,8 @@ import Link from 'next/link';
 import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { getInitials } from '@/lib/utils';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { JobQuickViewPanel } from '../recruitment/JobQuickViewPanel';
 
 
 function JobTableSkeleton() {
@@ -326,33 +328,42 @@ export function JobManagementClient() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                      {assignedUsers.length > 0 ? (
-                          <TooltipProvider>
-                              <Tooltip>
-                                  <TooltipTrigger asChild>
-                                      <div className="flex items-center -space-x-2 cursor-pointer" onClick={() => handleAssignUsers(job)}>
-                                          {assignedUsers.slice(0, 2).map(user => (
-                                              <Avatar key={user.uid} className="h-7 w-7 border-2 border-background">
-                                                  <AvatarFallback>{getInitials(user.fullName)}</AvatarFallback>
-                                              </Avatar>
-                                          ))}
-                                          {assignedUsers.length > 2 && (
-                                              <Avatar className="h-7 w-7 border-2 border-background">
-                                                  <AvatarFallback>+{assignedUsers.length - 2}</AvatarFallback>
-                                              </Avatar>
-                                          )}
-                                      </div>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                      <p>{assignedUsers.map(u => u.fullName).join(', ')}</p>
-                                  </TooltipContent>
-                              </Tooltip>
-                          </TooltipProvider>
-                      ) : (
-                          <div onClick={() => handleAssignUsers(job)} className="text-muted-foreground text-center cursor-pointer hover:text-foreground">
-                              -
-                          </div>
-                      )}
+                    <Popover>
+                        <PopoverTrigger asChild>
+                            <TooltipProvider>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <div className="flex items-center -space-x-2 cursor-pointer">
+                                            {assignedUsers.length > 0 ? (
+                                                <>
+                                                {assignedUsers.slice(0, 2).map(user => (
+                                                    <Avatar key={user.uid} className="h-7 w-7 border-2 border-background">
+                                                        <AvatarFallback>{getInitials(user.fullName)}</AvatarFallback>
+                                                    </Avatar>
+                                                ))}
+                                                {assignedUsers.length > 2 && (
+                                                    <Avatar className="h-7 w-7 border-2 border-background bg-muted">
+                                                        <AvatarFallback>+{assignedUsers.length - 2}</AvatarFallback>
+                                                    </Avatar>
+                                                )}
+                                                </>
+                                            ) : (
+                                                <div className="text-muted-foreground text-center w-full">-</div>
+                                            )}
+                                        </div>
+                                    </TooltipTrigger>
+                                    {assignedUsers.length > 0 &&
+                                        <TooltipContent>
+                                            <p>{assignedUsers.map(u => u.fullName).join(', ')}</p>
+                                        </TooltipContent>
+                                    }
+                                </Tooltip>
+                            </TooltipProvider>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                            <JobQuickViewPanel job={job} assignedUsers={assignedUsers} />
+                        </PopoverContent>
+                    </Popover>
                   </TableCell>
                   <TableCell>
                     {job.applyDeadline?.toDate ? format(job.applyDeadline.toDate(), 'dd MMM yyyy') : '-'}
