@@ -47,26 +47,6 @@ export function DashboardLayout({
   );
   const { data: navSettings, isLoading: isLoadingSettings } = useDoc<NavigationSetting>(settingsDocRef);
   
-  // --- Start of change for stable menu ---
-  const [hasRecruitmentTasks, setHasRecruitmentTasks] = useState(false);
-
-  const assignedJobsQuery = useMemoFirebase(() => {
-    if (!userProfile?.uid) return null;
-    return query(
-      collection(firestore, 'jobs'),
-      where('assignedUserIds', 'array-contains', userProfile.uid)
-    );
-  }, [firestore, userProfile?.uid]);
-
-  const { data: assignedJobs } = useCollection<Job>(assignedJobsQuery);
-
-  useEffect(() => {
-    if (assignedJobs && assignedJobs.length > 0) {
-      setHasRecruitmentTasks(true);
-    }
-  }, [assignedJobs]);
-  // --- End of change for stable menu ---
-
   const menuConfig = useMemo(() => {
     if (!roleKey) return [];
     
@@ -76,24 +56,6 @@ export function DashboardLayout({
       items: group.items.map(item => ({ ...item })),
     }));
     
-    if (hasRecruitmentTasks) {
-      const taskItem = {
-          key: 'recruitment.tasks',
-          href: '/admin/recruitment/my-tasks',
-          label: 'Tugas Rekrutmen',
-          icon: createElement(Briefcase),
-      };
-      let personalGroup = finalConfig.find(g => g.title === 'Personal' || g.title === 'Tugas Saya');
-      if (personalGroup) {
-        if (!personalGroup.items.some(item => item.key === taskItem.key)) {
-          personalGroup.items.push(taskItem);
-        }
-      } else {
-        const newGroup: MenuGroup = { title: 'Tugas Saya', items: [taskItem] };
-        finalConfig.splice(1, 0, newGroup);
-      }
-    }
-
     if (userProfile?.isDivisionManager) {
         const overtimeApprovalMenu: MenuItem = {
             key: 'manager.overtime_approval',
@@ -158,7 +120,7 @@ export function DashboardLayout({
     }
 
     return currentConfig;
-  }, [roleKey, userProfile, navSettings, isLoadingSettings, manualMenuConfig, hasRecruitmentTasks]);
+  }, [roleKey, userProfile, navSettings, isLoadingSettings, manualMenuConfig]);
 
   return (
     <SidebarProvider>

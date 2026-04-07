@@ -50,11 +50,6 @@ export default function MyRecruitmentTasksPage() {
   const { userProfile, loading: authLoading } = useAuth();
   const firestore = useFirestore();
 
-  const menuConfig = useMemo(() => {
-    if (!userProfile) return [];
-    return MENU_CONFIG[userProfile.role] || [];
-  }, [userProfile]);
-
   const assignedJobsQuery = useMemoFirebase(() => {
     if (!userProfile?.uid) return null;
     return query(
@@ -89,7 +84,7 @@ export default function MyRecruitmentTasksPage() {
   const error = jobsError || appsError;
 
   return (
-    <DashboardLayout pageTitle="Tugas Rekrutmen Saya" menuConfig={menuConfig}>
+    <DashboardLayout pageTitle="Tugas Rekrutmen Saya">
         {isLoading ? <MyTasksSkeleton /> : error ? (
              <Alert variant="destructive">
                 <AlertTitle>Gagal Memuat Tugas</AlertTitle>

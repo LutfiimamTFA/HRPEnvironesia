@@ -133,6 +133,7 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
         title: "Personal",
         items: [
             { key: 'personal.interviews', href: '/admin/interviews', label: 'My Interviews', icon: createElement(Video) },
+            { key: 'recruitment.tasks', href: '/admin/recruitment/my-tasks', label: 'Tugas Rekrutmen', icon: createElement(Briefcase) },
         ]
     }
   ],
@@ -143,7 +144,8 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
     {
         title: "Personal",
         items: [
-            { key: 'personal.interviews.hrd', href: '/admin/interviews', label: 'My Interviews', icon: createElement(Video) }
+            { key: 'personal.interviews.hrd', href: '/admin/interviews', label: 'My Interviews', icon: createElement(Video) },
+            { key: 'recruitment.tasks', href: '/admin/recruitment/my-tasks', label: 'Tugas Rekrutmen', icon: createElement(Briefcase) },
         ]
     }
   ],
@@ -159,6 +161,7 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
         title: "Personal",
         items: [
             { key: 'personal.interviews.manager', href: '/admin/interviews', label: 'My Interviews', icon: createElement(Video) },
+            { key: 'recruitment.tasks', href: '/admin/recruitment/my-tasks', label: 'Tugas Rekrutmen', icon: createElement(Briefcase) },
         ]
     }
   ],
@@ -173,6 +176,12 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
             { key: 'employee.leave', href: '/admin/karyawan/pengajuan-cuti', label: 'Pengajuan Cuti', icon: createElement(CalendarOff) },
         ]
     },
+    {
+        title: "Tugas Saya",
+        items: [
+            { key: 'recruitment.tasks', href: '/admin/recruitment/my-tasks', label: 'Tugas Rekrutmen', icon: createElement(Briefcase) },
+        ]
+    },
     REVIEW_ITEMS,
   ],
 
@@ -184,6 +193,7 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
             { key: 'employee.profile', href: '/admin/karyawan/magang/profile', label: 'Data Diri Karyawan', icon: createElement(User) },
             { key: 'employee.overtime', href: '/admin/karyawan/pengajuan-lembur', label: 'Pengajuan Lembur', icon: createElement(FileClock) },
             { key: 'employee.permission', href: '/admin/karyawan/pengajuan-izin', label: 'Pengajuan Izin', icon: createElement(FileHeart) },
+            { key: 'recruitment.tasks', href: '/admin/recruitment/my-tasks', label: 'Tugas Rekrutmen', icon: createElement(Briefcase) },
         ]
       },
       {
@@ -203,6 +213,7 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
             { key: 'employee.profile', href: '/admin/karyawan/profile', label: 'Data Diri Karyawan', icon: createElement(User) },
             { key: 'employee.overtime', href: '/admin/karyawan/pengajuan-lembur', label: 'Pengajuan Lembur', icon: createElement(FileClock) },
             { key: 'employee.permission', href: '/admin/karyawan/pengajuan-izin', label: 'Pengajuan Izin', icon: createElement(FileHeart) },
+            { key: 'recruitment.tasks', href: '/admin/recruitment/my-tasks', label: 'Tugas Rekrutmen', icon: createElement(Briefcase) },
         ]
     }
   ],
