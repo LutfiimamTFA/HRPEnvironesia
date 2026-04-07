@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import React, { useMemo, createElement } from 'react';
+import React, { useMemo, createElement, useState, useEffect } from 'react';
 import type { MenuGroup, MenuItem } from '@/lib/menu-config';
 import { SidebarNav } from './SidebarNav';
 import { Topbar } from './Topbar';
@@ -47,6 +47,9 @@ export function DashboardLayout({
   );
   const { data: navSettings, isLoading: isLoadingSettings } = useDoc<NavigationSetting>(settingsDocRef);
   
+  // --- Start of change for stable menu ---
+  const [hasRecruitmentTasks, setHasRecruitmentTasks] = useState(false);
+
   const assignedJobsQuery = useMemoFirebase(() => {
     if (!userProfile?.uid) return null;
     return query(
@@ -54,7 +57,15 @@ export function DashboardLayout({
       where('assignedUserIds', 'array-contains', userProfile.uid)
     );
   }, [firestore, userProfile?.uid]);
-  const { data: assignedJobs, isLoading: isLoadingAssignedJobs } = useCollection<Job>(assignedJobsQuery);
+
+  const { data: assignedJobs } = useCollection<Job>(assignedJobsQuery);
+
+  useEffect(() => {
+    if (assignedJobs && assignedJobs.length > 0) {
+      setHasRecruitmentTasks(true);
+    }
+  }, [assignedJobs]);
+  // --- End of change for stable menu ---
 
   const menuConfig = useMemo(() => {
     if (!roleKey) return [];
@@ -65,8 +76,6 @@ export function DashboardLayout({
       items: group.items.map(item => ({ ...item })),
     }));
     
-    const hasRecruitmentTasks = assignedJobs && assignedJobs.length > 0;
-
     if (hasRecruitmentTasks) {
       const taskItem = {
           key: 'recruitment.tasks',
@@ -149,7 +158,7 @@ export function DashboardLayout({
     }
 
     return currentConfig;
-  }, [roleKey, userProfile, navSettings, isLoadingSettings, manualMenuConfig, assignedJobs]);
+  }, [roleKey, userProfile, navSettings, isLoadingSettings, manualMenuConfig, hasRecruitmentTasks]);
 
   return (
     <SidebarProvider>
