@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useMemo, useState, useEffect } from 'react';
@@ -26,7 +25,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { MoreHorizontal, PlusCircle, Trash2, Edit, Eye, EyeOff, XCircle, Users } from 'lucide-react';
-import { UserFormDialog } from './UserFormDialog';
+import { JobFormDialog } from './JobFormDialog';
 import { DeleteConfirmationDialog } from './DeleteConfirmationDialog';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/providers/auth-provider';
@@ -330,37 +329,37 @@ export function JobManagementClient() {
                   </TableCell>
                   <TableCell>
                     <Popover>
-                        <PopoverTrigger asChild>
-                            <TooltipProvider>
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <div className="flex items-center -space-x-2 cursor-pointer">
-                                            {assignedUsers.length > 0 ? (
-                                                <>
-                                                {assignedUsers.slice(0, 2).map(user => (
-                                                    <Avatar key={user.uid} className="h-7 w-7 border-2 border-background">
-                                                        <AvatarFallback>{getInitials(user.fullName)}</AvatarFallback>
-                                                    </Avatar>
-                                                ))}
-                                                {assignedUsers.length > 2 && (
-                                                    <Avatar className="h-7 w-7 border-2 border-background bg-muted">
-                                                        <AvatarFallback>+{assignedUsers.length - 2}</AvatarFallback>
-                                                    </Avatar>
-                                                )}
-                                                </>
-                                            ) : (
-                                                <div className="text-muted-foreground text-center w-full">-</div>
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <PopoverTrigger asChild>
+                                    <div className="flex items-center -space-x-2 cursor-pointer">
+                                        {assignedUsers.length > 0 ? (
+                                            <>
+                                            {assignedUsers.slice(0, 2).map(user => (
+                                                <Avatar key={user.uid} className="h-7 w-7 border-2 border-background">
+                                                    <AvatarFallback>{getInitials(user.fullName)}</AvatarFallback>
+                                                </Avatar>
+                                            ))}
+                                            {assignedUsers.length > 2 && (
+                                                <Avatar className="h-7 w-7 border-2 border-background bg-muted">
+                                                    <AvatarFallback>+{assignedUsers.length - 2}</AvatarFallback>
+                                                </Avatar>
                                             )}
-                                        </div>
-                                    </TooltipTrigger>
-                                    {assignedUsers.length > 0 &&
-                                    <TooltipContent>
-                                        <p>{assignedUsers.map(u => u.fullName).join(', ')}</p>
-                                    </TooltipContent>
-                                    }
-                                </Tooltip>
-                            </TooltipProvider>
-                        </PopoverTrigger>
+                                            </>
+                                        ) : (
+                                            <div className="text-muted-foreground text-center w-full">-</div>
+                                        )}
+                                    </div>
+                                   </PopoverTrigger>
+                                </TooltipTrigger>
+                                {assignedUsers.length > 0 &&
+                                <TooltipContent>
+                                    <p>{assignedUsers.map(u => u.fullName).join(', ')}</p>
+                                </TooltipContent>
+                                }
+                            </Tooltip>
+                        </TooltipProvider>
                         <PopoverContent className="w-auto p-0" align="end">
                             <JobQuickViewPanel job={job} assignedUsers={assignedUsers} />
                         </PopoverContent>
