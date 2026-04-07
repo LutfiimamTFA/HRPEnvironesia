@@ -123,6 +123,10 @@ service cloud.firestore {
       match /saved_jobs/{jobId} {
         allow read, write, delete: if isOwner(userId);
       }
+
+      match /notifications/{notificationId} {
+        allow read, write: if isOwner(userId);
+      }
     }
 
     /**
@@ -479,3 +483,5 @@ service cloud.firestore {
     }
   }
 }
+
+    

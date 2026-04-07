@@ -671,6 +671,18 @@ export interface InternWithReviewStatus extends EmployeeProfile {
   evaluation?: MonthlyEvaluation;
 }
 
+// --- NOTIFICATION TYPES ---
+export type Notification = {
+  id?: string;
+  userId: string;
+  type: 'recruitment_assignment' | 'new_application' | 'status_update';
+  jobId?: string;
+  applicationId?: string;
+  title: string;
+  message: string;
+  isRead: boolean;
+  createdAt: Timestamp;
+};
 
 // --- AI ANALYSIS TYPES ---
 
@@ -970,3 +982,5 @@ export function isActionableStatus(status: string, mode: 'manager' | 'hrd'): boo
   
   return false;
 }
+
+    
