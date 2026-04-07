@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import admin from '@/lib/firebase/admin';
 import { ROLES_INTERNAL, type UserProfile } from '@/lib/types';
 
+export const runtime = 'nodejs';
+
 export async function POST(req: NextRequest) {
     const authorization = req.headers.get('Authorization');
     if (!authorization?.startsWith('Bearer ')) {

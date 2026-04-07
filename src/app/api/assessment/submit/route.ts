@@ -1,11 +1,12 @@
-
-'use client';
+'use server';
 
 import { NextRequest, NextResponse } from 'next/server';
 import admin from '@/lib/firebase/admin';
 import { Timestamp } from 'firebase-admin/firestore';
 import type { Assessment, AssessmentTemplate, AssessmentQuestion, AssessmentSession } from '@/lib/types';
 import { analyzePersonalityArchetype } from '@/ai/flows/analyze-personality-archetype-flow';
+
+export const runtime = 'nodejs';
 
 // Helper function to get the max possible score for a Likert dimension
 function getMaxScore(questions: AssessmentQuestion[], dimensionKey: string, engineKey: 'disc' | 'bigfive', scalePoints: number) {

@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import admin from '@/lib/firebase/admin';
 import type { InviteBatch } from '@/lib/types';
 
+export const runtime = 'nodejs';
+
 export async function GET(
   req: NextRequest,
   { params }: { params: { code: string } }

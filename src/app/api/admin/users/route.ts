@@ -4,6 +4,8 @@ import { UserRole, ROLES, EMPLOYMENT_TYPES, EmploymentType } from '@/lib/types';
 import { Timestamp } from 'firebase-admin/firestore';
 import { z } from 'zod';
 
+export const runtime = 'nodejs';
+
 const createSchema = z.object({
   fullName: z.string().min(2),
   email: z.string().email(),

@@ -7,6 +7,8 @@ import { Timestamp, FieldValue } from 'firebase-admin/firestore';
 import type { EmployeeProfile, UserProfile } from '@/lib/types';
 import { HRP_FIELDS } from '@/lib/hrp-fields';
 
+export const runtime = 'nodejs';
+
 async function verifyAdmin(req: NextRequest) {
     const authorization = req.headers.get('Authorization');
     if (!authorization?.startsWith('Bearer ')) {

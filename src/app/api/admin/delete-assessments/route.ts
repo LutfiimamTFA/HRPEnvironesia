@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import admin from '@/lib/firebase/admin';
 import { ROLES_INTERNAL, type UserProfile } from '@/lib/types';
 
+export const runtime = 'nodejs';
+
 // Helper function to verify user role via ID token
 async function verifyUserRole(req: NextRequest) {
     const authorization = req.headers.get('Authorization');

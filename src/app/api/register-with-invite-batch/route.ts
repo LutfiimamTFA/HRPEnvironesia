@@ -6,6 +6,8 @@ import { Timestamp, FieldValue } from 'firebase-admin/firestore';
 import { z } from 'zod';
 import type { InviteBatch, UserProfile } from '@/lib/types';
 
+export const runtime = 'nodejs';
+
 const registerSchema = z.object({
   batchCode: z.string().min(1, 'Batch code is required.'),
   fullName: z.string().min(2, { message: 'Full name is required.' }),

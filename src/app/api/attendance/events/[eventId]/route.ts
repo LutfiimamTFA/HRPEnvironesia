@@ -4,6 +4,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import admin from '@/lib/firebase/admin';
 
+export const runtime = 'nodejs';
+
 async function verifyAdmin(req: NextRequest) {
     const authorization = req.headers.get('Authorization');
     if (!authorization?.startsWith('Bearer ')) {

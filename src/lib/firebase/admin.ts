@@ -1,3 +1,4 @@
+import 'server-only';
 import admin from 'firebase-admin';
 
 /**
@@ -51,4 +52,3 @@ if (!admin.apps.length) {
 }
 
 export default admin;
-

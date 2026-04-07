@@ -3,6 +3,8 @@ import admin from '@/lib/firebase/admin';
 import { UserRole } from '@/lib/types';
 import { Timestamp } from 'firebase-admin/firestore';
 
+export const runtime = 'nodejs';
+
 const seedUsers: { email: string; password: string; fullName: string; role: UserRole }[] = [
   { email: 'super_admin@gmail.com', password: '12345678', fullName: 'Super Admin', role: 'super-admin' },
   { email: 'hrd@gmail.com', password: '12345678', fullName: 'HRD', role: 'hrd' },
@@ -177,12 +179,17 @@ export async function POST(req: NextRequest) {
         await db.collection('users').doc(userRecord.uid).set(userProfile, { merge: true });
       }
 
-      // Handle the roles_admin collection for admin
+      // Handle the roles_admin and roles_hrd collections
       if (userData.role === 'super-admin') {
         await db.collection('roles_admin').doc(userRecord.uid).set({ role: 'super-admin' });
       } else {
-        // In case a user's role was demoted, ensure they are not in roles_admin
-        await db.collection('roles_admin').doc(userRecord.uid).delete().catch(() => {}); // Ignore error if doc doesn't exist
+        await db.collection('roles_admin').doc(userRecord.uid).delete().catch(() => {});
+      }
+
+      if (userData.role === 'hrd') {
+        await db.collection('roles_hrd').doc(userRecord.uid).set({ role: 'hrd' });
+      } else {
+        await db.collection('roles_hrd').doc(userRecord.uid).delete().catch(() => {});
       }
       
       results.push({ email: userData.email, status, uid: userRecord.uid });

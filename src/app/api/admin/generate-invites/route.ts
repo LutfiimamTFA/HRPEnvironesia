@@ -8,6 +8,8 @@ import { generateUniqueCode } from '@/lib/utils';
 import { type InviteBatch } from '@/lib/types';
 import { firestore } from 'firebase-admin';
 
+export const runtime = 'nodejs';
+
 const inviteEmploymentTypes = ['karyawan', 'magang', 'training'] as const;
 
 const generateSchema = z.object({

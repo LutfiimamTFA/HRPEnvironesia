@@ -5,6 +5,7 @@ import admin from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import type { JobApplication, UserProfile } from '@/lib/types';
 
+export const runtime = 'nodejs';
 
 async function verifyAdmin(req: NextRequest) {
     const authorization = req.headers.get('Authorization');

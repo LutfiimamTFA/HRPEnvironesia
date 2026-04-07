@@ -5,6 +5,8 @@ import admin from '@/lib/firebase/admin';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { z } from 'zod';
 
+export const runtime = 'nodejs';
+
 const patchSchema = z.object({
   additionalQuantity: z.coerce.number().int().min(1, 'Jumlah minimal 1.').max(100, 'Jumlah maksimal 100.'),
 });
