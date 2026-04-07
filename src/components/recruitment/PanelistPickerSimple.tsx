@@ -13,7 +13,7 @@ import type { UserProfile, Brand } from '@/lib/types';
 
 interface PanelistPickerSimpleProps {
   allUsers: UserProfile[];
-  allBrands: Brand[];
+  allBrands?: Brand[];
   selectedIds: string[];
   onChange: (selectedIds: string[]) => void;
   className?: string;
@@ -140,8 +140,7 @@ export function PanelistPickerSimple({
                   <p className="text-xs text-muted-foreground">{user.email}</p>
                 </div>
                  <div className="text-right flex-shrink-0">
-                    <p className="font-semibold text-xs">{user.brandName || 'No Brand'}</p>
-                    <p className="text-xs text-muted-foreground capitalize">{user.jobInfo}</p>
+                    {user.brandName && <Badge variant="secondary">{user.brandName}</Badge>}
                 </div>
               </div>
             );

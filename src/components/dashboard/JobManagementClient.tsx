@@ -31,6 +31,7 @@ import { DeleteConfirmationDialog } from './DeleteConfirmationDialog';
 import { useAuth } from '@/providers/auth-provider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AssignedUsersDialog } from '../recruitment/AssignedUsersDialog';
+import Link from 'next/link';
 
 function JobTableSkeleton() {
   return (
@@ -110,7 +111,8 @@ export function JobManagementClient() {
   
   const assignableUsers = useMemo(() => {
     if (!users) return [];
-    return users.filter(u => u.employmentType === 'karyawan' || u.role === 'manager');
+    // Only allow 'manager' and 'karyawan' roles, excluding HR and Super Admin
+    return users.filter(u => u.role === 'manager' || u.role === 'karyawan');
   }, [users]);
 
   const brandMap = useMemo(() => {
