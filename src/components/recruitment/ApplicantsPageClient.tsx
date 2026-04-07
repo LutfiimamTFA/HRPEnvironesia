@@ -9,7 +9,7 @@ import { useAuth } from '@/providers/auth-provider';
 import type { JobApplication, JobApplicationStatus, Job, ApplicationInterview } from '@/lib/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { Eye, CalendarPlus, List, LayoutGrid, RefreshCw, Pencil, Edit, X } from 'lucide-react';
+import { Eye, CalendarPlus, List, LayoutGrid, RefreshCw, Pencil, Edit, X, Users } from 'lucide-react';
 import { ApplicationStatusBadge, statusDisplayLabels } from '@/components/recruitment/ApplicationStatusBadge';
 import { Checkbox } from '@/components/ui/checkbox';
 import Link from 'next/link';
@@ -26,6 +26,7 @@ import { doc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import type { ScheduleInterviewData } from './ScheduleInterviewDialog';
 import { ScheduleInterviewDialog } from './ScheduleInterviewDialog';
 import { EditInterviewTemplateDialog } from './EditInterviewTemplateDialog';
+import { AssignedUsersCard } from './AssignedUsersCard';
 
 type SelectionState = {
   selectedIds: Set<string>;
@@ -202,67 +203,75 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allUsers,
   return (
     <div className="space-y-4">
       {job && (
-        <Card>
-            <CardHeader>
-                <CardTitle>Interview Template</CardTitle>
-                <CardDescription>Atur templat default untuk semua wawancara pada lowongan ini. Ini akan digunakan saat menjadwalkan wawancara baru.</CardDescription>
-            </CardHeader>
-            <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                <div className="sm:col-span-2">
-                    <p className="font-medium text-muted-foreground">Default Link:</p>
-                    {job.interviewTemplate?.meetingLink ? (
-                      <p className="font-mono break-all">{job.interviewTemplate.meetingLink}</p>
-                    ) : detectedTemplate?.meetingLink ? (
-                      <div className='flex items-center gap-2 mt-1'>
-                        <p className="font-mono break-all text-muted-foreground italic">{detectedTemplate.meetingLink}</p>
-                        <Badge variant="outline">Detected</Badge>
-                      </div>
-                    ) : (
-                      <p className="font-mono break-all">Not set</p>
-                    )}
-                </div>
-                <div>
-                    <p className="font-medium text-muted-foreground">Default Start Date:</p>
-                    {job.interviewTemplate?.defaultStartDate ? (
-                        <p>{format(job.interviewTemplate.defaultStartDate.toDate(), 'dd MMM yyyy')}</p>
-                    ) : detectedTemplate?.defaultStartDate ? (
-                        <p className="italic text-muted-foreground">{format(detectedTemplate.defaultStartDate.toDate(), 'dd MMM yyyy')}</p>
-                    ) : (
-                        <p>Not set</p>
-                    )}
-                </div>
-                <div>
-                    <p className="font-medium text-muted-foreground">Workday Start Time:</p>
-                     {job.interviewTemplate?.workdayStartTime ? (
-                        <p>{job.interviewTemplate.workdayStartTime}</p>
-                    ) : detectedTemplate?.workdayStartTime ? (
-                        <p className="italic text-muted-foreground">{detectedTemplate.workdayStartTime}</p>
-                    ) : (
-                        <p>Not set</p>
-                    )}
-                </div>
-                <div>
-                    <p className="font-medium text-muted-foreground">Slot Duration:</p>
-                    {job.interviewTemplate?.slotDurationMinutes ? (
-                        <p>{job.interviewTemplate.slotDurationMinutes} minutes</p>
-                    ) : detectedTemplate?.slotDurationMinutes ? (
-                        <p className="italic text-muted-foreground">{detectedTemplate.slotDurationMinutes} minutes</p>
-                    ) : (
-                        <p>Not set</p>
-                    )}
-                </div>
-            </CardContent>
-            <CardFooter className="flex gap-2">
-                <Button variant="outline" onClick={() => setIsTemplateDialogOpen(true)}>
-                    <Edit className="mr-2 h-4 w-4" /> Edit Template
-                </Button>
-                {detectedTemplate && !job.interviewTemplate?.meetingLink && (
-                    <Button onClick={handleUseAsDefault}>
-                         Gunakan sebagai Default
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+            <AssignedUsersCard 
+                job={job}
+                allUsers={allUsers}
+                onUpdate={onJobUpdate}
+                className="lg:col-span-1"
+            />
+            <Card className="lg:col-span-2">
+                <CardHeader>
+                    <CardTitle>Interview Template</CardTitle>
+                    <CardDescription>Atur templat default untuk semua wawancara pada lowongan ini. Ini akan digunakan saat menjadwalkan wawancara baru.</CardDescription>
+                </CardHeader>
+                <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                    <div className="sm:col-span-2">
+                        <p className="font-medium text-muted-foreground">Default Link:</p>
+                        {job.interviewTemplate?.meetingLink ? (
+                        <p className="font-mono break-all">{job.interviewTemplate.meetingLink}</p>
+                        ) : detectedTemplate?.meetingLink ? (
+                        <div className='flex items-center gap-2 mt-1'>
+                            <p className="font-mono break-all text-muted-foreground italic">{detectedTemplate.meetingLink}</p>
+                            <Badge variant="outline">Detected</Badge>
+                        </div>
+                        ) : (
+                        <p className="font-mono break-all">Not set</p>
+                        )}
+                    </div>
+                    <div>
+                        <p className="font-medium text-muted-foreground">Default Start Date:</p>
+                        {job.interviewTemplate?.defaultStartDate ? (
+                            <p>{format(job.interviewTemplate.defaultStartDate.toDate(), 'dd MMM yyyy')}</p>
+                        ) : detectedTemplate?.defaultStartDate ? (
+                            <p className="italic text-muted-foreground">{format(detectedTemplate.defaultStartDate.toDate(), 'dd MMM yyyy')}</p>
+                        ) : (
+                            <p>Not set</p>
+                        )}
+                    </div>
+                    <div>
+                        <p className="font-medium text-muted-foreground">Workday Start Time:</p>
+                        {job.interviewTemplate?.workdayStartTime ? (
+                            <p>{job.interviewTemplate.workdayStartTime}</p>
+                        ) : detectedTemplate?.workdayStartTime ? (
+                            <p className="italic text-muted-foreground">{detectedTemplate.workdayStartTime}</p>
+                        ) : (
+                            <p>Not set</p>
+                        )}
+                    </div>
+                    <div>
+                        <p className="font-medium text-muted-foreground">Slot Duration:</p>
+                        {job.interviewTemplate?.slotDurationMinutes ? (
+                            <p>{job.interviewTemplate.slotDurationMinutes} minutes</p>
+                        ) : detectedTemplate?.slotDurationMinutes ? (
+                            <p className="italic text-muted-foreground">{detectedTemplate.slotDurationMinutes} minutes</p>
+                        ) : (
+                            <p>Not set</p>
+                        )}
+                    </div>
+                </CardContent>
+                <CardFooter className="flex gap-2">
+                    <Button variant="outline" onClick={() => setIsTemplateDialogOpen(true)}>
+                        <Edit className="mr-2 h-4 w-4" /> Edit Template
                     </Button>
-                )}
-            </CardFooter>
-        </Card>
+                    {detectedTemplate && !job.interviewTemplate?.meetingLink && (
+                        <Button onClick={handleUseAsDefault}>
+                            Gunakan sebagai Default
+                        </Button>
+                    )}
+                </CardFooter>
+            </Card>
+        </div>
       )}
 
       <div className="flex items-center justify-between gap-2 flex-wrap">

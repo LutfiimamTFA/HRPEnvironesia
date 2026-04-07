@@ -320,6 +320,11 @@
         "updatedBy": {
           "type": "string",
           "description": "UID of the user who last updated the job."
+        },
+        "assignedUserIds": {
+          "type": "array",
+          "description": "A list of user UIDs assigned to review this job.",
+          "items": { "type": "string" }
         }
       },
       "required": [
@@ -657,7 +662,8 @@
                         "name": { "type": "string", "description": "The name of the certification." },
                         "organization": { "type": "string", "description": "The issuing organization." },
                         "issueDate": { "type": "string", "description": "The month and year the certification was issued (YYYY-MM)." },
-                        "expirationDate": { "type": "string", "description": "The month and year the certification expires (YYYY-MM), if applicable." }
+                        "expirationDate": { "type": "string", "description": "The month and year the certification expires (YYYY-MM), if applicable." },
+                        "imageUrl": { "type": "string", "format": "uri" }
                     },
                     "required": ["id", "name", "organization", "issueDate"]
                 }

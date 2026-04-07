@@ -190,6 +190,7 @@ export type Job = {
   updatedAt: Timestamp;
   createdBy: string;
   updatedBy: string;
+  assignedUserIds?: string[];
   tags?: string[]; // Added for panelist suggestions
   interviewTemplate?: {
     meetingLink?: string;
@@ -457,7 +458,9 @@ export type Profile = {
 
     // Document URLs
     cvUrl?: string;
+    cvFileName?: string;
     ijazahUrl?: string;
+    ijazahFileName?: string;
     otherDocumentUrls?: string[];
     
     // Wizard metadata
