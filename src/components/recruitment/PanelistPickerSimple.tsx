@@ -140,7 +140,7 @@ export function PanelistPickerSimple({
                   <p className="text-xs text-muted-foreground">{user.email}</p>
                 </div>
                 <div className="text-right">
-                  {user.brandName && <p className="text-sm font-medium">{user.brandName}</p>}
+                  {user.brandName && <p className="text-sm font-semibold">{user.brandName}</p>}
                   <p className="text-xs text-muted-foreground capitalize">{user.jobInfo}</p>
                 </div>
               </div>

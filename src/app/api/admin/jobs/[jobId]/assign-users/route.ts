@@ -14,10 +14,17 @@ async function verifyAdmin(req: NextRequest) {
     const idToken = authorization.split('Bearer ')[1];
     try {
         const decodedToken = await admin.auth().verifyIdToken(idToken);
-        const userDoc = await admin.firestore().collection('users').doc(decodedToken.uid).get();
-        if (!userDoc.exists() || !['super-admin', 'hrd'].includes(userDoc.data()?.role)) {
+        const userDocSnapshot = await admin.firestore().collection('users').doc(decodedToken.uid).get();
+
+        if (!userDocSnapshot.exists()) {
+            return { error: 'Forbidden: User profile not found.', status: 403 };
+        }
+        
+        const userDocData = userDocSnapshot.data();
+        if (!['super-admin', 'hrd'].includes(userDocData?.role)) {
             return { error: 'Forbidden.', status: 403 };
         }
+        
         return { uid: decodedToken.uid };
     } catch (error: any) {
         if (error.code === 'auth/id-token-expired' || error.code === 'auth/invalid-id-token') {
