@@ -7,6 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import type { Job, UserProfile, Brand } from '@/lib/types';
 import { useAuth } from '@/providers/auth-provider';
+import { useAuth as useFirebaseAuth } from '@/firebase';
 import { PanelistPickerSimple } from './PanelistPickerSimple';
 import { useRouter } from 'next/navigation';
 
@@ -24,7 +25,8 @@ export function AssignedUsersDialog({ open, onOpenChange, job, currentUser, allU
   const [isSaving, setIsSaving] = useState(false);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const { toast } = useToast();
-  const { auth, firebaseUser } = useAuth();
+  const { firebaseUser } = useAuth();
+  const auth = useFirebaseAuth();
   const router = useRouter();
 
   useEffect(() => {

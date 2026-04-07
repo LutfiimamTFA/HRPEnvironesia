@@ -139,8 +139,9 @@ export function PanelistPickerSimple({
                   <p className="font-medium text-sm">{user.fullName}</p>
                   <p className="text-xs text-muted-foreground">{user.email}</p>
                 </div>
-                 <div className="text-right flex-shrink-0">
-                    {user.brandName && <Badge variant="secondary">{user.brandName}</Badge>}
+                <div className="text-right">
+                  {user.brandName && <p className="text-sm font-medium">{user.brandName}</p>}
+                  <p className="text-xs text-muted-foreground capitalize">{user.jobInfo}</p>
                 </div>
               </div>
             );
