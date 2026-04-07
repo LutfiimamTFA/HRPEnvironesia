@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { collection, doc, serverTimestamp } from 'firebase/firestore';
 import { useCollection, useFirestore, useMemoFirebase, updateDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase';
 import type { Job, Brand, UserProfile } from '@/lib/types';
@@ -24,12 +24,13 @@ import {
   DropdownMenuSeparator
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
-import { MoreHorizontal, PlusCircle, Trash2, Edit, Eye, EyeOff, XCircle } from 'lucide-react';
+import { MoreHorizontal, PlusCircle, Trash2, Edit, Eye, EyeOff, XCircle, Users } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { JobFormDialog } from './JobFormDialog';
 import { DeleteConfirmationDialog } from './DeleteConfirmationDialog';
 import { useAuth } from '@/providers/auth-provider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { AssignedUsersDialog } from '../recruitment/AssignedUsersDialog';
 
 function JobTableSkeleton() {
   return (
@@ -80,6 +81,7 @@ export function JobManagementClient() {
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [isAssignUsersOpen, setIsAssignUsersOpen] = useState(false);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [brandFilter, setBrandFilter] = useState('all');
@@ -88,7 +90,7 @@ export function JobManagementClient() {
 
 
   const jobsRef = useMemoFirebase(() => collection(firestore, 'jobs'), [firestore]);
-  const { data: jobs, isLoading: isLoadingJobs, error: jobsError } = useCollection<Job>(jobsRef);
+  const { data: jobs, isLoading: isLoadingJobs, error: jobsError, mutate: mutateJobs } = useCollection<Job>(jobsRef);
   
   const brandsRef = useMemoFirebase(() => collection(firestore, 'brands'), [firestore]);
   const { data: brands, isLoading: isLoadingBrands, error: brandsError } = useCollection<Brand>(brandsRef);
@@ -98,6 +100,12 @@ export function JobManagementClient() {
 
   const isLoading = isLoadingJobs || isLoadingBrands || isLoadingUsers;
   const error = jobsError || brandsError || usersError;
+  
+  const assignableUsers = useMemo(() => {
+    if (!users) return [];
+    // Filter out candidates
+    return users.filter(u => u.role !== 'kandidat' && u.isActive);
+  }, [users]);
 
   const brandMap = useMemo(() => {
     if (!brands) return new Map<string, string>();
@@ -157,6 +165,11 @@ export function JobManagementClient() {
   const handleDelete = (job: Job) => {
     setSelectedJob(job);
     setIsDeleteConfirmOpen(true);
+  };
+  
+  const handleAssignUsers = (job: Job) => {
+    setSelectedJob(job);
+    setIsAssignUsersOpen(true);
   };
 
   const confirmDelete = async () => {
@@ -276,7 +289,7 @@ export function JobManagementClient() {
               <TableHead>Type</TableHead>
               <TableHead>Openings</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Location</TableHead>
+              <TableHead>Assigned</TableHead>
               <TableHead>Deadline</TableHead>
               <TableHead>Last Update</TableHead>
               <TableHead className="w-[100px] text-right">Actions</TableHead>
@@ -299,7 +312,14 @@ export function JobManagementClient() {
                       {job.publishStatus}
                     </Badge>
                   </TableCell>
-                  <TableCell>{job.location}</TableCell>
+                  <TableCell>
+                    {job.assignedUserIds && job.assignedUserIds.length > 0 ? (
+                      <div className="flex items-center gap-1">
+                        <Users className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm">{job.assignedUserIds.length} Users</span>
+                      </div>
+                    ) : '-'}
+                  </TableCell>
                   <TableCell>
                     {job.applyDeadline?.toDate ? format(job.applyDeadline.toDate(), 'dd MMM yyyy') : '-'}
                   </TableCell>
@@ -318,6 +338,10 @@ export function JobManagementClient() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        <DropdownMenuItem onSelect={() => handleAssignUsers(job)}>
+                            <Users className="mr-2 h-4 w-4" /> Kelola User
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
                         <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setOpenMenuId(null); queueMicrotask(() => handleEdit(job)); }}>
                           <Edit className="mr-2 h-4 w-4" />
                           Edit
@@ -379,6 +403,17 @@ export function JobManagementClient() {
         itemName={selectedJob?.position}
         itemType="Job Posting"
       />
+      
+      {userProfile && (
+        <AssignedUsersDialog
+          open={isAssignUsersOpen}
+          onOpenChange={setIsAssignUsersOpen}
+          job={selectedJob}
+          allUsers={assignableUsers || []}
+          currentUser={userProfile}
+          onSuccess={mutateJobs}
+        />
+      )}
     </div>
   );
 }
