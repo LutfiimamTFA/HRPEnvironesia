@@ -16,6 +16,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ArrowLeft } from 'lucide-react';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { ApplicantsPageClient } from '@/components/recruitment/ApplicantsPageClient';
+import { AssignedUsersCard } from '@/components/recruitment/AssignedUsersCard';
 
 function ApplicantsPageSkeleton() {
   return (
@@ -27,7 +28,6 @@ function ApplicantsPageSkeleton() {
 }
 
 export default function RecruitmentApplicantsPage() {
-  const hasAccess = useRoleGuard(['hrd', 'super-admin']);
   const { userProfile } = useAuth();
   const firestore = useFirestore();
   const params = useParams();
@@ -43,30 +43,54 @@ export default function RecruitmentApplicantsPage() {
   );
   const { data: applications, isLoading: isLoadingApps, error } = useCollection<JobApplication>(applicationsQuery);
 
-  const internalUsersQuery = useMemoFirebase(() =>
-    query(
-      collection(firestore, 'users'),
-      where('role', 'in', ['hrd', 'manager', 'karyawan', 'super-admin']),
-      where('isActive', '==', true)
-    ),
+  const { data: usersToFilter, isLoading: isLoadingUsers } = useCollection<UserProfile>(
+    useMemoFirebase(() =>
+      query(
+        collection(firestore, 'users'),
+        where('role', 'in', ['manager', 'karyawan']),
+        where('isActive', '==', true)
+      ),
     [firestore]
-  );
-  const { data: internalUsers, isLoading: isLoadingUsers } = useCollection<UserProfile>(internalUsersQuery);
+  ));
+
+  const assignableUsers = useMemo(() => {
+    if (!usersToFilter) return [];
+    // Filter out interns and trainees from the 'karyawan' role
+    return usersToFilter.filter(u => u.role === 'manager' || u.employmentType === 'karyawan');
+  }, [usersToFilter]);
 
   const brandsQuery = useMemoFirebase(() => collection(firestore, 'brands'), [firestore]);
   const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(brandsQuery);
 
+  const hasAccess = useMemo(() => {
+    if (isLoadingJob || !userProfile || !job) return false;
+    if (userProfile.role === 'super-admin' || userProfile.role === 'hrd') return true;
+    if (job.assignedUserIds?.includes(userProfile.uid)) return true;
+    return false;
+  }, [userProfile, job, isLoadingJob]);
+
   const menuConfig = useMemo(() => {
-    if (userProfile?.role === 'super-admin') return MENU_CONFIG['super-admin'];
-    if (userProfile?.role === 'hrd') {
-      return MENU_CONFIG['hrd'];
-    }
-    return [];
+    if (!userProfile) return [];
+    if (userProfile.role === 'super-admin') return MENU_CONFIG['super-admin'];
+    if (userProfile.role === 'hrd') return MENU_CONFIG['hrd'];
+    // For assigned users, show their own menu config
+    return MENU_CONFIG[userProfile.role] || [];
   }, [userProfile]);
   
   const isLoading = isLoadingApps || isLoadingJob || isLoadingUsers || isLoadingBrands;
 
-  if (!hasAccess || isLoading) {
+  if (!hasAccess && !isLoading) {
+    return (
+       <DashboardLayout pageTitle="Akses Ditolak" menuConfig={menuConfig}>
+        <Alert variant="destructive">
+          <AlertTitle>Akses Ditolak</AlertTitle>
+          <AlertDescription>Anda tidak memiliki izin untuk melihat halaman ini.</AlertDescription>
+        </Alert>
+      </DashboardLayout>
+    );
+  }
+
+  if (isLoading) {
     return (
       <DashboardLayout 
         pageTitle="Loading Applicants..." 
@@ -104,11 +128,19 @@ export default function RecruitmentApplicantsPage() {
             </Button>
         </div>
         
+        {job && (userProfile?.role === 'hrd' || userProfile?.role === 'super-admin') && (
+            <AssignedUsersCard 
+                job={job} 
+                allUsers={assignableUsers}
+                onUpdate={mutateJob} 
+            />
+        )}
+        
         <ApplicantsPageClient 
           applications={applications || []} 
           job={job}
           onJobUpdate={mutateJob}
-          allUsers={internalUsers || []}
+          allUsers={assignableUsers}
           allBrands={brands || []}
         />
       </div>
