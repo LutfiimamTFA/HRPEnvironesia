@@ -15,7 +15,7 @@ async function verifyAdmin(req: NextRequest) {
         const decodedToken = await admin.auth().verifyIdToken(idToken);
         const userDocSnapshot = await admin.firestore().collection('users').doc(decodedToken.uid).get();
 
-        if (!userDocSnapshot.exists()) {
+        if (!userDocSnapshot.exists) {
             return { error: 'Forbidden: User profile not found.', status: 403 };
         }
         
@@ -52,7 +52,7 @@ export async function POST(
     // 1. Get the current job data to find out who is already assigned
     const jobRef = db.doc(`jobs/${params.jobId}`);
     const jobSnap = await jobRef.get();
-    if (!jobSnap.exists()) {
+    if (!jobSnap.exists) {
         return NextResponse.json({ error: 'Job not found.' }, { status: 404 });
     }
     const currentJobData = jobSnap.data() as Job;
@@ -108,5 +108,3 @@ export async function POST(
     return NextResponse.json({ error: 'Gagal menyimpan data. Silakan coba lagi.' }, { status: 500 });
   }
 }
-
-    
