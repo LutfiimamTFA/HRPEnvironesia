@@ -124,6 +124,7 @@ export function PermissionRequestForm({ open, onOpenChange, submission, employee
   const isViewing = !!submission && !isEditing;
   const isCreating = !submission;
   const mode = isCreating ? 'Buat' : (isEditing ? 'Edit' : 'Detail');
+  const isReadOnly = isViewing;
 
   const defaultTimes = useMemo(() => ({ start: '09:00', end: '17:00' }), []);
 
@@ -276,27 +277,27 @@ export function PermissionRequestForm({ open, onOpenChange, submission, employee
               <Form {...form}>
                 <form id="permission-form" onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
                   {/* General Fields */}
-                  <FormField control={form.control} name="type" render={({ field }) => (<FormItem><FormLabel>Jenis Izin*</FormLabel><Select onValueChange={field.onChange} value={field.value} disabled={!!defaultType || isViewing}><FormControl><SelectTrigger><SelectValue placeholder="Pilih jenis izin" /></SelectTrigger></FormControl><SelectContent>{PERMISSION_TYPES.map(t => <SelectItem key={t} value={t} className="capitalize">{PERMISSION_TYPE_LABELS[t]}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem>)} />
-                  <FormField control={form.control} name="reason" render={({ field }) => (<FormItem><FormLabel>Alasan/Keterangan*</FormLabel><FormControl><Textarea rows={3} placeholder="Jelaskan keperluan Anda..." {...field} readOnly={isViewing} /></FormControl><FormMessage /></FormItem>)} />
+                  <FormField control={form.control} name="type" render={({ field }) => (<FormItem><FormLabel>Jenis Izin*</FormLabel><Select onValueChange={field.onChange} value={field.value} disabled={!!defaultType || isReadOnly}><FormControl><SelectTrigger><SelectValue placeholder="Pilih jenis izin" /></SelectTrigger></FormControl><SelectContent>{PERMISSION_TYPES.map(t => <SelectItem key={t} value={t} className="capitalize">{PERMISSION_TYPE_LABELS[t]}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem>)} />
+                  <FormField control={form.control} name="reason" render={({ field }) => (<FormItem><FormLabel>Alasan/Keterangan*</FormLabel><FormControl><Textarea rows={3} placeholder="Jelaskan keperluan Anda..." {...field} readOnly={isReadOnly} /></FormControl><FormMessage /></FormItem>)} />
 
                   {/* Date & Time Fields */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FormField control={form.control} name="startDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>{selectedType === 'keluar_kantor' ? 'Tanggal Izin*' : 'Tanggal Mulai*'}</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} disabled={isViewing} /></FormControl><FormMessage /></FormItem>)} />
-                    {selectedType !== 'keluar_kantor' && <FormField control={form.control} name="endDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>Tanggal Selesai*</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} disabled={isViewing} /></FormControl><FormMessage /></FormItem>)} />}
+                    <FormField control={form.control} name="startDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>{selectedType === 'keluar_kantor' ? 'Tanggal Izin*' : 'Tanggal Mulai*'}</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} disabled={isReadOnly} /></FormControl><FormMessage /></FormItem>)} />
+                    {selectedType !== 'keluar_kantor' && <FormField control={form.control} name="endDate" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>Tanggal Selesai*</FormLabel><FormControl><GoogleDatePicker value={field.value} onChange={field.onChange} disabled={isReadOnly} /></FormControl><FormMessage /></FormItem>)} />}
                     {selectedType === 'keluar_kantor' && (
                         <div className="grid grid-cols-2 gap-2">
-                            <FormField control={form.control} name="startTime" render={({ field }) => (<FormItem><FormLabel>Jam Mulai*</FormLabel><FormControl><Input type="time" {...field} readOnly={isViewing} /></FormControl><FormMessage /></FormItem>)} />
-                            <FormField control={form.control} name="endTime" render={({ field }) => (<FormItem><FormLabel>Jam Selesai*</FormLabel><FormControl><Input type="time" {...field} readOnly={isViewing} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="startTime" render={({ field }) => (<FormItem><FormLabel>Jam Mulai*</FormLabel><FormControl><Input type="time" {...field} readOnly={isReadOnly} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="endTime" render={({ field }) => (<FormItem><FormLabel>Jam Selesai*</FormLabel><FormControl><Input type="time" {...field} readOnly={isReadOnly} /></FormControl><FormMessage /></FormItem>)} />
                         </div>
                     )}
                   </div>
                   
                   {/* Specific Fields */}
-                  {selectedType === 'sakit' && <FormField control={form.control} name="sicknessDescription" render={({ field }) => (<FormItem><FormLabel>Keluhan Singkat</FormLabel><FormControl><Input {...field} placeholder="Contoh: Demam dan batuk" readOnly={isViewing} /></FormControl><FormMessage /></FormItem>)} />}
-                  {selectedType === 'duka' && <FormField control={form.control} name="familyRelation" render={({ field }) => (<FormItem><FormLabel>Hubungan Keluarga*</FormLabel><FormControl><Input {...field} placeholder="Contoh: Orang Tua, Kakek/Nenek" readOnly={isViewing} /></FormControl><FormMessage /></FormItem>)} />}
-                  {selectedType === 'akademik' && <><FormField control={form.control} name="academicActivityName" render={({ field }) => (<FormItem><FormLabel>Nama Kegiatan*</FormLabel><FormControl><Input {...field} placeholder="Contoh: Sidang Skripsi, Seminar Nasional" readOnly={isViewing} /></FormControl><FormMessage /></FormItem>)} /><FormField control={form.control} name="academicInstitution" render={({ field }) => (<FormItem><FormLabel>Institusi</FormLabel><FormControl><Input {...field} placeholder="Nama kampus/penyelenggara" readOnly={isViewing} /></FormControl><FormMessage /></FormItem>)} /></>}
-                  {selectedType === 'lainnya' && <FormField control={form.control} name="otherLeaveTitle" render={({ field }) => (<FormItem><FormLabel>Judul Izin*</FormLabel><FormControl><Input {...field} placeholder="Contoh: Izin Mengurus Administrasi Bank" readOnly={isViewing} /></FormControl><FormMessage /></FormItem>)} />}
-                  {selectedType === 'keluar_kantor' && <FormField control={form.control} name="destination" render={({ field }) => (<FormItem><FormLabel>Tujuan / Lokasi*</FormLabel><FormControl><Input {...field} placeholder="Contoh: Bank BCA, Kantor Pajak" readOnly={isViewing} /></FormControl><FormMessage /></FormItem>)} />}
+                  {selectedType === 'sakit' && <FormField control={form.control} name="sicknessDescription" render={({ field }) => (<FormItem><FormLabel>Keluhan Singkat</FormLabel><FormControl><Input {...field} placeholder="Contoh: Demam dan batuk" readOnly={isReadOnly} /></FormControl><FormMessage /></FormItem>)} />}
+                  {selectedType === 'duka' && <FormField control={form.control} name="familyRelation" render={({ field }) => (<FormItem><FormLabel>Hubungan Keluarga*</FormLabel><FormControl><Input {...field} placeholder="Contoh: Orang Tua, Kakek/Nenek" readOnly={isReadOnly} /></FormControl><FormMessage /></FormItem>)} />}
+                  {selectedType === 'akademik' && <><FormField control={form.control} name="academicActivityName" render={({ field }) => (<FormItem><FormLabel>Nama Kegiatan*</FormLabel><FormControl><Input {...field} placeholder="Contoh: Sidang Skripsi, Seminar Nasional" readOnly={isReadOnly} /></FormControl><FormMessage /></FormItem>)} /><FormField control={form.control} name="academicInstitution" render={({ field }) => (<FormItem><FormLabel>Institusi</FormLabel><FormControl><Input {...field} placeholder="Nama kampus/penyelenggara" readOnly={isReadOnly} /></FormControl><FormMessage /></FormItem>)} /></>}
+                  {selectedType === 'lainnya' && <FormField control={form.control} name="otherLeaveTitle" render={({ field }) => (<FormItem><FormLabel>Judul Izin*</FormLabel><FormControl><Input {...field} placeholder="Contoh: Izin Mengurus Administrasi Bank" readOnly={isReadOnly} /></FormControl><FormMessage /></FormItem>)} />}
+                  {selectedType === 'keluar_kantor' && <FormField control={form.control} name="destination" render={({ field }) => (<FormItem><FormLabel>Tujuan / Lokasi*</FormLabel><FormControl><Input {...field} placeholder="Contoh: Bank BCA, Kantor Pajak" readOnly={isReadOnly} /></FormControl><FormMessage /></FormItem>)} />}
                   
                   {/* Attachment Field */}
                   <FormField control={form.control} name="attachment" render={({ field: { value, onChange, ...fieldProps } }) => (
