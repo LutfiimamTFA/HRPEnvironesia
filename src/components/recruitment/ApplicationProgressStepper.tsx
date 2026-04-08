@@ -3,7 +3,7 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
 import type { JobApplicationStatus } from '@/lib/types';
-import { Check, Users, Award, Search } from 'lucide-react';
+import { Check, Users, Award, Search, FileText } from 'lucide-react';
 import { ORDERED_RECRUITMENT_STAGES } from '@/lib/types';
 
 const applicationSteps = [

@@ -60,7 +60,7 @@ export function ApplicationActionBar({ application, onStageChange, onSendOfferCl
     <>
       <div className="flex items-center gap-2">
         {primaryAction && (
-          <Button onClick={() => handleActionClick(primaryAction)}>
+          <Button onClick={() => handleActionClick(primaryAction)} size="lg">
             <Check className="mr-2 h-4 w-4" />
             {`Lolos ke ${statusDisplayLabels[primaryAction]}`}
           </Button>
@@ -68,7 +68,7 @@ export function ApplicationActionBar({ application, onStageChange, onSendOfferCl
 
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" className="h-10 w-10">
+                <Button variant="outline" size="lg" className="px-3">
                 <MoreVertical className="h-4 w-4" />
                 <span className="sr-only">Tindakan Lain</span>
                 </Button>
