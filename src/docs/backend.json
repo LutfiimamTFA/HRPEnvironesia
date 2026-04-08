@@ -320,11 +320,6 @@
         "updatedBy": {
           "type": "string",
           "description": "UID of the user who last updated the job."
-        },
-        "assignedUserIds": {
-          "type": "array",
-          "description": "A list of user UIDs assigned to review this job.",
-          "items": { "type": "string" }
         }
       },
       "required": [
@@ -666,7 +661,7 @@
             },
             "selfDescription": {
               "type": "string",
-              "description": "A brief summary of the candidate's character, work attitude, strengths, and areas for development."
+              "description": "A brief summary of the candidate's character, personality, work attitude, strengths, and weaknesses."
             },
             "salaryExpectation": {
               "type": "string",
@@ -680,10 +675,22 @@
               "type": "string",
               "description": "The candidate's motivation and reasons for choosing the desired position."
             },
+            "workStyle": {
+                "type": "string",
+                "description": "Candidate's preferred working style (e.g., independent, team-based)."
+            },
+            "improvementArea": {
+                "type": "string",
+                "description": "One thing the candidate wants to improve about themselves."
+            },
             "availability": {
                 "type": "string",
                 "description": "When the candidate can start working.",
                 "enum": ["Secepatnya", "1 minggu", "2 minggu", "1 bulan", "3 bulan", "6 bulan", "Lainnya"]
+            },
+            "availabilityOther": {
+                "type": "string",
+                "description": "Details if 'Lainnya' is selected for availability."
             },
             "usedToDeadline": {
                 "type": "boolean",
@@ -717,7 +724,7 @@
               "description": "Timestamp when the profile was marked as complete."
             }
         },
-        "required": ["fullName", "nickname", "email", "phone", "eKtpNumber", "gender", "birthPlace", "birthDate", "addressKtp", "willingToWfo", "education", "declaration"]
+        "required": ["fullName", "nickname", "email", "phone", "eKtpNumber", "gender", "birthPlace", "birthDate", "addressKtp", "willingToWfo", "education", "declaration", "selfDescription", "salaryExpectation", "salaryExpectationReason", "motivation", "workStyle", "improvementArea", "availability", "usedToDeadline"]
     },
     "Assessment": {
       "title": "Assessment",
@@ -1093,28 +1100,6 @@
         "nextMonthRecommendation": { "type": "string", "description": "Recommendations or focus for the next month." }
       },
       "required": ["internUid", "evaluationMonth", "createdAt", "updatedAt"]
-    },
-    "Notification": {
-      "title": "Notification",
-      "type": "object",
-      "description": "Represents a user notification within the application.",
-      "properties": {
-        "userId": {
-          "type": "string",
-          "description": "The UID of the user who receives the notification."
-        },
-        "type": {
-          "type": "string",
-          "enum": ["recruitment_assignment", "new_application", "status_update"]
-        },
-        "jobId": { "type": "string" },
-        "applicationId": { "type": "string" },
-        "title": { "type": "string" },
-        "message": { "type": "string" },
-        "isRead": { "type": "boolean", "default": false },
-        "createdAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["userId", "type", "title", "message", "isRead", "createdAt"]
     }
   },
   "auth": {
@@ -1140,13 +1125,6 @@
               "description": "The Firebase Auth UID of the user."
             }
           ]
-        }
-      },
-      {
-        "path": "/users/{userId}/notifications/{notificationId}",
-        "definition": {
-          "schema": { "$ref": "#/backend/entities/Notification" },
-          "description": "Stores notifications for a specific user."
         }
       },
       {
