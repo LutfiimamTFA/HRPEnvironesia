@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useForm } from 'react-hook-form';
@@ -47,19 +47,16 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allBrands
 
   const isPrivilegedRecruiter = userProfile?.role === 'super-admin' || userProfile?.role === 'hrd';
 
-  const usersQuery = useMemoFirebase(() => {
-    // Only privileged users can fetch the full list for assignment purposes.
-    if (!userProfile || !isPrivilegedRecruiter) {
-      return null;
-    }
-    return query(
-      collection(firestore, 'users'),
-      where('role', 'in', ['manager', 'karyawan', 'hrd', 'super-admin']),
-      where('isActive', '==', true)
-    );
-  }, [firestore, userProfile, isPrivilegedRecruiter]);
-
-  const { data: usersToFilter, isLoading: isLoadingUsers } = useCollection<UserProfile>(usersQuery);
+  const { data: usersToFilter, isLoading: isLoadingUsers } = useCollection<UserProfile>(
+      useMemoFirebase(() => {
+        if (!userProfile || !isPrivilegedRecruiter) return null;
+        return query(
+          collection(firestore, 'users'),
+          where('role', 'in', ['hrd', 'manager', 'karyawan', 'super-admin']),
+          where('isActive', '==', true)
+        );
+    }, [firestore, userProfile, isPrivilegedRecruiter])
+  );
 
   const assignableUsers = useMemo(() => {
     if (!usersToFilter) return [];
@@ -228,6 +225,7 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allBrands
             <AssignedUsersCard 
                 job={job}
                 allUsers={assignableUsers}
+                allBrands={allBrands || []}
                 onUpdate={onJobUpdate}
                 className="lg:col-span-1"
             />
@@ -283,9 +281,10 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allBrands
                 </CardContent>
                 <CardFooter className="flex gap-2">
                     <Button variant="outline" onClick={() => setIsTemplateDialogOpen(true)}>
-                        <Edit className="mr-2 h-4 w-4" /> Edit Template
+                        {isPrivilegedRecruiter ? <Edit className="mr-2 h-4 w-4" /> : <Eye className="mr-2 h-4 w-4" />}
+                        {isPrivilegedRecruiter ? 'Edit Template' : 'Lihat Detail'}
                     </Button>
-                    {detectedTemplate && !job.interviewTemplate?.meetingLink && (
+                    {isPrivilegedRecruiter && detectedTemplate && !job.interviewTemplate?.meetingLink && (
                         <Button onClick={handleUseAsDefault}>
                             Gunakan sebagai Default
                         </Button>
@@ -406,7 +405,8 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allBrands
             onOpenChange={setIsTemplateDialogOpen} 
             job={job}
             initialTemplateData={detectedTemplate || undefined}
-            onSave={handleSaveTemplate} 
+            onSave={handleSaveTemplate}
+            readOnly={!isPrivilegedRecruiter}
         />
       )}
       {activeApplication && userProfile && job && (

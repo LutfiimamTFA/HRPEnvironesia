@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -31,9 +31,10 @@ interface EditInterviewTemplateDialogProps {
   job: Job;
   initialTemplateData?: Partial<Job['interviewTemplate']>;
   onSave: (templateData: Partial<Job['interviewTemplate']>) => void;
+  readOnly?: boolean;
 }
 
-export function EditInterviewTemplateDialog({ open, onOpenChange, job, initialTemplateData, onSave }: EditInterviewTemplateDialogProps) {
+export function EditInterviewTemplateDialog({ open, onOpenChange, job, initialTemplateData, onSave, readOnly = false }: EditInterviewTemplateDialogProps) {
   const [isSaving, setIsSaving] = useState(false);
   
   const form = useForm<FormValues>({
@@ -55,6 +56,7 @@ export function EditInterviewTemplateDialog({ open, onOpenChange, job, initialTe
   }, [open, job, initialTemplateData, form]);
 
   const handleSubmit = (values: FormValues) => {
+    if(readOnly) return;
     setIsSaving(true);
     const dataToSave: Partial<Job['interviewTemplate']> = {
         ...values,
@@ -63,19 +65,23 @@ export function EditInterviewTemplateDialog({ open, onOpenChange, job, initialTe
     onSave(dataToSave);
     setIsSaving(false);
   };
+  
+  const title = `${readOnly ? 'Detail' : 'Edit'} Interview Template untuk: ${job.position}`;
+  const description = readOnly ? 'Ini adalah pengaturan default untuk wawancara pada lowongan ini.' : 'Pengaturan ini akan menjadi default untuk semua wawancara yang dijadwalkan pada lowongan ini.';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col p-0">
         <DialogHeader className="p-6 pb-4 border-b">
-          <DialogTitle>Edit Interview Template for: {job.position}</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            These settings will be the default for all interviews scheduled for this job.
+            {description}
           </DialogDescription>
         </DialogHeader>
         <div className="flex-grow overflow-y-auto px-6">
             <Form {...form}>
-                <form id="template-form" onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 py-4">
+                <form id="template-form" onSubmit={form.handleSubmit(handleSubmit)} className="py-4">
+                  <fieldset disabled={readOnly} className="space-y-4">
                     <FormField control={form.control} name="meetingLink" render={({ field }) => ( <FormItem><FormLabel>Default Meeting Link</FormLabel><FormControl><Input placeholder="https://zoom.us/j/..." {...field} value={field.value || ''} /></FormControl><FormMessage /></FormItem>)} />
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <FormField control={form.control} name="defaultStartDate" render={({ field }) => ( <FormItem className="flex flex-col"><FormLabel>Default Start Date</FormLabel><FormControl><GoogleDatePicker portalled={false} value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>)} />
@@ -88,15 +94,20 @@ export function EditInterviewTemplateDialog({ open, onOpenChange, job, initialTe
                         <FormField control={form.control} name="slotDurationMinutes" render={({ field }) => (<FormItem><FormLabel>Slot Duration (minutes)</FormLabel><Select onValueChange={(v) => field.onChange(parseInt(v))} value={String(field.value)}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent portalled={false}><SelectItem value="15">15</SelectItem><SelectItem value="30">30</SelectItem><SelectItem value="45">45</SelectItem><SelectItem value="60">60</SelectItem><SelectItem value="90">90</SelectItem></SelectContent></Select><FormMessage /></FormItem>)} />
                         <FormField control={form.control} name="breakMinutes" render={({ field }) => (<FormItem><FormLabel>Break (minutes)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
                     </div>
+                  </fieldset>
                 </form>
             </Form>
         </div>
         <DialogFooter className="p-6 pt-4 border-t">
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button type="submit" form="template-form" disabled={isSaving}>
-            {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Save Template
+          <Button variant={readOnly ? 'default' : 'ghost'} onClick={() => onOpenChange(false)}>
+            {readOnly ? 'Tutup' : 'Batal'}
           </Button>
+          {!readOnly && (
+            <Button type="submit" form="template-form" disabled={isSaving}>
+              {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save Template
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
