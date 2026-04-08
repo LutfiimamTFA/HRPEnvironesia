@@ -1,6 +1,6 @@
 'use client';
 
-import { useForm } from 'react-hook-form';
+import { useForm, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -11,13 +11,14 @@ import { Loader2, Info, ShieldCheck } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import { useState } from 'react';
 import { useAuth } from '@/providers/auth-provider';
-import { useFirestore } from '@/firebase';
+import { useFirestore, setDocumentNonBlocking } from '@/firebase';
 import { doc, serverTimestamp, Timestamp, writeBatch } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Checkbox } from '../ui/checkbox';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../ui/select';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
+import { Separator } from '../ui/separator';
 
 const availabilityOptions = ['Secepatnya', '1 minggu', '2 minggu', '1 bulan', '3 bulan', '6 bulan', 'Lainnya'] as const;
 
@@ -115,7 +116,7 @@ export function SelfDescriptionForm({ initialData, onFinish, onBack }: SelfDescr
                 updatedAt: now,
                 completedAt: now,
             };
-            batch.update(profileDocRef, profilePayload);
+            batch.set(profileDocRef, profilePayload, { merge: true });
 
             const userDocRef = doc(firestore, 'users', firebaseUser.uid);
             batch.update(userDocRef, { isProfileComplete: true });
@@ -128,6 +129,19 @@ export function SelfDescriptionForm({ initialData, onFinish, onBack }: SelfDescr
             toast({ variant: 'destructive', title: "Gagal Menyimpan", description: error.message });
         } finally {
             setIsSaving(false);
+        }
+    };
+    
+    const onInvalid: (errors: FieldErrors<FormValues>) => void = (errors) => {
+        const firstErrorKey = Object.keys(errors)[0] as keyof FormValues | undefined;
+        if (firstErrorKey) {
+            const readableFieldName = firstErrorKey.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+            toast({
+                variant: 'destructive',
+                title: 'Validasi Gagal',
+                description: `Harap periksa kembali isian Anda. Kolom "${readableFieldName}" sepertinya belum valid.`,
+            });
+            (form.setFocus as any)(firstErrorKey);
         }
     };
 
@@ -145,8 +159,8 @@ export function SelfDescriptionForm({ initialData, onFinish, onBack }: SelfDescr
                     </AlertDescription>
                 </Alert>
                 <Form {...form}>
-                    <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8">
-                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <form onSubmit={form.handleSubmit(handleSubmit, onInvalid)} className="space-y-8">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <FormField control={form.control} name="selfDescription" render={({ field }) => (<FormItem><FormLabel>Ceritakan singkat tentang diri Anda <span className="text-destructive">*</span></FormLabel><FormDescription>Fokus pada karakter, sikap kerja, keunggulan, serta hal yang ingin Anda kembangkan.</FormDescription><FormControl><Textarea {...field} value={field.value ?? ''} rows={5} /></FormControl><FormMessage /></FormItem>)} />
                             <FormField control={form.control} name="motivation" render={({ field }) => (<FormItem><FormLabel>Motivasi Melamar <span className="text-destructive">*</span></FormLabel><FormDescription>Apa yang membuat Anda tertarik dengan posisi atau bidang ini?</FormDescription><FormControl><Textarea {...field} value={field.value ?? ''} placeholder="Jelaskan motivasi dan alasan yang mendasari Anda untuk bekerja pada bidang/posisi yang Anda pilih." rows={5} /></FormControl><FormMessage /></FormItem>)} />
                         </div>
