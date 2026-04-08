@@ -9,7 +9,7 @@ import type { JobApplication, Profile, Job, ApplicationTimelineEvent, Applicatio
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Mail, Phone, Briefcase, Calendar, CheckCircle, XCircle, Building, GraduationCap, DollarSign, Clock, Target, Lightbulb, User, FileText, Bot, BrainCircuit } from 'lucide-react';
+import { Mail, Phone, Briefcase, Calendar, CheckCircle, XCircle, Building, GraduationCap, DollarSign, Clock, Target, Lightbulb, User, FileText, Bot, BrainCircuit, FileClock } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { ProfileView } from '@/components/recruitment/ProfileView';
@@ -40,7 +40,7 @@ const InfoCard = ({ icon, label, value }: { icon: React.ReactNode, label: string
         <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted text-muted-foreground">{icon}</div>
         <div>
             <p className="text-xs font-medium text-muted-foreground">{label}</p>
-            <p className="text-sm font-semibold">{value || '-'}</p>
+            <div className="text-sm font-semibold">{value || '-'}</div>
         </div>
     </div>
 );
@@ -393,7 +393,7 @@ export default function ApplicationDetailPage() {
                         <ProfileView profile={profile} />
                     </TabsContent>
                     <TabsContent value="documents" className="mt-4">
-                        <CandidateDocumentsCard profile={profile} application={application} onVerificationChange={mutateApplication}/>
+                        <CandidateDocumentsCard application={application} onVerificationChange={mutateApplication}/>
                     </TabsContent>
                     <TabsContent value="ai_analysis" className="mt-4">
                        <CandidateFitAnalysis profile={profile} job={job} application={application} />
@@ -425,5 +425,3 @@ export default function ApplicationDetailPage() {
     </DashboardLayout>
   );
 }
-
-    
