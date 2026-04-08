@@ -1,6 +1,7 @@
 'use client';
     
 import { useState, useEffect, useCallback } from 'react';
+import { getAuth } from 'firebase/auth';
 import {
   DocumentReference,
   onSnapshot,
@@ -70,7 +71,6 @@ export function useDoc<T = any>(
   useEffect(() => {
     if (!memoizedDocRef) {
       setIsLoading(false);
-      setError(null);
       return;
     }
 
@@ -89,6 +89,17 @@ export function useDoc<T = any>(
         setIsLoading(false);
       },
       (error: FirestoreError) => {
+        try {
+          const auth = getAuth();
+          if (error.code === 'permission-denied' && !auth.currentUser) {
+            setIsLoading(false);
+            return; // Suppress error during logout.
+          }
+        } catch (e) {
+            // Firebase app is likely unmounted, safe to ignore.
+            return;
+        }
+
         const contextualError = new FirestorePermissionError({
           operation: 'get',
           path: memoizedDocRef.path,

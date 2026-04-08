@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { getAuth } from 'firebase/auth';
 import {
   Query,
   onSnapshot,
@@ -84,7 +85,6 @@ export function useCollection<T = any>(
   useEffect(() => {
     if (!memoizedTargetRefOrQuery) {
       setIsLoading(false);
-      setError(null);
       return;
     }
 
@@ -103,6 +103,17 @@ export function useCollection<T = any>(
         setIsLoading(false);
       },
       (error: FirestoreError) => {
+        try {
+          const auth = getAuth();
+          if (error.code === 'permission-denied' && !auth.currentUser) {
+            setIsLoading(false);
+            return; // Suppress error during logout.
+          }
+        } catch(e) {
+          // If getAuth fails, it means firebase is not initialized, we are unmounting, safe to ignore.
+          return;
+        }
+        
         const path: string =
           memoizedTargetRefOrQuery.type === 'collection'
             ? (memoizedTargetRefOrQuery as CollectionReference).path
