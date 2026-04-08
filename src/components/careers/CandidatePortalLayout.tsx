@@ -153,10 +153,9 @@ export function CandidatePortalLayout({ children }: { children: ReactNode }) {
     }
     defaultResult.highestStatus = highestStage;
     
-    // Determine assessment status
-    const appSessions = sessions.filter(s => s.applicationId); // Filter for sessions linked to an application
-    const submitted = appSessions.find(s => s.status === 'submitted');
-    const draft = appSessions.find(s => s.status === 'draft');
+    // Determine assessment status by looking at ALL sessions, not just application-specific ones.
+    const submitted = sessions.find(s => s.status === 'submitted');
+    const draft = sessions.find(s => s.status === 'draft');
     if (submitted) defaultResult.assessmentStatus = 'Selesai';
     else if (draft) defaultResult.assessmentStatus = 'Proses';
     
@@ -257,7 +256,7 @@ export function CandidatePortalLayout({ children }: { children: ReactNode }) {
                         const isActive = pathname === item.href || (item.href !== '/careers/portal' && pathname.startsWith(item.href));
                         
                         let badgeContent = null;
-                        if (item.label === 'Tes Kepribadian' && assessmentStatus) {
+                        if (item.label === 'Tes Kepribadian' && assessmentStatus && assessmentStatus !== 'Belum') {
                             badgeContent = <Badge variant={assessmentStatus === 'Selesai' ? 'default' : 'secondary'} className="text-xs">{assessmentStatus}</Badge>;
                         } else if (item.label === 'Jadwal Wawancara' && upcomingInterviewCount > 0) {
                             badgeContent = <Badge variant="default" className="text-xs">{upcomingInterviewCount}</Badge>;
