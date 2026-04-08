@@ -241,11 +241,20 @@ function ApplicationCard({ application, hasCompletedTest }: { application: JobAp
         ) : (
             <div className="p-4 rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 text-blue-900 dark:text-blue-100 space-y-3">
                 <h3 className="font-semibold text-lg flex items-center gap-2 text-blue-800 dark:text-blue-100"><FileClock className="h-5 w-5" /> Lamaran Anda Sedang Diproses</h3>
-                <p className="text-sm leading-relaxed">
-                    Terima kasih telah mengirimkan lamaran Anda untuk posisi <strong>{application.jobPosition}</strong>. Lamaran Anda telah kami terima dan akan segera ditinjau oleh tim rekrutmen kami.
+                 <p className="text-sm leading-relaxed">
+                    Terima kasih telah mengirimkan lamaran Anda untuk posisi <strong>{application.jobPosition}</strong>. Lamaran Anda telah kami terima dan saat ini sedang dalam proses peninjauan oleh tim rekrutmen kami.
                 </p>
                 <p className="text-sm leading-relaxed">
-                    Kami menghargai kesabaran Anda. Mengingat tingginya antusiasme dan jumlah aplikasi yang masuk, proses peninjauan ini dapat memakan waktu <strong>2 hingga 3 minggu</strong>. Harap periksa halaman ini secara berkala untuk melihat pembaruan status. Hanya kandidat yang memenuhi kualifikasi yang akan dihubungi untuk tahap selanjutnya.
+                    Kami menerima cukup banyak aplikasi untuk berbagai posisi, sehingga proses evaluasi membutuhkan waktu. Kami akan menghubungi Anda apabila terdapat perkembangan lebih lanjut atau jika profil Anda sesuai dengan kebutuhan pada tahap berikutnya.
+                </p>
+                <p className="text-sm leading-relaxed">
+                    Anda juga dapat memantau perkembangan status lamaran Anda secara berkala melalui halaman karir kami.
+                </p>
+                <p className="text-sm leading-relaxed">
+                    Profil Anda juga dapat kami simpan sebagai bagian dari pertimbangan untuk peluang lain yang relevan di masa mendatang.
+                </p>
+                <p className="text-sm leading-relaxed">
+                    Terima kasih atas minat dan kepercayaan Anda untuk bergabung bersama kami.
                 </p>
                 {isProcessing && !hasCompletedTest && (
                   <>
