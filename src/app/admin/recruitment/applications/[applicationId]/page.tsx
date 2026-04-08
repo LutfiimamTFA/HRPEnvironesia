@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking, useCollection } from '@/firebase';
 import { doc, serverTimestamp, updateDoc, Timestamp, writeBatch, collection, where, query, limit, orderBy } from 'firebase/firestore';
@@ -114,13 +114,9 @@ export default function ApplicationDetailPage() {
 
   const assessmentSessionsQuery = useMemoFirebase(() => {
     if (!application) return null;
-    // Query by candidate UID to find their latest session, regardless of application.
-    // Order by update time to get the most recent activity (draft or submitted).
     return query(
       collection(firestore, 'assessment_sessions'),
-      where('candidateUid', '==', application.candidateUid),
-      orderBy('updatedAt', 'desc'),
-      limit(1)
+      where('candidateUid', '==', application.candidateUid)
     );
   }, [firestore, application]);
   const { data: assessmentSessions, isLoading: isLoadingSessions } = useCollection<AssessmentSession>(assessmentSessionsQuery);
@@ -300,7 +296,11 @@ export default function ApplicationDetailPage() {
     if (!assessmentSessions || assessmentSessions.length === 0) {
       return { status: 'unstarted', text: 'Belum Dikerjakan', result: null, color: 'text-destructive' };
     }
-    const session = assessmentSessions[0];
+    
+    // Sort sessions on the client to find the most recent one
+    const sortedSessions = [...assessmentSessions].sort((a,b) => (b.updatedAt?.toMillis() || 0) - (a.updatedAt?.toMillis() || 0));
+    const session = sortedSessions[0];
+
     if (session.status === 'submitted') {
       const resultText = session.result?.discType || session.result?.mbtiArchetype?.code;
       return { status: 'completed', text: 'Selesai', result: resultText, color: 'text-green-600' };
@@ -368,10 +368,14 @@ export default function ApplicationDetailPage() {
                         icon={<BrainCircuit />}
                         label="Tes Kepribadian"
                         value={
-                          <div className="flex items-center gap-2">
-                            <span className={cn('font-semibold', assessmentInfo.color)}>{assessmentInfo.text}</span>
-                            {assessmentInfo.result && <Badge variant="secondary">{assessmentInfo.result}</Badge>}
-                          </div>
+                          isLoadingSessions ? (
+                            <span className="text-sm text-muted-foreground">Memuat...</span>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <span className={cn('font-semibold', assessmentInfo.color)}>{assessmentInfo.text}</span>
+                              {assessmentInfo.result && <Badge variant="secondary">{assessmentInfo.result}</Badge>}
+                            </div>
+                          )
                         }
                     />
                 </div>
@@ -392,7 +396,7 @@ export default function ApplicationDetailPage() {
                         <ProfileView profile={profile} />
                     </TabsContent>
                     <TabsContent value="documents" className="mt-4">
-                        <CandidateDocumentsCard profile={profile}/>
+                        <CandidateDocumentsCard application={application} onVerificationChange={mutateApplication}/>
                     </TabsContent>
                     <TabsContent value="ai_analysis" className="mt-4">
                        <CandidateFitAnalysis profile={profile} job={job} application={application} />
