@@ -16,7 +16,6 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ArrowLeft } from 'lucide-react';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { ApplicantsPageClient } from '@/components/recruitment/ApplicantsPageClient';
-import { AssignedUsersCard } from '@/components/recruitment/AssignedUsersCard';
 
 function ApplicantsPageSkeleton() {
   return (
@@ -43,16 +42,18 @@ export default function RecruitmentApplicantsPage() {
   );
   const { data: applications, isLoading: isLoadingApps, error } = useCollection<JobApplication>(applicationsQuery);
 
+  const isPrivilegedRecruiter = userProfile?.role === 'super-admin' || userProfile?.role === 'hrd';
+
   const usersQuery = useMemoFirebase(() => {
-    if (!userProfile) {
-        return null;
+    if (!userProfile || !isPrivilegedRecruiter) {
+      return null;
     }
     return query(
       collection(firestore, 'users'),
       where('role', 'in', ['manager', 'karyawan', 'hrd', 'super-admin']),
       where('isActive', '==', true)
     );
-  }, [firestore, userProfile]);
+  }, [firestore, userProfile, isPrivilegedRecruiter]);
 
   const { data: usersToFilter, isLoading: isLoadingUsers } = useCollection<UserProfile>(usersQuery);
 
@@ -135,7 +136,7 @@ export default function RecruitmentApplicantsPage() {
           applications={applications || []} 
           job={job}
           onJobUpdate={mutateJob}
-          allUsers={assignableUsers}
+          allUsers={assignableUsers || []}
           allBrands={brands || []}
         />
       </div>

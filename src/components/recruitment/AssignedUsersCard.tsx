@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -10,10 +10,13 @@ import type { Job, UserProfile, Brand, UserRole } from '@/lib/types';
 import { AssignedUsersDialog } from './AssignedUsersDialog';
 import { useAuth } from '@/providers/auth-provider';
 import { Badge } from '@/components/ui/badge';
+import { useFirestore } from '@/firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { Loader2 } from 'lucide-react';
 
 interface AssignedUsersCardProps {
   job: Job;
-  allUsers: UserProfile[];
+  allUsers: UserProfile[]; // This will be empty for non-privileged users
   allBrands: Brand[];
   onUpdate: () => void;
   className?: string;
@@ -22,13 +25,42 @@ interface AssignedUsersCardProps {
 export function AssignedUsersCard({ job, allUsers, allBrands, onUpdate, className }: AssignedUsersCardProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const { userProfile: currentUser } = useAuth();
+  const firestore = useFirestore();
+  const [fetchedUsers, setFetchedUsers] = useState<UserProfile[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const allAvailableUsers = useMemo(() => allUsers.length > 0 ? allUsers : fetchedUsers, [allUsers, fetchedUsers]);
+
+  useEffect(() => {
+    if (allUsers.length === 0 && job.assignedUserIds && job.assignedUserIds.length > 0) {
+        setIsLoading(true);
+        const fetchUsers = async () => {
+            try {
+                const userDocs = await Promise.all(
+                    job.assignedUserIds!.map(uid => getDoc(doc(firestore, 'users', uid)))
+                );
+                const users = userDocs
+                    .filter(docSnap => docSnap.exists())
+                    .map(docSnap => ({ ...docSnap.data(), id: docSnap.id } as UserProfile));
+                setFetchedUsers(users);
+            } catch (err) {
+                console.error("Error fetching assigned users in card:", err);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        fetchUsers();
+    } else {
+        setIsLoading(false);
+    }
+  }, [allUsers, job.assignedUserIds, firestore]);
 
   const assignedUsers = useMemo(() => {
     if (!job.assignedUserIds) return [];
     return (job.assignedUserIds || [])
-      .map(uid => allUsers.find(u => u.uid === uid))
+      .map(uid => allAvailableUsers.find(u => u.uid === uid))
       .filter((u): u is UserProfile => !!u);
-  }, [job.assignedUserIds, allUsers]);
+  }, [job.assignedUserIds, allAvailableUsers]);
 
   const sortedAssignedUsers = useMemo(() => {
     const roleOrder: Record<UserRole, number> = {
@@ -70,7 +102,11 @@ export function AssignedUsersCard({ job, allUsers, allBrands, onUpdate, classNam
           </div>
         </CardHeader>
         <CardContent>
-          {sortedAssignedUsers.length > 0 ? (
+          {isLoading ? (
+            <div className="flex items-center justify-center p-4">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : sortedAssignedUsers.length > 0 ? (
             <div className="space-y-4">
               {sortedAssignedUsers.map(user => {
                 const userBrandName = Array.isArray(user.brandId)
