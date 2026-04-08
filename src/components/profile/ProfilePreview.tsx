@@ -74,6 +74,7 @@ const EducationView = ({ item }: { item: Education }) => (
     <div className="text-sm">
         <p className="font-semibold">{item.institution}</p>
         <p>{item.level} - {item.fieldOfStudy}</p>
+        {item.thesisTitle && <p className="text-xs text-muted-foreground italic">Karya Ilmiah: {item.thesisTitle}</p>}
         <p className="text-muted-foreground text-xs">{item.startDate} - {item.isCurrent ? 'Sekarang' : item.endDate}</p>
         {item.gpa && <p className="text-muted-foreground text-xs">IPK/Nilai: {item.gpa}</p>}
     </div>
@@ -98,7 +99,7 @@ const OrgExperienceView = ({ item }: { item: OrganizationalExperience }) => (
 );
 
 const CertificationView = ({ item }: { item: Certification }) => (
-    <div className="text-sm flex justify-between items-start gap-2">
+    <div className="text-sm flex justify-between items-start gap-2 py-2 border-b last:border-b-0">
         <div>
             <p className="font-semibold">{item.name}</p>
             <p className="text-muted-foreground text-xs">Penerbit: {item.organization}</p>
@@ -288,7 +289,7 @@ export function ProfilePreview({
                  <div className="space-y-3">
                     <h4 className="font-semibold text-sm">Sertifikasi</h4>
                      {profile.certifications && profile.certifications.length > 0 ? (
-                         <div className="space-y-4">
+                         <div className="space-y-2 rounded-md border p-2">
                              {profile.certifications.map((cert, i) => (
                                  <CertificationView key={i} item={cert} />
                              ))}

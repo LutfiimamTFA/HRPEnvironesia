@@ -25,6 +25,7 @@ const educationSchema = z.object({
   institution: z.string().min(1, "Nama institusi harus diisi"),
   level: z.enum(EDUCATION_LEVELS, { required_error: "Jenjang pendidikan harus diisi" }),
   fieldOfStudy: z.string().optional(),
+  thesisTitle: z.string().optional(),
   gpa: z.string().optional(),
   startDate: z.string().min(4, "Tahun mulai harus diisi"),
   endDate: z.string().optional(),
@@ -45,6 +46,13 @@ interface EducationFormProps {
     onSaveSuccess: () => void;
     onBack: () => void;
 }
+
+const thesisLabels: Record<string, string> = {
+  'D3': 'Judul Tugas Akhir',
+  'S1': 'Judul Skripsi',
+  'S2': 'Judul Tesis',
+  'S3': 'Judul Disertasi',
+};
 
 export function EducationForm({ initialData, onSaveSuccess, onBack }: EducationFormProps) {
     const [isSaving, setIsSaving] = useState(false);
@@ -97,7 +105,11 @@ export function EducationForm({ initialData, onSaveSuccess, onBack }: EducationF
                 <Form {...form}>
                     <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8">
                         <div className="space-y-6">
-                            {fields.map((field, index) => (
+                            {fields.map((field, index) => {
+                                const selectedLevel = form.watch(`education.${index}.level`);
+                                const thesisLabel = selectedLevel ? thesisLabels[selectedLevel] : null;
+
+                                return (
                                 <div key={field.id} className="space-y-4 p-4 border rounded-md relative">
                                     <Button 
                                         type="button"
@@ -115,6 +127,11 @@ export function EducationForm({ initialData, onSaveSuccess, onBack }: EducationF
                                         <FormField control={form.control} name={`education.${index}.level`} render={({ field }) => (<FormItem><FormLabel>Jenjang <span className="text-destructive">*</span></FormLabel><Select onValueChange={field.onChange} value={field.value || ''}><FormControl><SelectTrigger><SelectValue placeholder="Pilih jenjang" /></SelectTrigger></FormControl><SelectContent>{EDUCATION_LEVELS.map(level => (<SelectItem key={level} value={level}>{level}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)} />
                                         <FormField control={form.control} name={`education.${index}.fieldOfStudy`} render={({ field }) => (<FormItem><FormLabel>Jurusan (Opsional)</FormLabel><FormControl><Input {...field} value={field.value ?? ''} placeholder="Contoh: Akuntansi" /></FormControl><FormMessage /></FormItem>)} />
                                     </div>
+                                    
+                                    {thesisLabel && (
+                                        <FormField control={form.control} name={`education.${index}.thesisTitle`} render={({ field }) => (<FormItem><FormLabel>{thesisLabel} (Opsional)</FormLabel><FormControl><Input {...field} value={field.value ?? ''} placeholder={`Contoh: Analisis...`} /></FormControl><FormMessage /></FormItem>)} />
+                                    )}
+
                                     <FormField control={form.control} name={`education.${index}.gpa`} render={({ field }) => (<FormItem><FormLabel>IPK / Nilai (Opsional)</FormLabel><FormControl><Input {...field} value={field.value ?? ''} placeholder="Contoh: 3.85" /></FormControl><FormMessage /></FormItem>)} />
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <FormField control={form.control} name={`education.${index}.startDate`} render={({ field }) => (<FormItem><FormLabel>Tahun Mulai <span className="text-destructive">*</span></FormLabel><FormControl><Input type="number" {...field} placeholder="YYYY" value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
@@ -123,13 +140,13 @@ export function EducationForm({ initialData, onSaveSuccess, onBack }: EducationF
                                     <FormField control={form.control} name={`education.${index}.isCurrent`} render={({ field }) => (<FormItem className="flex flex-row items-start space-x-3 space-y-0"><FormControl><Checkbox checked={!!field.value} onCheckedChange={field.onChange} /></FormControl><div className="space-y-1 leading-none"><FormLabel>Saat ini sedang menempuh</FormLabel></div></FormItem>)} />
                                     {index < fields.length - 1 && <Separator className="!mt-6" />}
                                 </div>
-                            ))}
+                            )})}
                         </div>
                         
                         <Button
                             type="button"
                             variant="outline"
-                            onClick={() => append({ id: crypto.randomUUID(), institution: '', level: 'S1', fieldOfStudy: '', gpa: '', startDate: '', endDate: '', isCurrent: false })}
+                            onClick={() => append({ id: crypto.randomUUID(), institution: '', level: 'S1', fieldOfStudy: '', gpa: '', startDate: '', endDate: '', isCurrent: false, thesisTitle: '' })}
                         >
                             <PlusCircle className="mr-2 h-4 w-4" /> Tambah Pendidikan
                         </Button>

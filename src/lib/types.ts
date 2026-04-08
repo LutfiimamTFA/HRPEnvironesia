@@ -371,6 +371,7 @@ export type Education = {
     institution: string;
     level: 'SMA/SMK' | 'D3' | 'S1' | 'S2' | 'S3';
     fieldOfStudy?: string;
+    thesisTitle?: string; // New field for thesis/final project title
     gpa?: string;
     startDate: string;
     endDate?: string;
@@ -885,7 +886,7 @@ export const PERMISSION_REQUEST_STATUSES = [
   'revision_hrd',
   'approved',
   
-  // Specific to non-blocking office exits (keluar_kantor)
+  // Specific to non-blocking office exit statuses (keluar_kantor)
   'reported', // Laporan keluar dibuat
   'returned', // Sudah tap in kembali
   'verified_manager', // Diverifikasi manager
@@ -982,5 +983,3 @@ export function isActionableStatus(status: string, mode: 'manager' | 'hrd'): boo
   
   return false;
 }
-
-    
