@@ -142,7 +142,7 @@ export function ProfilePreview({
 
   const isProfileLocked = React.useMemo(() => {
     if (!applications) return false;
-    const lockStages: JobApplicationStatus[] = ['screening', 'tes_kepribadian', 'verification', 'document_submission', 'interview', 'offered', 'hired'];
+    const lockStages: JobApplicationStatus[] = ['verification', 'document_submission', 'interview', 'offered', 'hired'];
     return applications.some(app => lockStages.includes(app.status));
   }, [applications]);
 
