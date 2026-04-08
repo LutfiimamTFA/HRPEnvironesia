@@ -47,13 +47,17 @@ const InfoCard = ({ icon, label, value }: { icon: React.ReactNode, label: string
 
 const SummaryTab = ({ profile }: { profile: Profile }) => (
   <div className="grid md:grid-cols-2 gap-6">
-    <Card>
+    <Card className="md:col-span-2">
       <CardHeader><CardTitle className="text-base">Deskripsi Diri</CardTitle></CardHeader>
       <CardContent><p className="text-sm text-muted-foreground">{profile.selfDescription || 'Belum diisi.'}</p></CardContent>
     </Card>
      <Card>
       <CardHeader><CardTitle className="text-base">Motivasi Melamar</CardTitle></CardHeader>
       <CardContent><p className="text-sm text-muted-foreground">{profile.motivation || 'Belum diisi.'}</p></CardContent>
+    </Card>
+    <Card>
+      <CardHeader><CardTitle className="text-base">Alasan Ekspektasi Gaji</CardTitle></CardHeader>
+      <CardContent><p className="text-sm text-muted-foreground">{profile.salaryExpectationReason || 'Belum diisi.'}</p></CardContent>
     </Card>
      <Card>
       <CardHeader><CardTitle className="text-base">Gaya Kerja</CardTitle></CardHeader>
