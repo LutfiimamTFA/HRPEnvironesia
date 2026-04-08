@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
@@ -6,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useForm } from 'react-hook-form';
 import { useAuth } from '@/providers/auth-provider';
-import type { JobApplication, JobApplicationStatus, Job, ApplicationInterview } from '@/lib/types';
+import type { JobApplication, JobApplicationStatus, Job, ApplicationInterview, UserProfile, Brand } from '@/lib/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Eye, CalendarPlus, List, LayoutGrid, RefreshCw, Pencil, Edit, X, Users } from 'lucide-react';
@@ -21,8 +20,8 @@ import { CandidatesKanban } from './CandidatesKanban';
 import { useToast } from '@/hooks/use-toast';
 import { ORDERED_RECRUITMENT_STAGES } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '../ui/card';
-import { setDocumentNonBlocking, useFirestore } from '@/firebase';
-import { doc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { setDocumentNonBlocking, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { doc, serverTimestamp, Timestamp, query, collection, where } from 'firebase/firestore';
 import type { ScheduleInterviewData } from './ScheduleInterviewDialog';
 import { ScheduleInterviewDialog } from './ScheduleInterviewDialog';
 import { EditInterviewTemplateDialog } from './EditInterviewTemplateDialog';
@@ -32,7 +31,7 @@ type SelectionState = {
   selectedIds: Set<string>;
 };
 
-export function ApplicantsPageClient({ applications, job, onJobUpdate, allUsers, allBrands }: { applications: JobApplication[], job: Job | null, onJobUpdate: () => void, allUsers: any[], allBrands: any[] }) {
+export function ApplicantsPageClient({ applications, job, onJobUpdate, allBrands }: { applications: JobApplication[], job: Job | null, onJobUpdate: () => void, allBrands: Brand[] }) {
   const { userProfile } = useAuth();
   const [selectionMode, setSelectionMode] = useState(false);
   const [selection, setSelection] = useState<SelectionState>({ selectedIds: new Set() });
@@ -45,6 +44,28 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allUsers,
   
   const firestore = useFirestore();
   const { toast } = useToast();
+
+  const isPrivilegedRecruiter = userProfile?.role === 'super-admin' || userProfile?.role === 'hrd';
+
+  const usersQuery = useMemoFirebase(() => {
+    // Only privileged users can fetch the full list for assignment purposes.
+    if (!userProfile || !isPrivilegedRecruiter) {
+      return null;
+    }
+    return query(
+      collection(firestore, 'users'),
+      where('role', 'in', ['manager', 'karyawan', 'hrd', 'super-admin']),
+      where('isActive', '==', true)
+    );
+  }, [firestore, userProfile, isPrivilegedRecruiter]);
+
+  const { data: usersToFilter, isLoading: isLoadingUsers } = useCollection<UserProfile>(usersQuery);
+
+  const assignableUsers = useMemo(() => {
+    if (!usersToFilter) return [];
+    // Filter out interns and trainees from the 'karyawan' role
+    return usersToFilter.filter(u => u.role === 'manager' || (u.role === 'karyawan' && u.employmentType === 'karyawan'));
+  }, [usersToFilter]);
 
   const detectedTemplate = useMemo(() => {
     if (!job || (job.interviewTemplate && job.interviewTemplate.slotDurationMinutes)) return null;
@@ -181,7 +202,7 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allUsers,
             startAt: Timestamp.fromDate(values.dateTime),
             endAt: Timestamp.fromDate(add(values.dateTime, { minutes: values.duration })),
             panelistIds: [userProfile.uid],
-            panelistNames: allUsers.filter(u => u.uid === userProfile.uid).map(u => u.fullName),
+            panelistNames: assignableUsers.filter(u => u.uid === userProfile.uid).map(u => u.fullName),
             meetingLink: values.meetingLink || job?.interviewTemplate?.meetingLink || '',
             status: 'scheduled',
         });
@@ -206,7 +227,7 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allUsers,
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
             <AssignedUsersCard 
                 job={job}
-                allUsers={allUsers}
+                allUsers={assignableUsers}
                 onUpdate={onJobUpdate}
                 className="lg:col-span-1"
             />
@@ -392,7 +413,7 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allUsers,
         <ScheduleInterviewDialog
             open={isSingleScheduleOpen}
             onOpenChange={setIsSingleScheduleOpen}
-            onConfirm={(data) => handleSaveSingleInterview(data)}
+            onConfirm={handleSaveSingleInterview}
             initialData={getMostRelevantInterview(activeApplication) ? {
                 dateTime: getMostRelevantInterview(activeApplication)!.startAt.toDate(),
                 duration: differenceInMinutes(getMostRelevantInterview(activeApplication)!.endAt.toDate(), getMostRelevantInterview(activeApplication)!.startAt.toDate()),
@@ -401,7 +422,7 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allUsers,
             candidateName={activeApplication.candidateName}
             recruiter={userProfile}
             job={job}
-            allUsers={allUsers}
+            allUsers={assignableUsers}
             allBrands={allBrands}
         />
       )}

@@ -42,27 +42,6 @@ export default function RecruitmentApplicantsPage() {
   );
   const { data: applications, isLoading: isLoadingApps, error } = useCollection<JobApplication>(applicationsQuery);
 
-  const isPrivilegedRecruiter = userProfile?.role === 'super-admin' || userProfile?.role === 'hrd';
-
-  const usersQuery = useMemoFirebase(() => {
-    if (!userProfile || !isPrivilegedRecruiter) {
-      return null;
-    }
-    return query(
-      collection(firestore, 'users'),
-      where('role', 'in', ['manager', 'karyawan', 'hrd', 'super-admin']),
-      where('isActive', '==', true)
-    );
-  }, [firestore, userProfile, isPrivilegedRecruiter]);
-
-  const { data: usersToFilter, isLoading: isLoadingUsers } = useCollection<UserProfile>(usersQuery);
-
-  const assignableUsers = useMemo(() => {
-    if (!usersToFilter) return [];
-    // Filter out interns and trainees from the 'karyawan' role
-    return usersToFilter.filter(u => u.role === 'manager' || (u.role === 'karyawan' && u.employmentType === 'karyawan'));
-  }, [usersToFilter]);
-
   const brandsQuery = useMemoFirebase(() => collection(firestore, 'brands'), [firestore]);
   const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(brandsQuery);
 
@@ -81,7 +60,7 @@ export default function RecruitmentApplicantsPage() {
     return MENU_CONFIG[userProfile.role] || [];
   }, [userProfile]);
   
-  const isLoading = isLoadingApps || isLoadingJob || isLoadingUsers || isLoadingBrands;
+  const isLoading = isLoadingApps || isLoadingJob || isLoadingBrands;
 
   if (!hasAccess && !isLoading) {
     return (
@@ -136,7 +115,6 @@ export default function RecruitmentApplicantsPage() {
           applications={applications || []} 
           job={job}
           onJobUpdate={mutateJob}
-          allUsers={assignableUsers || []}
           allBrands={brands || []}
         />
       </div>
