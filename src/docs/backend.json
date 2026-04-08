@@ -586,10 +586,6 @@
             "willingToWfo": { "type": "boolean", "description": "Indicates if the candidate is willing to work from the office." },
             "linkedinUrl": { "type": "string", "format": "uri", "description": "URL to LinkedIn profile." },
             "websiteUrl": { "type": "string", "format": "uri", "description": "URL to personal website/portfolio." },
-            "cvUrl": { "type": "string", "format": "uri" },
-            "cvFileName": { "type": "string" },
-            "ijazahUrl": { "type": "string", "format": "uri" },
-            "ijazahFileName": { "type": "string" },
             "education": {
                 "type": "array",
                 "items": {
@@ -609,7 +605,8 @@
                         },
                         "startDate": { "type": "string" },
                         "endDate": { "type": "string" },
-                        "isCurrent": { "type": "boolean" }
+                        "isCurrent": { "type": "boolean" },
+                        "thesisTitle": { "type": "string", "description": "Judul karya ilmiah (skripsi, tesis, dll)." }
                     },
                     "required": ["id", "institution", "level", "startDate"]
                 }
@@ -662,23 +659,39 @@
                         "name": { "type": "string", "description": "The name of the certification." },
                         "organization": { "type": "string", "description": "The issuing organization." },
                         "issueDate": { "type": "string", "description": "The month and year the certification was issued (YYYY-MM)." },
-                        "expirationDate": { "type": "string", "description": "The month and year the certification expires (YYYY-MM), if applicable." },
-                        "imageUrl": { "type": "string", "format": "uri" }
+                        "expirationDate": { "type": "string", "description": "The month and year the certification expires (YYYY-MM), if applicable." }
                     },
                     "required": ["id", "name", "organization", "issueDate"]
                 }
             },
             "selfDescription": {
               "type": "string",
-              "description": "A brief summary of the candidate's character, personality, work attitude, strengths, and weaknesses."
+              "description": "A brief summary of the candidate's character, work attitude, strengths, and areas for development."
             },
             "salaryExpectation": {
               "type": "string",
               "description": "The candidate's expected salary range or value."
             },
+            "salaryExpectationReason": {
+                "type": "string",
+                "description": "The candidate's reasoning for their salary expectation."
+            },
             "motivation": {
               "type": "string",
               "description": "The candidate's motivation and reasons for choosing the desired position."
+            },
+            "availability": {
+                "type": "string",
+                "description": "When the candidate can start working.",
+                "enum": ["Secepatnya", "1 minggu", "2 minggu", "1 bulan", "3 bulan", "6 bulan", "Lainnya"]
+            },
+            "usedToDeadline": {
+                "type": "boolean",
+                "description": "Indicates if the candidate is used to working with targets or deadlines."
+            },
+            "deadlineExperience": {
+                "type": "string",
+                "description": "Candidate's experience with working under deadlines."
             },
             "declaration": {
               "type": "boolean",
@@ -1398,5 +1411,3 @@
     "reasoning": "The Firestore structure is designed to provide a secure and scalable foundation for the HRP Starter application. It emphasizes authorization independence, clarity, and adherence to Firestore best practices.\n\nThe design leverages path-based ownership for user profiles, ensuring that only the user (or a super_admin) can access their data.  This is achieved by placing user documents at `/users/{userId}`. This structure inherently provides authorization independence; security rules can validate `request.auth.uid` against `@{userId}` path segment without needing to perform costly and brittle `get()` operations to check ownership.\n\nThe application requirements include a seeding process that creates initial user accounts with specific roles.  The `users/{userId}` collection stores user profiles (fullName, email, role, isActive, createdAt) and facilitates role-based access control. The `super_admin` role has read/write access to all collections, which is achieved in security rules by checking for the existence of a document in a dedicated `/roles_admin/{userId}` collection.\n\nQAPs (Rules Are Not Filters): List operations are inherently safe due to the structure.  A regular user can only read their own document in `users/{userId}`, so listing the entire collection would return no documents (without super-admin privileges).  The super-admin role, indicated by membership in `/roles_admin/{userId}`, grants broad access and bypasses the filtering constraints imposed on other users.\n\nAuthorization Independence: Achieved by storing all necessary authorization information directly within the user document at `/users/{userId}` (specifically, the `role` field) and leveraging path-based ownership. The super admin role is checked for via existence of a document, avoiding document `get()` calls.\n\n"
   }
 }
-
-    

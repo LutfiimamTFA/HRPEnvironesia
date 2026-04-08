@@ -15,15 +15,32 @@ import { useFirestore } from '@/firebase';
 import { doc, serverTimestamp, Timestamp, writeBatch } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Checkbox } from '../ui/checkbox';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../ui/select';
+import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
+
+const availabilityOptions = ['Secepatnya', '1 minggu', '2 minggu', '1 bulan', '3 bulan', '6 bulan', 'Lainnya'] as const;
 
 const formSchema = z.object({
   selfDescription: z.string().min(20, { message: "Deskripsi diri harus diisi, minimal 20 karakter." }),
   salaryExpectation: z.string().min(1, { message: "Ekspektasi gaji harus diisi." }),
+  salaryExpectationReason: z.string().optional(),
   motivation: z.string().min(20, { message: "Motivasi dan alasan harus diisi, minimal 20 karakter." }),
+  availability: z.enum(availabilityOptions, { required_error: 'Ketersediaan harus dipilih.' }),
+  usedToDeadline: z.enum(['ya', 'tidak'], { required_error: 'Pilihan ini harus diisi.' }),
+  deadlineExperience: z.string().optional(),
   declaration: z.literal(true, {
     errorMap: () => ({ message: "Anda harus menyetujui pernyataan ini untuk menyelesaikan profil." }),
   }),
+}).refine((data) => {
+    if (data.usedToDeadline === 'ya' && (!data.deadlineExperience || data.deadlineExperience.length < 10)) {
+        return false;
+    }
+    return true;
+}, {
+    message: 'Ceritakan pengalaman Anda dengan target/deadline (minimal 10 karakter).',
+    path: ['deadlineExperience'],
 });
+
 
 type FormValues = z.infer<typeof formSchema>;
 
@@ -31,7 +48,11 @@ interface SelfDescriptionFormProps {
     initialData: {
         selfDescription?: string;
         salaryExpectation?: string;
+        salaryExpectationReason?: string;
         motivation?: string;
+        availability?: typeof availabilityOptions[number];
+        usedToDeadline?: boolean;
+        deadlineExperience?: string;
     };
     onFinish: () => void;
     onBack: () => void;
@@ -48,10 +69,16 @@ export function SelfDescriptionForm({ initialData, onFinish, onBack }: SelfDescr
         defaultValues: {
             selfDescription: initialData?.selfDescription || '',
             salaryExpectation: initialData?.salaryExpectation || '',
+            salaryExpectationReason: initialData?.salaryExpectationReason || '',
             motivation: initialData?.motivation || '',
+            availability: initialData?.availability,
+            usedToDeadline: initialData?.usedToDeadline === true ? 'ya' : (initialData?.usedToDeadline === false ? 'tidak' : undefined),
+            deadlineExperience: initialData?.deadlineExperience || '',
             declaration: false,
         },
     });
+
+    const usedToDeadline = form.watch('usedToDeadline');
 
     const handleSubmit = async (values: FormValues) => {
         if (!firebaseUser) {
@@ -60,7 +87,7 @@ export function SelfDescriptionForm({ initialData, onFinish, onBack }: SelfDescr
         }
         setIsSaving(true);
         try {
-            const { declaration, ...rest } = values;
+            const { declaration, usedToDeadline, ...rest } = values;
             
             const batch = writeBatch(firestore);
             const now = serverTimestamp();
@@ -68,6 +95,7 @@ export function SelfDescriptionForm({ initialData, onFinish, onBack }: SelfDescr
             const profileDocRef = doc(firestore, 'profiles', firebaseUser.uid);
             const profilePayload = {
                 ...rest,
+                usedToDeadline: usedToDeadline === 'ya',
                 profileStatus: 'completed',
                 profileStep: 6,
                 updatedAt: now,
@@ -98,15 +126,29 @@ export function SelfDescriptionForm({ initialData, onFinish, onBack }: SelfDescr
             <CardContent>
                 <Form {...form}>
                     <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8">
-                        <FormField control={form.control} name="selfDescription" render={({ field }) => (<FormItem><FormLabel>Profil Singkat <span className="text-destructive">*</span></FormLabel><FormControl><Textarea {...field} value={field.value ?? ''} placeholder="Ceritakan secara singkat tentang karakter/kepribadian, sikap kerja, keunggulan, dan kekurangan diri Anda." rows={6} /></FormControl><FormMessage /></FormItem>)} />
-                        <FormField control={form.control} name="salaryExpectation" render={({ field }) => (<FormItem><FormLabel>Ekspektasi Gaji <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} placeholder="Contoh: 5 - 7 Juta atau UMR" /></FormControl><FormMessage /></FormItem>)} />
-                        <FormField control={form.control} name="motivation" render={({ field }) => (<FormItem><FormLabel>Motivasi & Alasan <span className="text-destructive">*</span></FormLabel><FormControl><Textarea {...field} value={field.value ?? ''} placeholder="Jelaskan motivasi dan alasan yang mendasari Anda untuk bekerja pada bidang/posisi yang Anda pilih." rows={6} /></FormControl><FormMessage /></FormItem>)} />
+                        <FormField control={form.control} name="selfDescription" render={({ field }) => (<FormItem><FormLabel>Ceritakan singkat tentang diri Anda <span className="text-destructive">*</span></FormLabel><FormDescription>Fokus pada karakter, sikap kerja, keunggulan, serta hal yang ingin Anda kembangkan.</FormDescription><FormControl><Textarea {...field} value={field.value ?? ''} rows={6} /></FormControl><FormMessage /></FormItem>)} />
                         
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <FormField control={form.control} name="salaryExpectation" render={({ field }) => (<FormItem><FormLabel>Ekspektasi Gaji <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} placeholder="Contoh: 5 - 7 Juta atau UMR" /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="salaryExpectationReason" render={({ field }) => (<FormItem><FormLabel>Alasan Ekspektasi Gaji (Opsional)</FormLabel><FormControl><Input {...field} value={field.value ?? ''} placeholder="Contoh: Berdasarkan riset dan pengalaman..." /></FormControl><FormMessage /></FormItem>)} />
+                        </div>
+
+                        <FormField control={form.control} name="motivation" render={({ field }) => (<FormItem><FormLabel>Motivasi Melamar <span className="text-destructive">*</span></FormLabel><FormControl><Textarea {...field} value={field.value ?? ''} placeholder="Jelaskan motivasi dan alasan yang mendasari Anda untuk bekerja pada bidang/posisi yang Anda pilih." rows={6} /></FormControl><FormMessage /></FormItem>)} />
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <FormField control={form.control} name="availability" render={({ field }) => (<FormItem><FormLabel>Kapan Anda dapat mulai bergabung? <span className="text-destructive">*</span></FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Pilih ketersediaan" /></SelectTrigger></FormControl><SelectContent>{availabilityOptions.map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="usedToDeadline" render={({ field }) => (<FormItem><FormLabel>Apakah Anda terbiasa bekerja dengan target/deadline? <span className="text-destructive">*</span></FormLabel><FormControl><RadioGroup onValueChange={field.onChange} value={field.value} className="flex items-center space-x-4 pt-2"><FormItem className="flex items-center space-x-2 space-y-0"><FormControl><RadioGroupItem value="ya" /></FormControl><FormLabel className="font-normal">Ya</FormLabel></FormItem><FormItem className="flex items-center space-x-2 space-y-0"><FormControl><RadioGroupItem value="tidak" /></FormControl><FormLabel className="font-normal">Tidak</FormLabel></FormItem></RadioGroup></FormControl><FormMessage /></FormItem>)} />
+                        </div>
+                        
+                        {usedToDeadline === 'ya' && (
+                             <FormField control={form.control} name="deadlineExperience" render={({ field }) => (<FormItem><FormLabel>Ceritakan pengalaman Anda bekerja dengan target <span className="text-destructive">*</span></FormLabel><FormControl><Textarea {...field} value={field.value ?? ''} placeholder="Ceritakan bagaimana Anda mengelola tekanan dan prioritas untuk memenuhi deadline." rows={4} /></FormControl><FormMessage /></FormItem>)} />
+                        )}
+
                         <FormField
                             control={form.control}
                             name="declaration"
                             render={({ field }) => (
-                                <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4 shadow-sm">
+                                <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4 shadow-sm !mt-12">
                                 <FormControl>
                                     <Checkbox
                                     checked={field.value}

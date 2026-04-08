@@ -4,9 +4,9 @@ import * as React from 'react';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
+  CardDescription,
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -303,10 +303,19 @@ export function ProfilePreview({
        <Card>
             <CardHeader><CardTitle className="text-lg flex items-center gap-3"><InfoIcon className="h-5 w-5 text-primary" />Tentang Saya</CardTitle></CardHeader>
             <CardContent>
-                 <dl>
+                 <dl className="space-y-2">
                     <InfoRow label="Profil Singkat" value={profile.selfDescription} />
                     <InfoRow label="Ekspektasi Gaji" value={profile.salaryExpectation} />
-                    <InfoRow label="Motivasi" value={profile.motivation} />
+                    <InfoRow label="Alasan Ekspektasi Gaji" value={profile.salaryExpectationReason} />
+                    <InfoRow label="Motivasi Melamar" value={profile.motivation} />
+                    <InfoRow label="Ketersediaan" value={profile.availability} />
+                    <InfoRow label="Bekerja dengan Target" value={profile.usedToDeadline ? 'Ya' : 'Tidak'} />
+                    {profile.usedToDeadline && (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 py-1.5">
+                        <dt className="text-sm font-medium text-muted-foreground">Pengalaman dengan Target</dt>
+                        <dd className="text-sm col-span-2">{profile.deadlineExperience || '-'}</dd>
+                      </div>
+                    )}
                 </dl>
             </CardContent>
        </Card>

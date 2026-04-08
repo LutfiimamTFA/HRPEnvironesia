@@ -371,7 +371,7 @@ export type Education = {
     institution: string;
     level: 'SMA/SMK' | 'D3' | 'S1' | 'S2' | 'S3';
     fieldOfStudy?: string;
-    thesisTitle?: string; // New field for thesis/final project title
+    thesisTitle?: string;
     gpa?: string;
     startDate: string;
     endDate?: string;
@@ -416,7 +416,6 @@ export type Certification = {
     organization: string;
     issueDate: string; // Storing as YYYY-MM
     expirationDate?: string; // Storing as YYYY-MM
-    imageUrl?: string;
 };
 
 export type Address = {
@@ -448,15 +447,20 @@ export type Profile = {
     willingToWfo: boolean;
     linkedinUrl?: string;
     websiteUrl?: string;
-    photoUrl?: string;
     education: Education[];
     workExperience?: WorkExperience[];
     organizationalExperience?: OrganizationalExperience[];
     skills?: string[];
     certifications?: Certification[];
+    
     selfDescription?: string;
     salaryExpectation?: string;
+    salaryExpectationReason?: string;
     motivation?: string;
+    availability?: 'Secepatnya' | '1 minggu' | '2 minggu' | '1 bulan' | '3 bulan' | '6 bulan' | 'Lainnya';
+    usedToDeadline?: boolean;
+    deadlineExperience?: string;
+
     declaration?: boolean;
 
     // Document URLs
