@@ -89,7 +89,7 @@ function ApplicationCard({ application, hasCompletedTest }: { application: JobAp
   const isOffered = application.status === 'offered';
   const isInterviewStage = application.status === 'interview';
   const isAssessmentStage = application.status === 'tes_kepribadian';
-  const isProcessing = ['screening', 'verification', 'document_submission', 'interview'].includes(application.status);
+  const isProcessing = ['submitted', 'screening', 'verification', 'document_submission'].includes(application.status);
 
   if (isOffered) {
     const salaryLabel = application.jobType === 'internship' ? 'Uang Saku' : 'Gaji';
@@ -238,12 +238,21 @@ function ApplicationCard({ application, hasCompletedTest }: { application: JobAp
                     </p>
                 </div>
             </div>
+        ) : isInterviewStage ? (
+            <div className="p-4 rounded-md border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-900 dark:text-indigo-100">
+                <h3 className="font-semibold text-lg flex items-center gap-2 text-indigo-800 dark:text-indigo-100"><Users className="h-5 w-5" /> Tahap Wawancara Selesai, Sedang Kami Tinjau</h3>
+                <div className="text-sm mt-3 space-y-3 text-indigo-800/90 dark:text-indigo-200/90 text-justify">
+                    <p>Terima kasih telah berpartisipasi dalam tahap wawancara untuk posisi <strong>{application.jobPosition}</strong>. Saat ini, tim rekrutmen kami sedang melakukan evaluasi mendalam berdasarkan hasil diskusi dan kualifikasi Anda secara keseluruhan.</p>
+                    <p>Kami memahami bahwa menunggu kabar bisa jadi hal yang mendebarkan. Kami berkomitmen untuk melakukan proses yang adil dan teliti bagi setiap kandidat. Oleh karena itu, proses ini mungkin membutuhkan sedikit waktu.</p>
+                    <p className="text-xs italic">Kami akan segera memberikan informasi perkembangan selanjutnya melalui portal ini atau email. Terima kasih atas pengertian dan antusiasme Anda.</p>
+                </div>
+            </div>
         ) : (
              <div className="p-4 rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 text-blue-900 dark:text-blue-100">
                 <h3 className="font-semibold text-lg flex items-center gap-2 text-blue-800 dark:text-blue-100"><FileClock className="h-5 w-5" /> Lamaran Anda Sedang Diproses</h3>
                  <div className="text-sm mt-3 space-y-3 text-blue-800/90 dark:text-blue-200/90 text-justify">
                     <p>Terima kasih telah mengirimkan lamaran Anda untuk posisi <strong>{application.jobPosition}</strong>. Lamaran Anda telah kami terima dan saat ini sedang dalam proses peninjauan oleh tim rekrutmen kami.</p>
-                    <p>Kami menerima cukup banyak aplikasi, sehingga proses evaluasi membutuhkan waktu. Kami akan menghubungi Anda apabila terdapat perkembangan lebih lanjut. Anda juga dapat memantau status lamaran Anda secara berkala melalui halaman ini.</p>
+                    <p>Kami menerima cukup banyak aplikasi, sehingga proses evaluasi membutuhkan waktu. Kami akan menghubungi Anda apabila terdapat perkembangan lebih lanjut. Anda juga dapat memantau status lamaran Anda di halaman ini secara berkala.</p>
                     <p className="text-xs italic">Profil Anda juga akan kami simpan sebagai bagian dari pertimbangan untuk peluang lain di masa mendatang. Terima kasih atas minat dan kepercayaan Anda.</p>
                 </div>
                 {isProcessing && !hasCompletedTest && (

@@ -89,7 +89,7 @@ function ApplicationCard({ application, hasCompletedTest }: { application: JobAp
   const isOffered = application.status === 'offered';
   const isInterviewStage = application.status === 'interview';
   const isAssessmentStage = application.status === 'tes_kepribadian';
-  const isProcessing = ['screening', 'verification', 'document_submission', 'interview'].includes(application.status);
+  const isProcessing = ['submitted', 'screening', 'verification', 'document_submission'].includes(application.status);
 
   if (isOffered) {
     const salaryLabel = application.jobType === 'internship' ? 'Uang Saku' : 'Gaji';
@@ -236,6 +236,15 @@ function ApplicationCard({ application, hasCompletedTest }: { application: JobAp
                         ? 'Anda telah menolak penawaran kerja ini. Proses rekrutmen untuk posisi ini telah selesai.'
                         : 'Terima kasih atas minat Anda. Saat ini kami belum dapat melanjutkan proses lamaran Anda.'}
                     </p>
+                </div>
+            </div>
+        ) : isInterviewStage ? (
+            <div className="p-4 rounded-md border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-900 dark:text-indigo-100">
+                <h3 className="font-semibold text-lg flex items-center gap-2 text-indigo-800 dark:text-indigo-100"><Users className="h-5 w-5" /> Tahap Wawancara Selesai, Sedang Kami Tinjau</h3>
+                <div className="text-sm mt-3 space-y-3 text-indigo-800/90 dark:text-indigo-200/90 text-justify">
+                    <p>Terima kasih telah berpartisipasi dalam tahap wawancara untuk posisi <strong>{application.jobPosition}</strong>. Saat ini, tim rekrutmen kami sedang melakukan evaluasi mendalam berdasarkan hasil diskusi dan kualifikasi Anda secara keseluruhan.</p>
+                    <p>Kami memahami bahwa menunggu kabar bisa jadi hal yang mendebarkan. Kami berkomitmen untuk melakukan proses yang adil dan teliti bagi setiap kandidat. Oleh karena itu, proses ini mungkin membutuhkan sedikit waktu.</p>
+                    <p className="text-xs italic">Kami akan segera memberikan informasi perkembangan selanjutnya melalui portal ini atau email. Terima kasih atas pengertian dan antusiasme Anda.</p>
                 </div>
             </div>
         ) : (
