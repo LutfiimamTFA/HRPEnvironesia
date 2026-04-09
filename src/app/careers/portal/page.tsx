@@ -161,11 +161,7 @@ export default function CandidateDashboardPage() {
         
         {hasApplied && (
             <Card>
-                <CardHeader>
-                    <CardTitle>Status Lamaran Aktif Anda</CardTitle>
-                    <CardDescription>Berikut adalah linimasa proses rekrutmen untuk posisi dengan progres terjauh. Tahap yang sedang aktif akan ditandai dengan warna.</CardDescription>
-                </CardHeader>
-                <CardContent>
+                <CardContent className="pt-6">
                     <ApplicationStatusStepper 
                         application={highestStatusApplication}
                         highestStatus={highestStatus} 
