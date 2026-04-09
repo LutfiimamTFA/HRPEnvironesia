@@ -199,9 +199,9 @@ export function ProfilePreview({
               </CardDescription>
             </div>
             <div className="flex items-center gap-4">
-                <Badge variant={isProfileComplete ? 'default' : 'secondary'}>
-                    {isProfileComplete ? 'Profil Lengkap' : 'Profil Belum Lengkap'}
-                </Badge>
+                {isProfileComplete && (
+                    <Badge variant='default'>Profil Lengkap</Badge>
+                )}
                 <Button onClick={handleCTAClick} disabled={isProfileLocked || isLoadingApps}>
                     {isLoadingApps ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Edit className="mr-2 h-4 w-4" />}
                     {isProfileComplete ? 'Perbarui Profil' : 'Lanjutkan Pengisian'}
