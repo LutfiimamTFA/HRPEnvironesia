@@ -11,7 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Edit, User, Home, BookOpen, Briefcase, Sparkles, Building, Info as InfoIcon, Eye, EyeOff, Banknote, GraduationCap, Lock, Loader2 } from 'lucide-react';
+import { Edit, User, Home, BookOpen, Briefcase, Sparkles, Building, Info as InfoIcon, Eye, EyeOff, Banknote, GraduationCap, Lock, Loader2, Link2 as LinkIcon, X } from 'lucide-react';
 import type {
   Profile,
   Address,
@@ -171,7 +171,7 @@ export function ProfilePreview({
 
   const birthDateValue = React.useMemo(() => {
     if (!profile.birthDate) return '-';
-    const date = (profile.birthDate as any).toDate ? (profile.birthDate as any).toDate() : new Date(profile.birthDate);
+    const date = (profile.birthDate as any)?.toDate ? (profile.birthDate as any).toDate() : new Date(profile.birthDate as any);
     if (isNaN(date.getTime())) return 'Invalid Date';
     return format(date, 'dd MMMM yyyy', { locale: idLocale });
   }, [profile.birthDate]);

@@ -205,7 +205,7 @@ export type Job = {
   };
 };
 
-export const ORDERED_RECRUITMENT_STAGES = ['draft', 'submitted', 'tes_kepribadian', 'screening', 'interview', 'offered', 'hired', 'rejected'] as const;
+export const ORDERED_RECRUITMENT_STAGES = ['draft', 'submitted', 'tes_kepribadian', 'screening', 'verification', 'document_submission', 'interview', 'offered', 'hired', 'rejected'] as const;
 export type JobApplicationStatus = (typeof ORDERED_RECRUITMENT_STAGES)[number];
 
 
@@ -337,7 +337,48 @@ export type JobApplication = {
   cvTextExtractedAt?: Timestamp;
   cvTextSource?: 'pdf-parse' | 'ocr-vision' | 'ocr-docai' | 'unknown';
   cvCharCount?: number;
+  
+  // --- Internal Review Features ---
+  internalReviewConfig?: InternalReviewConfig;
+  internalReviewSummary?: InternalReviewSummary;
 };
+
+export type InternalReviewScore = 'sangat_direkomendasikan' | 'direkomendasikan' | 'dipertimbangkan' | 'belum_sesuai';
+
+export interface InternalReviewConfig {
+  enabled: boolean;
+  assignedReviewerUids: string[];
+  assignedReviewerNames?: string[];
+  visibilityMode: 'shared_internal';
+  reviewLocked: boolean;
+  lastUpdatedAt?: Timestamp | null;
+}
+
+export interface InternalReviewSummary {
+  totalAssigned: number;
+  totalSubmitted: number;
+  totalSangatDirekomendasikan: number;
+  totalDirekomendasikan: number;
+  totalDipertimbangkan: number;
+  totalBelumSesuai: number;
+  pendingReviewerUids: string[];
+  allSubmitted: boolean;
+  lastUpdatedAt?: Timestamp | null;
+}
+
+export interface InternalReview {
+  id?: string; // Same as reviewerUid
+  applicationId: string;
+  reviewerUid: string;
+  reviewerName: string;
+  reviewerRole: 'hrd' | 'reviewer' | 'manager' | 'super-admin';
+  score: InternalReviewScore;
+  note: string;
+  strengths?: string;
+  concerns?: string;
+  submittedAt: Timestamp;
+  updatedAt: Timestamp;
+}
 
 export type Candidate = {
     id?: string;

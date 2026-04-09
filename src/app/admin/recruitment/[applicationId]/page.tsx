@@ -231,7 +231,7 @@ export default function ApplicationDetailPage() {
                  </div>
             </CardContent>
           </Card>
-          <CandidateDocumentsCard profile={profile as any} />
+          <CandidateDocumentsCard profile={profile as any} application={application} onVerificationChange={() => {}} />
           <CandidateFitAnalysis profile={profile} job={job} application={application} />
           <ProfileView profile={profile} />
         </div>

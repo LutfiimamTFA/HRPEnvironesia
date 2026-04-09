@@ -33,6 +33,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ManagePanelistsDialog } from '@/components/recruitment/ManagePanelistsDialog';
 import { ROLES_INTERNAL } from '@/lib/types';
 import { InterviewManagement } from '@/components/recruitment/InterviewManagement';
+import { InternalEvaluationSection } from '@/components/recruitment/InternalEvaluationSection';
 
 
 function ApplicationDetailSkeleton() {
@@ -129,6 +130,9 @@ export default function ApplicationDetailPage() {
         iv.status !== 'canceled' && iv.panelistIds?.includes(userProfile.uid)
     );
     if (isPanelist) return true;
+
+    // Check if user is assigned as an internal reviewer
+    if (application.internalReviewConfig?.assignedReviewerUids?.includes(userProfile.uid)) return true;
 
     return false;
   }, [userProfile, application, job, isPrivilegedRecruiter]);
@@ -314,7 +318,11 @@ export default function ApplicationDetailPage() {
                 </div>
                 <div className="flex flex-col items-end gap-2">
                     <ApplicationStatusBadge status={application.status} className="text-base px-4 py-1" />
-                     {application.submittedAt && <p className="text-sm text-muted-foreground">Applied on {format(application.submittedAt.toDate(), 'dd MMM yyyy')}</p>}
+                    {application.submittedAt && <p className="text-sm text-muted-foreground">Applied on {format(application.submittedAt.toDate(), 'dd MMM yyyy')}</p>}
+                    <div className={cn("text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted mt-1 flex items-center gap-1.5", assessmentInfo.color)}>
+                        <BrainCircuit className="h-3 w-3" />
+                        <span>Psikotest: {assessmentInfo.text} {assessmentInfo.result && `(${assessmentInfo.result})`}</span>
+                    </div>
                 </div>
               </div>
             </CardHeader>
@@ -343,6 +351,8 @@ export default function ApplicationDetailPage() {
                  ))}
             </div>
           </div>
+
+          <InternalEvaluationSection application={application} />
         </div>
         </>
       )}

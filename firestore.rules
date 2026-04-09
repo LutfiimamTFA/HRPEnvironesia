@@ -232,8 +232,11 @@ service cloud.firestore {
         // runs on each document in the result set.
         allow list: if isSignedIn();
 
-        // GET: Allow if the user is an admin, the document owner, or an assigned panelist.
-        allow get: if isHrd() || isSuperAdmin() || resource.data.candidateUid == request.auth.uid || request.auth.uid in resource.data.allPanelistIds;
+        // GET: Allow if the user is an admin, the document owner, an assigned panelist, or an assigned internal reviewer.
+        allow get: if isHrd() || isSuperAdmin() || 
+                     resource.data.candidateUid == request.auth.uid || 
+                     request.auth.uid in resource.data.get('allPanelistIds', []) ||
+                     request.auth.uid in resource.data.get(['internalReviewConfig', 'assignedReviewerUids'], []);
 
         // CREATE: A user can create an application only if they are the owner.
         allow create: if isCreatingOwn() && (request.resource.data.status == "draft" || request.resource.data.status == "submitted");
@@ -297,8 +300,13 @@ service cloud.firestore {
         }
         function isInternalStatusUpdate() {
             let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
-            let allowedKeys = ['status', 'updatedAt', 'personalityTestAssignedAt', 'cvVerified', 'ijazahVerified', 'timeline', 'interviews', 'allPanelistIds', 'offerStatus', 'offeredSalary', 'probationDurationMonths', 'contractStartDate', 'contractDurationMonths', 'contractEndDate', 'offerNotes', 'internalAccessEnabled'];
-            return isInternal() && changedKeys.hasOnly(allowedKeys);
+            let allowedKeys = ['status', 'updatedAt', 'personalityTestAssignedAt', 'cvVerified', 'ijazahVerified', 'timeline', 'interviews', 'allPanelistIds', 'offerStatus', 'offeredSalary', 'probationDurationMonths', 'contractStartDate', 'contractDurationMonths', 'contractEndDate', 'offerNotes', 'internalAccessEnabled', 'internalReviewSummary'];
+            let hrdOnlyKeys = ['internalReviewConfig'];
+            
+            if (changedKeys.hasAny(hrdOnlyKeys)) {
+                return isHrd() || isSuperAdmin();
+            }
+            return isInternal() && changedKeys.hasOnly(allowedKeys.concat(hrdOnlyKeys));
         }
         function isRequestingReschedule() {
           let isOwner = request.auth.uid == resource.data.candidateUid;
@@ -307,6 +315,18 @@ service cloud.firestore {
           let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
           let onlyAllowedFieldsChanged = changedKeys.hasOnly(allowedKeys);
           return isOwner && isInterviewStage && onlyAllowedFieldsChanged;
+        }
+
+        // Internal Reviews Subcollection (Moved outside nested match for better list query stability)
+        function hasInternalReviewAccess(appId) {
+          let appData = get(/databases/$(database)/documents/applications/$(appId)).data;
+          return request.auth.uid in appData.get(['internalReviewConfig', 'assignedReviewerUids'], []);
+        }
+
+        match /applications/{applicationId}/internal_reviews/{reviewerUid} {
+          allow list: if isHrd() || isSuperAdmin() || (isSignedIn() && hasInternalReviewAccess(applicationId));
+          allow get: if isHrd() || isSuperAdmin() || request.auth.uid == reviewerUid || (isSignedIn() && hasInternalReviewAccess(applicationId));
+          allow write: if isHrd() || isSuperAdmin() || (isOwner(reviewerUid) && hasInternalReviewAccess(applicationId));
         }
     }
 

@@ -59,25 +59,25 @@ export const CANDIDATE_STEPS = [
 ];
 
 const InfoBlock = ({ label, value, icon: Icon, className }: { label: string; value?: React.ReactNode; icon?: any; className?: string }) => (
-  <div className={cn("space-y-1.5", className)}>
-    <div className="flex items-center gap-2 text-muted-foreground/80">
-      {Icon && <Icon className="h-3.5 w-3.5" />}
-      <span className="text-[10px] sm:text-xs font-bold uppercase tracking-[0.1em]">{label}</span>
+  <div className={cn("space-y-1", className)}>
+    <div className="flex items-center gap-2 text-muted-foreground/60">
+      {Icon && <Icon className="h-3 w-3" />}
+      <span className="text-[9px] font-bold uppercase tracking-[0.15em]">{label}</span>
     </div>
-    <div className="text-lg sm:text-xl font-bold text-foreground leading-tight break-words">
-      {value || <span className="text-muted-foreground/30 font-normal italic text-base">Belum diisi kandidat</span>}
+    <div className="text-base sm:text-lg font-bold text-foreground leading-snug break-words">
+      {value || <span className="text-muted-foreground/30 font-normal italic text-sm">Belum diisi kandidat</span>}
     </div>
   </div>
 );
 
 const SectionHeader = ({ title, icon: Icon }: { title: string; icon: any }) => (
-  <div className="flex items-center gap-4 mb-8 border-b pb-6">
-    <div className="p-3 rounded-2xl bg-primary/5 text-primary">
-      <Icon className="h-7 w-7" />
+  <div className="flex items-center gap-3.5 mb-6 border-b pb-5">
+    <div className="p-2.5 rounded-xl bg-primary/5 text-primary">
+      <Icon className="h-5 w-5" />
     </div>
     <div>
-        <h3 className="text-3xl font-black tracking-tight">{title}</h3>
-        <p className="text-muted-foreground text-sm font-medium">Informasi mendalam mengenai data terkait.</p>
+        <h3 className="text-xl sm:text-2xl font-black tracking-tight">{title}</h3>
+        <p className="text-muted-foreground text-xs font-medium">Informasi mendalam mengenai data terkait.</p>
     </div>
   </div>
 );
@@ -110,19 +110,19 @@ export function CandidateStepContent({ profile, application, activeStep, job }: 
           <div className="pt-6">
              <div className="flex items-center gap-2 text-muted-foreground/80 mb-4">
                 <MapPin className="h-4 w-4" />
-                <span className="text-xs font-bold uppercase tracking-widest">Alamat Lengkap</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider">Alamat Lengkap</span>
              </div>
              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                  <div className="p-6 rounded-3xl bg-muted/30 border">
                     <p className="text-[10px] font-bold uppercase text-muted-foreground mb-4">Alamat Sesuai KTP</p>
-                    <p className="text-base font-bold leading-relaxed">{profile.addressKtp?.street}, RT {profile.addressKtp?.rt}/RW {profile.addressKtp?.rw}, {profile.addressKtp?.village}, {profile.addressKtp?.district}, {profile.addressKtp?.city}, {profile.addressKtp?.province} {profile.addressKtp?.postalCode}</p>
+                    <p className="text-sm font-bold leading-relaxed">{profile.addressKtp?.street}, RT {profile.addressKtp?.rt}/RW {profile.addressKtp?.rw}, {profile.addressKtp?.village}, {profile.addressKtp?.district}, {profile.addressKtp?.city}, {profile.addressKtp?.province} {profile.addressKtp?.postalCode}</p>
                  </div>
                  <div className="p-6 rounded-3xl bg-muted/30 border">
                     <p className="text-[10px] font-bold uppercase text-muted-foreground mb-4">Alamat Domisili</p>
                     {profile.isDomicileSameAsKtp ? (
                         <p className="text-base font-medium text-muted-foreground italic">Sama dengan alamat KTP</p>
                     ) : (
-                        <p className="text-base font-bold leading-relaxed">{profile.addressDomicile?.street}, RT {profile.addressDomicile?.rt}/RW {profile.addressDomicile?.rw}, {profile.addressDomicile?.village}, {profile.addressDomicile?.district}, {profile.addressDomicile?.city}, {profile.addressDomicile?.province} {profile.addressDomicile?.postalCode}</p>
+                        <p className="text-sm font-bold leading-relaxed">{profile.addressDomicile?.street}, RT {profile.addressDomicile?.rt}/RW {profile.addressDomicile?.rw}, {profile.addressDomicile?.village}, {profile.addressDomicile?.district}, {profile.addressDomicile?.city}, {profile.addressDomicile?.province} {profile.addressDomicile?.postalCode}</p>
                     )}
                  </div>
              </div>
@@ -143,8 +143,8 @@ export function CandidateStepContent({ profile, application, activeStep, job }: 
                   <div className="flex-1 space-y-4">
                     <div className="flex flex-col md:flex-row justify-between items-start gap-4">
                       <div>
-                        <h4 className="text-2xl font-black text-primary">{edu.institution}</h4>
-                        <p className="text-lg font-bold text-foreground/80">{edu.level} — {edu.fieldOfStudy}</p>
+                        <h4 className="text-xl font-black text-primary">{edu.institution}</h4>
+                        <p className="text-base font-bold text-foreground/80">{edu.level} — {edu.fieldOfStudy}</p>
                       </div>
                       <div className="flex items-center gap-2 px-4 py-2 bg-muted/50 rounded-2xl font-bold text-sm">
                         <Calendar className="h-4 w-4" />
@@ -184,11 +184,11 @@ export function CandidateStepContent({ profile, application, activeStep, job }: 
                   <div className="flex-1 space-y-4">
                     <div className="flex flex-col md:flex-row justify-between items-start gap-4">
                       <div>
-                        <h4 className="text-2xl font-black">{exp.position}</h4>
+                        <h4 className="text-xl font-black">{exp.position}</h4>
                         <div className="flex items-center gap-2 mt-1">
-                            <span className="text-lg font-bold text-blue-600">{exp.company}</span>
+                            <span className="text-base font-bold text-blue-600">{exp.company}</span>
                             <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />
-                            <span className="text-base text-muted-foreground font-medium">{exp.jobType ? JOB_TYPE_LABELS[exp.jobType] : ''}</span>
+                            <span className="text-sm text-muted-foreground font-medium">{exp.jobType ? JOB_TYPE_LABELS[exp.jobType] : ''}</span>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 px-4 py-2 bg-muted/50 rounded-2xl font-bold text-sm">
@@ -230,8 +230,8 @@ export function CandidateStepContent({ profile, application, activeStep, job }: 
                   <div className="flex-1 space-y-1">
                     <div className="flex flex-col md:flex-row justify-between items-start gap-4 mb-4">
                        <div>
-                          <h4 className="text-2xl font-black">{org.position}</h4>
-                          <p className="text-lg font-bold text-orange-600">{org.organization}</p>
+                          <h4 className="text-xl font-black">{org.position}</h4>
+                          <p className="text-base font-bold text-orange-600">{org.organization}</p>
                        </div>
                        <div className="flex items-center gap-2 px-4 py-2 bg-muted/50 rounded-2xl font-bold text-sm">
                           <Calendar className="h-4 w-4" />
@@ -322,8 +322,8 @@ export function CandidateStepContent({ profile, application, activeStep, job }: 
             <div className="flex items-center gap-2 mb-4">
                 <span className="text-[10px] font-black uppercase tracking-widest text-primary/60 bg-primary/5 px-2 py-0.5 rounded">Tentang Profil</span>
             </div>
-            <div className="text-xl leading-relaxed font-medium text-foreground/90 whitespace-pre-wrap bg-muted/20 p-8 rounded-[2rem] border-2 border-dashed">
-              {profile.selfDescription || <span className="text-muted-foreground/30 font-normal italic">Belum diisi kandidat</span>}
+            <div className="text-lg leading-relaxed font-medium text-foreground/90 whitespace-pre-wrap bg-muted/20 p-6 rounded-2xl border-2 border-dashed">
+              {profile.selfDescription || <span className="text-muted-foreground/30 font-normal italic text-sm">Belum diisi kandidat</span>}
             </div>
           </div>
 
@@ -352,7 +352,7 @@ export function CandidateStepContent({ profile, application, activeStep, job }: 
                         <Target className="h-8 w-8" />
                     </div>
                     <div>
-                        <p className="text-2xl font-black">Target & Deadline</p>
+                        <p className="text-lg font-bold">Target & Deadline</p>
                         <p className="text-lg text-muted-foreground font-medium mt-1">
                           {profile.usedToDeadline ? 'Kandidat terbiasa bekerja di bawah tekanan target/deadline ketat.' : 'Kandidat belum terbiasa dengan ritme target yang masif.'}
                         </p>
