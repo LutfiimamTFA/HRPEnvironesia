@@ -158,19 +158,6 @@ export default function CandidateDashboardPage() {
                 )}
             </CardContent>
         </Card>
-        
-        {hasApplied && (
-            <Card>
-                <CardContent className="pt-6">
-                    <ApplicationStatusStepper 
-                        application={highestStatusApplication}
-                        highestStatus={highestStatus} 
-                        isProfileComplete={userProfile?.isProfileComplete || false}
-                        isLoading={loading || isLoadingApps}
-                    />
-                </CardContent>
-            </Card>
-        )}
     </div>
   );
 }
