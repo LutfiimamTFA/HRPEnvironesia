@@ -8,7 +8,7 @@ import { Topbar } from './Topbar';
 import { SidebarProvider, SidebarInset } from '../ui/sidebar';
 import { useAuth } from '@/providers/auth-provider';
 import { useFirestore, useDoc, useMemoFirebase, useCollection } from '@/firebase';
-import { doc, collection, query, where } from 'firebase/firestore';
+import { doc, collection, query, where, limit } from 'firebase/firestore';
 import type { NavigationSetting, UserRole, Job } from '@/lib/types';
 import { MENU_CONFIG, ALL_MENU_GROUPS } from '@/lib/menu-config';
 import { CheckSquare, FileHeart, Briefcase } from 'lucide-react';
@@ -47,6 +47,33 @@ export function DashboardLayout({
   );
   const { data: navSettings, isLoading: isLoadingSettings } = useDoc<NavigationSetting>(settingsDocRef);
   
+  // Realtime checks for recruitment-related assignments across multiple sources
+  const panelistQuery = useMemoFirebase(() => {
+    if (!userProfile?.uid) return null;
+    return query(
+        collection(firestore, 'applications'),
+        where('allPanelistIds', 'array-contains', userProfile.uid),
+        limit(1)
+    );
+  }, [firestore, userProfile?.uid]);
+
+  const jobQuery = useMemoFirebase(() => {
+    if (!userProfile?.uid) return null;
+    return query(
+        collection(firestore, 'jobs'),
+        where('assignedUserIds', 'array-contains', userProfile.uid),
+        limit(1)
+    );
+  }, [firestore, userProfile?.uid]);
+
+  const { data: panelistAssignments, isLoading: isLoadingPanelists } = useCollection(panelistQuery);
+  const { data: jobAssignments, isLoading: isLoadingJobs } = useCollection(jobQuery);
+
+  const hasAnyAssignment = (panelistAssignments && panelistAssignments.length > 0) || 
+                          (jobAssignments && jobAssignments.length > 0);
+  
+  const isAssignmentLoading = isLoadingPanelists || isLoadingJobs;
+
   const menuConfig = useMemo(() => {
     if (!roleKey) return [];
     
@@ -98,6 +125,12 @@ export function DashboardLayout({
           
           const reviewKeys = ['review.reports', 'manager.overtime_approval', 'manager.permission_approval', 'hrd.permission_approval', 'hrd.overtime_approval'];
           if (reviewKeys.includes(item.key) && !userCanReview) {
+              return false;
+          }
+          
+          // Only show recruitment tasks if user is actually assigned
+          // We hide it during loading to prevent the "ghost menu" flicker for non-recruiters
+          if (item.key === 'recruitment.tasks' && (isAssignmentLoading || !hasAnyAssignment)) {
               return false;
           }
           

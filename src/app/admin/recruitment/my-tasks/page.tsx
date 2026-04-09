@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { useAuth } from '@/providers/auth-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, where, orderBy } from 'firebase/firestore';
-import type { JobApplication, JobApplicationStatus } from '@/lib/types';
+import type { JobApplication, JobApplicationStatus, Job } from '@/lib/types';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -26,16 +26,68 @@ export default function MyRecruitmentTasksPage() {
     return MENU_CONFIG[userProfile.role] || [];
   }, [userProfile]);
 
-  const tasksQuery = useMemoFirebase(() => {
-    if (!userProfile) return null;
+  // 1. Get Jobs where user is part of the Recruitment Team
+  const assignedJobsQuery = useMemoFirebase(() => {
+    if (!userProfile?.uid) return null;
+    return query(
+      collection(firestore, 'jobs'),
+      where('assignedUserIds', 'array-contains', userProfile.uid)
+    );
+  }, [firestore, userProfile?.uid]);
+
+  const { data: assignedJobs } = useCollection<Job>(assignedJobsQuery);
+  const assignedJobIds = useMemo(() => assignedJobs?.map(j => j.id).filter(Boolean) as string[] || [], [assignedJobs]);
+
+  // 2. Query Applications based on multiple criteria:
+  // - User is an explicit reviewer (array-contains on internalReviewConfig.assignedReviewerUids)
+  // - User is a panelist (array-contains on allPanelistIds)
+  // - User is part of the Job's team (jobId is in assignedJobIds) - Handled by client-side merge or separate query
+
+  const directAssignmentQuery = useMemoFirebase(() => {
+    if (!userProfile?.uid) return null;
     return query(
       collection(firestore, 'applications'),
-      where('internalReviewConfig.assignedReviewerUids', 'array-contains', userProfile.uid),
-      orderBy('updatedAt', 'desc')
+      where('internalReviewConfig.assignedReviewerUids', 'array-contains', userProfile.uid)
     );
-  }, [firestore, userProfile]);
+  }, [firestore, userProfile?.uid]);
 
-  const { data: applications, isLoading } = useCollection<JobApplication>(tasksQuery);
+  const panelistAssignmentQuery = useMemoFirebase(() => {
+    if (!userProfile?.uid) return null;
+    return query(
+      collection(firestore, 'applications'),
+      where('allPanelistIds', 'array-contains', userProfile.uid)
+    );
+  }, [firestore, userProfile?.uid]);
+
+  // Applications from Job-level assignment (only if we have job IDs)
+  const jobLevelAppsQuery = useMemoFirebase(() => {
+    if (!userProfile?.uid || assignedJobIds.length === 0) return null;
+    // Firestore 'in' query supports up to 30 IDs
+    return query(
+      collection(firestore, 'applications'),
+      where('jobId', 'in', assignedJobIds.slice(0, 30))
+    );
+  }, [firestore, userProfile?.uid, assignedJobIds]);
+
+  const { data: directApps, isLoading: loadingDirect } = useCollection<JobApplication>(directAssignmentQuery);
+  const { data: panelistApps, isLoading: loadingPanelist } = useCollection(panelistAssignmentQuery);
+  const { data: jobApps, isLoading: loadingJobLevel } = useCollection(jobLevelAppsQuery);
+
+  const applications = useMemo(() => {
+    const all = [...(directApps || []), ...(panelistApps || []), ...(jobApps || [])];
+    
+    // Deduplicate by ID
+    const unique = Array.from(new Map(all.map(a => [a.id, a])).values());
+
+    // Client-side sort by updatedAt
+    return unique.sort((a, b) => {
+        const timeA = a.updatedAt?.toMillis?.() || (a.updatedAt as any)?.seconds || 0;
+        const timeB = b.updatedAt?.toMillis?.() || (b.updatedAt as any)?.seconds || 0;
+        return timeB - timeA;
+    });
+  }, [directApps, panelistApps, jobApps]);
+
+  const isLoading = loadingDirect || (assignedJobIds.length > 0 && loadingJobLevel);
 
   if (!userProfile) return null;
 
@@ -102,13 +154,13 @@ export default function MyRecruitmentTasksPage() {
                       </div>
                     </TableCell>
                     <TableCell>
-                       {app.internalReviewSummary?.pendingReviewerUids?.includes(userProfile.uid) ? (
-                          <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 gap-1.5 py-1">
-                            <Clock className="h-3 w-3" /> Menunggu Review
-                          </Badge>
-                       ) : (
+                       {app.internalReviewSummary?.submittedReviewerUids?.includes(userProfile.uid) ? (
                           <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 gap-1.5 py-1">
                             <CheckCircle2 className="h-3 w-3" /> Sudah Review
+                          </Badge>
+                       ) : (
+                          <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 gap-1.5 py-1">
+                            <Clock className="h-3 w-3" /> Menunggu Review
                           </Badge>
                        )}
                     </TableCell>

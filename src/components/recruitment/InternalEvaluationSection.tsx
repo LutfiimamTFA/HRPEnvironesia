@@ -148,6 +148,12 @@ export function InternalEvaluationSection({ application, job, internalUsers }: I
     return list;
   }, [application, job, internalUsers, reviews]);
 
+  const isReviewer = useMemo(() => {
+     return potentialReviewers.some(p => p.uid === userProfile?.uid);
+  }, [potentialReviewers, userProfile?.uid]);
+
+  const canSeeDashboard = isHRD || isReviewer;
+
   const canReview = useMemo(() => {
     if (!userProfile) return false;
     if (userProfile.role === 'hrd' || userProfile.role === 'super-admin') return true;
@@ -208,6 +214,7 @@ export function InternalEvaluationSection({ application, job, internalUsers }: I
           totalDipertimbangkan: allReviews.filter(r => r.score === 'dipertimbangkan').length,
           totalBelumSesuai: allReviews.filter(r => r.score === 'belum_sesuai').length,
           pendingReviewerUids: pendingUids,
+          submittedReviewerUids: submittedUids,
           allSubmitted: assignedUids.length > 0 && allReviews.length >= assignedUids.length,
           lastUpdatedAt: Timestamp.now(),
         };
@@ -252,8 +259,8 @@ export function InternalEvaluationSection({ application, job, internalUsers }: I
       </CardHeader>
 
       <CardContent className="p-6 md:p-12 space-y-20">
-        {/* Monitoring Dashboard for HRD */}
-        {isHRD && (
+        {/* Monitoring Dashboard for HRD & Assigned Reviewers */}
+        {canSeeDashboard && (
             <div className="space-y-12 animate-in fade-in slide-in-from-top-6 duration-1000">
                 {/* 1. Dashboard Header - Dark Theme Harmonized */}
                 <div className="flex flex-col lg:flex-row items-center justify-between gap-8 p-10 rounded-[2.5rem] bg-slate-950/40 border border-slate-800 shadow-2xl ring-1 ring-white/5">
@@ -263,9 +270,18 @@ export function InternalEvaluationSection({ application, job, internalUsers }: I
                         </div>
                         <div>
                             <h3 className="text-2xl font-black uppercase tracking-tighter text-slate-100 italic">Progress Penilaian Tim</h3>
-                            <p className="text-sm font-bold text-slate-500 uppercase tracking-widest mt-1">
-                                <span className="text-indigo-400">{reviews?.length || 0}</span> dari <span className="text-slate-300">{potentialReviewers.length}</span> reviewer sudah submit
-                            </p>
+                            <div className="space-y-1">
+                                <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">
+                                    <span className="text-indigo-400">{reviews?.length || 0}</span> dari <span className="text-slate-300">{potentialReviewers.length}</span> reviewer sudah submit
+                                </p>
+                                {reviews && reviews.length > 0 && (
+                                    <p className="text-[10px] font-bold text-slate-500 uppercase">
+                                        Terakhir oleh: <span className="text-emerald-400">
+                                            {[...reviews].sort((a,b) => b.updatedAt.toMillis() - a.updatedAt.toMillis())[0].reviewerName}
+                                        </span> • {format([...reviews].sort((a,b) => b.updatedAt.toMillis() - a.updatedAt.toMillis())[0].updatedAt.toDate(), 'HH:mm - dd MMM')}
+                                    </p>
+                                )}
+                            </div>
                         </div>
                     </div>
                     
@@ -408,7 +424,7 @@ export function InternalEvaluationSection({ application, job, internalUsers }: I
         )}
 
         {/* 2. My Review Form - Professional Dark Container */}
-        {canReview && (
+        {canReview && (!application.internalReviewConfig?.reviewLocked || myReview) && (
             <div className="space-y-12 p-12 rounded-[3.5rem] bg-slate-950/40 border border-slate-800 shadow-2xl ring-1 ring-white/5">
                  <div className="flex items-center gap-5">
                     <div className="h-12 w-12 rounded-[1.2rem] bg-indigo-500/10 text-indigo-400 flex items-center justify-center border border-indigo-500/20 shadow-inner">
@@ -475,22 +491,20 @@ export function InternalEvaluationSection({ application, job, internalUsers }: I
                     </div>
                  </div>
 
-                 <div className="flex flex-col sm:flex-row items-center justify-between gap-8 p-10 rounded-[2.5rem] bg-indigo-950/20 border border-indigo-500/10 shadow-inner">
-                    <div className="flex items-center gap-5 text-indigo-200/60 text-sm font-bold uppercase tracking-tight italic">
-                        <div className="p-3 rounded-2xl bg-indigo-500/10 shadow-sm border border-indigo-500/20">
-                            <AlertCircle className="h-7 w-7 text-indigo-400 shrink-0" />
-                        </div>
-                        Penilaian ini bersifat rahasia dan hanya digunakan untuk kepentingan rekrutmen internal.
+                <div className="flex items-center justify-between mt-8 p-4 rounded-3xl bg-indigo-900/10">
+                    <div className="flex items-center gap-3 text-sm text-indigo-300">
+                        <AlertCircle className="w-5 h-5 text-indigo-400" />
+                        <span className="font-semibold">{application.internalReviewConfig?.reviewLocked ? 'Evaluasi telah dikunci oleh HRD.' : 'Penilaian ini bersifat rahasia.'}</span>
                     </div>
                     <Button 
                         onClick={handleSubmit} 
-                        disabled={isSubmitting || !score || note.length < 15}
-                        className="w-full sm:w-auto px-16 h-18 rounded-[2rem] font-black text-xl shadow-2xl shadow-indigo-500/40 transition-all hover:scale-105 hover:bg-indigo-500 bg-indigo-600 text-white border-0"
+                        disabled={isSubmitting || !score || note.length < 15 || !!application.internalReviewConfig?.reviewLocked}
+                        className="px-10 h-14 rounded-2xl bg-indigo-500 hover:bg-indigo-600 text-white font-bold"
                     >
-                        {isSubmitting ? <Loader2 className="mr-3 h-6 w-6 animate-spin" /> : null}
-                        {isSubmitting ? 'MEMPROSES...' : myReview ? 'UPDATE EVALUASI' : 'KIRIM EVALUASI'}
+                        {isSubmitting ? <Loader2 className="mr-3 h-5 w-5 animate-spin" /> : null}
+                        {isSubmitting ? 'MEMPROSES...' : application.internalReviewConfig?.reviewLocked ? 'TERKUNCI' : myReview ? 'UPDATE EVALUASI' : 'KIRIM EVALUASI'}
                     </Button>
-                 </div>
+                </div>
             </div>
         )}
 

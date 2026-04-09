@@ -300,8 +300,8 @@ service cloud.firestore {
         }
         function isInternalStatusUpdate() {
             let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
-            let allowedKeys = ['status', 'updatedAt', 'personalityTestAssignedAt', 'cvVerified', 'ijazahVerified', 'timeline', 'interviews', 'allPanelistIds', 'offerStatus', 'offeredSalary', 'probationDurationMonths', 'contractStartDate', 'contractDurationMonths', 'contractEndDate', 'offerNotes', 'internalAccessEnabled', 'internalReviewSummary'];
-            let hrdOnlyKeys = ['internalReviewConfig'];
+            let allowedKeys = ['status', 'candidateStatus', 'decisionAt', 'updatedAt', 'personalityTestAssignedAt', 'cvVerified', 'ijazahVerified', 'timeline', 'interviews', 'allPanelistIds', 'offerStatus', 'offeredSalary', 'probationDurationMonths', 'contractStartDate', 'contractDurationMonths', 'contractEndDate', 'offerNotes', 'internalAccessEnabled', 'internalReviewSummary'];
+            let hrdOnlyKeys = ['internalReviewConfig', 'recruitmentInternalDecision'];
             
             if (changedKeys.hasAny(hrdOnlyKeys)) {
                 return isHrd() || isSuperAdmin();
@@ -322,7 +322,8 @@ service cloud.firestore {
     // Internal Reviews Subcollection (Properly moved outside nested applications block)
     function hasInternalReviewAccess(appId) {
       let appData = get(/databases/$(database)/documents/applications/$(appId)).data;
-      return request.auth.uid in appData.get(['internalReviewConfig', 'assignedReviewerUids'], []);
+      return request.auth.uid in appData.get(['internalReviewConfig', 'assignedReviewerUids'], []) ||
+             request.auth.uid in appData.get('allPanelistIds', []);
     }
 
     match /applications/{applicationId}/internal_reviews/{reviewerUid} {

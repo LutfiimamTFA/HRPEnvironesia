@@ -341,6 +341,7 @@ export type JobApplication = {
   // --- Internal Review Features ---
   internalReviewConfig?: InternalReviewConfig;
   internalReviewSummary?: InternalReviewSummary;
+  recruitmentInternalDecision?: RecruitmentInternalDecision;
 };
 
 export type InternalReviewScore = 'direkomendasikan' | 'dipertimbangkan' | 'belum_sesuai';
@@ -361,8 +362,19 @@ export interface InternalReviewSummary {
   totalDipertimbangkan: number;
   totalBelumSesuai: number;
   pendingReviewerUids: string[];
+  submittedReviewerUids?: string[];
   allSubmitted: boolean;
   lastUpdatedAt?: Timestamp | null;
+}
+
+export type RecruitmentInternalDecisionStatus = 'lanjut_ke_tahap_selanjutnya' | 'pending_internal' | 'tidak_dilanjutkan_saat_ini';
+
+export interface RecruitmentInternalDecision {
+  status: RecruitmentInternalDecisionStatus;
+  note: string;
+  decidedBy: string;
+  decidedByName?: string;
+  decidedAt: Timestamp;
 }
 
 export interface InternalReview {

@@ -59,12 +59,7 @@ export function ApplicationActionBar({ application, onStageChange, onSendOfferCl
   return (
     <>
       <div className="flex items-center gap-2">
-        {primaryAction && (
-          <Button onClick={() => handleActionClick(primaryAction)} size="lg">
-            <Check className="mr-2 h-4 w-4" />
-            {`Lolos ke ${statusDisplayLabels[primaryAction]}`}
-          </Button>
-        )}
+        {/* Tombol "Lolos ke..." telah dihapus karena fungsinya digantikan oleh panel Keputusan Final Internal di bawah header */}
 
         <DropdownMenu>
             <DropdownMenuTrigger asChild>

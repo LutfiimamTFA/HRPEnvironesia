@@ -34,6 +34,8 @@ import { ManagePanelistsDialog } from '@/components/recruitment/ManagePanelistsD
 import { ROLES_INTERNAL } from '@/lib/types';
 import { InterviewManagement } from '@/components/recruitment/InterviewManagement';
 import { InternalEvaluationSection } from '@/components/recruitment/InternalEvaluationSection';
+import { FinalInternalDecisionSection } from '@/components/recruitment/FinalInternalDecisionSection';
+import { InternalHRTimeline } from '@/components/recruitment/InternalHRTimeline';
 
 
 function ApplicationDetailSkeleton() {
@@ -287,15 +289,17 @@ export default function ApplicationDetailPage() {
       ) : (
         <>
         <div className="space-y-6">
-          <ApplicationActionBar 
-            application={application} 
-            onStageChange={handleStageChange}
-            onSendOfferClick={() => {
-                // This page seems to not have the OfferDialog yet, unlike the component version.
-                // We'll keep it as a no-handle or implement if needed.
-                toast({ title: "Fitur Penawaran", description: "Fitur ini akan segera tersedia di halaman detail ini." });
-            }}
-          />
+          {/* Action bar removed per user request: everything moved to FinalInternalDecisionSection */}
+
+          {isPrivilegedRecruiter && (
+              <div className="mb-4">
+                  <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 mb-3 ml-2 flex items-center gap-2">
+                      <Lock className="h-3 w-3" />
+                      Timeline Internal Khusus HRD
+                  </h3>
+                  <InternalHRTimeline application={application} />
+              </div>
+          )}
           
           <Card>
             <CardHeader>
@@ -328,6 +332,7 @@ export default function ApplicationDetailPage() {
             </CardHeader>
           </Card>
 
+          <FinalInternalDecisionSection application={application} onStageChange={handleStageChange} />
           
           {/* Unified Detail Sections (Headless Step Navigation Structure) */}
           <div className="grid grid-cols-1 xl:grid-cols-[200px_1fr] gap-10 items-start pt-4">

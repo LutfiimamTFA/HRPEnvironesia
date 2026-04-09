@@ -66,8 +66,9 @@ function IdentityCard({ profile, userProfile, brands }: { profile: EmployeeProfi
 }
 
 function PeriodProgressCard({ profile }: { profile: EmployeeProfile | null }) {
-    const startDate = profile?.internshipStartDate?.toDate();
-    const endDate = profile?.internshipEndDate?.toDate();
+    // Using any for now to avoid TS errors until we standardize the intern profile fields
+    const startDate = (profile as any)?.internshipStartDate?.toDate?.() || profile?.joinDate?.toDate?.();
+    const endDate = (profile as any)?.internshipEndDate?.toDate?.();
 
     const { progress, remainingDays, totalDays, weekOf } = useMemo(() => {
         if (!startDate || !endDate) return { progress: 0, remainingDays: 'N/A', totalDays: 'N/A', weekOf: 'N/A' };
@@ -110,7 +111,7 @@ function PeriodProgressCard({ profile }: { profile: EmployeeProfile | null }) {
     )
 }
 
-const mockReportStatus = 'not_created'; // 'not_created', 'created', 'revision'
+const mockReportStatus: 'not_created' | 'created' | 'revision' = 'not_created'; // 'not_created', 'created', 'revision'
 
 function GreetingAndAlert({ name }: { name: string }) {
     let alertContent;
