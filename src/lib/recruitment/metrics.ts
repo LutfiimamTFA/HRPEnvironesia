@@ -4,7 +4,7 @@ import type { JobApplication } from '@/lib/types';
 import { statusDisplayLabels } from '@/components/recruitment/ApplicationStatusBadge';
 
 export type FilterState = {
-  dateRange: { from?: Date; to?: Date };
+  dateRange: { from?: Date | null; to?: Date | null };
   jobIds?: string[];
   recruiterIds?: string[];
   stages?: string[];
