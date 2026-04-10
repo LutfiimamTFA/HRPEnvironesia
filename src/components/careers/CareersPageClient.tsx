@@ -4,7 +4,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowRight, FileText, Leaf, Search, User, UserCheck, ShieldCheck, BarChart, Globe, Menu, X, Users } from 'lucide-react';
+import { ArrowRight, FileText, Leaf, Search, User, UserCheck, ShieldCheck, BarChart, Globe, Menu, X, Users, Loader2 } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -13,7 +13,11 @@ import { useRouter } from 'next/navigation';
 import imagePlaceholders from '@/lib/placeholder-images.json';
 import { JobExplorerSkeleton } from '@/components/careers/JobExplorer';
 import dynamic from 'next/dynamic';
-import { ThemeToggle } from '../ui/ThemeToggle';
+import { ThemeToggle } from '@/components/ui/ThemeToggle';
+import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
+import { collection, query, where, orderBy } from 'firebase/firestore';
+import type { EcosystemCompany } from '@/lib/types';
+
 
 const DynamicJobExplorerClient = dynamic(
   () => import('@/components/careers/JobExplorer').then((mod) => mod.JobExplorerClient),
@@ -29,6 +33,7 @@ const t = {
     jobs: "Lowongan",
     process: "Proses",
     faq: "FAQ",
+    ecosystem: "Ekosistem",
     companyProfile: "Profil Perusahaan",
     signIn: "Masuk Kandidat",
     signUp: "Daftar"
@@ -160,6 +165,10 @@ const t = {
     company: "Perusahaan",
     internalAccess: "Akses Internal",
     copyright: "© {year} Environesia. All Rights Reserved."
+  },
+  Ecosystem: {
+    title: "Perusahaan dalam Ekosistem Kami",
+    subtitle: "Bagian dari grup bisnis yang berkolaborasi untuk menciptakan solusi berkelanjutan bagi masa depan bumi."
   }
 };
 
@@ -180,8 +189,9 @@ const Header = () => {
     const menuItems = [
         { href: '#lowongan', label: t.Header.jobs },
         { href: '#proses', label: t.Header.process },
+        { href: '#ekosistem', label: t.Header.ecosystem },
         { href: '#faq', label: t.Header.faq },
-        { href: '#member-of-environesia', label: t.Header.companyProfile },
+        { href: 'https://environesia.co.id/', label: t.Header.companyProfile, external: true },
     ];
 
     return (
@@ -194,7 +204,7 @@ const Header = () => {
                     </Link>
                     <nav className="hidden items-center gap-8 text-sm font-medium md:flex">
                         {menuItems.map((item) => (
-                           <a key={item.label} href={item.href} className="text-muted-foreground transition-colors hover:text-primary">
+                           <a key={item.label} href={item.href} target={item.external ? '_blank' : '_self'} rel={item.external ? 'noopener noreferrer' : ''} className="text-muted-foreground transition-colors hover:text-primary">
                                 {item.label}
                            </a>
                         ))}
@@ -226,7 +236,7 @@ const Header = () => {
                                     </div>
                                     <nav className="flex flex-col gap-4 p-4">
                                         {menuItems.map((item) => (
-                                           <a key={item.label} href={item.href} className="text-lg font-medium text-foreground transition-colors hover:text-primary" onClick={() => setMobileMenuOpen(false)}>
+                                           <a key={item.label} href={item.href} target={item.external ? '_blank' : '_self'} rel={item.external ? 'noopener noreferrer' : ''} className="text-lg font-medium text-foreground transition-colors hover:text-primary" onClick={() => setMobileMenuOpen(false)}>
                                                 {item.label}
                                            </a>
                                         ))}
@@ -340,44 +350,93 @@ const ValuePropsSection = () => {
     );
 }
 
-// --- Member Companies Section ---
-const MemberCompaniesSection = () => {
-    const companies = [
-        { name: "Logo 1", data: imagePlaceholders.logo_1 },
-        { name: "Logo 2", data: imagePlaceholders.logo_2 },
-        { name: "Logo 3", data: imagePlaceholders.logo_3 },
-        { name: "Logo 4", data: imagePlaceholders.logo_4 },
-        { name: "Logo 5", data: imagePlaceholders.logo_5 },
-        { name: "Logo 6", data: imagePlaceholders.logo_6 },
-    ];
-  
+// --- Ecosystem Section ---
+const EcosystemSection = () => {
+    const firestore = useFirestore();
+    const ecosystemQuery = useMemoFirebase(
+      () => query(
+        collection(firestore, 'ecosystem_companies'),
+        orderBy('sortOrder', 'asc')
+      ),
+      [firestore]
+    );
+    const { data: allCompanies, isLoading } = useCollection<EcosystemCompany>(ecosystemQuery);
+
+    const companies = React.useMemo(() => {
+        if (!allCompanies) return [];
+        return allCompanies.filter(c => c.isActive);
+    }, [allCompanies]);
+
     return (
-        <section id="member-of-environesia" className="py-16 lg:py-24 bg-background scroll-mt-14">
-            <div className="mx-auto w-full max-w-5xl px-4 sm:px-6 lg:px-8">
-                <div className="text-center">
-                    <h2 className="text-3xl font-bold tracking-tight">Perusahaan dalam Ekosistem Kami</h2>
-                    <p className="mt-4 text-lg text-muted-foreground max-w-2xl mx-auto">
-                        Kami adalah bagian dari keluarga besar yang berdedikasi pada inovasi, keberlanjutan, dan pertumbuhan bersama.
+        <section id="ekosistem" className="w-full relative py-24 lg:py-40 overflow-hidden bg-background scroll-mt-20">
+            <div className="absolute inset-0 -z-10">
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[800px] bg-gradient-to-b from-primary/[0.05] to-transparent" />
+                <div className="absolute top-1/4 -left-20 w-96 h-96 bg-primary/10 rounded-full blur-[120px] opacity-40 animate-pulse" />
+                <div className="absolute bottom-1/4 -right-20 w-[600px] h-[600px] bg-primary/20 rounded-full blur-[150px] opacity-30" />
+            </div>
+            
+            <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
+                <div className="flex flex-col items-center text-center mb-16 lg:mb-20">
+                    <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-bold tracking-widest uppercase mb-6">
+                        <Globe className="h-3 w-3" /> Our Corporate Universe
+                    </div>
+                    <h2 className="text-3xl md:text-5xl lg:text-6xl font-bold tracking-tight text-foreground mb-6">
+                        {t.Ecosystem.title}
+                    </h2>
+                    <p className="mt-4 max-w-2xl text-lg text-muted-foreground/70 font-medium">
+                        {t.Ecosystem.subtitle}
                     </p>
                 </div>
-                <div className="mt-12 grid grid-cols-2 gap-8 md:grid-cols-3 items-center">
-                    {companies.map((company) => (
-                    <div key={company.name} className="flex justify-center">
-                        <Image
-                            src={company.data.src}
-                            alt={company.data.alt}
-                            width={company.data.width}
-                            height={company.data.height}
-                            className="object-contain filter grayscale opacity-60 hover:grayscale-0 hover:opacity-100 transition-all duration-300"
-                            data-ai-hint={company.data.ai_hint}
-                        />
+                
+                {isLoading && (
+                    <div className="grid grid-cols-1 gap-12 sm:grid-cols-2 lg:grid-cols-3">
+                        {[...Array(6)].map((_, i) => (
+                            <Card key={i} className="rounded-[3.5rem] h-[300px]"><CardContent className="flex items-center justify-center h-full"><Loader2 className="h-8 w-8 animate-spin" /></CardContent></Card>
+                        ))}
                     </div>
-                    ))}
-                </div>
+                )}
+                
+                {companies && companies.length > 0 && (
+                    <div className="grid grid-cols-1 gap-12 sm:grid-cols-2 lg:grid-cols-3">
+                        {companies.map((company) => (
+                            <a 
+                                key={company.id} 
+                                href={company.websiteUrl} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="group relative flex flex-col bg-card rounded-[3.5rem] p-1.5 border border-border/40 hover:border-primary/40 transition-all duration-1000 hover:shadow-[0_80px_120px_-30px_rgba(0,0,0,0.2)] md:hover:-translate-y-8"
+                            >
+                                <div className="relative flex flex-col h-full bg-background rounded-[3.2rem] overflow-hidden">
+                                    <div className="relative w-full aspect-[16/11] flex items-center justify-center p-16 overflow-hidden">
+                                        <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.04] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
+                                        
+                                        <div className="relative w-full h-full transition-all duration-1000 group-hover:scale-110">
+                                            <Image
+                                                src={company.iconUrl}
+                                                alt={company.name}
+                                                fill
+                                                className="object-contain filter grayscale contrast-125 brightness-110 group-hover:grayscale-0 group-hover:contrast-100 group-hover:brightness-100 transition-all duration-1000"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="flex-1 p-8 pt-0 flex flex-col justify-center items-center text-center">
+                                        <h3 className="text-xl font-bold text-foreground tracking-tight group-hover:text-primary transition-colors duration-300">
+                                            {company.name}
+                                        </h3>
+                                        
+                                        <div className="mt-6 flex items-center gap-2 text-primary font-bold text-xs tracking-wide group-hover:gap-4 transition-all duration-300">
+                                            Lihat Selengkapnya <ArrowRight className="h-4 w-4" />
+                                        </div>
+                                    </div>
+                                </div>
+                            </a>
+                        ))}
+                    </div>
+                )}
             </div>
-      </section>
+        </section>
     );
-  };
+};
 
 // --- Recruitment Process Section ---
 const RecruitmentProcessSection = () => {
@@ -516,7 +575,7 @@ const Footer = () => {
                      <div>
                         <h4 className="font-semibold">{t.Footer.company}</h4>
                         <ul className="mt-4 space-y-2 text-sm">
-                             <li><a href="#member-of-environesia" className="text-muted-foreground hover:text-primary">{t.Header.companyProfile}</a></li>
+                             <li><a href="#ekosistem" className="text-muted-foreground hover:text-primary">{t.Header.ecosystem}</a></li>
                              <li><a href="/admin/login" className="text-muted-foreground hover:text-primary">{t.Footer.internalAccess}</a></li>
                         </ul>
                     </div>
@@ -540,7 +599,7 @@ export function CareersPageClient() {
         <HeroSection />
         <JobExplorerSection />
         <ValuePropsSection />
-        <MemberCompaniesSection />
+        <EcosystemSection />
         <RecruitmentProcessSection />
         <OfficeSpotlightSection />
         <HowToApplySection />
