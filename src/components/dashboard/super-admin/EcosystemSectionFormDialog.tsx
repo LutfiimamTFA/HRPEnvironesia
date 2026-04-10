@@ -48,6 +48,7 @@ import {
   rectSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { Label } from '@/components/ui/label';
 
 const formSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters."),
@@ -109,6 +110,15 @@ export function EcosystemSectionFormDialog({ open, onOpenChange, item, onSuccess
 
   const form = useForm<FormValues>({ resolver: zodResolver(formSchema) });
 
+  const handleClose = (isOpen: boolean) => {
+    if (!isOpen) {
+      // Clean up blob URLs when dialog is closed
+      imagePreviews.forEach(p => { if (p.isNew) URL.revokeObjectURL(p.url); });
+      setImagePreviews([]);
+    }
+    onOpenChange(isOpen);
+  };
+
   useEffect(() => {
     if (open) {
       form.reset({
@@ -123,10 +133,6 @@ export function EcosystemSectionFormDialog({ open, onOpenChange, item, onSuccess
       setImagePreviews(
         item?.imageUrls.map(url => ({ id: url, url, isNew: false })) || []
       );
-    } else {
-       // Clean up blob URLs on close
-       imagePreviews.forEach(p => { if (p.isNew) URL.revokeObjectURL(p.url); });
-       setImagePreviews([]);
     }
   }, [open, item, form]);
 
@@ -224,9 +230,19 @@ export function EcosystemSectionFormDialog({ open, onOpenChange, item, onSuccess
           <div className="p-6">
             <Form {...form}>
               <form id="section-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                <FormField control={form.control} name="title" render={({ field }) => (<FormItem><FormLabel>Title</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
-                <FormField control={form.control} name="subtitle" render={({ field }) => (<FormItem><FormLabel>Subtitle (for Hero)</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
-                <FormField control={form.control} name="description" render={({ field }) => (<FormItem><FormLabel>Description (for other sections)</FormLabel><FormControl><Textarea {...field} /></FormControl><FormMessage /></FormItem>)} />
+                  <FormField
+                    control={form.control}
+                    name="title"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Title</FormLabel>
+                        <FormControl><Input {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField control={form.control} name="subtitle" render={({ field }) => (<FormItem><FormLabel>Subtitle (for Hero)</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                  <FormField control={form.control} name="description" render={({ field }) => (<FormItem><FormLabel>Description (for other sections)</FormLabel><FormControl><Textarea {...field} /></FormControl><FormMessage /></FormItem>)} />
 
                  <FormItem>
                   <FormLabel>Images</FormLabel>
@@ -264,7 +280,7 @@ export function EcosystemSectionFormDialog({ open, onOpenChange, item, onSuccess
         </ScrollArea>
 
         <DialogFooter className="p-6 pt-4 border-t flex-shrink-0">
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button type="button" variant="ghost" onClick={() => handleClose(false)}>Cancel</Button>
           <Button type="submit" form="section-form" disabled={isSaving}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Save
           </Button>
