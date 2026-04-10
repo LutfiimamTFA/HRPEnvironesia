@@ -356,16 +356,12 @@ const EcosystemSection = () => {
     const ecosystemQuery = useMemoFirebase(
       () => query(
         collection(firestore, 'ecosystem_companies'),
+        where('isActive', '==', true),
         orderBy('sortOrder', 'asc')
       ),
       [firestore]
     );
-    const { data: allCompanies, isLoading } = useCollection<EcosystemCompany>(ecosystemQuery);
-
-    const companies = React.useMemo(() => {
-        if (!allCompanies) return [];
-        return allCompanies.filter(c => c.isActive);
-    }, [allCompanies]);
+    const { data: companies, isLoading } = useCollection<EcosystemCompany>(ecosystemQuery);
 
     return (
         <section id="ekosistem" className="w-full relative py-24 lg:py-40 overflow-hidden bg-background scroll-mt-20">
