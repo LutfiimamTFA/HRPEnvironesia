@@ -1,27 +1,12 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-  FormDescription,
-} from '@/components/ui/form';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
@@ -33,25 +18,15 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import Image from 'next/image';
 import type { EcosystemSection } from '@/lib/types';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  arrayMove,
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const formSchema = z.object({
   sectionKey: z.string().min(3, "Section Key is required.").regex(/^[a-z0-9-]+$/, "Only lowercase letters, numbers, and hyphens allowed."),
+  type: z.enum(['hero', 'content'], { required_error: 'Section type must be selected.' }),
   title: z.string().min(3, "Title must be at least 3 characters."),
   subtitle: z.string().optional(),
   description: z.string().optional(),
@@ -110,11 +85,11 @@ export function EcosystemSectionFormDialog({ open, onOpenChange, item, onSuccess
   const mode = item ? 'Edit' : 'Create';
 
   const form = useForm<FormValues>({ resolver: zodResolver(formSchema) });
-  const sectionKey = form.watch('sectionKey');
+  
+  const selectedType = form.watch('type');
 
   const handleClose = (isOpen: boolean) => {
     if (!isOpen) {
-      // Clean up blob URLs when dialog is closed
       imagePreviews.forEach(p => { if (p.isNew) URL.revokeObjectURL(p.url); });
       setImagePreviews([]);
     }
@@ -125,6 +100,7 @@ export function EcosystemSectionFormDialog({ open, onOpenChange, item, onSuccess
     if (open) {
       form.reset({
         sectionKey: item?.sectionKey || '',
+        type: item?.type || 'content',
         title: item?.title || '',
         subtitle: item?.subtitle || '',
         description: item?.description || '',
@@ -205,6 +181,7 @@ export function EcosystemSectionFormDialog({ open, onOpenChange, item, onSuccess
 
         const payload: Omit<EcosystemSection, 'id'> = {
             sectionKey: values.sectionKey,
+            type: values.type,
             title: values.title,
             subtitle: values.subtitle || '',
             description: values.description || '',
@@ -235,7 +212,7 @@ export function EcosystemSectionFormDialog({ open, onOpenChange, item, onSuccess
           <DialogDescription>Atur konten yang akan tampil di landing page.</DialogDescription>
         </DialogHeader>
 
-        <div className="flex-grow overflow-y-auto">
+        <ScrollArea className="flex-grow">
           <div className="p-6">
             <Form {...form}>
               <form id="section-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
@@ -246,9 +223,33 @@ export function EcosystemSectionFormDialog({ open, onOpenChange, item, onSuccess
                       <FormItem>
                         <FormLabel>Section Key</FormLabel>
                         <FormControl>
-                          <Input {...field} disabled={mode === 'Edit'} placeholder="e.g., hero-banner" />
+                          <Input {...field} disabled={mode === 'Edit'} placeholder="e.g., hero, basecamp, our-values" />
                         </FormControl>
-                        <FormDescription>A unique identifier for this section. Cannot be changed after creation.</FormDescription>
+                        <FormDescription>Pengenal unik untuk section ini. Tidak bisa diubah setelah dibuat.</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="type"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Tipe Section</FormLabel>
+                         <Select onValueChange={field.onChange} value={field.value} disabled={mode === 'Edit'}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Pilih tipe section..." />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="hero">Hero Section</SelectItem>
+                              <SelectItem value="content">Content Section</SelectItem>
+                            </SelectContent>
+                          </Select>
+                         <FormDescription>
+                           {field.value === 'hero' ? 'Tampil di bagian paling atas halaman dengan layout khusus.' : 'Tampil sebagai blok konten standar di bawah hero.'}
+                         </FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -258,23 +259,23 @@ export function EcosystemSectionFormDialog({ open, onOpenChange, item, onSuccess
                     name="title"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Title</FormLabel>
+                        <FormLabel>Judul</FormLabel>
                         <FormControl><Input {...field} /></FormControl>
+                        <FormDescription>Judul utama yang akan ditampilkan di section.</FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
                   
-                  {sectionKey === 'hero' ? (
-                    <FormField control={form.control} name="subtitle" render={({ field }) => (<FormItem><FormLabel>Subtitle (for Hero Section)</FormLabel><FormControl><Textarea {...field} /></FormControl><FormMessage /></FormItem>)} />
+                  {selectedType === 'hero' ? (
+                    <FormField control={form.control} name="subtitle" render={({ field }) => (<FormItem><FormLabel>Subtitle</FormLabel><FormControl><Textarea {...field} /></FormControl><FormDescription>Teks pendukung di bawah judul, khusus untuk Hero Section.</FormDescription><FormMessage /></FormItem>)} />
                   ) : (
-                    <FormField control={form.control} name="description" render={({ field }) => (<FormItem><FormLabel>Description (for other sections)</FormLabel><FormControl><Textarea {...field} /></FormControl><FormMessage /></FormItem>)} />
+                    <FormField control={form.control} name="description" render={({ field }) => (<FormItem><FormLabel>Deskripsi</FormLabel><FormControl><Textarea {...field} /></FormControl><FormDescription>Paragraf deskripsi untuk Content Section.</FormDescription><FormMessage /></FormItem>)} />
                   )}
 
-
                  <FormItem>
-                  <FormLabel>Images</FormLabel>
-                  <FormDescription>Drag images to reorder. First image will be the main display.</FormDescription>
+                  <FormLabel>Gambar</FormLabel>
+                  <FormDescription>Seret gambar untuk mengubah urutan. Jika lebih dari satu, akan tampil sebagai carousel.</FormDescription>
                   <div className="mt-2 p-4 border rounded-lg">
                     {imagePreviews.length > 0 ? (
                        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -287,12 +288,12 @@ export function EcosystemSectionFormDialog({ open, onOpenChange, item, onSuccess
                         </SortableContext>
                       </DndContext>
                     ) : (
-                       <div className="text-center text-muted-foreground p-4">No images uploaded yet.</div>
+                       <div className="text-center text-muted-foreground p-4">Belum ada gambar yang diunggah.</div>
                     )}
                   </div>
                  <div className="mt-2">
                     <label htmlFor="image-upload" className="cursor-pointer text-sm text-primary font-medium underline-offset-4 hover:underline">
-                      <PlusCircle className="inline-block h-4 w-4 mr-2" /> Add Images
+                      <PlusCircle className="inline-block h-4 w-4 mr-2" /> Tambah Gambar
                     </label>
                     <Input id="image-upload" type="file" multiple className="hidden" onChange={handleFileChange} accept="image/png, image/jpeg, image/webp" />
                   </div>
@@ -300,17 +301,17 @@ export function EcosystemSectionFormDialog({ open, onOpenChange, item, onSuccess
 
                 <div className="grid grid-cols-2 gap-4">
                   <FormField control={form.control} name="sortOrder" render={({ field }) => (<FormItem><FormLabel>Sort Order</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                  <FormField control={form.control} name="isActive" render={({ field }) => (<FormItem><FormLabel>Status</FormLabel><div className="flex items-center space-x-2 h-10"><FormControl><Switch id="is-active" checked={field.value} onCheckedChange={field.onChange} /></FormControl><Label htmlFor="is-active">Active</Label></div><FormMessage /></FormItem>)} />
+                  <FormField control={form.control} name="isActive" render={({ field }) => (<FormItem><FormLabel>Status</FormLabel><div className="flex items-center space-x-2 h-10"><FormControl><Switch id="is-active" checked={field.value} onCheckedChange={field.onChange} /></FormControl><Label htmlFor="is-active">Aktif</Label></div><FormMessage /></FormItem>)} />
                 </div>
               </form>
             </Form>
           </div>
-        </div>
+        </ScrollArea>
 
         <DialogFooter className="p-6 pt-4 border-t flex-shrink-0">
-          <Button type="button" variant="ghost" onClick={() => handleClose(false)}>Cancel</Button>
+          <Button type="button" variant="ghost" onClick={() => handleClose(false)}>Batal</Button>
           <Button type="submit" form="section-form" disabled={isSaving}>
-            {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Save
+            {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Simpan
           </Button>
         </DialogFooter>
       </DialogContent>

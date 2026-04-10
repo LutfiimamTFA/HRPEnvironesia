@@ -167,7 +167,8 @@ export type EcosystemCompany = {
 
 export type EcosystemSection = {
   id?: string;
-  sectionKey: 'hero' | 'basecamp';
+  sectionKey: string;
+  type: 'hero' | 'content';
   title: string;
   subtitle?: string;
   description?: string;

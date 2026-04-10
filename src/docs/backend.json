@@ -84,6 +84,49 @@
         "createdAt"
       ]
     },
+    "EcosystemSection": {
+      "title": "Ecosystem Section",
+      "type": "object",
+      "description": "Represents a dynamic content section on the landing page, like the hero or spotlight.",
+      "properties": {
+        "sectionKey": {
+          "type": "string",
+          "description": "A unique key for the section, e.g., 'hero', 'basecamp'."
+        },
+        "type": {
+          "type": "string",
+          "description": "Defines the purpose and layout of the section.",
+          "enum": ["hero", "content"]
+        },
+        "title": { "type": "string" },
+        "subtitle": { "type": "string", "description": "Used for Hero sections." },
+        "description": { "type": "string", "description": "Used for Content sections." },
+        "imageUrls": {
+          "type": "array",
+          "items": { "type": "string", "format": "uri" }
+        },
+        "isActive": { "type": "boolean", "default": true },
+        "sortOrder": { "type": "number", "default": 0 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["sectionKey", "type", "title", "imageUrls", "isActive"]
+    },
+    "EcosystemCompany": {
+      "title": "Ecosystem Company",
+      "type": "object",
+      "description": "Represents a company within the Environesia ecosystem, displayed on the landing page.",
+      "properties": {
+        "name": { "type": "string", "description": "The name of the company." },
+        "iconUrl": { "type": "string", "format": "uri", "description": "URL of the company's logo." },
+        "websiteUrl": { "type": "string", "format": "uri", "description": "Link to the company's website." },
+        "isActive": { "type": "boolean", "description": "Controls visibility on the landing page." },
+        "sortOrder": { "type": "number", "description": "Order of appearance, lower numbers first." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "iconUrl", "websiteUrl", "isActive", "sortOrder"]
+    },
     "InviteBatch": {
       "title": "Invite Batch",
       "type": "object",
@@ -384,19 +427,15 @@
           "type": "string",
           "description": "Denormalized job location."
         },
-        "status": {
+        "internalStatus": {
           "type": "string",
-          "description": "The current status of the application.",
-          "enum": [
-            "draft",
-            "submitted",
-            "psychotest",
-            "verification",
-            "document_submission",
-            "interview",
-            "rejected",
-            "hired"
-          ]
+          "description": "The internal status of the application, visible only to HR.",
+          "enum": ["draft", "submitted", "screening", "assessment", "verification", "document_submission", "interview", "offer", "hired", "on_hold", "rejected"]
+        },
+        "candidateStatus": {
+          "type": "string",
+          "description": "The status visible to the candidate.",
+          "enum": ["submitted", "under_review", "assessment", "interview_scheduled", "offer_received", "process_complete"]
         },
         "createdAt": {
           "type": "string",
@@ -470,7 +509,8 @@
         "brandId",
         "brandName",
         "jobType",
-        "status",
+        "internalStatus",
+        "candidateStatus",
         "createdAt",
         "updatedAt"
       ]
@@ -581,6 +621,10 @@
             "willingToWfo": { "type": "boolean", "description": "Indicates if the candidate is willing to work from the office." },
             "linkedinUrl": { "type": "string", "format": "uri", "description": "URL to LinkedIn profile." },
             "websiteUrl": { "type": "string", "format": "uri", "description": "URL to personal website/portfolio." },
+            "cvUrl": { "type": "string", "format": "uri", "description": "URL to the candidate's uploaded CV." },
+            "cvFileName": { "type": "string", "description": "The original file name of the CV." },
+            "ijazahUrl": { "type": "string", "format": "uri", "description": "URL to the candidate's uploaded Ijazah/SKL." },
+            "ijazahFileName": { "type": "string", "description": "The original file name of the Ijazah/SKL." },
             "education": {
                 "type": "array",
                 "items": {
@@ -1141,6 +1185,20 @@
         "definition": {
           "schema": { "$ref": "#/backend/entities/EmployeeProfile" },
           "description": "Stores detailed profile information for employees (interns, full-time, etc.)."
+        }
+      },
+      {
+        "path": "/ecosystem_companies/{companyId}",
+        "definition": {
+          "schema": { "$ref": "#/backend/entities/EcosystemCompany" },
+          "description": "Stores information about companies in the ecosystem for the landing page."
+        }
+      },
+      {
+        "path": "/ecosystem_sections/{sectionId}",
+        "definition": {
+          "schema": { "$ref": "#/backend/entities/EcosystemSection" },
+          "description": "Stores content for dynamic sections on the landing page."
         }
       },
       {
