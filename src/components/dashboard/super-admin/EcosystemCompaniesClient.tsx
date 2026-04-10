@@ -49,10 +49,15 @@ export function EcosystemCompaniesClient() {
   const [selectedItem, setSelectedItem] = useState<EcosystemCompany | null>(null);
 
   const companiesQuery = useMemoFirebase(
-    () => query(collection(firestore, 'ecosystem_companies'), orderBy('sortOrder', 'asc')),
+    () => query(collection(firestore, 'ecosystem_companies')),
     [firestore]
   );
   const { data: companies, isLoading, error } = useCollection<EcosystemCompany>(companiesQuery);
+
+  const sortedCompanies = useMemo(() => {
+    if (!companies) return [];
+    return [...companies].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+  }, [companies]);
 
   const handleCreate = () => {
     setSelectedItem(null);
@@ -102,8 +107,8 @@ export function EcosystemCompaniesClient() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {companies && companies.length > 0 ? (
-              companies.map(item => (
+            {sortedCompanies && sortedCompanies.length > 0 ? (
+              sortedCompanies.map(item => (
                 <TableRow key={item.id}>
                   <TableCell>{item.sortOrder}</TableCell>
                   <TableCell>
