@@ -19,47 +19,5 @@
     "height": 900,
     "alt": "Minimalist illustration for empty job listings",
     "ai_hint": "minimalist illustration seedling"
-  },
-  "logo_1": {
-    "src": "https://picsum.photos/seed/logo1/280/120",
-    "width": 140,
-    "height": 70,
-    "alt": "Company Logo 1",
-    "ai_hint": "company logo"
-  },
-  "logo_2": {
-    "src": "https://picsum.photos/seed/logo2/280/120",
-    "width": 140,
-    "height": 70,
-    "alt": "Company Logo 2",
-    "ai_hint": "company logo"
-  },
-  "logo_3": {
-    "src": "https://picsum.photos/seed/logo3/280/120",
-    "width": 140,
-    "height": 70,
-    "alt": "Company Logo 3",
-    "ai_hint": "company logo"
-  },
-  "logo_4": {
-    "src": "https://picsum.photos/seed/logo4/280/120",
-    "width": 140,
-    "height": 70,
-    "alt": "Company Logo 4",
-    "ai_hint": "company logo"
-  },
-  "logo_5": {
-    "src": "https://picsum.photos/seed/logo5/280/120",
-    "width": 140,
-    "height": 70,
-    "alt": "Company Logo 5",
-    "ai_hint": "company logo"
-  },
-  "logo_6": {
-    "src": "https://picsum.photos/seed/logo6/280/120",
-    "width": 140,
-    "height": 70,
-    "alt": "Company Logo 6",
-    "ai_hint": "company logo"
   }
 }

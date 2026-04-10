@@ -125,8 +125,7 @@ service cloud.firestore {
       }
 
       match /notifications/{notificationId} {
-        allow read: if isOwner(userId);
-        allow write: if isOwner(userId);
+        allow read, write: if isOwner(userId);
       }
     }
 
@@ -193,6 +192,16 @@ service cloud.firestore {
       allow read, write: if isHrd() || isSuperAdmin();
     }
     
+    /**
+     * /ecosystem_companies/{companyId}
+     * - Publicly readable for the landing page.
+     * - Writable only by HRD and Super Admins.
+     */
+    match /ecosystem_companies/{companyId} {
+        allow read: if true;
+        allow write: if isHrd() || isSuperAdmin();
+    }
+
     /**
      * /brands/{brandId}
      * - Brands are public for anyone to read.

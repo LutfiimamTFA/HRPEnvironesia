@@ -84,6 +84,21 @@
         "createdAt"
       ]
     },
+    "EcosystemCompany": {
+      "title": "Ecosystem Company",
+      "type": "object",
+      "description": "Represents a company within the Environesia ecosystem, displayed on the landing page.",
+      "properties": {
+        "name": { "type": "string", "description": "The name of the company." },
+        "iconUrl": { "type": "string", "format": "uri", "description": "URL of the company's logo." },
+        "websiteUrl": { "type": "string", "format": "uri", "description": "Link to the company's website." },
+        "isActive": { "type": "boolean", "description": "Controls visibility on the landing page." },
+        "sortOrder": { "type": "number", "description": "Order of appearance, lower numbers first." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "iconUrl", "websiteUrl", "isActive", "sortOrder"]
+    },
     "InviteBatch": {
       "title": "Invite Batch",
       "type": "object",
@@ -1142,6 +1157,13 @@
         "definition": {
           "schema": { "$ref": "#/backend/entities/EmployeeProfile" },
           "description": "Stores detailed profile information for employees (interns, full-time, etc.)."
+        }
+      },
+      {
+        "path": "/ecosystem_companies/{companyId}",
+        "definition": {
+          "schema": { "$ref": "#/backend/entities/EcosystemCompany" },
+          "description": "Stores information about companies in the ecosystem for the landing page."
         }
       },
       {

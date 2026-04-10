@@ -4,15 +4,20 @@ import React, { useMemo, useState, useEffect } from 'react';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowRight, FileText, Leaf, Search, User, UserCheck, ShieldCheck, BarChart, Globe, Menu, X, Users } from 'lucide-react';
+import { ArrowRight, FileText, Leaf, Search, User, UserCheck, ShieldCheck, BarChart, Globe, Menu, X, Users, Loader2 } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Link, useRouter } from '@/navigation';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import imagePlaceholders from '@/lib/placeholder-images.json';
 import { JobExplorerSkeleton } from '@/components/careers/JobExplorer';
 import dynamic from 'next/dynamic';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
+import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
+import { collection, query, where, orderBy } from 'firebase/firestore';
+import type { EcosystemCompany } from '@/lib/types';
+
 
 const DynamicJobExplorerClient = dynamic(
   () => import('@/components/careers/JobExplorer').then((mod) => mod.JobExplorerClient),
@@ -163,25 +168,17 @@ const t = {
   },
   Ecosystem: {
     title: "Perusahaan dalam Ekosistem Kami",
-    subtitle: "Bagian dari grup bisnis yang berkolaborasi untuk menciptakan solusi berkelanjutan bagi masa depan bumi.",
-    companies: [
-      { name: "PT Environesia Global Sertifikasi (EGS)", href: "https://egs.environesia.co.id/", logo: "logo_1" },
-      { name: "PT Global Enviro Laboratory (GEL)", href: "https://gel.environesia.co.id/", logo: "logo_2" },
-      { name: "PT Prima Sekawan Lingkungan (PSL)", href: "https://psl.environesia.co.id/", logo: "logo_3" },
-      { name: "PT Karbon Hutan Indonesia (KHI)", href: "https://khi.environesia.co.id/", logo: "logo_4" },
-      { name: "Environesia Global Services", href: "https://environesia.co.id/", logo: "logo_5" },
-      { name: "Entitas Lainnya", href: "#", logo: "logo_6" }
-    ]
+    subtitle: "Bagian dari grup bisnis yang berkolaborasi untuk menciptakan solusi berkelanjutan bagi masa depan bumi."
   }
 };
 
 
 // --- Header Component ---
 const Header = () => {
-    const [scrolled, setScrolled] = useState(false);
-    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const [scrolled, setScrolled] = React.useState(false);
+    const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
 
-    useEffect(() => {
+    React.useEffect(() => {
         const handleScroll = () => {
             setScrolled(window.scrollY > 10);
         };
@@ -276,17 +273,15 @@ const HeroSection = () => {
                     priority
                     className="object-cover"
                 />
-                <div className="absolute inset-0 bg-black/60" />
+                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
+                <div className="absolute inset-0 bg-background/50" />
             </div>
             <div className="relative z-10 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
                 <div className="flex min-h-[70vh] flex-col items-center justify-center pb-20 pt-32 text-center lg:min-h-dvh">
-                    <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white text-[10px] font-bold tracking-widest uppercase mb-6">
-                         <Leaf className="h-3 w-3 text-primary" /> Join The Green Revolution
-                    </div>
-                    <h1 className="text-4xl font-bold tracking-tight text-white md:text-6xl lg:text-7xl leading-tight">
+                    <h1 className="text-4xl font-extrabold tracking-tight text-foreground md:text-6xl lg:text-7xl">
                         {t.Hero.title}
                     </h1>
-                    <p className="mt-6 max-w-2xl text-lg text-white/80">
+                    <p className="mt-6 max-w-2xl text-lg text-muted-foreground">
                         {t.Hero.subtitle}
                     </p>
                     <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4 w-full max-w-xs sm:max-w-none">
@@ -297,7 +292,7 @@ const HeroSection = () => {
                         <Link href="/careers/login">{t.Hero.ctaSecondary}</Link>
                       </Button>
                     </div>
-                     <div className="mt-16 flex flex-wrap items-center justify-center gap-x-8 gap-y-4 text-sm text-white/80">
+                     <div className="mt-16 flex flex-wrap items-center justify-center gap-x-8 gap-y-4 text-sm text-muted-foreground">
                         <span className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-primary"/> {t.Hero.badgeProjects}</span>
                         <span className="flex items-center gap-2"><Globe className="h-4 w-4 text-primary"/> {t.Hero.badgeProvinces}</span>
                         <span className="flex items-center gap-2"><BarChart className="h-4 w-4 text-primary"/> {t.Hero.badgeServices}</span>
@@ -310,20 +305,17 @@ const HeroSection = () => {
 
 // --- Job Explorer Section ---
 const JobExplorerSection = () => {
-    const [isClient, setIsClient] = useState(false);
-    useEffect(() => {
+    const [isClient, setIsClient] = React.useState(false);
+    React.useEffect(() => {
         setIsClient(true);
     }, []);
     
     return (
-        <section id="lowongan" className="w-full scroll-mt-20 py-24 lg:py-32">
+        <section id="lowongan" className="w-full scroll-mt-20 py-16 lg:py-24">
             <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
-                <div className="flex flex-col items-center text-center mb-16 lg:mb-24">
-                     <span className="px-3 py-1 mb-4 text-[10px] font-bold tracking-widest uppercase rounded-full bg-primary/10 text-primary border border-primary/20">
-                        Open Positions
-                    </span>
-                    <h2 className="text-3xl md:text-5xl lg:text-6xl font-bold tracking-tight text-foreground mb-6">{t.JobExplorer.title}</h2>
-                    <p className="mt-4 text-lg text-muted-foreground max-w-2xl">{t.JobExplorer.subtitle}</p>
+                <div className="mx-auto max-w-2xl text-center">
+                    <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{t.JobExplorer.title}</h2>
+                    <p className="mt-4 text-lg text-muted-foreground">{t.JobExplorer.subtitle}</p>
                 </div>
                 {isClient ? <DynamicJobExplorerClient /> : <JobExplorerSkeleton />}
             </div>
@@ -336,28 +328,20 @@ const ValuePropsSection = () => {
     const values = t.ValueProps.values;
     const icons = [Globe, BarChart, Users, ShieldCheck];
     return (
-        <section className="w-full py-24 lg:py-32 bg-muted/30">
+        <section className="w-full py-16 lg:py-24 bg-card">
             <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
-                <div className="flex flex-col items-center text-center mb-20">
-                    <span className="px-3 py-1 mb-4 text-[10px] font-bold tracking-widest uppercase rounded-full bg-primary/10 text-primary border border-primary/20">
-                        Why Choose Us
-                    </span>
-                    <h2 className="text-3xl md:text-5xl lg:text-6xl font-bold tracking-tight text-foreground mb-12">
-                        {t.ValueProps.title}
-                    </h2>
+                <div className="mx-auto max-w-2xl text-center">
+                    <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{t.ValueProps.title}</h2>
+                    <p className="mt-4 text-lg text-muted-foreground">{t.ValueProps.subtitle}</p>
                 </div>
-                <div className="mt-16 grid gap-10 md:grid-cols-2 lg:grid-cols-4">
+                <div className="mt-16 grid gap-8 md:grid-cols-2 lg:grid-cols-4">
                     {values.map((v, i) => (
-                        <div key={v.title} className="group relative bg-background p-10 rounded-[2.5rem] border border-border/50 hover:shadow-2xl transition-all duration-500">
-                            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary mb-8 group-hover:scale-110 group-hover:bg-primary group-hover:text-primary-foreground transition-all duration-500">
+                        <div key={v.title} className="text-center">
+                            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary mb-4">
                                 {React.createElement(icons[i], { className: "h-8 w-8" })}
                             </div>
-                            <h3 className="font-bold text-2xl mb-4 tracking-tight">{v.title}</h3>
-                            <p className="text-muted-foreground leading-relaxed italic">"{v.description}"</p>
-                            
-                            <div className="absolute top-6 right-6 text-primary/10 font-black text-6xl group-hover:text-primary/5 transition-colors">
-                                0{i+1}
-                            </div>
+                            <h3 className="font-semibold text-lg">{v.title}</h3>
+                            <p className="text-sm text-muted-foreground mt-1">{v.description}</p>
                         </div>
                     ))}
                 </div>
@@ -368,10 +352,19 @@ const ValuePropsSection = () => {
 
 // --- Ecosystem Section ---
 const EcosystemSection = () => {
-    const companies = t.Ecosystem.companies;
+    const firestore = useFirestore();
+    const ecosystemQuery = useMemoFirebase(
+      () => query(
+        collection(firestore, 'ecosystem_companies'),
+        where('isActive', '==', true),
+        orderBy('sortOrder', 'asc')
+      ),
+      [firestore]
+    );
+    const { data: companies, isLoading } = useCollection<EcosystemCompany>(ecosystemQuery);
+
     return (
         <section id="ekosistem" className="w-full relative py-24 lg:py-40 overflow-hidden bg-background scroll-mt-20">
-            {/* Premium Background Elements */}
             <div className="absolute inset-0 -z-10">
                 <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[800px] bg-gradient-to-b from-primary/[0.05] to-transparent" />
                 <div className="absolute top-1/4 -left-20 w-96 h-96 bg-primary/10 rounded-full blur-[120px] opacity-40 animate-pulse" />
@@ -391,45 +384,51 @@ const EcosystemSection = () => {
                     </p>
                 </div>
                 
-                <div className="grid grid-cols-1 gap-12 sm:grid-cols-2 lg:grid-cols-3">
-                    {companies.map((company, i) => (
-                        <a 
-                            key={i} 
-                            href={company.href} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="group relative flex flex-col bg-card rounded-[3.5rem] p-1.5 border border-border/40 hover:border-primary/40 transition-all duration-1000 hover:shadow-[0_80px_120px_-30px_rgba(0,0,0,0.2)] md:hover:-translate-y-8"
-                        >
-                            <div className="relative flex flex-col h-full bg-background rounded-[3.2rem] overflow-hidden">
-                                {/* Logo Wrapper */}
-                                <div className="relative w-full aspect-[16/11] flex items-center justify-center p-16 overflow-hidden">
-                                     {/* Background Gradient on hover */}
-                                    <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.04] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
-                                    
-                                    <div className="relative w-full h-full transition-all duration-1000 group-hover:scale-110">
-                                        <Image
-                                            src={(imagePlaceholders as any)[company.logo].src}
-                                            alt={company.name}
-                                            fill
-                                            className="object-contain filter grayscale contrast-125 brightness-110 group-hover:grayscale-0 group-hover:contrast-100 group-hover:brightness-100 transition-all duration-1000"
-                                        />
+                {isLoading && (
+                    <div className="grid grid-cols-1 gap-12 sm:grid-cols-2 lg:grid-cols-3">
+                        {[...Array(6)].map((_, i) => (
+                            <Card key={i} className="rounded-[3.5rem] h-[300px]"><CardContent className="flex items-center justify-center h-full"><Loader2 className="h-8 w-8 animate-spin" /></CardContent></Card>
+                        ))}
+                    </div>
+                )}
+                
+                {companies && companies.length > 0 && (
+                    <div className="grid grid-cols-1 gap-12 sm:grid-cols-2 lg:grid-cols-3">
+                        {companies.map((company) => (
+                            <a 
+                                key={company.id} 
+                                href={company.websiteUrl} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="group relative flex flex-col bg-card rounded-[3.5rem] p-1.5 border border-border/40 hover:border-primary/40 transition-all duration-1000 hover:shadow-[0_80px_120px_-30px_rgba(0,0,0,0.2)] md:hover:-translate-y-8"
+                            >
+                                <div className="relative flex flex-col h-full bg-background rounded-[3.2rem] overflow-hidden">
+                                    <div className="relative w-full aspect-[16/11] flex items-center justify-center p-16 overflow-hidden">
+                                        <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.04] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
+                                        
+                                        <div className="relative w-full h-full transition-all duration-1000 group-hover:scale-110">
+                                            <Image
+                                                src={company.iconUrl}
+                                                alt={company.name}
+                                                fill
+                                                className="object-contain filter grayscale contrast-125 brightness-110 group-hover:grayscale-0 group-hover:contrast-100 group-hover:brightness-100 transition-all duration-1000"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="flex-1 p-8 pt-0 flex flex-col justify-center items-center text-center">
+                                        <h3 className="text-xl font-bold text-foreground tracking-tight group-hover:text-primary transition-colors duration-300">
+                                            {company.name}
+                                        </h3>
+                                        
+                                        <div className="mt-6 flex items-center gap-2 text-primary font-bold text-xs tracking-wide group-hover:gap-4 transition-all duration-300">
+                                            Lihat Selengkapnya <ArrowRight className="h-4 w-4" />
+                                        </div>
                                     </div>
                                 </div>
-                                                                {/* Text Content */}
-                                <div className="flex-1 p-8 pt-0 flex flex-col justify-center items-center text-center">
-                                    <h3 className="text-xl font-bold text-foreground tracking-tight group-hover:text-primary transition-colors duration-300">
-                                        {company.name}
-                                    </h3>
-                                    
-                                    <div className="mt-6 flex items-center gap-2 text-primary font-bold text-xs tracking-wide group-hover:gap-4 transition-all duration-300">
-                                        Lihat Selengkapnya <ArrowRight className="h-4 w-4" />
-                                    </div>
-                                </div>
-
-                            </div>
-                        </a>
-                    ))}
-                </div>
+                            </a>
+                        ))}
+                    </div>
+                )}
             </div>
         </section>
     );
@@ -440,13 +439,11 @@ const RecruitmentProcessSection = () => {
     const steps = t.RecruitmentProcess.steps;
 
     return (
-        <section id="proses" className="w-full scroll-mt-20 py-20 lg:py-24">
+        <section id="proses" className="w-full scroll-mt-14 py-16 lg:py-24">
             <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
-                <div className="flex flex-col items-center text-center mb-12">
-                     <span className="px-3 py-1 mb-4 text-[10px] font-bold tracking-widest uppercase rounded-full bg-primary/10 text-primary border border-primary/20">
-                        Step by Step
-                    </span>
-                    <h2 className="text-3xl md:text-5xl lg:text-6xl font-bold tracking-tight text-foreground">{t.RecruitmentProcess.title}</h2>
+                <div className="mx-auto max-w-xl text-center">
+                    <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{t.RecruitmentProcess.title}</h2>
+                    <p className="mt-4 text-lg text-muted-foreground">{t.RecruitmentProcess.subtitle}</p>
                 </div>
                 <div className="relative mt-16 max-w-2xl mx-auto">
                     <div className="absolute left-6 top-0 h-full w-0.5 bg-border/40 md:left-1/2 md:-translate-x-1/2" />
@@ -499,28 +496,25 @@ const HowToApplySection = () => {
     const steps = t.HowToApply.steps;
     const icons = [User, Search, FileText, UserCheck];
     return (
-        <section className="w-full py-20 lg:py-24 bg-muted/30">
+        <section className="w-full py-16 lg:py-24">
             <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
-                <div className="flex flex-col items-center text-center mb-16">
-                    <span className="px-3 py-1 mb-4 text-[10px] font-bold tracking-widest uppercase rounded-full bg-primary/10 text-primary border border-primary/20">
-                        Quick Start
-                    </span>
-                    <h2 className="text-3xl md:text-5xl lg:text-6xl font-bold tracking-tight text-foreground mb-6">{t.HowToApply.title}</h2>
-                    <p className="mt-4 text-lg text-muted-foreground max-w-2xl">{t.HowToApply.subtitle}</p>
+                <div className="mx-auto max-w-xl text-center">
+                    <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{t.HowToApply.title}</h2>
+                    <p className="mt-4 text-lg text-muted-foreground">{t.HowToApply.subtitle}</p>
                 </div>
-                <div className="mt-16 grid gap-12 md:grid-cols-2 lg:grid-cols-4">
+                <div className="mt-16 grid gap-8 md:grid-cols-2 lg:grid-cols-4">
                     {steps.map((step, i) => (
-                        <div key={step.title} className="group text-center">
-                            <div className="mx-auto mb-8 flex h-24 w-24 items-center justify-center rounded-[2rem] bg-background shadow-[0_20px_50px_rgba(0,0,0,0.05)] border border-border/50 group-hover:-translate-y-2 transition-all duration-500">
-                                {React.createElement(icons[i], { className: "h-10 w-10 text-primary" })}
+                        <div key={step.title} className="text-center">
+                            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-background shadow-md border">
+                                {React.createElement(icons[i], { className: "h-8 w-8 text-primary" })}
                             </div>
-                            <h3 className="mb-4 text-2xl font-black tracking-tight">{step.title}</h3>
-                            <p className="text-muted-foreground leading-relaxed px-4">{step.description}</p>
+                            <h3 className="mb-2 text-lg font-semibold">{step.title}</h3>
+                            <p className="text-sm text-muted-foreground">{step.description}</p>
                         </div>
                     ))}
                 </div>
-                         <div className="mt-16 text-center">
-                    <Button size="lg" className="h-14 px-10 rounded-full text-base font-bold tracking-tight shadow-xl shadow-primary/20 transition-all" asChild>
+                 <div className="mt-16 text-center">
+                    <Button size="lg" asChild>
                         <Link href="/careers/register">{t.HowToApply.cta} <ArrowRight className="ml-2 h-4 w-4" /></Link>
                     </Button>
                 </div>
@@ -535,11 +529,9 @@ const FaqSection = () => {
     return (
     <section id="faq" className="w-full scroll-mt-14 py-16 lg:py-24 bg-card">
         <div className="mx-auto w-full max-w-4xl px-4 sm:px-6 lg:px-8">
-            <div className="flex flex-col items-center text-center mb-16">
-                 <span className="px-3 py-1 mb-4 text-[10px] font-bold tracking-widest uppercase rounded-full bg-primary/10 text-primary border border-primary/20">
-                    Help Center
-                </span>
-                <h2 className="text-3xl md:text-5xl lg:text-6xl font-bold tracking-tight text-foreground">{t.FAQ.title}</h2>
+            <div className="mx-auto max-w-xl text-center">
+                <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{t.FAQ.title}</h2>
+                <p className="mt-4 text-lg text-muted-foreground">{t.FAQ.subtitle}</p>
             </div>
             <Accordion type="single" collapsible className="mt-12 w-full space-y-4">
                 {questions.map((item, i) => (
@@ -579,7 +571,7 @@ const Footer = () => {
                      <div>
                         <h4 className="font-semibold">{t.Footer.company}</h4>
                         <ul className="mt-4 space-y-2 text-sm">
-                             <li><a href="https://environesia.co.id/" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary">{t.Header.companyProfile}</a></li>
+                             <li><a href="#ekosistem" className="text-muted-foreground hover:text-primary">{t.Header.ecosystem}</a></li>
                              <li><a href="/admin/login" className="text-muted-foreground hover:text-primary">{t.Footer.internalAccess}</a></li>
                         </ul>
                     </div>

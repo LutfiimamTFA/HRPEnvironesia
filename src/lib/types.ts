@@ -154,6 +154,17 @@ export type Division = {
   isActive: boolean;
 };
 
+export type EcosystemCompany = {
+  id?: string;
+  name: string;
+  websiteUrl: string;
+  iconUrl: string;
+  isActive: boolean;
+  sortOrder: number;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+};
+
 export type NavigationSetting = {
   id?: string;
   role: UserRole;
