@@ -15,6 +15,8 @@ import { useToast } from '@/hooks/use-toast';
 import { DeleteConfirmationDialog } from '../DeleteConfirmationDialog';
 import { EcosystemCompanyFormDialog } from './EcosystemCompanyFormDialog';
 import Image from 'next/image';
+import type { Brand } from '@/lib/types';
+
 
 function TableSkeleton() {
   return (
@@ -52,7 +54,12 @@ export function EcosystemCompaniesClient() {
     () => query(collection(firestore, 'ecosystem_companies')),
     [firestore]
   );
-  const { data: companies, isLoading, error } = useCollection<EcosystemCompany>(companiesQuery);
+  const { data: companies, isLoading: isLoadingCompanies, error } = useCollection<EcosystemCompany>(companiesQuery);
+  const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(
+    useMemoFirebase(() => collection(firestore, 'brands'), [firestore])
+  );
+
+  const isLoading = isLoadingCompanies || isLoadingBrands;
 
   const sortedCompanies = useMemo(() => {
     if (!companies) return [];
@@ -134,7 +141,12 @@ export function EcosystemCompaniesClient() {
           </TableBody>
         </Table>
       </div>
-      <EcosystemCompanyFormDialog open={isFormOpen} onOpenChange={setIsFormOpen} item={selectedItem} />
+      <EcosystemCompanyFormDialog 
+        open={isFormOpen} 
+        onOpenChange={setIsFormOpen} 
+        item={selectedItem}
+        brands={brands || []}
+      />
       <DeleteConfirmationDialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen} onConfirm={confirmDelete} itemName={selectedItem?.name} itemType="Ecosystem Company" />
     </>
   );

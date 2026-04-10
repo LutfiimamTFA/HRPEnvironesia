@@ -16,8 +16,10 @@ import { useFirestore, setDocumentNonBlocking, useFirebaseApp } from '@/firebase
 import { doc, collection, serverTimestamp } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import Image from 'next/image';
-import type { EcosystemCompany } from '@/lib/types';
+import type { EcosystemCompany, Brand } from '@/lib/types';
 import { Label } from '@/components/ui/label';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const formSchema = z.object({
   name: z.string().min(2, "Name is required."),
@@ -33,9 +35,10 @@ interface EcosystemCompanyFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   item: EcosystemCompany | null;
+  brands: Brand[];
 }
 
-export function EcosystemCompanyFormDialog({ open, onOpenChange, item }: EcosystemCompanyFormDialogProps) {
+export function EcosystemCompanyFormDialog({ open, onOpenChange, item, brands }: EcosystemCompanyFormDialogProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const firestore = useFirestore();
@@ -123,70 +126,95 @@ export function EcosystemCompanyFormDialog({ open, onOpenChange, item }: Ecosyst
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-grow p-6 overflow-y-auto">
-          <Form {...form}>
-            <form id="ecosystem-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                <FormField control={form.control} name="name" render={({ field }) => (<FormItem><FormLabel>Company Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
-                <FormField control={form.control} name="websiteUrl" render={({ field }) => (<FormItem><FormLabel>Website URL</FormLabel><FormControl><Input type="url" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                <FormField control={form.control} name="iconFile" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Logo</FormLabel>
-                      <FormControl>
-                        <label htmlFor="icon-upload" className="relative mt-2 flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-lg cursor-pointer hover:bg-muted transition-colors">
-                            {imagePreview ? (
-                                <Image src={imagePreview} alt="Logo preview" layout="fill" className="object-contain rounded-lg p-2" />
-                            ) : (
-                                <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                                    <UploadCloud className="w-10 h-10 mb-3 text-muted-foreground" />
-                                    <p className="mb-2 text-sm text-primary font-semibold">Choose Logo</p>
-                                    <p className="text-xs text-muted-foreground">PNG, JPG, WEBP up to 2MB</p>
-                                </div>
-                            )}
-                            <Input id="icon-upload" name={field.name} type="file" className="hidden" onChange={handleFileChange} accept="image/*" />
-                        </label>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                )} />
-                <div className="grid grid-cols-2 gap-4">
+        <ScrollArea className="flex-grow">
+          <div className="p-6">
+            <Form {...form}>
+              <form id="ecosystem-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                   <FormField
                     control={form.control}
-                    name="sortOrder"
+                    name="name"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Sort Order</FormLabel>
-                        <FormDescription>Angka kecil tampil duluan.</FormDescription>
+                        <FormLabel>Company Name</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Pilih dari brand yang ada" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {brands.map((brand) => (
+                                <SelectItem key={brand.id} value={brand.name}>
+                                  {brand.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField control={form.control} name="websiteUrl" render={({ field }) => (<FormItem><FormLabel>Website URL</FormLabel><FormControl><Input type="url" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                  <FormField control={form.control} name="iconFile" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Logo</FormLabel>
                         <FormControl>
-                          <Input type="number" {...field} />
+                          <label htmlFor="icon-upload" className="relative mt-2 flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-lg cursor-pointer hover:bg-muted transition-colors">
+                              {imagePreview ? (
+                                  <Image src={imagePreview} alt="Logo preview" layout="fill" className="object-contain rounded-lg p-2" />
+                              ) : (
+                                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                                      <UploadCloud className="w-10 h-10 mb-3 text-muted-foreground" />
+                                      <p className="mb-2 text-sm text-primary font-semibold">Choose Logo</p>
+                                      <p className="text-xs text-muted-foreground">PNG, JPG, WEBP up to 2MB</p>
+                                  </div>
+                              )}
+                              <Input id="icon-upload" name={field.name} type="file" className="hidden" onChange={handleFileChange} accept="image/*" />
+                          </label>
                         </FormControl>
                         <FormMessage />
                       </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="isActive"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Status</FormLabel>
-                        <div className="flex items-center space-x-2 h-10">
+                  )} />
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="sortOrder"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Sort Order</FormLabel>
+                          <FormDescription>Angka kecil tampil duluan.</FormDescription>
                           <FormControl>
-                            <Switch
-                              id="is-active-switch"
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                            />
+                            <Input type="number" {...field} />
                           </FormControl>
-                          <Label htmlFor="is-active-switch">Active</Label>
-                        </div>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-            </form>
-          </Form>
-        </div>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="isActive"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Status</FormLabel>
+                          <div className="flex items-center space-x-2 h-10">
+                            <FormControl>
+                              <Switch
+                                id="is-active-switch"
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                              />
+                            </FormControl>
+                            <Label htmlFor="is-active-switch">Active</Label>
+                          </div>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+              </form>
+            </Form>
+          </div>
+        </ScrollArea>
 
         <DialogFooter className="p-6 pt-4 border-t flex-shrink-0">
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
