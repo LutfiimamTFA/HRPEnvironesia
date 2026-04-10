@@ -26,7 +26,7 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Save, UploadCloud, Trash2, GripVertical } from 'lucide-react';
+import { Loader2, Save, UploadCloud, Trash2, GripVertical, PlusCircle } from 'lucide-react';
 import { useFirestore, setDocumentNonBlocking, useFirebaseApp } from '@/firebase';
 import { doc, collection, serverTimestamp } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -192,7 +192,17 @@ export function EcosystemSectionFormDialog({ open, onOpenChange, item, onSuccess
             })
         );
         
-        const finalImageUrls = imagePreviews.map(p => p.url);
+        const finalImageUrls = imagePreviews.map(p => {
+          if (p.isNew) {
+            // This is a bit tricky, we need to find the corresponding uploaded URL
+            // Assuming order is preserved, which might not be safe.
+            // A better way would be to associate file with a temporary ID.
+            // For now, let's find the URL that corresponds to the new file by finding it in the `values.imageFiles`
+            const newFileIndex = (values.imageFiles || []).findIndex(f => f.name === p.file?.name);
+            return newImageUrls[newFileIndex];
+          }
+          return p.url;
+        }).filter(Boolean) as string[];
 
         const payload: Omit<EcosystemSection, 'id'> = {
             sectionKey: item?.sectionKey || (values.title.toLowerCase().replace(/\s+/g, '-') as any),
