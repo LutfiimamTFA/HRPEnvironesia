@@ -45,12 +45,13 @@ import {
   arrayMove,
   SortableContext,
   useSortable,
-  rectSortingStrategy,
+  verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Label } from '@/components/ui/label';
 
 const formSchema = z.object({
+  sectionKey: z.string().min(3, "Section Key is required.").regex(/^[a-z0-9-]+$/, "Only lowercase letters, numbers, and hyphens allowed."),
   title: z.string().min(3, "Title must be at least 3 characters."),
   subtitle: z.string().optional(),
   description: z.string().optional(),
@@ -109,6 +110,7 @@ export function EcosystemSectionFormDialog({ open, onOpenChange, item, onSuccess
   const mode = item ? 'Edit' : 'Create';
 
   const form = useForm<FormValues>({ resolver: zodResolver(formSchema) });
+  const sectionKey = form.watch('sectionKey');
 
   const handleClose = (isOpen: boolean) => {
     if (!isOpen) {
@@ -122,6 +124,7 @@ export function EcosystemSectionFormDialog({ open, onOpenChange, item, onSuccess
   useEffect(() => {
     if (open) {
       form.reset({
+        sectionKey: item?.sectionKey || '',
         title: item?.title || '',
         subtitle: item?.subtitle || '',
         description: item?.description || '',
@@ -180,7 +183,7 @@ export function EcosystemSectionFormDialog({ open, onOpenChange, item, onSuccess
   const onSubmit = async (values: FormValues) => {
     setIsSaving(true);
     try {
-        const docId = item?.id || values.title.toLowerCase().replace(/\s+/g, '-');
+        const docId = item?.id || values.sectionKey;
         const docRef = doc(firestore, 'ecosystem_sections', docId);
 
         const newImageUrls = await Promise.all(
@@ -194,10 +197,6 @@ export function EcosystemSectionFormDialog({ open, onOpenChange, item, onSuccess
         
         const finalImageUrls = imagePreviews.map(p => {
           if (p.isNew) {
-            // This is a bit tricky, we need to find the corresponding uploaded URL
-            // Assuming order is preserved, which might not be safe.
-            // A better way would be to associate file with a temporary ID.
-            // For now, let's find the URL that corresponds to the new file by finding it in the `values.imageFiles`
             const newFileIndex = (values.imageFiles || []).findIndex(f => f.name === p.file?.name);
             return newImageUrls[newFileIndex];
           }
@@ -205,7 +204,7 @@ export function EcosystemSectionFormDialog({ open, onOpenChange, item, onSuccess
         }).filter(Boolean) as string[];
 
         const payload: Omit<EcosystemSection, 'id'> = {
-            sectionKey: item?.sectionKey || (values.title.toLowerCase().replace(/\s+/g, '-') as any),
+            sectionKey: values.sectionKey,
             title: values.title,
             subtitle: values.subtitle || '',
             description: values.description || '',
@@ -236,10 +235,24 @@ export function EcosystemSectionFormDialog({ open, onOpenChange, item, onSuccess
           <DialogDescription>Atur konten yang akan tampil di landing page.</DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="flex-grow">
+        <div className="flex-grow overflow-y-auto">
           <div className="p-6">
             <Form {...form}>
               <form id="section-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                  <FormField
+                    control={form.control}
+                    name="sectionKey"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Section Key</FormLabel>
+                        <FormControl>
+                          <Input {...field} disabled={mode === 'Edit'} placeholder="e.g., hero-banner" />
+                        </FormControl>
+                        <FormDescription>A unique identifier for this section. Cannot be changed after creation.</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                   <FormField
                     control={form.control}
                     name="title"
@@ -251,8 +264,13 @@ export function EcosystemSectionFormDialog({ open, onOpenChange, item, onSuccess
                       </FormItem>
                     )}
                   />
-                  <FormField control={form.control} name="subtitle" render={({ field }) => (<FormItem><FormLabel>Subtitle (for Hero)</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
-                  <FormField control={form.control} name="description" render={({ field }) => (<FormItem><FormLabel>Description (for other sections)</FormLabel><FormControl><Textarea {...field} /></FormControl><FormMessage /></FormItem>)} />
+                  
+                  {sectionKey === 'hero' ? (
+                    <FormField control={form.control} name="subtitle" render={({ field }) => (<FormItem><FormLabel>Subtitle (for Hero Section)</FormLabel><FormControl><Textarea {...field} /></FormControl><FormMessage /></FormItem>)} />
+                  ) : (
+                    <FormField control={form.control} name="description" render={({ field }) => (<FormItem><FormLabel>Description (for other sections)</FormLabel><FormControl><Textarea {...field} /></FormControl><FormMessage /></FormItem>)} />
+                  )}
+
 
                  <FormItem>
                   <FormLabel>Images</FormLabel>
@@ -260,7 +278,7 @@ export function EcosystemSectionFormDialog({ open, onOpenChange, item, onSuccess
                   <div className="mt-2 p-4 border rounded-lg">
                     {imagePreviews.length > 0 ? (
                        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                        <SortableContext items={imagePreviews} strategy={rectSortingStrategy}>
+                        <SortableContext items={imagePreviews.map(p => p.id)} strategy={verticalListSortingStrategy}>
                           <div className="grid grid-cols-3 sm:grid-cols-4 gap-4">
                             {imagePreviews.map((image) => (
                               <SortableImagePreview key={image.id} image={image} onRemove={() => handleRemoveImage(image.id)} />
@@ -287,7 +305,7 @@ export function EcosystemSectionFormDialog({ open, onOpenChange, item, onSuccess
               </form>
             </Form>
           </div>
-        </ScrollArea>
+        </div>
 
         <DialogFooter className="p-6 pt-4 border-t flex-shrink-0">
           <Button type="button" variant="ghost" onClick={() => handleClose(false)}>Cancel</Button>
