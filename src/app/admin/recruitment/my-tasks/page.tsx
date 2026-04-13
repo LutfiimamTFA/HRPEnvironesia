@@ -22,8 +22,8 @@ import { getInitials } from '@/lib/utils';
 const getDisplayInterview = (app: JobApplication): ApplicationInterview | null => {
     if (!app.interviews || app.interviews.length === 0) return null;
     const now = new Date();
-    // Filter for interviews that are actually scheduled
-    const scheduled = app.interviews.filter(iv => iv.status === 'scheduled');
+    // Filter for interviews that are either scheduled or have a reschedule request
+    const scheduled = app.interviews.filter(iv => iv.status === 'scheduled' || iv.status === 'reschedule_requested');
     if (scheduled.length === 0) return null;
     // Find the next upcoming interview
     const upcoming = scheduled
