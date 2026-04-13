@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link as LinkIcon, Calendar, Video, RefreshCw, Users, Info } from "lucide-react";
-import { format, add } from 'date-fns';
+import { add, format, differenceInMinutes, isBefore, set } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
@@ -117,7 +117,7 @@ function InterviewCard({ interview, onMutate }: { interview: EnrichedInterview, 
                         <Button asChild className="w-full sm:w-auto">
                             <a href={interview.meetingLink} target="_blank" rel="noopener noreferrer">
                                 <LinkIcon className="mr-2 h-4 w-4" />
-                                Buka Link Wawancara {isTemplate && '(Template)'}
+                                Buka Link Wawancara
                             </a>
                         </Button>
                      )}
@@ -208,10 +208,20 @@ export default function InterviewsPage() {
                 const job = jobMap.get(app.jobId);
                 if (job?.interviewTemplate && job.interviewTemplate.defaultStartDate) {
                     const template = job.interviewTemplate;
+                    const templateDate = template.defaultStartDate.toDate();
+                    
+                    let finalStartDate = templateDate;
+                    if (template.workdayStartTime) {
+                        const [hours, minutes] = template.workdayStartTime.split(':').map(Number);
+                        if (!isNaN(hours) && !isNaN(minutes)) {
+                           finalStartDate = set(templateDate, { hours, minutes, seconds: 0, milliseconds: 0 });
+                        }
+                    }
+                    
                     const virtualInterview: ApplicationInterview = {
                         interviewId: `template-${job.id}`,
-                        startAt: template.defaultStartDate,
-                        endAt: add(template.defaultStartDate.toDate(), { minutes: template.slotDurationMinutes || 30 }),
+                        startAt: finalStartDate,
+                        endAt: add(finalStartDate, { minutes: template.slotDurationMinutes || 30 }),
                         meetingLink: template.meetingLink || '',
                         panelistNames: ['Tim Rekrutmen'],
                         panelistIds: [],
