@@ -193,9 +193,10 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
             startAt: Timestamp.fromDate(slot.startAt),
             endAt: Timestamp.fromDate(slot.endAt),
             panelistIds: panelistIds,
-            panelistNames: [], // This should be populated based on panelistIds
+            panelistNames: [recruiter.fullName],
             meetingLink: meetingLink ?? '',
             status: 'scheduled',
+            meetingPublished: false,
         };
 
         const timelineEvent: ApplicationTimelineEvent = {
@@ -209,12 +210,14 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
             }
         };
         
+        // Merge existing panelist IDs with the new one so query works correctly
         const allPanelistIds = Array.from(new Set([...(slot.candidate.allPanelistIds || []), ...panelistIds]));
 
         batch.update(appRef, {
             status: 'interview',
             interviews: [
-                ...(slot.candidate.interviews || []),
+                // Keep non-canceled existing interviews, then add the new one
+                ...(slot.candidate.interviews || []).filter(iv => iv.status !== 'canceled'),
                 interviewData,
             ],
             allPanelistIds,

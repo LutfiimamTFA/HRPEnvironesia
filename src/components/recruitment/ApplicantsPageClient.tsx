@@ -182,6 +182,8 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allBrands
 
     const interviewToEdit = getMostRelevantInterview(activeApplication);
     const newInterviews = [...(activeApplication.interviews || [])];
+    const panelistIds = values.panelists?.map(p => p.value) || [userProfile.uid];
+    const panelistNames = values.panelists?.map(p => p.label) || [userProfile.fullName];
     
     if(interviewToEdit) {
         const index = newInterviews.findIndex(iv => iv.interviewId === interviewToEdit.interviewId);
@@ -190,6 +192,8 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allBrands
                 ...newInterviews[index],
                 startAt: Timestamp.fromDate(values.dateTime),
                 endAt: Timestamp.fromDate(add(values.dateTime, { minutes: values.duration })),
+                panelistIds,
+                panelistNames,
                 meetingLink: values.meetingLink || newInterviews[index].meetingLink || '',
             };
         }
@@ -198,16 +202,23 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allBrands
             interviewId: crypto.randomUUID(),
             startAt: Timestamp.fromDate(values.dateTime),
             endAt: Timestamp.fromDate(add(values.dateTime, { minutes: values.duration })),
-            panelistIds: [userProfile.uid],
-            panelistNames: assignableUsers.filter(u => u.uid === userProfile.uid).map(u => u.fullName),
+            panelistIds,
+            panelistNames,
             meetingLink: values.meetingLink || job?.interviewTemplate?.meetingLink || '',
             status: 'scheduled',
+            meetingPublished: false,
         });
     }
 
+    // Rebuild allPanelistIds from all non-canceled interviews
+    const allPanelistIds = Array.from(
+      new Set(newInterviews.filter(iv => iv.status !== 'canceled').flatMap(iv => iv.panelistIds || []))
+    );
+
     try {
         await setDocumentNonBlocking(doc(firestore, 'applications', activeApplication.id!), {
-            interviews: newInterviews
+            interviews: newInterviews,
+            allPanelistIds,
         }, { merge: true });
         toast({ title: "Jadwal Diperbarui", description: `Jadwal untuk ${activeApplication.candidateName} telah disimpan.`});
         onJobUpdate();
