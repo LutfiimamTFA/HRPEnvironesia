@@ -18,27 +18,34 @@ import Link from 'next/link';
 import { ApplicationStatusBadge } from '@/components/recruitment/ApplicationStatusBadge';
 import { getInitials } from '@/lib/utils';
 
-// Helper to get the most relevant interview to display
 const getDisplayInterview = (app: JobApplication): ApplicationInterview | null => {
-    if (!app.interviews || app.interviews.length === 0) return null;
-    const now = new Date();
-    // Filter for interviews that are not canceled
-    const relevantInterviews = app.interviews.filter(iv => iv.status !== 'canceled');
-    if (relevantInterviews.length === 0) return null;
+    if (!app.interviews || app.interviews.length === 0) {
+      return null;
+    }
+    const now = new Date().getTime();
 
-    // Find the next upcoming interview
-    const upcoming = relevantInterviews
-        .filter(iv => iv.startAt.toDate() >= now)
-        .sort((a, b) => a.startAt.toDate().getTime() - b.startAt.toDate().getTime());
-    
-    if (upcoming.length > 0) return upcoming[0];
-    
-    // If no upcoming, find the most recent past one
-    const past = relevantInterviews
-        .sort((a, b) => b.startAt.toDate().getTime() - a.startAt.toDate().getTime());
-    
-    return past.length > 0 ? past[0] : null;
+    // Filter out canceled and invalid interviews, then sort
+    const sortedValidInterviews = app.interviews
+      .filter(iv => {
+        return iv && iv.status !== 'canceled' && iv.startAt && typeof iv.startAt.toDate === 'function';
+      })
+      .sort((a, b) => a.startAt.toMillis() - b.startAt.toMillis()); // Sort ascending
+
+    if (sortedValidInterviews.length === 0) {
+      return null;
+    }
+
+    // Find the first interview that is happening now or in the future
+    const nextUpcoming = sortedValidInterviews.find(iv => iv.startAt.toMillis() >= now);
+
+    if (nextUpcoming) {
+      return nextUpcoming;
+    }
+
+    // If no upcoming interviews, return the most recent past one (the last one in the sorted list)
+    return sortedValidInterviews[sortedValidInterviews.length - 1];
 };
+
 
 export default function MyRecruitmentTasksPage() {
   const { userProfile, loading: authLoading } = useAuth();
