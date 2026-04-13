@@ -1,13 +1,13 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/providers/auth-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
 import type { JobApplication, ApplicationInterview, Job, UserProfile, Brand } from '@/lib/types';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { MENU_CONFIG } from '@/lib/menu-config';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -23,10 +23,10 @@ import {
   Search,
 } from 'lucide-react';
 import Link from 'next/link';
-import { ApplicationStatusBadge, statusDisplayLabels } from '@/components/recruitment/ApplicationStatusBadge';
 import { getInitials } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { statusDisplayLabels } from '@/components/recruitment/ApplicationStatusBadge';
 
 // --- Helpers ───────────────────────────────────────────────────────────────
 
@@ -123,7 +123,7 @@ function InterviewDetailModal({
               {isTemplate && (
                 <Badge variant="outline" className="mt-2 text-xs gap-1.5 border-amber-500/50 bg-amber-500/10 text-amber-500">
                   <Info className="h-3 w-3" />
-                  Informasi dari Template (Jadwal belum final)
+                  Jadwal dari Template (Belum Final)
                 </Badge>
               )}
             </div>
@@ -245,19 +245,7 @@ export default function MyRecruitmentTasksPage() {
     return MENU_CONFIG[userProfile.role] || [];
   }, [userProfile]);
 
-  const assignedJobsQuery = useMemoFirebase(() => {
-    if (!userProfile?.uid) return null;
-    return query(
-      collection(firestore, 'jobs'),
-      where('assignedUserIds', 'array-contains', userProfile.uid)
-    );
-  }, [firestore, userProfile?.uid]);
-
-  const { data: assignedJobs, isLoading: loadingJobs } = useCollection<Job>(assignedJobsQuery);
-  const assignedJobIds = useMemo(
-    () => (assignedJobs?.map(j => j.id).filter(Boolean) as string[]) || [],
-    [assignedJobs]
-  );
+  // --- Data Fetching ---
 
   const directAssignmentQuery = useMemoFirebase(() => {
     if (!userProfile?.uid) return null;
@@ -275,40 +263,41 @@ export default function MyRecruitmentTasksPage() {
     );
   }, [firestore, userProfile?.uid]);
 
-  const jobLevelAppsQuery = useMemoFirebase(() => {
-    if (!userProfile?.uid || assignedJobIds.length === 0) return null;
-    return query(
-      collection(firestore, 'applications'),
-      where('jobId', 'in', assignedJobIds.slice(0, 30))
-    );
-  }, [firestore, userProfile?.uid, assignedJobIds]);
-
   const { data: directApps, isLoading: loadingDirect } = useCollection<JobApplication>(directAssignmentQuery);
   const { data: panelistApps, isLoading: loadingPanelist } = useCollection(panelistAssignmentQuery);
-  const { data: jobApps, isLoading: loadingJobLevel } = useCollection(jobLevelAppsQuery);
 
   const applications = useMemo(() => {
-    const all = [...(directApps || []), ...(panelistApps || []), ...(jobApps || [])];
+    const all = [...(directApps || []), ...(panelistApps || [])];
     const unique = Array.from(new Map(all.map(a => [a.id, a])).values());
     return unique.sort((a, b) => {
       const timeA = a.updatedAt?.toMillis?.() || (a.updatedAt as any)?.seconds || 0;
       const timeB = b.updatedAt?.toMillis?.() || (b.updatedAt as any)?.seconds || 0;
       return timeB - timeA;
     });
-  }, [directApps, panelistApps, jobApps]);
+  }, [directApps, panelistApps]);
+
+  const allRelevantJobIds = useMemo(() => {
+    if (!applications) return [];
+    return Array.from(new Set(applications.map(app => app.jobId)));
+  }, [applications]);
+
+  const allJobsQuery = useMemoFirebase(() => {
+    if (allRelevantJobIds.length === 0) return null;
+    return query(collection(firestore, 'jobs'), where('__name__', 'in', allRelevantJobIds.slice(0, 30)));
+  }, [firestore, allRelevantJobIds]);
+  const { data: allRelevantJobs, isLoading: loadingAllJobs } = useCollection<Job>(allJobsQuery);
 
   const jobMap = useMemo(() => {
     const map = new Map<string, Job>();
-    (assignedJobs || []).forEach(j => { if (j.id) map.set(j.id, j); });
+    (allRelevantJobs || []).forEach(j => { if (j.id) map.set(j.id, j); });
     return map;
-  }, [assignedJobs]);
+  }, [allRelevantJobs]);
 
   const isLoading =
     authLoading ||
-    loadingJobs ||
     loadingDirect ||
     loadingPanelist ||
-    (assignedJobIds.length > 0 && loadingJobLevel);
+    loadingAllJobs;
     
   const [searchTerm, setSearchTerm] = useState('');
   const [stageFilter, setStageFilter] = useState('all');
@@ -415,7 +404,7 @@ export default function MyRecruitmentTasksPage() {
 
                       {/* Status */}
                       <TableCell>
-                        <ApplicationStatusBadge status={app.status} className="text-[10px] h-4" />
+                        <Badge variant="outline">{statusDisplayLabels[app.status]}</Badge>
                       </TableCell>
 
                       {/* Jadwal Wawancara — klikable buka modal */}
