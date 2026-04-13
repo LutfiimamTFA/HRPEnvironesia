@@ -99,38 +99,52 @@ export function InterviewManagement({ application, onUpdate, allUsers, allBrands
         if (activeInterview && !activeInterview.rescheduleRequest) { // Pure Edit
             const index = newInterviews.findIndex(iv => iv.interviewId === activeInterview.interviewId);
             if (index !== -1) {
-                newInterviews[index] = {
-                    ...newInterviews[index],
+                const originalData = newInterviews[index];
+
+                const updatedData: ApplicationInterview = {
+                    ...originalData,
                     startAt: Timestamp.fromDate(data.dateTime),
                     endAt: Timestamp.fromDate(add(data.dateTime, { minutes: data.duration })),
                     panelistIds: panelistIds,
                     panelistNames: panelistNames,
-                    meetingLink: data.meetingLink,
+                    meetingLink: data.meetingLink || '',
                     notes: data.notes,
                 };
-                newTimeline.push({
-                    type: 'interview_updated',
-                    at: Timestamp.now(),
-                    by: userProfile.uid,
-                    meta: { note: `Jadwal wawancara diperbarui oleh HRD.` },
-                });
                 
-                const allRecipients = new Set([application.candidateUid, ...panelistIds]);
-                allRecipients.forEach(recipientUid => {
-                    const notifRef = doc(collection(firestore, 'users', recipientUid, 'notifications'));
-                    const isCandidate = recipientUid === application.candidateUid;
-                    batch.set(notifRef, {
-                        ...notificationBase,
-                        userId: recipientUid,
-                        type: 'interview_updated',
-                        title: 'Jadwal Wawancara Diperbarui',
-                        message: isCandidate
-                            ? `Jadwal wawancara Anda untuk posisi "${application.jobPosition}" telah diubah. Mohon periksa detailnya.`
-                            : `Jadwal wawancara untuk ${application.candidateName} (${application.jobPosition}) telah diperbarui.`,
-                        actionUrl: isCandidate ? '/careers/portal/interviews' : '/admin/interviews',
-                    });
-                });
+                // Compare key fields to see if a notification is needed
+                const hasChanged = 
+                    originalData.startAt.toMillis() !== updatedData.startAt.toMillis() ||
+                    originalData.endAt.toMillis() !== updatedData.endAt.toMillis() ||
+                    originalData.meetingLink !== updatedData.meetingLink ||
+                    JSON.stringify((originalData.panelistIds || []).sort()) !== JSON.stringify(updatedData.panelistIds.sort());
 
+                newInterviews[index] = updatedData;
+
+                if (hasChanged) {
+                    newTimeline.push({
+                        type: 'interview_updated',
+                        at: Timestamp.now(),
+                        by: userProfile.uid,
+                        meta: { note: `Jadwal wawancara diperbarui oleh HRD.` },
+                    });
+                    
+                    const allRecipients = new Set([application.candidateUid, ...updatedData.panelistIds]);
+                    allRecipients.forEach(recipientUid => {
+                        const notifRef = doc(collection(firestore, 'users', recipientUid, 'notifications'));
+                        const isCandidate = recipientUid === application.candidateUid;
+                        batch.set(notifRef, {
+                            ...notificationBase,
+                            userId: recipientUid,
+                            type: 'interview_updated',
+                            title: 'Jadwal Wawancara Diperbarui',
+                            message: isCandidate
+                                ? `Jadwal wawancara Anda untuk posisi "${application.jobPosition}" telah diubah. Mohon periksa detailnya.`
+                                : `Jadwal wawancara untuk ${application.candidateName} (${application.jobPosition}) telah diperbarui.`,
+                            actionUrl: isCandidate ? '/careers/portal/interviews' : '/admin/interviews',
+                        });
+                    });
+                }
+                
                 const allPanelistIds = new Set<string>();
                 newInterviews.forEach(iv => {
                     if (iv.status === 'scheduled') {
