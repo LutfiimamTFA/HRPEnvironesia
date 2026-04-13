@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import { useAuth } from '@/providers/auth-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, where, orderBy } from 'firebase/firestore';
-import type { JobApplication, Job, ApplicationInterview } from '@/lib/types';
+import type { JobApplication, Job, ApplicationInterview, UserProfile } from '@/lib/types';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -16,6 +16,7 @@ import { format } from 'date-fns';
 import { ArrowRight, Briefcase, Calendar, CheckCircle2, Clock, User, Link as LinkIcon } from 'lucide-react';
 import Link from 'next/link';
 import { ApplicationStatusBadge } from '@/components/recruitment/ApplicationStatusBadge';
+import { getInitials } from '@/lib/utils';
 
 // Helper to get the most relevant interview to display
 const getDisplayInterview = (app: JobApplication): ApplicationInterview | null => {
