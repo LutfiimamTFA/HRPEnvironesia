@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
 import { collection, query, where, doc, serverTimestamp } from 'firebase/firestore';
-import type { JobApplication, JobApplicationStatus, AssessmentSession } from '@/lib/types';
+import type { Job, JobApplication, JobApplicationStatus, AssessmentSession } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { format, addMonths } from 'date-fns';
 import { id } from 'date-fns/locale';
@@ -20,7 +20,7 @@ import { statusDisplayLabels } from '@/components/recruitment/ApplicationStatusB
 import { useToast } from '@/hooks/use-toast';
 
 
-function ApplicationCard({ application, hasCompletedTest }: { application: JobApplication, hasCompletedTest: boolean }) {
+function ApplicationCard({ application, job, hasCompletedTest }: { application: JobApplication, job?: Job, hasCompletedTest: boolean }) {
   const [now, setNow] = useState(new Date());
   const [isDeciding, setIsDeciding] = React.useState(false);
   const { firebaseUser } = useAuth();
@@ -249,6 +249,35 @@ function ApplicationCard({ application, hasCompletedTest }: { application: JobAp
                 </div>
             )
         }
+    } else if (job?.interviewTemplate?.defaultStartDate) {
+        const template = job.interviewTemplate;
+        const templateDate = template.defaultStartDate.toDate();
+        const templateTime = template.workdayStartTime || 'N/A';
+        const templateLink = template.meetingLink;
+        
+        return (
+            <div className="p-4 rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 text-blue-900 dark:text-blue-100">
+                <h3 className="font-semibold text-lg flex items-center gap-2 text-blue-800 dark:text-blue-100"><Calendar className="h-5 w-5" /> Jadwal Wawancara Tersedia</h3>
+                <div className="text-sm mt-3 space-y-3 text-blue-800/90 dark:text-blue-200/90 text-justify">
+                    <p>Selamat! Anda telah lolos ke tahap wawancara. Berdasarkan jadwal yang telah ditentukan oleh tim HRD, wawancara Anda akan dilaksanakan pada:</p>
+                    <ul className="list-disc pl-5 font-semibold">
+                        <li>Tanggal: {format(templateDate, 'eeee, dd MMMM yyyy', { locale: id })}</li>
+                        <li>Waktu: {templateTime} WIB</li>
+                        <li>Media: Zoom Meeting</li>
+                    </ul>
+                    <p>Silakan mempersiapkan diri dengan baik. Jika terdapat pembaruan jadwal atau link wawancara, kami akan menginformasikannya melalui portal ini dan email.</p>
+                    {templateLink && (
+                        <div className="pt-2">
+                            <Button asChild size="sm">
+                                <a href={templateLink} target="_blank" rel="noopener noreferrer">
+                                    <LinkIcon className="mr-2 h-4 w-4" /> Buka Link Wawancara (Template)
+                                </a>
+                            </Button>
+                        </div>
+                    )}
+                </div>
+            </div>
+        )
     } else {
         // No interview scheduled yet for this 'interview' stage application
         return (
@@ -393,6 +422,22 @@ export default function ApplicationsPage() {
 
     const { data: applications, isLoading: applicationsLoading, error } = useCollection<JobApplication>(applicationsQuery);
 
+    const jobIds = useMemo(() => {
+        if (!applications) return [];
+        return Array.from(new Set(applications.map(app => app.jobId)));
+    }, [applications]);
+
+    const { data: jobs, isLoading: jobsLoading } = useCollection<Job>(useMemoFirebase(() => {
+        if (jobIds.length === 0) return null;
+        // Chunking would be needed for > 30 job applications to different jobs
+        return query(collection(firestore, 'jobs'), where('__name__', 'in', jobIds.slice(0, 30)));
+    }, [firestore, jobIds]));
+
+    const jobMap = useMemo(() => {
+        if (!jobs) return new Map<string, Job>();
+        return new Map(jobs.map(job => [job.id!, job]));
+    }, [jobs]);
+
     const sessionsQuery = useMemoFirebase(() => {
       if (!uid) return null;
       return query(
@@ -414,7 +459,7 @@ export default function ApplicationsPage() {
         });
     }, [applications]);
 
-    const isLoading = authLoading || applicationsLoading || sessionsLoading;
+    const isLoading = authLoading || applicationsLoading || sessionsLoading || jobsLoading;
 
     if (error) {
         return (
@@ -437,13 +482,17 @@ export default function ApplicationsPage() {
                 <ApplicationsPageSkeleton />
             ) : sortedApplications && sortedApplications.length > 0 ? (
                 <div className="space-y-6">
-                    {sortedApplications.map(app => (
-                        <ApplicationCard 
-                            key={app.id} 
-                            application={app} 
-                            hasCompletedTest={hasCompletedTest}
-                        />
-                    ))}
+                    {sortedApplications.map(app => {
+                        const job = jobMap.get(app.jobId);
+                        return (
+                            <ApplicationCard 
+                                key={app.id} 
+                                application={app} 
+                                job={job}
+                                hasCompletedTest={hasCompletedTest}
+                            />
+                        )
+                    })}
                 </div>
             ) : (
                 <Card className="h-64 flex flex-col items-center justify-center text-center">
@@ -466,4 +515,3 @@ export default function ApplicationsPage() {
         </div>
     );
 }
-    
