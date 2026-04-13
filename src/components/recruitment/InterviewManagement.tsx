@@ -9,12 +9,12 @@ import { format, differenceInMinutes, add } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/providers/auth-provider';
-import { useFirestore } from '@/firebase';
+import { useFirestore, updateDocumentNonBlocking } from '@/firebase';
 import { doc, serverTimestamp, updateDoc, Timestamp, writeBatch } from 'firebase/firestore';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ScheduleInterviewDialog, type ScheduleInterviewData } from './ScheduleInterviewDialog';
 import { ManagePanelistsDialog } from './ManagePanelistsDialog';
-import type { JobApplication, ApplicationInterview, RescheduleRequest, Brand, UserProfile, ApplicationTimelineEvent } from '@/lib/types';
+import type { JobApplication, ApplicationInterview, RescheduleRequest, Brand, UserProfile, ApplicationTimelineEvent, Job } from '@/lib/types';
 
 
 export function InterviewManagement({ application, onUpdate, allUsers, allBrands, job }: { application: JobApplication; onUpdate: () => void; allUsers: UserProfile[], allBrands: Brand[], job: Job }) {
@@ -41,7 +41,6 @@ export function InterviewManagement({ application, onUpdate, allUsers, allBrands
 
     const isCurrentlyPublished = !!interviewToToggle.meetingPublished;
 
-    // Prevent publishing if the link is missing
     if (!isCurrentlyPublished && !interviewToToggle.meetingLink) {
         toast({ variant: 'destructive', title: 'Link Kosong', description: 'Tambahkan link meeting sebelum mempublikasikannya.' });
         return;
@@ -244,13 +243,20 @@ export function InterviewManagement({ application, onUpdate, allUsers, allBrands
   if (application.status !== 'interview') {
     return null;
   }
+  
+  const isPrivilegedRecruiter = userProfile?.role === 'hrd' || userProfile?.role === 'super-admin';
+  const title = isPrivilegedRecruiter ? 'Manajemen Wawancara' : 'Detail Jadwal Wawancara';
+  const description = isPrivilegedRecruiter ? 'Atur, ubah, dan publikasikan jadwal wawancara untuk kandidat ini.' : 'Berikut adalah detail jadwal wawancara yang telah ditetapkan oleh tim HRD.';
 
   return (
     <Card>
       <CardHeader>
         <div className="flex justify-between items-center">
-            <CardTitle>Manajemen Wawancara</CardTitle>
-            {(!application.interviews || application.interviews.filter(iv => iv.status !== 'canceled').length === 0) && (
+            <div>
+              <CardTitle>{title}</CardTitle>
+              <CardDescription>{description}</CardDescription>
+            </div>
+            {isPrivilegedRecruiter && (!application.interviews || application.interviews.filter(iv => iv.status !== 'canceled').length === 0) && (
               <Button size="sm" onClick={() => handleOpenScheduleDialog()}>Jadwalkan Wawancara Baru</Button>
             )}
         </div>
@@ -268,7 +274,7 @@ export function InterviewManagement({ application, onUpdate, allUsers, allBrands
                                 <p className="text-sm text-muted-foreground">Pewawancara: {(iv.panelistNames || iv.interviewerNames || []).join(', ')}</p>
                             </div>
                             <div className="flex items-center gap-2">
-                                {userProfile && ['super-admin', 'hrd'].includes(userProfile.role) && (
+                                {isPrivilegedRecruiter && (
                                     <>
                                         <Button 
                                             variant={iv.meetingPublished ? "outline" : "secondary"} 
@@ -288,9 +294,11 @@ export function InterviewManagement({ application, onUpdate, allUsers, allBrands
                                         </Button>
                                     </>
                                 )}
-                                <Button variant="ghost" size="sm" onClick={() => handleOpenScheduleDialog(iv)}>
-                                    <Edit className="h-4 w-4 mr-2" /> Edit
-                                </Button>
+                                {isPrivilegedRecruiter && (
+                                    <Button variant="ghost" size="sm" onClick={() => handleOpenScheduleDialog(iv)}>
+                                        <Edit className="h-4 w-4 mr-2" /> Edit
+                                    </Button>
+                                )}
                                 <Badge variant={iv.status === 'scheduled' ? 'default' : 'secondary'} className="capitalize">{iv.status.replace('_', ' ')}</Badge>
                             </div>
                         </div>
@@ -307,17 +315,19 @@ export function InterviewManagement({ application, onUpdate, allUsers, allBrands
                                                 {iv.rescheduleRequest.proposedSlots.map((slot, slotIndex) => (
                                                     <li key={slotIndex} className="flex items-center justify-between text-sm p-2 bg-background/50 rounded-md">
                                                         <span>{format(slot.startAt.toDate(), 'eeee, dd MMM yyyy - HH:mm', { locale: idLocale })}</span>
-                                                        <Button size="xs" onClick={() => handleApproveReschedule(iv, slot)} disabled={isSubmitting}>Setujui</Button>
+                                                        {isPrivilegedRecruiter && <Button size="xs" onClick={() => handleApproveReschedule(iv, slot)} disabled={isSubmitting}>Setujui</Button>}
                                                     </li>
                                                 ))}
                                             </ul>
                                         </div>
                                     </div>
                                 </AlertDescription>
-                                <div className="flex gap-2 mt-4 pt-4 border-t">
-                                    <Button size="sm" onClick={() => handleOpenScheduleDialog(iv)} disabled={isSubmitting}>Buat Jadwal Baru (Counter)</Button>
-                                    <Button size="sm" variant="ghost" onClick={() => handleDenyReschedule(iv)} disabled={isSubmitting}>Tolak Permintaan</Button>
-                                </div>
+                                {isPrivilegedRecruiter && (
+                                  <div className="flex gap-2 mt-4 pt-4 border-t">
+                                      <Button size="sm" onClick={() => handleOpenScheduleDialog(iv)} disabled={isSubmitting}>Buat Jadwal Baru (Counter)</Button>
+                                      <Button size="sm" variant="ghost" onClick={() => handleDenyReschedule(iv)} disabled={isSubmitting}>Tolak Permintaan</Button>
+                                  </div>
+                                )}
                             </Alert>
                         )}
                     </div>

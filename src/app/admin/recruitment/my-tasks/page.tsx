@@ -1,10 +1,10 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useAuth } from '@/providers/auth-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, where, orderBy } from 'firebase/firestore';
-import type { JobApplication, JobApplicationStatus, Job } from '@/lib/types';
+import type { JobApplication, Job, ApplicationInterview } from '@/lib/types';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -13,12 +13,30 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
-import { ArrowRight, Briefcase, Calendar, CheckCircle2, Clock, User } from 'lucide-react';
+import { ArrowRight, Briefcase, Calendar, CheckCircle2, Clock, User, Link as LinkIcon } from 'lucide-react';
 import Link from 'next/link';
 import { ApplicationStatusBadge } from '@/components/recruitment/ApplicationStatusBadge';
 
+// Helper to get the most relevant interview to display
+const getDisplayInterview = (app: JobApplication): ApplicationInterview | null => {
+    if (!app.interviews || app.interviews.length === 0) return null;
+    const now = new Date();
+    // Filter for interviews that are actually scheduled
+    const scheduled = app.interviews.filter(iv => iv.status === 'scheduled');
+    if (scheduled.length === 0) return null;
+    // Find the next upcoming interview
+    const upcoming = scheduled
+        .filter(iv => iv.startAt.toDate() >= now)
+        .sort((a, b) => a.startAt.toDate().getTime() - b.startAt.toDate().getTime());
+    if (upcoming.length > 0) return upcoming[0];
+    // If no upcoming, find the most recent past one
+    const past = scheduled
+        .sort((a, b) => b.startAt.toDate().getTime() - a.startAt.toDate().getTime());
+    return past.length > 0 ? past[0] : null;
+};
+
 export default function MyRecruitmentTasksPage() {
-  const { userProfile } = useAuth();
+  const { userProfile, loading: authLoading } = useAuth();
   const firestore = useFirestore();
 
   const menuConfig = useMemo(() => {
@@ -26,7 +44,7 @@ export default function MyRecruitmentTasksPage() {
     return MENU_CONFIG[userProfile.role] || [];
   }, [userProfile]);
 
-  // 1. Get Jobs where user is part of the Recruitment Team
+  // Queries remain the same as before
   const assignedJobsQuery = useMemoFirebase(() => {
     if (!userProfile?.uid) return null;
     return query(
@@ -35,14 +53,9 @@ export default function MyRecruitmentTasksPage() {
     );
   }, [firestore, userProfile?.uid]);
 
-  const { data: assignedJobs } = useCollection<Job>(assignedJobsQuery);
+  const { data: assignedJobs, isLoading: loadingJobs } = useCollection<Job>(assignedJobsQuery);
   const assignedJobIds = useMemo(() => assignedJobs?.map(j => j.id).filter(Boolean) as string[] || [], [assignedJobs]);
-
-  // 2. Query Applications based on multiple criteria:
-  // - User is an explicit reviewer (array-contains on internalReviewConfig.assignedReviewerUids)
-  // - User is a panelist (array-contains on allPanelistIds)
-  // - User is part of the Job's team (jobId is in assignedJobIds) - Handled by client-side merge or separate query
-
+  
   const directAssignmentQuery = useMemoFirebase(() => {
     if (!userProfile?.uid) return null;
     return query(
@@ -59,10 +72,8 @@ export default function MyRecruitmentTasksPage() {
     );
   }, [firestore, userProfile?.uid]);
 
-  // Applications from Job-level assignment (only if we have job IDs)
   const jobLevelAppsQuery = useMemoFirebase(() => {
     if (!userProfile?.uid || assignedJobIds.length === 0) return null;
-    // Firestore 'in' query supports up to 30 IDs
     return query(
       collection(firestore, 'applications'),
       where('jobId', 'in', assignedJobIds.slice(0, 30))
@@ -75,19 +86,15 @@ export default function MyRecruitmentTasksPage() {
 
   const applications = useMemo(() => {
     const all = [...(directApps || []), ...(panelistApps || []), ...(jobApps || [])];
-    
-    // Deduplicate by ID
     const unique = Array.from(new Map(all.map(a => [a.id, a])).values());
-
-    // Client-side sort by updatedAt
     return unique.sort((a, b) => {
         const timeA = a.updatedAt?.toMillis?.() || (a.updatedAt as any)?.seconds || 0;
         const timeB = b.updatedAt?.toMillis?.() || (b.updatedAt as any)?.seconds || 0;
         return timeB - timeA;
     });
   }, [directApps, panelistApps, jobApps]);
-
-  const isLoading = loadingDirect || (assignedJobIds.length > 0 && loadingJobLevel);
+  
+  const isLoading = authLoading || loadingJobs || loadingDirect || loadingPanelist || (assignedJobIds.length > 0 && loadingJobLevel);
 
   if (!userProfile) return null;
 
@@ -96,7 +103,7 @@ export default function MyRecruitmentTasksPage() {
       <div className="space-y-6">
         <div className="flex flex-col gap-2">
           <h1 className="text-3xl font-bold tracking-tight">Tugas Rekrutmen Saya</h1>
-          <p className="text-muted-foreground">Daftar kandidat yang ditugaskan kepada Anda untuk dilakukan evaluasi internal.</p>
+          <p className="text-muted-foreground">Daftar kandidat yang ditugaskan kepada Anda untuk dilakukan evaluasi internal atau wawancara.</p>
         </div>
 
         {isLoading ? (
@@ -123,23 +130,24 @@ export default function MyRecruitmentTasksPage() {
                 <TableRow>
                   <TableHead className="font-bold">Kandidat</TableHead>
                   <TableHead className="font-bold">Posisi</TableHead>
-                  <TableHead className="font-bold">Assign Date</TableHead>
-                  <TableHead className="font-bold">Status Saya</TableHead>
-                  <TableHead className="font-bold">Review Tim</TableHead>
+                  <TableHead className="font-bold">Tahap Saat Ini</TableHead>
+                  <TableHead className="font-bold">Jadwal Wawancara</TableHead>
                   <TableHead className="text-right font-bold">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {applications.map((app) => (
+                {applications.map((app) => {
+                  const interview = getDisplayInterview(app);
+                  return (
                   <TableRow key={app.id} className="hover:bg-muted/30 transition-colors">
                     <TableCell>
                       <div className="flex items-center gap-3">
                         <div className="h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold">
-                          {app.candidateName.charAt(0)}
+                          {getInitials(app.candidateName)}
                         </div>
                         <div>
                           <p className="font-bold">{app.candidateName}</p>
-                          <ApplicationStatusBadge status={app.status} className="text-[10px] h-4" />
+                          <p className="text-xs text-muted-foreground">{app.candidateEmail}</p>
                         </div>
                       </div>
                     </TableCell>
@@ -148,27 +156,18 @@ export default function MyRecruitmentTasksPage() {
                       <p className="text-xs text-muted-foreground">{app.brandName}</p>
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Calendar className="h-3 w-3" />
-                        {app.internalReviewConfig?.lastUpdatedAt ? format(app.internalReviewConfig.lastUpdatedAt.toDate(), 'dd MMM yyyy') : '-'}
-                      </div>
+                      <ApplicationStatusBadge status={app.status} className="text-[10px] h-4" />
                     </TableCell>
                     <TableCell>
-                       {app.internalReviewSummary?.submittedReviewerUids?.includes(userProfile.uid) ? (
-                          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 gap-1.5 py-1">
-                            <CheckCircle2 className="h-3 w-3" /> Sudah Review
-                          </Badge>
-                       ) : (
-                          <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 gap-1.5 py-1">
-                            <Clock className="h-3 w-3" /> Menunggu Review
-                          </Badge>
-                       )}
-                    </TableCell>
-                    <TableCell>
-                       <div className="flex items-center gap-2">
-                          <p className="text-sm font-bold">{app.internalReviewSummary?.totalSubmitted || 0} / {app.internalReviewSummary?.totalAssigned || 0}</p>
-                          <p className="text-xs text-muted-foreground">Komentar</p>
-                       </div>
+                        {interview ? (
+                            <div className="flex items-center gap-2 text-xs font-semibold">
+                                <Calendar className="h-3.5 w-3.5" />
+                                <span>{format(interview.startAt.toDate(), 'dd MMM, HH:mm')}</span>
+                                {interview.meetingLink && <LinkIcon className="h-3.5 w-3.5 text-blue-500" />}
+                            </div>
+                        ) : (
+                            <span className="text-xs text-muted-foreground italic">Belum terjadwal</span>
+                        )}
                     </TableCell>
                     <TableCell className="text-right">
                       <Button variant="ghost" size="sm" asChild className="rounded-xl group">
@@ -178,7 +177,7 @@ export default function MyRecruitmentTasksPage() {
                       </Button>
                     </TableCell>
                   </TableRow>
-                ))}
+                )})}
               </TableBody>
             </Table>
           </Card>
