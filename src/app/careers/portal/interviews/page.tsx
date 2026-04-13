@@ -1,15 +1,15 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase, useDoc } from '@/firebase';
-import { collection, query, where, doc } from 'firebase/firestore';
+import { collection, query, where, doc, add } from 'firebase/firestore';
 import type { JobApplication, ApplicationInterview, Job } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link as LinkIcon, Calendar, Video, RefreshCw, Users, Info } from "lucide-react";
-import { format, add } from 'date-fns';
+import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
@@ -22,7 +22,18 @@ interface EnrichedInterview extends ApplicationInterview {
 }
 
 function InterviewCard({ interview, onMutate }: { interview: EnrichedInterview, onMutate: () => void }) {
-    const isUpcoming = interview.startAt.toDate() > new Date();
+    const [isUpcoming, setIsUpcoming] = useState<boolean | null>(null);
+
+    useEffect(() => {
+        const checkDate = () => {
+            const now = new Date();
+            setIsUpcoming(interview.startAt.toDate() > now);
+        };
+        checkDate();
+        const timer = setInterval(checkDate, 60000); // Check every minute
+        return () => clearInterval(timer);
+    }, [interview.startAt]);
+    
     const [isRescheduleDialogOpen, setIsRescheduleDialogOpen] = useState(false);
     const { isTemplate } = interview;
 
@@ -51,7 +62,7 @@ function InterviewCard({ interview, onMutate }: { interview: EnrichedInterview, 
                                 <Badge variant="destructive">Permintaan Ditolak</Badge>
                             ) : rescheduleStatus === 'countered' ? (
                                 <Badge className="bg-blue-500">Usulan Jadwal Baru dari HRD</Badge>
-                            ) : (isUpcoming ? <Badge>Akan Datang</Badge> : <Badge variant="secondary">Telah Lewat</Badge>)}
+                            ) : (isUpcoming === null ? <Skeleton className="h-6 w-20" /> : isUpcoming ? <Badge>Akan Datang</Badge> : <Badge variant="secondary">Telah Lewat</Badge>)}
                         </div>
                     </div>
                 </CardHeader>
@@ -159,9 +170,14 @@ export default function InterviewsPage() {
         return new Map(jobs.map(job => [job.id!, job]));
     }, [jobs]);
 
-    const allInterviews = useMemo(() => {
-        if (!applications || !jobMap) return [];
-        
+    const [sortedInterviews, setSortedInterviews] = useState<EnrichedInterview[]>([]);
+
+    useEffect(() => {
+        if (!applications || !jobMap) {
+            setSortedInterviews([]);
+            return;
+        }
+
         const interviews: EnrichedInterview[] = [];
         applications.forEach(app => {
             let hasSpecificInterview = false;
@@ -174,7 +190,6 @@ export default function InterviewsPage() {
                 });
             }
             
-            // If no specific interview, check for template
             if (!hasSpecificInterview) {
                 const job = jobMap.get(app.jobId);
                 if (job?.interviewTemplate && job.interviewTemplate.defaultStartDate) {
@@ -193,12 +208,11 @@ export default function InterviewsPage() {
             }
         });
         
-        // Sort by start date, upcoming first, then past ones most recent first
-        return interviews.sort((a, b) => {
+        const now = new Date().getTime();
+        const sorted = [...interviews].sort((a, b) => {
             const aTime = a.startAt.toDate().getTime();
             const bTime = b.startAt.toDate().getTime();
-            const now = new Date().getTime();
-
+            
             const aIsUpcoming = aTime >= now;
             const bIsUpcoming = bTime >= now;
 
@@ -206,11 +220,13 @@ export default function InterviewsPage() {
             if (!aIsUpcoming && bIsUpcoming) return 1;
             
             if (aIsUpcoming) {
-                return aTime - bTime; // Sort upcoming interviews chronologically
+                return aTime - bTime;
             } else {
-                return bTime - aTime; // Sort past interviews reverse-chronologically
+                return bTime - aTime;
             }
         });
+
+        setSortedInterviews(sorted);
     }, [applications, jobMap]);
 
     const isLoading = authLoading || appsLoading || jobsLoading;
@@ -226,9 +242,9 @@ export default function InterviewsPage() {
                 <p className="text-muted-foreground">Berikut adalah semua jadwal wawancara Anda yang akan datang atau yang telah lewat.</p>
             </div>
 
-            {allInterviews.length > 0 ? (
+            {sortedInterviews.length > 0 ? (
                 <div className="space-y-4">
-                    {allInterviews.map((interview, index) => (
+                    {sortedInterviews.map((interview, index) => (
                         <InterviewCard key={`${interview.application.id}-${interview.interviewId || index}`} interview={interview} onMutate={mutate} />
                     ))}
                 </div>
