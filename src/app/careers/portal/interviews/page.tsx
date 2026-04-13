@@ -3,13 +3,13 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase, useDoc } from '@/firebase';
-import { collection, query, where, doc, add } from 'firebase/firestore';
+import { collection, query, where, doc } from 'firebase/firestore';
 import type { JobApplication, ApplicationInterview, Job } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link as LinkIcon, Calendar, Video, RefreshCw, Users, Info } from "lucide-react";
-import { format } from 'date-fns';
+import { format, add } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
@@ -144,6 +144,11 @@ export default function InterviewsPage() {
     const { userProfile, loading: authLoading } = useAuth();
     const firestore = useFirestore();
 
+    const [isClient, setIsClient] = useState(false);
+    useEffect(() => {
+        setIsClient(true);
+    }, []);
+
     const applicationsQuery = useMemoFirebase(() => {
         if (!userProfile?.uid) return null;
         return query(
@@ -173,7 +178,7 @@ export default function InterviewsPage() {
     const [sortedInterviews, setSortedInterviews] = useState<EnrichedInterview[]>([]);
 
     useEffect(() => {
-        if (!applications || !jobMap) {
+        if (!isClient || !applications || !jobMap) {
             setSortedInterviews([]);
             return;
         }
@@ -227,7 +232,7 @@ export default function InterviewsPage() {
         });
 
         setSortedInterviews(sorted);
-    }, [applications, jobMap]);
+    }, [isClient, applications, jobMap]);
 
     const isLoading = authLoading || appsLoading || jobsLoading;
     
