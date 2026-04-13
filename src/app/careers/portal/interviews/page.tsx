@@ -3,17 +3,18 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useAuth } from '@/providers/auth-provider';
 import { useCollection, useFirestore, useMemoFirebase, useDoc } from '@/firebase';
-import { collection, query, where, doc } from 'firebase/firestore';
+import { collection, query, where, doc, updateDoc, add } from 'firebase/firestore';
 import type { JobApplication, ApplicationInterview, Job } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link as LinkIcon, Calendar, Video, RefreshCw, Users, Info } from "lucide-react";
-import { format, add } from 'date-fns';
+import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { RescheduleRequestDialog } from '@/components/recruitment/RescheduleRequestDialog';
+import Link from 'next/link';
 
 interface EnrichedInterview extends ApplicationInterview {
   application: JobApplication;
@@ -24,15 +25,29 @@ interface EnrichedInterview extends ApplicationInterview {
 function InterviewCard({ interview, onMutate }: { interview: EnrichedInterview, onMutate: () => void }) {
     const [isUpcoming, setIsUpcoming] = useState<boolean | null>(null);
 
+    const safeToDate = (ts: any): Date | null => {
+        if (!ts) return null;
+        if (ts instanceof Date) return ts; // Already a Date object
+        if (typeof ts.toDate === 'function') return ts.toDate(); // Firestore Timestamp
+        return null;
+    };
+    
+    const startDate = safeToDate(interview.startAt);
+    const endDate = safeToDate(interview.endAt);
+
     useEffect(() => {
         const checkDate = () => {
             const now = new Date();
-            setIsUpcoming(interview.startAt.toDate() > now);
+            if (startDate) {
+                setIsUpcoming(startDate > now);
+            } else {
+                setIsUpcoming(null);
+            }
         };
         checkDate();
         const timer = setInterval(checkDate, 60000); // Check every minute
         return () => clearInterval(timer);
-    }, [interview.startAt]);
+    }, [startDate]);
     
     const [isRescheduleDialogOpen, setIsRescheduleDialogOpen] = useState(false);
     const { isTemplate } = interview;
@@ -72,8 +87,8 @@ function InterviewCard({ interview, onMutate }: { interview: EnrichedInterview, 
                             <Calendar className="h-5 w-5 mt-0.5 text-primary" />
                             <div>
                                 <p className="font-semibold">Tanggal & Waktu</p>
-                                <p>{format(interview.startAt.toDate(), 'eeee, dd MMMM yyyy', { locale: id })}</p>
-                                <p>{format(interview.startAt.toDate(), 'HH:mm')} - {format(interview.endAt.toDate(), 'HH:mm')} WIB</p>
+                                <p>{startDate ? format(startDate, 'eeee, dd MMMM yyyy', { locale: id }) : '-'}</p>
+                                <p>{startDate ? format(startDate, 'HH:mm') : ''} - {endDate ? format(endDate, 'HH:mm') : ''} WIB</p>
                             </div>
                         </div>
                          <div className="flex items-start gap-3">
@@ -215,8 +230,10 @@ export default function InterviewsPage() {
         
         const now = new Date().getTime();
         const sorted = [...interviews].sort((a, b) => {
-            const aTime = a.startAt.toDate().getTime();
-            const bTime = b.startAt.toDate().getTime();
+            const aDate = a.startAt.toDate ? a.startAt.toDate() : a.startAt;
+            const bDate = b.startAt.toDate ? b.startAt.toDate() : b.startAt;
+            const aTime = aDate.getTime();
+            const bTime = bDate.getTime();
             
             const aIsUpcoming = aTime >= now;
             const bIsUpcoming = bTime >= now;
