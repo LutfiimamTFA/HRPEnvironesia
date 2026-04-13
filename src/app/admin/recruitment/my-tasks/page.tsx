@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { useAuth } from '@/providers/auth-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
-import type { JobApplication, ApplicationInterview, Job } from '@/lib/types';
+import type { JobApplication, ApplicationInterview, Job, UserProfile, Brand } from '@/lib/types';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { Card, CardContent } from '@/components/ui/card';
@@ -23,8 +23,11 @@ import {
 import Link from 'next/link';
 import { ApplicationStatusBadge } from '@/components/recruitment/ApplicationStatusBadge';
 import { getInitials } from '@/lib/utils';
+import { Input } from '@/components/ui/input';
+import { Search } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-// ─── Helpers ───────────────────────────────────────────────────────────────
+// --- Helpers ───────────────────────────────────────────────────────────────
 
 const safeToDate = (ts: any): Date | null => {
   if (!ts) return null;
@@ -51,17 +54,28 @@ const getDisplayInterview = (app: JobApplication): ApplicationInterview | null =
 
   if (sorted.length === 0) return null;
 
-  const upcoming = sorted.find(iv => (safeToDate(iv.startAt)?.getTime() ?? 0) >= now);
-  return upcoming ?? sorted[sorted.length - 1];
+  // Find the next upcoming scheduled (or requested reschedule) interview
+  const upcoming = sorted.find(iv => 
+    (safeToDate(iv.startAt)?.getTime() ?? 0) >= now && 
+    (iv.status === 'scheduled' || iv.status === 'reschedule_requested')
+  );
+  if (upcoming) return upcoming;
+
+  // If no upcoming, find the most recent past one that was not canceled
+  const past = sorted
+    .filter(iv => (safeToDate(iv.startAt)?.getTime() ?? 0) < now)
+    .sort((a,b) => (safeToDate(b.startAt)?.getTime() ?? 0) - (safeToDate(a.startAt)?.getTime() ?? 0));
+  
+  return past.length > 0 ? past[0] : null;
 };
 
-// ─── Modal payload types ────────────────────────────────────────────────────
+// --- Modal payload types ────────────────────────────────────────────────────
 
 type ModalData =
   | { type: 'actual'; interview: ApplicationInterview; app: JobApplication }
   | { type: 'template'; template: NonNullable<Job['interviewTemplate']>; app: JobApplication; jobPosition: string };
 
-// ─── Interview Detail Modal ─────────────────────────────────────────────────
+// --- Interview Detail Modal ─────────────────────────────────────────────────
 
 function InterviewDetailModal({
   data,
@@ -305,6 +319,20 @@ export default function MyRecruitmentTasksPage() {
     loadingDirect ||
     loadingPanelist ||
     (assignedJobIds.length > 0 && loadingJobLevel);
+    
+  const [searchTerm, setSearchTerm] = useState('');
+  const [stageFilter, setStageFilter] = useState('all');
+
+  const filteredApplications = useMemo(() => {
+    if (!applications) return [];
+    return applications.filter(app => {
+        const stageMatch = stageFilter === 'all' || app.status === stageFilter;
+        const searchMatch = searchTerm === '' || 
+            app.candidateName.toLowerCase().includes(searchTerm.toLowerCase()) || 
+            app.jobPosition.toLowerCase().includes(searchTerm.toLowerCase());
+        return stageMatch && searchMatch;
+    });
+  }, [applications, stageFilter, searchTerm]);
 
   if (!userProfile) return null;
 
@@ -317,13 +345,31 @@ export default function MyRecruitmentTasksPage() {
             Daftar kandidat yang ditugaskan kepada Anda untuk dilakukan evaluasi internal atau wawancara.
           </p>
         </div>
+        
+        <div className="flex items-center gap-2">
+            <div className="relative flex-grow">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input placeholder="Cari kandidat atau posisi..." className="pl-8" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+            </div>
+            <Select value={stageFilter} onValueChange={setStageFilter}>
+                <SelectTrigger className="w-[240px]">
+                    <SelectValue placeholder="Filter tahap..." />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">Semua Tahap</SelectItem>
+                    {Object.entries(statusDisplayLabels).map(([key, label]) => (
+                        <SelectItem key={key} value={key}>{label}</SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
+        </div>
 
         {isLoading ? (
           <div className="space-y-4">
             <Skeleton className="h-12 w-full" />
             <Skeleton className="h-48 w-full" />
           </div>
-        ) : !applications || applications.length === 0 ? (
+        ) : !filteredApplications || filteredApplications.length === 0 ? (
           <Card className="border-dashed py-12">
             <CardContent className="flex flex-col items-center justify-center text-center">
               <div className="bg-muted p-4 rounded-full mb-4">
@@ -331,7 +377,7 @@ export default function MyRecruitmentTasksPage() {
               </div>
               <h3 className="text-xl font-semibold">Tidak Ada Tugas Review</h3>
               <p className="text-muted-foreground max-w-sm mx-auto mt-2 text-sm">
-                Saat ini belum ada kandidat yang ditugaskan kepada Anda untuk evaluasi internal.
+                Saat ini belum ada kandidat yang membutuhkan tindakan dari Anda.
                 Tugas akan muncul di sini jika HRD menambahkan Anda sebagai reviewer.
               </p>
             </CardContent>
@@ -349,7 +395,7 @@ export default function MyRecruitmentTasksPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {applications.map(app => {
+                {filteredApplications.map(app => {
                   const interview = getDisplayInterview(app);
                   const jobTemplate = !interview
                     ? jobMap.get(app.jobId)?.interviewTemplate
@@ -387,57 +433,44 @@ export default function MyRecruitmentTasksPage() {
                       {/* Jadwal Wawancara — klikable buka modal */}
                       <TableCell>
                         {interview ? (
-                          // Case 1: Jadwal aktual tersedia
-                          <button
+                          <Button
+                            variant="ghost"
+                            className="text-left p-0 h-auto font-normal group"
                             onClick={() => openModal({ type: 'actual', interview, app })}
-                            className="text-left group space-y-1 hover:opacity-80 transition-opacity"
                           >
-                            <div className="flex items-center gap-2 text-xs font-semibold">
-                              <Calendar className="h-3.5 w-3.5 text-primary" />
-                              <span>{format(safeToDate(interview.startAt)!, 'dd MMM, HH:mm')}</span>
-                            </div>
-                            <span className="flex items-center gap-1 text-[10px] text-primary underline-offset-2 group-hover:underline">
-                              <Info className="h-3 w-3" /> Lihat detail
-                            </span>
-                          </button>
-                        ) : jobTemplate && (templateDate || jobTemplate.meetingLink) ? (
-                          // Case 2: Template lowongan tersedia
-                          <button
-                            onClick={() =>
-                              openModal({
-                                type: 'template',
-                                template: jobTemplate,
-                                app,
-                                jobPosition: app.jobPosition,
-                              })
-                            }
-                            className="text-left group space-y-1 hover:opacity-80 transition-opacity"
-                          >
-                            <Badge variant="secondary" className="text-[10px] gap-1 font-medium">
-                              <Info className="h-2.5 w-2.5" /> Template Lowongan
-                            </Badge>
-                            {templateDate && (
-                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                <Calendar className="h-3 w-3" />
-                                <span>
-                                  {format(templateDate, 'dd MMM')}
-                                  {jobTemplate.workdayStartTime && ` · ${jobTemplate.workdayStartTime}`}
-                                </span>
+                            <div className="flex items-center gap-2">
+                              <Calendar className="h-4 w-4 text-primary" />
+                              <div className="leading-tight">
+                                <p className="font-semibold text-sm group-hover:text-primary transition-colors">
+                                  {format(safeToDate(interview.startAt)!, 'dd MMM, HH:mm')}
+                                </p>
+                                <p className="text-xs text-muted-foreground group-hover:text-primary/80">Klik untuk detail</p>
                               </div>
-                            )}
-                            <span className="flex items-center gap-1 text-[10px] text-primary underline-offset-2 group-hover:underline">
-                              <LinkIcon className="h-3 w-3" /> Lihat detail &amp; link meeting
-                            </span>
-                          </button>
-                        ) : app.status === 'interview' ? (
-                          // Case 3: Tahap interview, belum ada jadwal/template
-                          <span className="text-xs text-amber-500 italic">Menunggu penjadwalan</span>
+                            </div>
+                          </Button>
+                        ) : jobTemplate && (templateDate || jobTemplate.meetingLink) ? (
+                          <Button
+                            variant="ghost"
+                            className="text-left p-0 h-auto font-normal group"
+                            onClick={() => openModal({ type: 'template', template: jobTemplate, app, jobPosition: app.jobPosition })}
+                          >
+                            <div className="flex items-center gap-2">
+                              <Info className="h-4 w-4 text-sky-500" />
+                              <div className="leading-tight">
+                                <p className="font-semibold text-sm group-hover:text-primary transition-colors">
+                                  Info dari Template
+                                </p>
+                                <p className="text-xs text-muted-foreground group-hover:text-primary/80">Klik untuk detail</p>
+                              </div>
+                            </div>
+                          </Button>
                         ) : (
-                          // Case 4: Belum tahap interview
-                          <span className="text-xs text-muted-foreground italic">Belum terjadwal</span>
+                          <span className="text-xs text-muted-foreground italic">
+                            {app.status === 'interview' ? 'Menunggu penjadwalan' : 'Belum terjadwal'}
+                          </span>
                         )}
                       </TableCell>
-
+                      
                       {/* Aksi */}
                       <TableCell className="text-right">
                         <Button variant="ghost" size="sm" asChild className="rounded-xl group">
