@@ -14,17 +14,17 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
-import { format, differenceInMinutes } from 'date-fns';
+import { format, differenceInMinutes, addDays } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import {
   ArrowRight, Briefcase, Calendar, Link as LinkIcon,
   Clock, Users, Video, Info, ExternalLink, ChevronRight,
+  Search,
 } from 'lucide-react';
 import Link from 'next/link';
-import { ApplicationStatusBadge } from '@/components/recruitment/ApplicationStatusBadge';
+import { ApplicationStatusBadge, statusDisplayLabels } from '@/components/recruitment/ApplicationStatusBadge';
 import { getInitials } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
-import { Search } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 // --- Helpers ───────────────────────────────────────────────────────────────
@@ -38,36 +38,23 @@ const safeToDate = (ts: any): Date | null => {
 };
 
 const getDisplayInterview = (app: JobApplication): ApplicationInterview | null => {
-  if (!app.interviews || app.interviews.length === 0) return null;
-  const now = new Date().getTime();
+    if (!app.interviews || app.interviews.length === 0) return null;
 
-  const sorted = app.interviews
-    .filter(iv => {
-      if (!iv || iv.status === 'canceled') return false;
-      return safeToDate(iv.startAt) !== null;
-    })
-    .sort((a, b) => {
-      const aMs = safeToDate(a.startAt)?.getTime() ?? 0;
-      const bMs = safeToDate(b.startAt)?.getTime() ?? 0;
-      return aMs - bMs;
-    });
+    const sortedInterviews = [...app.interviews]
+        .filter(iv => iv && iv.status !== 'canceled' && iv.startAt)
+        .sort((a, b) => (a.startAt?.toMillis() || 0) - (b.startAt?.toMillis() || 0));
 
-  if (sorted.length === 0) return null;
+    if (sortedInterviews.length === 0) return null;
 
-  // Find the next upcoming scheduled (or requested reschedule) interview
-  const upcoming = sorted.find(iv => 
-    (safeToDate(iv.startAt)?.getTime() ?? 0) >= now && 
-    (iv.status === 'scheduled' || iv.status === 'reschedule_requested')
-  );
-  if (upcoming) return upcoming;
+    const now = new Date();
+    const upcoming = sortedInterviews.find(iv => iv.startAt.toDate() >= now);
 
-  // If no upcoming, find the most recent past one that was not canceled
-  const past = sorted
-    .filter(iv => (safeToDate(iv.startAt)?.getTime() ?? 0) < now)
-    .sort((a,b) => (safeToDate(b.startAt)?.getTime() ?? 0) - (safeToDate(a.startAt)?.getTime() ?? 0));
-  
-  return past.length > 0 ? past[0] : null;
+    if (upcoming) return upcoming;
+
+    // If no upcoming, return the most recent past one
+    return sortedInterviews.pop() || null;
 };
+
 
 // --- Modal payload types ────────────────────────────────────────────────────
 
