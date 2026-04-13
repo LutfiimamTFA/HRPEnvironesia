@@ -10,7 +10,7 @@ import { id as idLocale } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/providers/auth-provider';
 import { useFirestore, updateDocumentNonBlocking } from '@/firebase';
-import { doc, serverTimestamp, updateDoc, Timestamp, writeBatch } from 'firebase/firestore';
+import { doc, serverTimestamp, updateDoc, Timestamp, writeBatch, collection } from 'firebase/firestore';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ScheduleInterviewDialog, type ScheduleInterviewData } from './ScheduleInterviewDialog';
 import { ManagePanelistsDialog } from './ManagePanelistsDialog';
@@ -78,13 +78,23 @@ export function InterviewManagement({ application, onUpdate, allUsers, allBrands
     if (!application || !userProfile) return false;
 
     setIsSubmitting(true);
-
+    const batch = writeBatch(firestore);
+    const appRef = doc(firestore, 'applications', application.id!);
     const newInterviews = [...(application.interviews || [])];
     const newTimeline = [...(application.timeline || [])];
     
     try {
         const panelistIds = data.panelists.map(p => p.value);
         const panelistNames = data.panelists.map(p => p.label);
+        
+        const notificationBase = {
+            module: 'recruitment' as const,
+            targetType: 'application' as const,
+            targetId: application.id!,
+            isRead: false,
+            createdAt: serverTimestamp() as Timestamp,
+            createdBy: userProfile.uid,
+        };
 
         if (activeInterview && !activeInterview.rescheduleRequest) { // Pure Edit
             const index = newInterviews.findIndex(iv => iv.interviewId === activeInterview.interviewId);
@@ -99,10 +109,26 @@ export function InterviewManagement({ application, onUpdate, allUsers, allBrands
                     notes: data.notes,
                 };
                 newTimeline.push({
-                    type: 'status_changed',
+                    type: 'interview_updated',
                     at: Timestamp.now(),
                     by: userProfile.uid,
                     meta: { note: `Jadwal wawancara diperbarui oleh HRD.` },
+                });
+                
+                const allRecipients = new Set([application.candidateUid, ...panelistIds]);
+                allRecipients.forEach(recipientUid => {
+                    const notifRef = doc(collection(firestore, 'users', recipientUid, 'notifications'));
+                    const isCandidate = recipientUid === application.candidateUid;
+                    batch.set(notifRef, {
+                        ...notificationBase,
+                        userId: recipientUid,
+                        type: 'interview_updated',
+                        title: 'Jadwal Wawancara Diperbarui',
+                        message: isCandidate
+                            ? `Jadwal wawancara Anda untuk posisi "${application.jobPosition}" telah diubah. Mohon periksa detailnya.`
+                            : `Jadwal wawancara untuk ${application.candidateName} (${application.jobPosition}) telah diperbarui.`,
+                        actionUrl: isCandidate ? '/careers/portal/interviews' : '/admin/interviews',
+                    });
                 });
 
                 const allPanelistIds = new Set<string>();
@@ -112,13 +138,14 @@ export function InterviewManagement({ application, onUpdate, allUsers, allBrands
                     }
                 });
 
-                await updateDoc(doc(firestore, 'applications', application.id!), { interviews: newInterviews, timeline: newTimeline, allPanelistIds: Array.from(allPanelistIds) });
+                batch.update(appRef, { interviews: newInterviews, timeline: newTimeline, allPanelistIds: Array.from(allPanelistIds) });
                 toast({ title: 'Wawancara Diperbarui' });
+
             } else {
                  throw new Error("Wawancara yang akan diedit tidak ditemukan.");
             }
         } else { // Create or Counter-proposal
-            if (activeInterview && activeInterview.rescheduleRequest) { // Counter-proposal
+            if (activeInterview && activeInterview.rescheduleRequest) {
                 const index = newInterviews.findIndex(iv => iv.interviewId === activeInterview.interviewId);
                 if (index !== -1) {
                     newInterviews[index].status = 'canceled';
@@ -148,13 +175,32 @@ export function InterviewManagement({ application, onUpdate, allUsers, allBrands
                 by: userProfile.uid,
                 meta: { interviewDate: Timestamp.fromDate(data.dateTime) }
             });
+
+            const allRecipients = new Set([application.candidateUid, ...panelistIds]);
+            allRecipients.forEach(recipientUid => {
+                const notifRef = doc(collection(firestore, 'users', recipientUid, 'notifications'));
+                const isCandidate = recipientUid === application.candidateUid;
+
+                batch.set(notifRef, {
+                    ...notificationBase,
+                    userId: recipientUid,
+                    type: 'interview_scheduled',
+                    title: 'Jadwal Wawancara Baru',
+                    message: isCandidate
+                        ? `Anda telah dijadwalkan untuk wawancara posisi "${application.jobPosition}".`
+                        : `Anda ditugaskan sebagai panelis untuk wawancara ${application.candidateName} (${application.jobPosition}).`,
+                    actionUrl: isCandidate ? '/careers/portal/interviews' : '/admin/interviews',
+                });
+            });
+
             const allPanelistIds = new Set<string>(application.allPanelistIds || []);
             panelistIds.forEach(id => allPanelistIds.add(id));
 
-            await updateDoc(doc(firestore, 'applications', application.id!), { interviews: newInterviews, timeline: newTimeline, allPanelistIds: Array.from(allPanelistIds) });
+            batch.update(appRef, { interviews: newInterviews, timeline: newTimeline, allPanelistIds: Array.from(allPanelistIds) });
             toast({ title: activeInterview ? 'Jadwal Baru Diajukan' : 'Wawancara Dijadwalkan' });
         }
         
+        await batch.commit();
         onUpdate();
         return true;
     } catch (error: any) {
