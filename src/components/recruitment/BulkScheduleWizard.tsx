@@ -262,9 +262,11 @@ export function BulkScheduleWizard({ isOpen, onOpenChange, candidates, recruiter
                 targetId: slot.candidate.id!,
                 userId: recipientUid,
                 type: 'interview_scheduled',
-                title: 'Jadwal Wawancara Baru',
-                message: `Jadwal wawancara untuk ${slot.candidate.candidateName} telah ditetapkan. Silakan cek detail terbaru.`,
-                actionUrl: isCandidate ? '/careers/portal/applications' : '/admin/recruitment/my-tasks',
+                title: 'Jadwal Wawancara Tersedia',
+                message: isCandidate 
+                    ? `Wawancara Anda untuk posisi ${slot.candidate.jobPosition} telah dijadwalkan pada ${interviewDateStr} pukul ${interviewTimeStr}.`
+                    : `Wawancara kandidat ${slot.candidate.candidateName} untuk posisi ${slot.candidate.jobPosition} telah dijadwalkan pada ${interviewDateStr} pukul ${interviewTimeStr}.`,
+                actionUrl: isCandidate ? '/careers/portal/applications' : `/admin/recruitment/applications/${slot.candidate.id}`,
                 isRead: false,
                 createdAt: serverTimestamp(),
                 createdBy: recruiter.uid,

@@ -264,7 +264,7 @@ export default function MyRecruitmentTasksPage() {
   }, [firestore, userProfile?.uid]);
 
   const { data: directApps, isLoading: loadingDirect } = useCollection<JobApplication>(directAssignmentQuery);
-  const { data: panelistApps, isLoading: loadingPanelist } = useCollection(panelistAssignmentQuery);
+  const { data: panelistApps, isLoading: loadingPanelist } = useCollection<JobApplication>(panelistAssignmentQuery);
 
   const applications = useMemo(() => {
     const all = [...(directApps || []), ...(panelistApps || [])];

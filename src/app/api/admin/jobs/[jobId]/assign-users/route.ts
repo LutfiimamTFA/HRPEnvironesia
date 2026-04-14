@@ -81,7 +81,7 @@ export async function POST(
             targetId: params.jobId,
             actionUrl: `/admin/recruitment/my-tasks`,
             isRead: false,
-            createdBy: authResult.uid,
+            createdBy: authResult.uid!,
             createdAt: FieldValue.serverTimestamp(),
             meta: {
                 jobId: params.jobId,

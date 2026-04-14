@@ -35,7 +35,7 @@ import { ROLES_INTERNAL } from '@/lib/types';
 import { InterviewManagement } from '@/components/recruitment/InterviewManagement';
 import { InternalEvaluationSection } from '@/components/recruitment/InternalEvaluationSection';
 import { PostInterviewEvaluationSection } from '@/components/recruitment/PostInterviewEvaluationSection';
-import { FinalInternalDecisionSection } from '@/components/recruitment/FinalInternalDecisionSection';
+import { UnifiedInternalDecision } from '@/components/recruitment/UnifiedInternalDecision';
 import { InternalHRTimeline } from '@/components/recruitment/InternalHRTimeline';
 
 
@@ -251,8 +251,7 @@ export default function ApplicationDetailPage() {
   const shouldShowPostInterview = useMemo(() => {
     if (!application?.status) return false;
     
-    // Show as long as it has reached 'interview' stage or beyond
-    // Include verification and document_submission as they are sometimes used as post-interview/final-review phases
+    // Always show if it has reached 'interview' stage or beyond
     const stages = ['interview', 'verification', 'document_submission', 'offered', 'hired', 'rejected'];
     return stages.includes(application.status);
   }, [application]);
@@ -344,7 +343,15 @@ export default function ApplicationDetailPage() {
             </CardHeader>
           </Card>
 
-          <FinalInternalDecisionSection application={application} onStageChange={handleStageChange} />
+          <UnifiedInternalDecision application={application} onStageChange={handleStageChange} />
+
+          <InterviewManagement 
+              application={application} 
+              job={job} 
+              allUsers={internalUsers || []}
+              allBrands={brands || []}
+              onUpdate={mutateApplication}
+          />
           
           {/* Unified Detail Sections (Headless Step Navigation Structure) */}
           <div className="grid grid-cols-1 xl:grid-cols-[200px_1fr] gap-10 items-start pt-4">

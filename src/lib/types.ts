@@ -368,6 +368,13 @@ export type JobApplication = {
   internalReviewSummary?: InternalReviewSummary;
   recruitmentInternalDecision?: RecruitmentInternalDecision;
   postInterviewEvaluation?: PostInterviewEvaluationSummary;
+  postInterviewDecision?: PostInterviewDecision;
+  candidateStatus?: 'lolos' | 'menunggu';
+  
+  // Interview Lifecycle Tracking
+  interviewCompleted?: boolean;
+  interviewCompletedAt?: Timestamp;
+  interviewCompletionSource?: 'manual' | 'auto_time';
 };
 
 export type InternalReviewScore = 'direkomendasikan' | 'dipertimbangkan' | 'belum_sesuai';
@@ -398,6 +405,16 @@ export type RecruitmentInternalDecisionStatus = 'lanjut_ke_tahap_selanjutnya' | 
 export interface RecruitmentInternalDecision {
   status: RecruitmentInternalDecisionStatus;
   note: string;
+  decidedBy: string;
+  decidedByName?: string;
+  decidedAt: Timestamp;
+}
+
+export type PostInterviewDecisionStatus = 'lanjut' | 'pending' | 'tidak_lanjut';
+
+export interface PostInterviewDecision {
+  status: PostInterviewDecisionStatus;
+  note?: string;
   decidedBy: string;
   decidedByName?: string;
   decidedAt: Timestamp;

@@ -61,7 +61,7 @@ export function ApplicationStatusStepper({ application, highestStatus, isProfile
         const stepIndex = ORDERED_RECRUITMENT_STAGES.indexOf(stage);
 
         if (highestStatus === 'rejected') {
-            return { status: 'locked', reason: 'Proses lamaran Anda tidak dapat dilanjutkan saat ini.' };
+            return { status: 'waiting', reason: 'Lamaran Anda sedang dalam tahap evaluasi lanjutan oleh tim kami.' };
         }
 
         if (stepIndex < currentHighestIndex) {
