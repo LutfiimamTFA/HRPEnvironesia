@@ -19,10 +19,11 @@ interface ManagePanelistsDialogProps {
   interview: ApplicationInterview;
   currentUser: UserProfile;
   allUsers: UserProfile[];
+  allBrands: Brand[];
   onSuccess: () => void;
 }
 
-export function ManagePanelistsDialog({ open, onOpenChange, application, interview, currentUser, allUsers, onSuccess }: ManagePanelistsDialogProps) {
+export function ManagePanelistsDialog({ open, onOpenChange, application, interview, currentUser, allUsers, allBrands, onSuccess }: ManagePanelistsDialogProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [panelistIds, setPanelistIds] = useState<string[]>([]);
   const firestore = useFirestore();
@@ -156,6 +157,7 @@ export function ManagePanelistsDialog({ open, onOpenChange, application, intervi
         <div className="py-4">
             <PanelistPickerSimple
                 allUsers={allUsers}
+                allBrands={allBrands}
                 selectedIds={panelistIds}
                 onChange={setPanelistIds}
             />

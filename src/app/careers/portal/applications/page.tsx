@@ -424,7 +424,7 @@ function ApplicationCard({
       const twoHoursInMs = 2 * 60 * 60 * 1000;
 
       const isActuallyCompleted =
-        application.postInterviewEvaluation?.submissions > 0 ||
+        (application.postInterviewEvaluation?.submissions ?? 0) > 0 ||
         now.getTime() > interviewEnd.getTime() + twoHoursInMs;
 
       if (!isActuallyCompleted) {
