@@ -33,6 +33,16 @@ import { format, addMonths } from "date-fns";
 import { id } from "date-fns/locale";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Link } from "@/navigation";
 import {
   ArrowRight,
@@ -69,6 +79,10 @@ function ApplicationCard({
 }) {
   const [now, setNow] = useState(new Date());
   const [isDeciding, setIsDeciding] = React.useState(false);
+  const [isNegotiationOpen, setIsNegotiationOpen] = useState(false);
+  const [requestedSalary, setRequestedSalary] = useState("");
+  const [negotiationReason, setNegotiationReason] = useState("");
+  const [isSubmittingNegotiation, setIsSubmittingNegotiation] = useState(false);
   const { firebaseUser } = useAuth();
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -115,9 +129,95 @@ function ApplicationCard({
     }
   };
 
+  const canRequestNegotiation =
+    application.offerStatus === "sent" && !application.candidateNegotiationUsed;
+
+  const handleNegotiationSubmit = async (
+    event: React.FormEvent<HTMLFormElement>,
+  ) => {
+    event.preventDefault();
+
+    if (!firebaseUser) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Anda harus login.",
+      });
+      return;
+    }
+
+    if (!requestedSalary.trim()) {
+      toast({
+        variant: "destructive",
+        title: "Gagal Mengirim Negosiasi",
+        description: "Gaji yang diharapkan harus diisi.",
+      });
+      return;
+    }
+
+    if (!negotiationReason.trim()) {
+      toast({
+        variant: "destructive",
+        title: "Gagal Mengirim Negosiasi",
+        description: "Alasan negosiasi harus diisi.",
+      });
+      return;
+    }
+
+    const requestedSalaryNumber = parseInt(
+      requestedSalary.replace(/\D/g, ""),
+      10,
+    );
+    if (isNaN(requestedSalaryNumber) || requestedSalaryNumber <= 0) {
+      toast({
+        variant: "destructive",
+        title: "Gagal Mengirim Negosiasi",
+        description: "Masukkan gaji yang valid.",
+      });
+      return;
+    }
+
+    setIsSubmittingNegotiation(true);
+    try {
+      const appRef = doc(firestore, "applications", application.id!);
+      const payload: any = {
+        offerStatus: "negotiation_requested",
+        candidateNegotiationUsed: true,
+        candidateCounterOffer: {
+          requestedSalary: requestedSalaryNumber,
+          reason: negotiationReason.trim(),
+          submittedAt: serverTimestamp(),
+        },
+        updatedAt: serverTimestamp(),
+      };
+      await updateDocumentNonBlocking(appRef, payload);
+      toast({
+        title: "Permintaan Negosiasi Dikirim",
+        description: "Tim HRD akan meninjau usulan Anda dan merespons segera.",
+      });
+      setIsNegotiationOpen(false);
+      setRequestedSalary("");
+      setNegotiationReason("");
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Gagal Mengirim Negosiasi",
+        description: error.message,
+      });
+    } finally {
+      setIsSubmittingNegotiation(false);
+    }
+  };
+
   const formatSalary = (value: number | undefined | null) => {
     if (value === undefined || value === null) return "-";
     return `Rp ${value.toLocaleString("id-ID")}`;
+  };
+
+  const formatSalaryInput = (value: string) => {
+    const digits = value.replace(/\D/g, "");
+    if (!digits) return "";
+    return `Rp ${parseInt(digits, 10).toLocaleString("id-ID")}`;
   };
 
   const scheduledInterview = useMemo(() => {
@@ -177,8 +277,8 @@ function ApplicationCard({
                 <CardDescription>
                   Berdasarkan hasil tahapan seleksi yang telah Anda ikuti, kami
                   menyampaikan penawaran kerja untuk posisi ini. Mohon tinjau
-                  seluruh detail penawaran dengan saksama. Keputusan yang Anda
-                  berikan bersifat final dan tidak dapat diubah melalui sistem.
+                  seluruh detail penawaran dengan saksama. Anda dapat mengajukan
+                  negosiasi 1 kali sebelum mengambil keputusan final.
                 </CardDescription>
               </div>
               <Badge className="w-fit bg-primary/80">
@@ -261,20 +361,354 @@ function ApplicationCard({
             )}
           </CardContent>
           <CardFooter className="bg-muted/50 p-4 border-t flex flex-col sm:flex-row justify-end items-center gap-2">
-            <Button
-              onClick={() => handleDecision("rejected")}
-              variant="outline"
-              disabled={isDeciding}
-              className="w-full sm:w-auto"
-            >
-              Tolak Penawaran
-            </Button>
+            {canRequestNegotiation ? (
+              <Button
+                onClick={() => setIsNegotiationOpen(true)}
+                variant="outline"
+                disabled={isDeciding}
+                className="w-full sm:w-auto"
+              >
+                Ajukan Negosiasi
+              </Button>
+            ) : (
+              <div className="rounded-lg border border-muted/70 bg-muted/50 px-4 py-3 text-sm text-muted-foreground w-full sm:w-auto text-center">
+                Negosiasi hanya dapat dilakukan satu kali.
+              </div>
+            )}
             <Button
               onClick={() => handleDecision("accepted")}
               disabled={isDeciding}
               className="w-full sm:w-auto"
             >
               {isDeciding && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Terima Penawaran
+            </Button>
+          </CardFooter>
+
+          <Dialog open={isNegotiationOpen} onOpenChange={setIsNegotiationOpen}>
+            <DialogContent className="w-full max-w-5xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Ajukan Negosiasi Penawaran</DialogTitle>
+                <DialogDescription>
+                  Anda dapat mengajukan penyesuaian gaji 1 kali. Setelah
+                  pengajuan dikirim, Anda tidak dapat mengubah atau mengajukan
+                  ulang.
+                </DialogDescription>
+              </DialogHeader>
+              <form
+                onSubmit={handleNegotiationSubmit}
+                className="space-y-6 p-4"
+              >
+                <div className="grid gap-6 lg:grid-cols-2">
+                  <div className="rounded-3xl border border-muted/70 bg-muted/50 p-5">
+                    <p className="text-sm font-semibold">Penawaran Awal HRD</p>
+                    <div className="mt-4 space-y-4 text-sm text-muted-foreground">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                          Posisi
+                        </p>
+                        <p className="mt-1 font-semibold text-foreground">
+                          {application.jobPosition}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                          Status penawaran
+                        </p>
+                        <p className="mt-1 font-semibold text-foreground">
+                          Penawaran Terkirim
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                          Gaji yang ditawarkan
+                        </p>
+                        <p className="mt-1 font-semibold text-foreground">
+                          {formatSalary(application.offeredSalary)} / bulan
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                          Tipe kerja
+                        </p>
+                        <p className="mt-1 font-semibold capitalize">
+                          {application.jobType}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                          Durasi kontrak
+                        </p>
+                        <p className="mt-1 font-semibold">
+                          {application.contractDurationMonths} bulan
+                        </p>
+                      </div>
+                      {application.probationDurationMonths != null && (
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                            Masa percobaan
+                          </p>
+                          <p className="mt-1 font-semibold">
+                            {application.probationDurationMonths} bulan
+                          </p>
+                        </div>
+                      )}
+                      {application.workDays && (
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                            Hari kerja
+                          </p>
+                          <p className="mt-1 font-semibold">
+                            {application.workDays}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-3xl border border-muted/70 bg-background p-5 shadow-sm">
+                    <p className="text-sm font-semibold">Usulan Negosiasi</p>
+                    <div className="mt-4 space-y-4">
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">
+                          Gaji yang diharapkan
+                        </label>
+                        <Input
+                          value={requestedSalary}
+                          onChange={(event) =>
+                            setRequestedSalary(
+                              formatSalaryInput(event.target.value),
+                            )
+                          }
+                          placeholder="Rp 5.000.000"
+                          inputMode="numeric"
+                          className="mt-2"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">
+                          Alasan / catatan negosiasi
+                        </label>
+                        <Textarea
+                          value={negotiationReason}
+                          onChange={(event) =>
+                            setNegotiationReason(event.target.value)
+                          }
+                          placeholder="Jelaskan singkat alasan penyesuaian gaji"
+                          className="mt-2"
+                          rows={5}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-muted/70 bg-muted/50 p-4 text-sm text-muted-foreground">
+                  Negosiasi hanya dapat dilakukan 1 kali agar proses tetap
+                  profesional dan efisien.
+                </div>
+
+                <DialogFooter>
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    onClick={() => setIsNegotiationOpen(false)}
+                    disabled={isSubmittingNegotiation}
+                  >
+                    Batal
+                  </Button>
+                  <Button type="submit" disabled={isSubmittingNegotiation}>
+                    {isSubmittingNegotiation ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : null}
+                    Kirim Negosiasi
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </Card>
+      );
+    }
+
+    if (application.offerStatus === "negotiation_requested") {
+      const counter = application.candidateCounterOffer;
+      return (
+        <Card className="flex flex-col border-amber-500/50">
+          <CardHeader>
+            <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4">
+              <div>
+                <CardTitle className="text-xl">Negosiasi Dikirim</CardTitle>
+                <CardDescription>
+                  Pengajuan negosiasi Anda telah dikirim dan sedang ditinjau
+                  oleh tim HRD.
+                </CardDescription>
+              </div>
+              <Badge className="w-fit bg-amber-600 hover:bg-amber-700 text-white">
+                Negosiasi Dikirim
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm">
+              <p className="font-semibold">Status Review</p>
+              <p className="mt-2 text-muted-foreground">
+                Pengajuan negosiasi Anda telah dikirim dan sedang ditinjau oleh
+                tim HRD.
+              </p>
+              <p className="mt-2 text-sm font-medium text-slate-900">
+                Setelah pengajuan dikirim, Anda tidak dapat mengubah atau
+                mengajukan ulang.
+              </p>
+            </div>
+            <div className="grid gap-4 lg:grid-cols-2 text-sm">
+              <div className="rounded-3xl border border-muted/70 bg-muted/50 p-5">
+                <p className="font-semibold">Penawaran Awal HRD</p>
+                <div className="mt-4 space-y-3 text-muted-foreground">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em]">Gaji</p>
+                    <p className="mt-1 font-semibold text-foreground">
+                      {formatSalary(application.offeredSalary)} / bulan
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em]">Posisi</p>
+                    <p className="mt-1 font-semibold capitalize">
+                      {application.jobPosition}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-3xl border border-muted/70 bg-background p-5 shadow-sm">
+                <p className="font-semibold">Permintaan Anda</p>
+                <div className="mt-4 space-y-3 text-muted-foreground">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em]">
+                      Gaji yang diminta
+                    </p>
+                    <p className="mt-1 font-semibold text-foreground">
+                      {formatSalary(counter?.requestedSalary)} / bulan
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em]">
+                      Selisih nominal
+                    </p>
+                    <p className="mt-1 font-semibold text-foreground">
+                      {counter?.requestedSalary != null &&
+                      application.offeredSalary != null
+                        ? `Rp ${(
+                            counter.requestedSalary - application.offeredSalary
+                          ).toLocaleString("id-ID")}`
+                        : "-"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em]">
+                      Catatan Anda
+                    </p>
+                    <p className="mt-1 font-semibold text-foreground">
+                      {counter?.reason || "-"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    if (
+      application.offerStatus === "negotiation_approved" ||
+      application.offerStatus === "negotiation_countered" ||
+      application.offerStatus === "negotiation_rejected"
+    ) {
+      const counter = application.candidateCounterOffer;
+      const isCountered = application.offerStatus === "negotiation_countered";
+      const isApproved = application.offerStatus === "negotiation_approved";
+      const title = isApproved
+        ? "Negosiasi Disetujui"
+        : isCountered
+          ? "HRD Mengajukan Penawaran Final"
+          : "Negosiasi Ditolak";
+      const description = isApproved
+        ? "HRD menyetujui usulan gaji Anda. Silakan terima atau tolak penawaran final."
+        : isCountered
+          ? "HRD mengajukan penawaran akhir. Silakan tinjau dan pilih terima atau tolak final."
+          : "HRD menolak usulan negosiasi. Anda masih dapat menerima atau menolak penawaran final.";
+      return (
+        <Card className="flex flex-col border-slate-300/80">
+          <CardHeader>
+            <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4">
+              <div>
+                <CardTitle className="text-xl">{title}</CardTitle>
+                <CardDescription>{description}</CardDescription>
+              </div>
+              <Badge className="w-fit bg-slate-700 text-white">
+                {application.offerStatus.replaceAll("_", " ")}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 lg:grid-cols-2 text-sm">
+              <div className="rounded-3xl border border-muted/70 bg-muted/50 p-5">
+                <p className="font-semibold">Penawaran Akhir</p>
+                <div className="mt-4 space-y-3 text-muted-foreground">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em]">Gaji</p>
+                    <p className="mt-1 font-semibold text-foreground">
+                      {formatSalary(application.offeredSalary)} / bulan
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em]">Posisi</p>
+                    <p className="mt-1 font-semibold capitalize">
+                      {application.jobPosition}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              {counter ? (
+                <div className="rounded-3xl border border-muted/70 bg-background p-5 shadow-sm">
+                  <p className="font-semibold">Usulan Anda</p>
+                  <div className="mt-4 space-y-3 text-muted-foreground">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.2em]">
+                        Gaji yang diminta
+                      </p>
+                      <p className="mt-1 font-semibold text-foreground">
+                        {formatSalary(counter.requestedSalary)} / bulan
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.2em]">
+                        Catatan Anda
+                      </p>
+                      <p className="mt-1 font-semibold text-foreground">
+                        {counter.reason || "-"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </CardContent>
+          <CardFooter className="bg-muted/50 p-4 border-t flex flex-col sm:flex-row justify-end items-center gap-2">
+            <Button
+              onClick={() => handleDecision("rejected")}
+              variant="outline"
+              disabled={isDeciding}
+              className="w-full sm:w-auto"
+            >
+              {isDeciding && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Tolak Final
+            </Button>
+            <Button
+              onClick={() => handleDecision("accepted")}
+              disabled={isDeciding}
+              className="w-full sm:w-auto"
+            >
               Terima Penawaran
             </Button>
           </CardFooter>

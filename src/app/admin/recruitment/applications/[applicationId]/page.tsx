@@ -32,6 +32,7 @@ import type {
   RescheduleRequest,
   Brand,
   UserProfile,
+  AssessmentSession,
 } from "@/lib/types";
 import { useRoleGuard } from "@/hooks/useRoleGuard";
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
@@ -52,6 +53,7 @@ import {
   GraduationCap,
   BrainCircuit,
   Info,
+  Loader2,
 } from "lucide-react";
 import {
   Card,
@@ -82,6 +84,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { id as idLocale } from "date-fns/locale";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { ManagePanelistsDialog } from "@/components/recruitment/ManagePanelistsDialog";
 import { ROLES_INTERNAL, ORDERED_RECRUITMENT_STAGES } from "@/lib/types";
 import { InternalEvaluationSection } from "@/components/recruitment/InternalEvaluationSection";
@@ -130,6 +142,10 @@ export default function ApplicationDetailPage() {
   const [hasTriggeredAutoScreen, setHasTriggeredAutoScreen] = useState(false);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [isSendingOffer, setIsSendingOffer] = useState(false);
+  const [isUpdatingDecision, setIsUpdatingDecision] = useState(false);
+  const [isCounterOpen, setIsCounterOpen] = useState(false);
+  const [counterSalary, setCounterSalary] = useState("");
+  const [counterReason, setCounterReason] = useState("");
   const [isActivating, setIsActivating] = useState(false);
   const [activeProfileStep, setActiveProfileStep] = useState(1);
   const [evaluationFilter, setEvaluationFilter] = useState<
@@ -389,6 +405,81 @@ export default function ApplicationDetailPage() {
       });
     } finally {
       setIsSendingOffer(false);
+    }
+  };
+
+  const handleOfferDecision = async (
+    decision:
+      | "negotiation_approved"
+      | "negotiation_rejected"
+      | "negotiation_countered",
+  ) => {
+    if (!application || !userProfile) return;
+    setIsUpdatingDecision(true);
+
+    const candidateRequest = application.candidateCounterOffer;
+    const counterSalaryValue = Number(counterSalary.replace(/[^0-9]/g, ""));
+
+    if (decision === "negotiation_countered" && !counterSalaryValue) {
+      toast({
+        variant: "destructive",
+        title: "Gagal Mengirim Counter",
+        description: "Mohon isi nominal penawaran counter yang valid.",
+      });
+      setIsUpdatingDecision(false);
+      return;
+    }
+
+    const timelineEvent: ApplicationTimelineEvent = {
+      type: "offer_sent",
+      at: Timestamp.now(),
+      by: userProfile.uid,
+      meta: {
+        note:
+          decision === "negotiation_approved"
+            ? "HRD menyetujui negosiasi kandidat dan menetapkan penawaran akhir."
+            : decision === "negotiation_rejected"
+              ? "HRD menolak negosiasi kandidat. Kandidat dapat menerima atau menolak penawaran awal."
+              : "HRD mengajukan penawaran counter akhir kepada kandidat.",
+      },
+    };
+
+    const updatePayload: any = {
+      offerStatus: decision,
+      updatedAt: serverTimestamp(),
+      timeline: [...(application.timeline || []), timelineEvent],
+    };
+
+    if (
+      decision === "negotiation_approved" &&
+      candidateRequest?.requestedSalary
+    ) {
+      updatePayload.offeredSalary = candidateRequest.requestedSalary;
+    }
+
+    if (decision === "negotiation_countered") {
+      updatePayload.offeredSalary = counterSalaryValue;
+      updatePayload.offerNotes = counterReason || application.offerNotes;
+    }
+
+    try {
+      await updateDoc(applicationRef!, updatePayload);
+      mutateApplication();
+      toast({
+        title: "Tanggapan Negosiasi Diperbarui",
+        description: "Status penawaran berhasil dikirim kepada kandidat.",
+      });
+      setIsCounterOpen(false);
+      setCounterSalary("");
+      setCounterReason("");
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Gagal Memperbarui Negosiasi",
+        description: error.message,
+      });
+    } finally {
+      setIsUpdatingDecision(false);
     }
   };
 
@@ -883,9 +974,169 @@ export default function ApplicationDetailPage() {
                             value={application.offerDescription ?? "-"}
                           />
                         </CardContent>
-                        <CardFooter className="rounded-b-xl bg-slate-950/5 p-4">
+                        {application.offerStatus === "negotiation_requested" &&
+                        application.candidateCounterOffer ? (
+                          <>
+                            <div className="mt-4 rounded-3xl border border-amber-200 bg-amber-50 p-4">
+                              <div className="flex items-center justify-between gap-4">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    Usulan Negosiasi Kandidat
+                                  </p>
+                                  <p className="text-sm text-muted-foreground">
+                                    Detail gaji yang diminta kandidat dan
+                                    catatan.
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                                <InfoRow
+                                  icon={<ShieldCheck className="h-4 w-4" />}
+                                  label="Gaji awal"
+                                  value={
+                                    application.offeredSalary != null
+                                      ? `${formatSalary(application.offeredSalary)} / bulan`
+                                      : "-"
+                                  }
+                                />
+                                <InfoRow
+                                  icon={<Info className="h-4 w-4" />}
+                                  label="Gaji diminta kandidat"
+                                  value={
+                                    application.candidateCounterOffer
+                                      .requestedSalary != null
+                                      ? `${formatSalary(application.candidateCounterOffer.requestedSalary)} / bulan`
+                                      : "-"
+                                  }
+                                />
+                                <InfoRow
+                                  icon={<Users className="h-4 w-4" />}
+                                  label="Selisih nominal"
+                                  value={
+                                    application.candidateCounterOffer
+                                      .requestedSalary != null &&
+                                    application.offeredSalary != null
+                                      ? `Rp ${(application.candidateCounterOffer.requestedSalary - application.offeredSalary).toLocaleString("id-ID")}`
+                                      : "-"
+                                  }
+                                />
+                                <InfoRow
+                                  icon={<MessageSquare className="h-4 w-4" />}
+                                  label="Catatan kandidat"
+                                  value={
+                                    application.candidateCounterOffer.reason ||
+                                    "-"
+                                  }
+                                />
+                              </div>
+                            </div>
+                            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+                              <Button
+                                variant="outline"
+                                onClick={() =>
+                                  handleOfferDecision("negotiation_rejected")
+                                }
+                                disabled={isUpdatingDecision}
+                              >
+                                {isUpdatingDecision ? (
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : null}
+                                Tolak Negosiasi
+                              </Button>
+                              <Button
+                                variant="secondary"
+                                onClick={() =>
+                                  handleOfferDecision("negotiation_approved")
+                                }
+                                disabled={isUpdatingDecision}
+                              >
+                                {isUpdatingDecision ? (
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : null}
+                                Setuju
+                              </Button>
+                              <Button
+                                onClick={() => setIsCounterOpen(true)}
+                                disabled={isUpdatingDecision}
+                              >
+                                Ajukan Counter
+                              </Button>
+                            </div>
+                            <Dialog
+                              open={isCounterOpen}
+                              onOpenChange={setIsCounterOpen}
+                            >
+                              <DialogContent className="sm:max-w-2xl">
+                                <DialogHeader>
+                                  <DialogTitle>
+                                    Ajukan Counter Penawaran
+                                  </DialogTitle>
+                                  <DialogDescription>
+                                    Masukkan nominal gaji final yang akan
+                                    diajukan kembali kepada kandidat.
+                                  </DialogDescription>
+                                </DialogHeader>
+                                <div className="space-y-4 py-4">
+                                  <div>
+                                    <label className="text-sm font-medium text-muted-foreground">
+                                      Gaji counter
+                                    </label>
+                                    <Input
+                                      value={counterSalary}
+                                      onChange={(event) =>
+                                        setCounterSalary(event.target.value)
+                                      }
+                                      placeholder="7.000.000"
+                                      inputMode="numeric"
+                                      className="mt-2"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="text-sm font-medium text-muted-foreground">
+                                      Catatan untuk kandidat
+                                    </label>
+                                    <Textarea
+                                      value={counterReason}
+                                      onChange={(event) =>
+                                        setCounterReason(event.target.value)
+                                      }
+                                      placeholder="Berikan alasan singkat untuk counter penawaran"
+                                      rows={5}
+                                      className="mt-2"
+                                    />
+                                  </div>
+                                </div>
+                                <DialogFooter>
+                                  <Button
+                                    variant="secondary"
+                                    type="button"
+                                    onClick={() => setIsCounterOpen(false)}
+                                    disabled={isUpdatingDecision}
+                                  >
+                                    Batal
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    onClick={() =>
+                                      handleOfferDecision(
+                                        "negotiation_countered",
+                                      )
+                                    }
+                                    disabled={isUpdatingDecision}
+                                  >
+                                    {isUpdatingDecision ? (
+                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    ) : null}
+                                    Kirim Counter
+                                  </Button>
+                                </DialogFooter>
+                              </DialogContent>
+                            </Dialog>
+                          </>
+                        ) : null}
+                        <CardFooter className="rounded-b-xl bg-slate-100/70 dark:bg-slate-900/50 p-4">
                           <div className="space-y-2">
-                            <p className="text-sm font-semibold">
+                            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                               Timeline Penawaran
                             </p>
                             {offerTimeline.length > 0 ? (
@@ -893,7 +1144,7 @@ export default function ApplicationDetailPage() {
                                 {offerTimeline.map((event, index) => (
                                   <div
                                     key={index}
-                                    className="rounded-lg border border-slate-200/80 bg-slate-50 p-3 text-sm"
+                                    className="rounded-lg border border-slate-300/80 bg-slate-100 p-3 text-sm text-slate-900 shadow-sm dark:border-slate-700/80 dark:bg-slate-950 dark:text-slate-100"
                                   >
                                     <p className="font-medium">
                                       {format(
@@ -901,7 +1152,7 @@ export default function ApplicationDetailPage() {
                                         "dd MMM yyyy HH:mm",
                                       )}
                                     </p>
-                                    <p className="text-muted-foreground">
+                                    <p className="text-slate-600 dark:text-slate-300">
                                       {event.meta.note ??
                                         "Penawaran dikirim ke kandidat."}
                                     </p>
@@ -909,7 +1160,7 @@ export default function ApplicationDetailPage() {
                                 ))}
                               </div>
                             ) : (
-                              <p className="text-sm text-muted-foreground">
+                              <p className="text-sm text-slate-600 dark:text-slate-300">
                                 Belum ada aktivitas penawaran yang tercatat.
                               </p>
                             )}

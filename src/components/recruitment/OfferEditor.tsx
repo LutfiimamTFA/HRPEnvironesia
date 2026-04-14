@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { addMonths, format } from "date-fns";
@@ -17,6 +17,15 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
   Form,
   FormControl,
   FormField,
@@ -28,7 +37,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { GoogleDatePicker } from "@/components/ui/google-date-picker";
 import type { Job, JobApplication } from "@/lib/types";
-import { OfferFormData, offerSchema } from "./OfferDialog";
+export type { OfferFormData } from "./OfferDialog";
+import { offerSchema } from "./OfferDialog";
 
 interface OfferEditorProps {
   id?: string;
@@ -94,9 +104,25 @@ export function OfferEditor({
   });
 
   const { watch, setValue, reset } = form;
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [hasConfirmedPreview, setHasConfirmedPreview] = useState(false);
+  const [previewData, setPreviewData] = useState<OfferFormData | null>(null);
   const startDate = watch("contractStartDate");
   const duration = watch("contractDurationMonths");
   const contractEndDate = watch("contractEndDate");
+
+  const openPreview = form.handleSubmit((data) => {
+    setPreviewData(data);
+    setHasConfirmedPreview(false);
+    setIsPreviewOpen(true);
+  });
+
+  const handleConfirmSend = async () => {
+    if (!previewData) return;
+    await onSendOffer(previewData);
+    setIsPreviewOpen(false);
+    setHasConfirmedPreview(false);
+  };
 
   useEffect(() => {
     reset({
@@ -195,7 +221,7 @@ export function OfferEditor({
         <Form {...form}>
           <form
             id="offer-editor-form"
-            onSubmit={form.handleSubmit(onSendOffer)}
+            onSubmit={openPreview}
             className="space-y-4"
           >
             <FormField
@@ -415,9 +441,164 @@ export function OfferEditor({
           form="offer-editor-form"
           disabled={!isEditable || isSendingOffer}
         >
-          {isSendingOffer ? "Mengirim..." : "Kirim Penawaran"}
+          {isSendingOffer ? "Mengirim..." : "Preview Penawaran"}
         </Button>
       </CardFooter>
+      <Dialog
+        open={isPreviewOpen}
+        onOpenChange={(open) => {
+          setIsPreviewOpen(open);
+          if (!open) setHasConfirmedPreview(false);
+        }}
+      >
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <DialogTitle>Preview Penawaran</DialogTitle>
+                <DialogDescription>
+                  Tinjau kembali semua detail sebelum mengirim penawaran resmi
+                  ke kandidat.
+                </DialogDescription>
+              </div>
+              <Badge className="self-start bg-primary/10 text-primary">
+                Preview – Belum Dikirim
+              </Badge>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-6 py-4">
+            <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+              <div className="rounded-3xl border border-muted/70 bg-muted/50 p-6 shadow-sm">
+                <div className="space-y-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-start">
+                    <div>
+                      <p className="text-sm text-muted-foreground">
+                        Nama Kandidat
+                      </p>
+                      <p className="text-lg font-semibold">{candidateName}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm text-muted-foreground">Posisi</p>
+                      <p className="font-semibold">{application.jobPosition}</p>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-muted/60 bg-background p-4">
+                      <p className="text-sm text-muted-foreground">
+                        Status Penawaran
+                      </p>
+                      <p className="mt-2 font-semibold">Preview</p>
+                    </div>
+                    <div className="rounded-2xl border border-muted/60 bg-background p-4">
+                      <p className="text-sm text-muted-foreground">
+                        Hari Kerja
+                      </p>
+                      <p className="mt-2 font-semibold">
+                        {previewData?.workDays || "-"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="rounded-3xl border border-primary/50 bg-primary/5 p-6 text-center">
+                    <p className="text-sm uppercase tracking-[0.18em] text-primary-foreground/70">
+                      Gaji yang Ditawarkan
+                    </p>
+                    <p className="mt-3 text-3xl font-semibold leading-tight text-primary">
+                      Rp {formatSalary(previewData?.offeredSalary)}
+                    </p>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-muted/60 bg-background p-4">
+                      <p className="text-sm text-muted-foreground">
+                        Durasi Kontrak
+                      </p>
+                      <p className="mt-2 font-semibold">
+                        {previewData?.contractDurationMonths} bulan
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-muted/60 bg-background p-4">
+                      <p className="text-sm text-muted-foreground">
+                        Masa Probation
+                      </p>
+                      <p className="mt-2 font-semibold">
+                        {previewData?.probationDurationMonths != null
+                          ? `${previewData.probationDurationMonths} bulan`
+                          : "-"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="rounded-3xl border border-muted/70 bg-muted/50 p-6 shadow-sm">
+                  <p className="text-sm text-muted-foreground">
+                    Ringkasan Penawaran
+                  </p>
+                  <div className="mt-4 space-y-4 text-sm text-muted-foreground">
+                    <div>
+                      <p className="font-semibold text-foreground">
+                        Deskripsi Penawaran
+                      </p>
+                      <p className="mt-2 text-sm text-foreground">
+                        {previewData?.offerDescription ||
+                          "Tidak ada deskripsi tambahan."}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground">
+                        Catatan HRD
+                      </p>
+                      <p className="mt-2 text-sm text-foreground">
+                        {previewData?.offerNotes || "Tidak ada catatan."}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-muted/60 bg-background p-4">
+                      <p className="text-sm text-muted-foreground">
+                        Estimasi Pengiriman
+                      </p>
+                      <p className="mt-2 text-sm text-foreground">
+                        Penawaran ini akan dikirim ke kandidat dan menunggu
+                        konfirmasi.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-muted/70 bg-background p-5">
+              <label className="flex items-start gap-3">
+                <Checkbox
+                  checked={hasConfirmedPreview}
+                  onCheckedChange={(checked) =>
+                    setHasConfirmedPreview(checked === true)
+                  }
+                />
+                <span className="text-sm leading-6">
+                  Saya sudah memastikan semua data penawaran benar.
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="secondary"
+              onClick={() => setIsPreviewOpen(false)}
+              disabled={isSendingOffer}
+            >
+              Kembali Edit
+            </Button>
+            <Button
+              onClick={handleConfirmSend}
+              disabled={!hasConfirmedPreview || isSendingOffer}
+            >
+              {isSendingOffer ? "Mengirim..." : "Kirim Penawaran ke Kandidat"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

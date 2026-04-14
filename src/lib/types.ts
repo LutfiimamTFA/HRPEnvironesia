@@ -290,6 +290,10 @@ export type ApplicationTimelineEvent = {
     | "interview_scheduled"
     | "interview_updated"
     | "offer_sent"
+    | "negotiation_requested"
+    | "negotiation_approved"
+    | "negotiation_rejected"
+    | "negotiation_countered"
     | "assessment_graded"
     | "status_changed"
     | "panelists_updated";
@@ -373,7 +377,15 @@ export type JobApplication = {
   ijazahVerified?: boolean;
 
   // New offer fields
-  offerStatus?: "sent" | "accepted" | "rejected" | "withdrawn";
+  offerStatus?:
+    | "sent"
+    | "negotiation_requested"
+    | "negotiation_approved"
+    | "negotiation_rejected"
+    | "negotiation_countered"
+    | "accepted"
+    | "rejected"
+    | "withdrawn";
   offeredSalary?: number | null;
   probationDurationMonths?: number | null;
   contractStartDate?: Timestamp | null;
@@ -383,6 +395,14 @@ export type JobApplication = {
   workDays?: string | null;
   offerNotes?: string | null;
   candidateOfferDecisionAt?: Timestamp | null;
+  candidateNegotiationUsed?: boolean;
+  candidateCounterOffer?: {
+    requestedSalary: number | null;
+    requestedContractDurationMonths?: number | null;
+    requestedWorkType?: string | null;
+    reason: string;
+    submittedAt: Timestamp;
+  } | null;
   internalAccessEnabled?: boolean;
 
   // Denormalized data
@@ -902,7 +922,10 @@ export type Notification = {
     | "interview_updated"
     | "stage_advanced"
     | "new_application"
-    | "status_update";
+    | "status_update"
+    | "offer"
+    | "negotiation"
+    | "decision";
   module: "recruitment" | "employee";
   title: string;
   message: string;
