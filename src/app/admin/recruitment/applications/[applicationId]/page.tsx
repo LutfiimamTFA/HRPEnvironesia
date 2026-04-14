@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking, useCollection } from '@/firebase';
 import { doc, serverTimestamp, updateDoc, writeBatch, Timestamp, collection, where, query, orderBy, limit, getDocs } from 'firebase/firestore';
-import type { JobApplication, Profile, Job, ApplicationTimelineEvent, ApplicationInterview, RescheduleRequest, Brand, UserProfile, AssessmentSession } from '@/lib/types';
+import type { JobApplication, Profile, Job, ApplicationTimelineEvent, ApplicationInterview, RescheduleRequest, Brand, UserProfile } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -31,7 +31,6 @@ import { id as idLocale } from 'date-fns/locale';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ManagePanelistsDialog } from '@/components/recruitment/ManagePanelistsDialog';
 import { ROLES_INTERNAL, ORDERED_RECRUITMENT_STAGES } from '@/lib/types';
-import { InterviewManagement } from '@/components/recruitment/InterviewManagement';
 import { InternalEvaluationSection } from '@/components/recruitment/InternalEvaluationSection';
 import { PostInterviewEvaluationSection } from '@/components/recruitment/PostInterviewEvaluationSection';
 import { UnifiedInternalDecision } from '@/components/recruitment/UnifiedInternalDecision';
@@ -41,7 +40,7 @@ function ApplicationDetailSkeleton() {
   return <Skeleton className="h-[500px] w-full" />;
 }
 
-const InfoCard = ({ icon, label, value }: { icon: React.ReactNode, label: string, value: React.ReactNode }) => (
+const InfoRow = ({ icon, label, value }: { icon: React.ReactNode, label: string, value: React.ReactNode }) => (
     <div className="flex items-start gap-3 rounded-lg border bg-card p-3">
         <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted text-muted-foreground">{icon}</div>
         <div>
@@ -339,14 +338,6 @@ export default function ApplicationDetailPage() {
           </Card>
 
           <UnifiedInternalDecision application={application} onStageChange={handleStageChange} />
-
-          <InterviewManagement 
-              application={application} 
-              job={job} 
-              allUsers={internalUsers || []}
-              allBrands={brands || []}
-              onUpdate={mutateApplication}
-          />
           
           <div className="grid grid-cols-1 xl:grid-cols-[200px_1fr] gap-10 items-start pt-4">
             
