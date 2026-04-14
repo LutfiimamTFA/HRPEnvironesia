@@ -30,7 +30,7 @@ import { Badge } from '@/components/ui/badge';
 import { id as idLocale } from 'date-fns/locale';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ManagePanelistsDialog } from '@/components/recruitment/ManagePanelistsDialog';
-import { ROLES_INTERNAL } from '@/lib/types';
+import { ROLES_INTERNAL, ORDERED_RECRUITMENT_STAGES } from '@/lib/types';
 import { InterviewManagement } from '@/components/recruitment/InterviewManagement';
 import { InternalEvaluationSection } from '@/components/recruitment/InternalEvaluationSection';
 import { PostInterviewEvaluationSection } from '@/components/recruitment/PostInterviewEvaluationSection';
@@ -248,11 +248,29 @@ export default function ApplicationDetailPage() {
 
 
   const shouldShowPostInterview = useMemo(() => {
-    if (!application?.status) return false;
+    if (!application) return false;
+
+    if (application.interviewCompleted) {
+      return true;
+    }
+
+    if (application.status === 'interview') {
+      const lastInterview = application.interviews
+        ?.filter(iv => iv.status === 'scheduled')
+        .sort((a,b) => b.startAt.toMillis() - a.startAt.toMillis())[0];
+      
+      if (lastInterview?.endAt) {
+        return new Date() > lastInterview.endAt.toDate();
+      }
+    }
     
-    // Always show if it has reached 'interview' stage or beyond
-    const stages = ['interview', 'verification', 'document_submission', 'offered', 'hired', 'rejected'];
-    return stages.includes(application.status);
+    const interviewStageIndex = ORDERED_RECRUITMENT_STAGES.indexOf('interview');
+    const currentStageIndex = ORDERED_RECRUITMENT_STAGES.indexOf(application.status);
+    if (currentStageIndex > interviewStageIndex) {
+      return true;
+    }
+
+    return false;
   }, [application]);
 
 

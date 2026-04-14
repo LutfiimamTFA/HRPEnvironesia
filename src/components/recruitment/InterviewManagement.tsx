@@ -242,29 +242,6 @@ export function InterviewManagement({ application, onUpdate, allUsers, allBrands
                 by: userProfile.uid,
                 meta: { interviewDate: Timestamp.fromDate(data.dateTime) }
             });
-
-            // Send Notif for CREATION
-            const interviewDateStr = format(data.dateTime, 'eeee, dd MMM yyyy', { locale: idLocale });
-            const interviewTimeStr = format(data.dateTime, 'HH:mm');
-            
-            const allRecipients = new Set<string>([application.candidateUid, ...panelistIds, ...(job.assignedUserIds || [])]);
-            
-            allRecipients.forEach(recipientUid => {
-                const notifRef = doc(collection(firestore, 'users', recipientUid, 'notifications'));
-                const isCandidate = recipientUid === application.candidateUid;
-                
-                batch.set(notifRef, {
-                    ...notificationBase,
-                    userId: recipientUid,
-                    type: 'interview_scheduled',
-                    title: 'Jadwal Wawancara Tersedia',
-                    message: isCandidate 
-                        ? `Wawancara Anda untuk posisi ${application.jobPosition} telah dijadwalkan pada ${interviewDateStr} pukul ${interviewTimeStr}.`
-                        : `Wawancara kandidat ${application.candidateName} untuk posisi ${application.jobPosition} telah dijadwalkan pada ${interviewDateStr} pukul ${interviewTimeStr}.`,
-                    actionUrl: isCandidate ? `/careers/portal/applications` : `/admin/recruitment/applications/${application.id}`,
-                });
-            });
-
             const allPanelistIds = new Set<string>(application.allPanelistIds || []);
             panelistIds.forEach(id => allPanelistIds.add(id));
 
@@ -357,7 +334,7 @@ export function InterviewManagement({ application, onUpdate, allUsers, allBrands
         setIsSubmitting(false);
     }
   };
-  
+
   const handleMarkCompleted = async () => {
     if (!application || !userProfile) return;
     setIsSubmitting(true);
@@ -417,6 +394,12 @@ export function InterviewManagement({ application, onUpdate, allUsers, allBrands
             </div>
             <div className="flex items-center gap-2">
                 {isPrivilegedRecruiter && (
+                  application.interviewCompleted ? (
+                    <div className="text-right text-xs text-muted-foreground p-2 bg-muted/50 rounded-lg">
+                      <p className="font-semibold text-green-600 flex items-center gap-1.5"><CheckCircle className="h-4 w-4" /> Wawancara Selesai</p>
+                      {application.interviewCompletedAt && <p>Ditandai pada: {format(application.interviewCompletedAt.toDate(), 'dd MMM yyyy, HH:mm', { locale: idLocale })}</p>}
+                    </div>
+                  ) : (
                     <Button 
                         variant="outline" 
                         size="sm" 
@@ -427,6 +410,7 @@ export function InterviewManagement({ application, onUpdate, allUsers, allBrands
                         {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-2 h-4 w-4" />}
                         Tandai Selesai
                     </Button>
+                  )
                 )}
                 {isPrivilegedRecruiter && (!application.interviews || application.interviews.filter(iv => iv.status !== 'canceled').length === 0) && (
                 <Button size="sm" onClick={() => handleOpenScheduleDialog()}>Jadwalkan Wawancara Baru</Button>
