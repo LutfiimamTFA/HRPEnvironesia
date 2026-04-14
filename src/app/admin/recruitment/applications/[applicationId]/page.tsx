@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking, useCollection } from '@/firebase';
 import { doc, serverTimestamp, updateDoc, writeBatch, Timestamp, collection, where, query, orderBy, limit, getDocs } from 'firebase/firestore';
@@ -17,7 +17,7 @@ import { ApplicationStatusBadge, statusDisplayLabels } from '@/components/recrui
 import { useToast } from '@/hooks/use-toast';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { getInitials, cn } from '@/lib/utils';
-import { format, differenceInMinutes, add } from 'date-fns';
+import { format, differenceInMinutes, add, isBefore } from 'date-fns';
 import { ApplicationProgressStepper } from '@/components/recruitment/ApplicationProgressStepper';
 import { CandidateDocumentsCard } from '@/components/recruitment/CandidateDocumentsCard';
 import { CandidateFitAnalysis } from '@/components/recruitment/CandidateFitAnalysis';
@@ -36,8 +36,6 @@ import { InternalEvaluationSection } from '@/components/recruitment/InternalEval
 import { PostInterviewEvaluationSection } from '@/components/recruitment/PostInterviewEvaluationSection';
 import { UnifiedInternalDecision } from '@/components/recruitment/UnifiedInternalDecision';
 import { CandidateStepNav, CandidateStepContent } from '@/components/recruitment/CandidateStepView';
-import { FinalInternalDecisionSection } from '@/components/recruitment/FinalInternalDecisionSection';
-
 
 function ApplicationDetailSkeleton() {
   return <Skeleton className="h-[500px] w-full" />;
@@ -250,37 +248,17 @@ export default function ApplicationDetailPage() {
 
   const shouldShowPostInterview = useMemo(() => {
     if (!application) return false;
-
-    // If there's already a post-interview evaluation summary, it's definitely post-interview phase.
+    // Show if there are any post-interview reviews submitted
     if (application.postInterviewEvaluation && application.postInterviewEvaluation.submissions > 0) {
-      return true;
+        return true;
     }
-
-    if (application.interviewCompleted) { // Keep legacy check for now
-      return true;
-    }
-
-    if (application.status === 'interview') {
-      const lastInterview = application.interviews
-        ?.filter(iv => iv.status === 'scheduled')
-        .sort((a,b) => b.startAt.toMillis() - a.startAt.toMillis())[0];
-      
-      if (lastInterview?.endAt) {
-        return new Date() > lastInterview.endAt.toDate();
-      }
-    }
-    
-    const interviewStageIndex = ORDERED_RECRUITMENT_STAGES.indexOf('interview');
-    const currentStageIndex = ORDERED_RECRUITMENT_STAGES.indexOf(application.status);
-    if (currentStageIndex > interviewStageIndex) {
-      return true;
-    }
-
-    return false;
+    // Or if the interview stage is complete
+    return !!application.interviewCompleted;
   }, [application]);
 
 
   const isLoading = isLoadingApp || isLoadingProfile || isLoadingJob || isLoadingUsers || isLoadingBrands || isLoadingSessions;
+  const isHRD = userProfile?.role === 'hrd' || userProfile?.role === 'super-admin';
 
   if (!hasAccess) {
     return <DashboardLayout pageTitle="Loading..." menuConfig={[]}><ApplicationDetailSkeleton /></DashboardLayout>;
@@ -431,7 +409,6 @@ export default function ApplicationDetailPage() {
               {shouldShowPostInterview && (evaluationFilter === 'all' || evaluationFilter === 'pasca') && (
                   <PostInterviewEvaluationSection application={application} job={job} internalUsers={internalUsers} />
               )}
-               {isHRD && <FinalInternalDecisionSection application={application} onStageChange={handleStageChange} />}
           </div>
         </div>
         </>
