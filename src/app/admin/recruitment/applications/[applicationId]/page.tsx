@@ -1,10 +1,10 @@
 'use client';
 
 import { useMemo, useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { useDoc, useFirestore, useMemoFirebase, updateDocumentNonBlocking, useCollection } from '@/firebase';
-import { doc, serverTimestamp, updateDoc, writeBatch, Timestamp, collection, where, query, orderBy, limit } from 'firebase/firestore';
+import { doc, serverTimestamp, updateDoc, writeBatch, Timestamp, collection, where, query, orderBy, limit, getDocs } from 'firebase/firestore';
 import type { JobApplication, Profile, Job, ApplicationTimelineEvent, ApplicationInterview, RescheduleRequest, Brand, UserProfile, AssessmentSession } from '@/lib/types';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
@@ -35,6 +35,7 @@ import { InterviewManagement } from '@/components/recruitment/InterviewManagemen
 import { InternalEvaluationSection } from '@/components/recruitment/InternalEvaluationSection';
 import { PostInterviewEvaluationSection } from '@/components/recruitment/PostInterviewEvaluationSection';
 import { UnifiedInternalDecision } from '@/components/recruitment/UnifiedInternalDecision';
+import { CandidateStepNav, CandidateStepContent } from '@/components/recruitment/CandidateStepView';
 
 
 function ApplicationDetailSkeleton() {
@@ -181,7 +182,7 @@ export default function ApplicationDetailPage() {
     }
 
     try {
-        await updateDoc(applicationRef!, updatePayload as any);
+        await updateDoc(appRef!, updatePayload as any);
         mutateApplication();
         toast({ title: 'Status Diperbarui', description: `Kandidat dipindahkan ke tahap "${statusDisplayLabels[newStage]}".` });
         return true;
@@ -209,7 +210,7 @@ export default function ApplicationDetailPage() {
         },
       };
 
-      await updateDocumentNonBlocking(applicationRef!, { 
+      await updateDocumentNonBlocking(appRef!, { 
         status: 'screening',
         candidateStatus: 'under_review',
         timeline: [...(application.timeline || []), timelineEvent] 
