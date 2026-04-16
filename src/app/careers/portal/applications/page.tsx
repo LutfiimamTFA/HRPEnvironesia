@@ -313,6 +313,10 @@ function ApplicationCard({
     "document_submission",
   ].includes(application.status);
   const hasFinalPositive = application.candidateStatus === "lolos";
+  const hasInternalEvaluation =
+    !!application.internalDecision ||
+    !!application.postInterviewDecision ||
+    !!application.recruitmentInternalDecision;
 
   // Status mapping for candidates
   const displayStatus = useMemo(() => {
@@ -906,6 +910,28 @@ function ApplicationCard({
   }
 
   if (isInterviewStage) {
+    if (hasInternalEvaluation) {
+      return (
+        <div className="p-6 rounded-2xl border border-indigo-200 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-900 dark:text-indigo-100">
+          <h3 className="font-bold text-lg flex items-center gap-3">
+            <Users className="h-6 w-6" />
+            Wawancara telah selesai
+          </h3>
+          <div className="mt-4 space-y-4 text-sm leading-relaxed">
+            <p>
+              Terima kasih, Anda telah menyelesaikan tahap wawancara. Saat ini
+              tim rekrutmen kami sedang melakukan evaluasi lebih lanjut terhadap
+              hasil wawancara Anda.
+            </p>
+            <p>
+              Kami akan menginformasikan hasilnya melalui portal ini setelah
+              proses penilaian selesai. Mohon menunggu informasi selanjutnya.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
     if (scheduledInterview) {
       const interviewStart = scheduledInterview.startAt.toDate();
       const interviewEnd = scheduledInterview.endAt.toDate();
