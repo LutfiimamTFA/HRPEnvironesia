@@ -11,8 +11,11 @@ import type {
   UserProfile,
   Brand,
   EmployeeProfile,
+  EmployeeMasterData,
+  EmployeeProfileWithMaster,
   Division,
 } from "@/lib/types";
+import { mergeEmployeeAndProfile } from "@/lib/employees";
 import {
   Table,
   TableBody,
@@ -103,9 +106,8 @@ export default function KaryawanDataPage() {
   const [brandFilter, setBrandFilter] = useState("all");
   const [completenessFilter, setCompletenessFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedUser, setSelectedUser] = useState<EmployeeProfile | null>(
-    null,
-  );
+  const [selectedUser, setSelectedUser] =
+    useState<EmployeeProfileWithMaster | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -333,13 +335,35 @@ export default function KaryawanDataPage() {
     ),
   );
 
+  const { data: employees, isLoading: employeesLoading } =
+    useCollection<EmployeeMasterData>(
+      useMemoFirebase(
+        () =>
+          query(
+            collection(firestore, "employees"),
+            where("employmentType", "==", "karyawan"),
+          ),
+        [firestore],
+      ),
+    );
+
   const { data: brands, isLoading: brandsLoading } = useCollection<Brand>(
     useMemoFirebase(() => collection(firestore, "brands"), [firestore]),
   );
 
+  const mergedProfiles = useMemo(() => {
+    if (!employees) return [];
+    const profileMap = new Map(
+      employeeProfiles?.map((profile) => [profile.uid, profile]),
+    );
+    return employees.map((employee) =>
+      mergeEmployeeAndProfile(employee, profileMap.get(employee.uid) ?? null),
+    );
+  }, [employees, employeeProfiles]);
+
   const filteredProfiles = useMemo(() => {
-    if (!employeeProfiles) return [];
-    return employeeProfiles.filter((profile) => {
+    if (!mergedProfiles) return [];
+    return mergedProfiles.filter((profile) => {
       const profileStatus = profile.employmentStatus || "active";
       const brandMatch =
         brandFilter === "all" || profile.brandId === brandFilter;
@@ -364,13 +388,7 @@ export default function KaryawanDataPage() {
         completenessMatch
       );
     });
-  }, [
-    employeeProfiles,
-    activeTab,
-    brandFilter,
-    searchTerm,
-    completenessFilter,
-  ]);
+  }, [mergedProfiles, activeTab, brandFilter, searchTerm, completenessFilter]);
 
   const handleCreateClick = () => {
     setSelectedUser(null);
@@ -597,7 +615,7 @@ export default function KaryawanDataPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {profilesLoading ? (
+                    {employeesLoading || profilesLoading ? (
                       <TableRow>
                         <TableCell colSpan={7} className="h-24 text-center">
                           Memuat data karyawan...
@@ -608,23 +626,22 @@ export default function KaryawanDataPage() {
                         const completeness =
                           calculateProfileCompleteness(profile);
                         return (
-                          <TableRow key={profile.uid} className="cursor-pointer">
+                          <TableRow
+                            key={profile.uid}
+                            className="cursor-pointer"
+                          >
                             <TableCell className="font-medium">
                               <div>{profile.fullName}</div>
                               <div className="text-xs text-muted-foreground">
                                 {profile.email}
                               </div>
                             </TableCell>
-                            <TableCell>
-                              {profile.brandName || "-"}
-                            </TableCell>
+                            <TableCell>{profile.brandName || "-"}</TableCell>
                             <TableCell>{profile.division || "-"}</TableCell>
                             <TableCell>
                               {profile.positionTitle || "-"}
                             </TableCell>
-                            <TableCell>
-                              {profile.managerName || "-"}
-                            </TableCell>
+                            <TableCell>{profile.managerName || "-"}</TableCell>
                             <TableCell>
                               <div className="flex items-center gap-2">
                                 <span className="text-sm font-medium">
@@ -646,9 +663,7 @@ export default function KaryawanDataPage() {
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
                                   <DropdownMenuItem
-                                    onSelect={() =>
-                                      handleViewDetail(profile)
-                                    }
+                                    onSelect={() => handleViewDetail(profile)}
                                   >
                                     <Eye className="mr-2 h-4 w-4" /> Lihat
                                     Detail
@@ -669,20 +684,15 @@ export default function KaryawanDataPage() {
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem
-                                    onSelect={() =>
-                                      handleEditClick(profile)
-                                    }
+                                    onSelect={() => handleEditClick(profile)}
                                   >
                                     <Edit className="mr-2 h-4 w-4" /> Edit
                                   </DropdownMenuItem>
                                   <DropdownMenuItem
                                     className="text-destructive"
-                                    onSelect={() =>
-                                      handleDeleteClick(profile)
-                                    }
+                                    onSelect={() => handleDeleteClick(profile)}
                                   >
-                                    <Trash2 className="mr-2 h-4 w-4" />{" "}
-                                    Hapus
+                                    <Trash2 className="mr-2 h-4 w-4" /> Hapus
                                   </DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>

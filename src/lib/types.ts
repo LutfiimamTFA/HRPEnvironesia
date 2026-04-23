@@ -62,6 +62,35 @@ export type UserProfile = {
   updatedAt?: Timestamp;
 };
 
+export type EmployeeDataSource = "import" | "manual" | "employee";
+
+export type EmployeeMasterData = {
+  uid: string;
+  fullName: string;
+  email: string;
+  brand?: string;
+  brandId?: string;
+  brandName?: string;
+  division?: string;
+  positionTitle?: string;
+  managerName?: string | null;
+  managerUid?: string | null;
+  employmentType?: EmploymentType;
+  employmentStatus?: EmploymentStatus;
+  startDate?: Timestamp;
+  joinDate?: Timestamp; // legacy alias for compatibility
+  employeeNumber?: string;
+  source?: EmployeeDataSource;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+};
+
+export type EmployeeProfileWithMaster = EmployeeMasterData &
+  Partial<EmployeeProfile> & {
+    employeeMasterData: EmployeeMasterData;
+    employeeProfile?: EmployeeProfile | null;
+  };
+
 export const EMPLOYMENT_STATUSES = [
   "active",
   "probation",
@@ -266,7 +295,12 @@ export type EmployeeProfile = {
   gender?: "Laki-laki" | "Perempuan" | "Lainnya" | string;
   birthPlace?: string;
   birthDate?: string; // YYYY-MM-DD
-  maritalStatus?: "Belum Kawin" | "Kawin" | "Cerai Hidup" | "Cerai Mati" | string;
+  maritalStatus?:
+    | "Belum Kawin"
+    | "Kawin"
+    | "Cerai Hidup"
+    | "Cerai Mati"
+    | string;
   religion?: string;
   bloodType?: "A" | "B" | "AB" | "O" | string;
   heightCm?: string;
@@ -301,7 +335,6 @@ export type EmployeeProfile = {
   emergencyContactRelation?: string;
   emergencyContactPhone?: string;
   emergencyContactAddress?: string;
-
 
   // --- Informasi Kepegawaian ---
   employeeNumber?: string;

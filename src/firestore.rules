@@ -166,6 +166,19 @@ service cloud.firestore {
       allow list: if isHrd() || isSuperAdmin();
       allow delete: if false;
     }
+
+    /**
+     * /employees/{uid} (Employee Master Data)
+     * - HRD and Super Admin manage the master HRD record.
+     * - Employees may read their own master data, but not update it.
+     */
+    match /employees/{uid} {
+      allow get: if isOwner(uid) || isHrd() || isSuperAdmin();
+      allow list: if isHrd() || isSuperAdmin();
+      allow create: if isHrd() || isSuperAdmin();
+      allow update: if isHrd() || isSuperAdmin();
+      allow delete: if false;
+    }
     
     /**
      * /roles_admin/{userId}
