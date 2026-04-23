@@ -11,60 +11,212 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Edit, User, Home, Banknote, ShieldAlert } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  Edit,
+  User,
+  Home,
+  Banknote,
+  ShieldCheck,
+  Phone,
+  Mail,
+  MapPin,
+  Calendar,
+  Users,
+  Heart,
+  FileText,
+  Eye,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+  Clock,
+  GraduationCap,
+  Award,
+} from "lucide-react";
 import type { UserProfile, EmployeeProfile } from "@/lib/types";
 import { format } from "date-fns";
 import { parseDateValue } from "@/lib/utils";
 
-const InfoRow = ({
-  label,
-  value,
-}: {
-  label: string;
-  value?: string | number | null;
-  className?: string;
-}) => (
-  <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 py-1.5">
-    <dt className="text-sm font-medium text-muted-foreground">{label}</dt>
-    <dd className="text-sm col-span-2 font-semibold">{value || "-"}</dd>
-  </div>
-);
-
 const SectionTitle = ({
   children,
   icon,
+  description,
 }: {
   children: React.ReactNode;
   icon: React.ReactNode;
+  description?: string;
 }) => (
-  <h3 className="text-lg font-semibold tracking-tight flex items-center gap-3 mb-4 text-primary">
-    {icon}
-    {children}
-  </h3>
+  <div className="flex flex-col gap-1 mb-6">
+    <div className="flex items-center gap-3">
+      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary shadow-sm">
+        {icon}
+      </div>
+      <div>
+        <h3 className="text-lg font-bold tracking-tight text-slate-100">
+          {children}
+        </h3>
+        {description && (
+          <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">
+            {description}
+          </p>
+        )}
+      </div>
+    </div>
+  </div>
 );
 
-const formatAddress = (address?: {
+const DataRow = ({
+  label,
+  value,
+  icon,
+  className = "",
+}: {
+  label: string;
+  value?: string | number | null;
+  icon?: React.ReactNode;
+  className?: string;
+}) => (
+  <div
+    className={`group flex flex-col gap-1.5 py-3 border-b border-slate-800/40 last:border-0 ${className}`}
+  >
+    <div className="flex items-center gap-2 text-slate-500 font-semibold uppercase tracking-[0.08em] text-[10px]">
+      {icon}
+      {label}
+    </div>
+    <div className="text-sm font-bold text-slate-200 min-h-[1.25rem]">
+      {value || (
+        <span className="text-slate-600 font-medium italic text-xs">
+          Belum diisi
+        </span>
+      )}
+    </div>
+  </div>
+);
+
+const FileStatus = ({
+  label,
+  url,
+  pending = false,
+  notOwned = false,
+}: {
+  label: string;
+  url?: string;
+  pending?: boolean;
+  notOwned?: boolean;
+}) => {
+  if (notOwned) {
+    return (
+      <div className="flex items-center justify-between py-3 border-b border-slate-800/40 last:border-0">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+          {label}
+        </span>
+        <Badge
+          variant="outline"
+          className="bg-slate-900/50 text-slate-500 border-slate-800 text-[10px]"
+        >
+          Belum Memiliki
+        </Badge>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-between py-3 border-b border-slate-800/40 last:border-0">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+        {label}
+      </span>
+      <div className="flex items-center gap-2">
+        {url ? (
+          <>
+            <Badge
+              variant="outline"
+              className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-[10px] gap-1 px-2 py-0.5 font-bold"
+            >
+              <CheckCircle2 className="h-3 w-3" /> Sudah diunggah
+            </Badge>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-[10px] text-primary hover:bg-primary/10 font-bold"
+              onClick={() => url && window.open(url, "_blank")}
+            >
+              <Eye className="mr-1 h-3 w-3" /> Lihat
+            </Button>
+          </>
+        ) : pending ? (
+          <Badge
+            variant="outline"
+            className="bg-amber-500/10 text-amber-500 border-amber-500/20 text-[10px] gap-1 px-2 py-0.5 font-bold"
+          >
+            <Clock className="h-3 w-3" /> Menyusul
+          </Badge>
+        ) : (
+          <Badge
+            variant="outline"
+            className="bg-red-500/10 text-red-500 border-red-500/20 text-[10px] gap-1 px-2 py-0.5 font-bold"
+          >
+            <XCircle className="h-3 w-3" /> Belum diunggah
+          </Badge>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const formatStructuredAddress = (addr?: {
   street?: string;
   rt?: string;
   rw?: string;
-  village?: string;
-  district?: string;
-  city?: string;
-  province?: string;
-  postalCode?: string;
+  kodePos?: string;
+  provinsi?: { id: string; name: string };
+  kabupatenKota?: { id: string; name: string };
+  kecamatan?: { id: string; name: string };
+  kelurahan?: { id: string; name: string };
 }) => {
-  if (!address) return "Belum diisi.";
-  const parts = [
-    address.street,
-    address.rt ? `RT ${address.rt}` : undefined,
-    address.rw ? `RW ${address.rw}` : undefined,
-    address.village,
-    address.district,
-    address.city,
-    address.province,
-    address.postalCode,
-  ].filter(Boolean);
-  return parts.length ? parts.join(", ") : "Belum diisi.";
+  if (!addr) return null;
+
+  const parts: string[] = [];
+
+  // Tambahkan nama jalan dengan prefix "Jl." jika ada
+  if (addr.street?.trim()) {
+    parts.push(`Jl. ${addr.street.trim()}`);
+  }
+
+  // Tambahkan RT/RW jika ada
+  const rtRwParts: string[] = [];
+  if (addr.rt?.trim()) rtRwParts.push(`RT ${addr.rt.trim()}`);
+  if (addr.rw?.trim()) rtRwParts.push(`RW ${addr.rw.trim()}`);
+  if (rtRwParts.length > 0) {
+    parts.push(rtRwParts.join("/"));
+  }
+
+  // Tambahkan kelurahan
+  if (addr.kelurahan?.name?.trim()) {
+    parts.push(`Kel. ${addr.kelurahan.name.trim()}`);
+  }
+
+  // Tambahkan kecamatan
+  if (addr.kecamatan?.name?.trim()) {
+    parts.push(`Kec. ${addr.kecamatan.name.trim()}`);
+  }
+
+  // Tambahkan kabupaten/kota
+  if (addr.kabupatenKota?.name?.trim()) {
+    parts.push(addr.kabupatenKota.name.trim());
+  }
+
+  // Tambahkan provinsi
+  if (addr.provinsi?.name?.trim()) {
+    parts.push(addr.provinsi.name.trim());
+  }
+
+  // Tambahkan kode pos
+  if (addr.kodePos?.trim()) {
+    parts.push(addr.kodePos.trim());
+  }
+
+  // Jika tidak ada bagian sama sekali, return null
+  return parts.length > 0 ? parts.join(", ") : null;
 };
 
 export function EmployeeProfileDisplay({
@@ -77,192 +229,644 @@ export function EmployeeProfileDisplay({
   onEdit: () => void;
 }) {
   const isProfileComplete = employeeProfile?.completeness?.isComplete;
+  const iden = employeeProfile?.dataDiriIdentitas || ({} as any);
+  const addr = employeeProfile?.alamat || ({} as any);
+  const docAdmin = employeeProfile?.dokumenAdministratif || ({} as any);
+  const rek = employeeProfile?.dataRekening || ({} as any);
+  const family = employeeProfile?.dataKeluarga || {};
+  const contacts = employeeProfile?.kontakDarurat || [];
+  const pp = employeeProfile?.pendidikanDanPengembangan || ({} as any);
+
+  const totalSiblings = family.saudaraKandung?.length || 0;
+  const totalDependents = family.tanggungan?.length || 0;
+
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return null;
+    const date = parseDateValue(dateStr);
+    return date ? format(date, "dd MMMM yyyy") : null;
+  };
+
+  const requiresSim = (() => {
+    const position = (employeeProfile.positionTitle || "").toLowerCase();
+    const requiredKeywords = [
+      "driver",
+      "lapangan",
+      "operasional",
+      "sales lapangan",
+    ];
+    return (
+      (employeeProfile as any).requiresSIM === true ||
+      requiredKeywords.some((kw) => position.includes(kw))
+    );
+  })();
+
+  const calculateCompleteness = () => {
+    const blocks = [];
+    let completedMandatoryCount = 0;
+    const totalMandatoryCount = 6;
+
+    // 1. Data Diri & Identitas
+    const isIdenComplete = Boolean(
+      iden.fullName &&
+      iden.phone &&
+      iden.gender &&
+      iden.birthPlace &&
+      iden.birthDate &&
+      iden.maritalStatus &&
+      iden.religion &&
+      iden.nationality,
+    );
+    blocks.push({
+      name: "Data Diri & Identitas",
+      isComplete: isIdenComplete,
+      mandatory: true,
+    });
+    if (isIdenComplete) completedMandatoryCount++;
+
+    // 2. Alamat — accept new structured format OR legacy addressCurrent
+    const isAddrComplete = Boolean(
+      addr.ktp?.provinsi?.id || addr.addressCurrent,
+    );
+    blocks.push({
+      name: "Alamat",
+      isComplete: isAddrComplete,
+      mandatory: true,
+    });
+    if (isAddrComplete) completedMandatoryCount++;
+
+    // 3. Dokumen Administratif
+    const isNpwpComplete =
+      docAdmin.noNpwp ||
+      docAdmin.npwpFilePending ||
+      (docAdmin.npwp && docAdmin.npwpPhotoUrl);
+    const isBpjsKesComplete =
+      docAdmin.noBpjsKesehatan ||
+      docAdmin.bpjsKesehatanFilePending ||
+      (docAdmin.bpjsKesehatan && docAdmin.bpjsKesehatanPhotoUrl);
+    const isBpjsTkComplete =
+      docAdmin.noBpjsKetenagakerjaan ||
+      docAdmin.bpjsKetenagakerjaanFilePending ||
+      (docAdmin.bpjsKetenagakerjaan && docAdmin.bpjsKetenagakerjaanPhotoUrl);
+    const isDocAdminComplete = Boolean(
+      isNpwpComplete && isBpjsKesComplete && isBpjsTkComplete,
+    );
+    blocks.push({
+      name: "Dokumen Administratif",
+      isComplete: isDocAdminComplete,
+      mandatory: true,
+    });
+    if (isDocAdminComplete) completedMandatoryCount++;
+
+    // 4. Data Rekening & Finansial
+    const isRekComplete = Boolean(rek.bankName);
+    blocks.push({
+      name: "Data Rekening & Finansial",
+      isComplete: isRekComplete,
+      mandatory: true,
+    });
+    if (isRekComplete) completedMandatoryCount++;
+
+    // 5. Data Keluarga & Tanggungan (Membutuhkan minimal 1 kontak darurat utama)
+    const hasEmergency = contacts.some((c: any) => c.priority === "Utama");
+    blocks.push({
+      name: "Data Keluarga & Tanggungan",
+      isComplete: hasEmergency,
+      mandatory: true,
+    });
+    if (hasEmergency) completedMandatoryCount++;
+
+    // 6. Pendidikan Terakhir
+    const pendTerakhir = pp.pendidikanTerakhir || {};
+    const isPendTerakhirComplete = Boolean(
+      pendTerakhir.jenjang &&
+      pendTerakhir.namaInstitusi &&
+      pendTerakhir.jurusan &&
+      pendTerakhir.tahunLulus,
+    );
+    blocks.push({
+      name: "Pendidikan Terakhir",
+      isComplete: isPendTerakhirComplete,
+      mandatory: true,
+    });
+    if (isPendTerakhirComplete) completedMandatoryCount++;
+
+    return {
+      completedMandatoryCount,
+      totalMandatoryCount,
+      isFullyComplete: completedMandatoryCount === totalMandatoryCount,
+      percentage: Math.round(
+        (completedMandatoryCount / totalMandatoryCount) * 100,
+      ),
+      missingBlocks: blocks
+        .filter((b) => b.mandatory && !b.isComplete)
+        .map((b) => b.name),
+    };
+  };
+
+  const completeness = calculateCompleteness();
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <div className="flex justify-between items-start">
-            <div>
-              <CardTitle className="text-2xl">
-                {employeeProfile.fullName}
-              </CardTitle>
-              <CardDescription className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1">
-                <span>{employeeProfile.email}</span>
-                <span className="hidden sm:inline">•</span>
-                <span>{employeeProfile.phone}</span>
-              </CardDescription>
+    <div className="space-y-8 pb-12 animate-in fade-in duration-700">
+      {/* 1. Header Profile */}
+      <div className="relative group overflow-hidden rounded-[2.5rem] bg-slate-900/40 border border-slate-800/60 p-8 md:p-10 shadow-2xl shadow-blue-500/5">
+        <div className="absolute top-0 right-0 -m-8 h-64 w-64 rounded-full bg-primary/5 blur-3xl group-hover:bg-primary/10 transition-colors duration-1000" />
+        <div className="relative flex flex-col md:flex-row items-center gap-8 md:gap-10">
+          <Avatar className="h-32 w-32 md:h-40 md:w-40 rounded-[2.5rem] border-4 border-slate-800 shadow-2xl transition-transform duration-500 hover:scale-105">
+            <AvatarImage src={iden.profilePhotoUrl} className="object-cover" />
+            <AvatarFallback className="bg-slate-800 text-slate-400">
+              <User className="h-16 w-16" />
+            </AvatarFallback>
+          </Avatar>
+
+          <div className="flex-1 text-center md:text-left space-y-4">
+            <div className="space-y-1">
+              <div className="flex flex-col md:flex-row items-center gap-3">
+                <h1 className="text-3xl md:text-4xl font-black tracking-tight text-slate-100">
+                  {iden.fullName || employeeProfile.fullName}
+                </h1>
+                <Badge
+                  variant={
+                    completeness.isFullyComplete ? "default" : "secondary"
+                  }
+                  className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${completeness.isFullyComplete ? "bg-emerald-500 hover:bg-emerald-600" : "bg-orange-500 text-white hover:bg-orange-600"}`}
+                >
+                  {completeness.isFullyComplete
+                    ? "Profil Lengkap"
+                    : `Belum Lengkap (${completeness.completedMandatoryCount}/${completeness.totalMandatoryCount})`}
+                </Badge>
+              </div>
+              <p className="text-slate-400 font-bold tracking-wider uppercase text-xs flex items-center justify-center md:justify-start gap-4">
+                <span className="flex items-center gap-1.5">
+                  <Mail className="h-3 w-3 text-primary" />{" "}
+                  {iden.personalEmail || employeeProfile.email}
+                </span>
+                <span className="hidden md:inline text-slate-700">|</span>
+                <span className="flex items-center gap-1.5">
+                  <Phone className="h-3 w-3 text-primary" />{" "}
+                  {iden.phone || employeeProfile.phone}
+                </span>
+              </p>
             </div>
-            <div className="flex items-center gap-4">
-              <Badge variant={isProfileComplete ? "default" : "secondary"}>
-                {isProfileComplete ? "Profil Lengkap" : "Profil Belum Lengkap"}
-              </Badge>
-              <Button onClick={onEdit}>
-                <Edit className="mr-2 h-4 w-4" /> Edit Profil
+
+            <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 pt-2">
+              <Button
+                onClick={onEdit}
+                className="rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold px-6 h-11 shadow-lg shadow-primary/20 transition-all duration-300"
+              >
+                <Edit className="mr-2 h-4 w-4" /> Edit Profil Saya
               </Button>
             </div>
-          </div>
-        </CardHeader>
-      </Card>
 
-      <div className="grid lg:grid-cols-3 gap-6 items-start">
-        <div className="lg:col-span-2 space-y-6">
-          <Card>
-            <CardHeader>
-              <SectionTitle icon={<User className="h-5 w-5" />}>
-                Identitas Pribadi
+            {!completeness.isFullyComplete && (
+              <div className="mt-4 flex flex-col md:flex-row items-center md:items-start gap-2 bg-orange-500/10 border border-orange-500/20 rounded-xl p-3 text-left">
+                <div className="flex-1">
+                  <p className="text-xs text-orange-400 font-semibold mb-1">
+                    Blok yang belum lengkap:
+                  </p>
+                  <ul className="text-xs text-slate-300 flex flex-wrap gap-2">
+                    {completeness.missingBlocks.map((block, i) => (
+                      <li
+                        key={i}
+                        className="bg-slate-900/50 px-2 py-1 rounded-md"
+                      >
+                        • {block}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
+                    Progress
+                  </p>
+                  <p className="text-lg font-black text-orange-400">
+                    {completeness.percentage}%
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+        {/* Left Column (Main Data) */}
+        <div className="space-y-8">
+          {/* Section: Data Pribadi */}
+          <Card className="border-slate-800 bg-slate-950/40 rounded-[2.5rem] overflow-hidden shadow-xl border-t-4 border-t-blue-500/20">
+            <CardContent className="p-8 md:p-10">
+              <SectionTitle
+                icon={<User className="h-5 w-5" />}
+                description="Informasi Identitas"
+              >
+                Data Pribadi
               </SectionTitle>
-              <CardDescription>
-                Dapat diubah oleh Anda melalui tombol "Edit Profil".
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-1">
-              <InfoRow
-                label="Nama Panggilan"
-                value={employeeProfile.nickName}
-              />
-              <InfoRow
-                label="Email Pribadi"
-                value={employeeProfile.personalEmail}
-              />
-              <InfoRow
-                label="Tempat, Tgl Lahir"
-                value={`${employeeProfile.birthPlace || "-"}, ${
-                  employeeProfile.birthDate
-                    ? (() => {
-                        const date = parseDateValue(employeeProfile.birthDate);
-                        return date
-                          ? format(date, "dd MMM yyyy")
-                          : "Invalid Date";
-                      })()
-                    : "-"
-                }`}
-              />
-              <InfoRow
-                label="Status Pernikahan"
-                value={employeeProfile.maritalStatus}
-              />
-              <InfoRow label="Jenis Kelamin" value={employeeProfile.gender} />
-              <InfoRow label="Agama" value={employeeProfile.religion} />
-              <InfoRow
-                label="Kewarganegaraan"
-                value={employeeProfile.nationality}
-              />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-2">
+                <DataRow
+                  label="Nama Panggilan"
+                  value={iden.nickName}
+                  icon={<Heart className="h-3 w-3" />}
+                />
+                <DataRow
+                  label="Tempat, Tanggal Lahir"
+                  value={
+                    iden.birthPlace
+                      ? `${iden.birthPlace}, ${formatDate(iden.birthDate)}`
+                      : null
+                  }
+                  icon={<Calendar className="h-3 w-3" />}
+                />
+                <DataRow
+                  label="Jenis Kelamin"
+                  value={iden.gender}
+                  icon={<User className="h-3 w-3" />}
+                />
+                <DataRow
+                  label="Status Pernikahan"
+                  value={iden.maritalStatus}
+                  icon={<Users className="h-3 w-3" />}
+                />
+                <DataRow
+                  label="Agama"
+                  value={iden.religion}
+                  icon={<ShieldCheck className="h-3 w-3" />}
+                />
+                <DataRow
+                  label="Kewarganegaraan"
+                  value={iden.nationality}
+                  icon={<MapPin className="h-3 w-3" />}
+                />
+                <DataRow label="Golongan Darah" value={iden.golonganDarah} />
+                <DataRow
+                  label="Tinggi & Berat"
+                  value={
+                    iden.tinggiBadan
+                      ? `${iden.tinggiBadan} cm / ${iden.beratBadan} kg`
+                      : null
+                  }
+                />
+                {iden.hasPhysicalCondition === "Ya" && (
+                  <DataRow
+                    label="Kelainan Fisik"
+                    value={iden.physicalConditionDetails}
+                    className="col-span-2"
+                  />
+                )}
+              </div>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader>
-              <SectionTitle icon={<ShieldAlert className="h-5 w-5" />}>
-                Identitas & Dokumen
+
+          {/* Section: Alamat */}
+          <Card className="border-slate-800 bg-slate-950/40 rounded-[2.5rem] overflow-hidden shadow-xl border-t-4 border-t-emerald-500/20">
+            <CardContent className="p-8 md:p-10">
+              <SectionTitle
+                icon={<Home className="h-5 w-5" />}
+                description="Domisili & KTP"
+              >
+                Alamat Lengkap
               </SectionTitle>
-              <CardDescription>
-                Ringkasan dokumen yang Anda unggah atau sambungkan.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-1">
-              <InfoRow label="NIK" value={employeeProfile.nik} />
-              <InfoRow label="Nomor SIM" value={employeeProfile.simNumber} />
-              <InfoRow label="NPWP" value={employeeProfile.npwp} />
-              <InfoRow
-                label="No. BPJS Kesehatan"
-                value={employeeProfile.bpjsKesehatan}
-              />
-              <InfoRow
-                label="No. BPJS Ketenagakerjaan"
-                value={employeeProfile.bpjsKetenagakerjaan}
-              />
-              <InfoRow
-                label="URL Foto Profil"
-                value={employeeProfile.profilePhotoUrl}
-              />
-              <InfoRow
-                label="URL Foto KTP"
-                value={employeeProfile.ktpPhotoUrl}
-              />
-              <InfoRow
-                label="URL Foto SIM"
-                value={employeeProfile.simPhotoUrl}
-              />
-              <InfoRow
-                label="URL Bukti NPWP"
-                value={employeeProfile.npwpPhotoUrl}
-              />
-              <InfoRow
-                label="URL Bukti Rekening"
-                value={employeeProfile.bankDocumentUrl}
-              />
+              <div className="space-y-6">
+                <div className="group space-y-2">
+                  <div className="flex items-center gap-2 text-slate-500 font-semibold uppercase tracking-[0.08em] text-[10px]">
+                    <MapPin className="h-3 w-3" /> Alamat Domisili Saat Ini
+                  </div>
+                  <p className="text-sm font-bold text-slate-200 leading-relaxed bg-slate-900/30 p-4 rounded-2xl border border-slate-800/40 group-hover:border-primary/20 transition-colors line-clamp-3">
+                    {formatStructuredAddress(addr.domisili) ||
+                      addr.addressCurrent || (
+                        <span className="text-slate-600 font-medium italic">
+                          Belum diisi
+                        </span>
+                      )}
+                  </p>
+                </div>
+                <div className="group space-y-2">
+                  <div className="flex items-center gap-2 text-slate-500 font-semibold uppercase tracking-[0.08em] text-[10px]">
+                    <MapPin className="h-3 w-3" /> Alamat Sesuai KTP
+                  </div>
+                  <p className="text-sm font-bold text-slate-200 leading-relaxed bg-slate-900/30 p-4 rounded-2xl border border-slate-800/40 group-hover:border-primary/20 transition-colors line-clamp-3">
+                    {formatStructuredAddress(addr.ktp) || (
+                      <span className="text-slate-600 font-medium italic">
+                        Belum diisi
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Section: Pendidikan & Pengembangan */}
+          <Card className="border-slate-800 bg-slate-950/40 rounded-[2.5rem] overflow-hidden shadow-xl border-t-4 border-t-indigo-500/20">
+            <CardContent className="p-8 md:p-10">
+              <SectionTitle
+                icon={<GraduationCap className="h-5 w-5" />}
+                description="Riwayat Akademik & Sertifikasi"
+              >
+                Pendidikan & Pengembangan
+              </SectionTitle>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                {/* Pendidikan Terakhir */}
+                <div className="space-y-4">
+                  <h4 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                    <GraduationCap className="h-3 w-3" /> Pendidikan Terakhir
+                  </h4>
+                  {pp.pendidikanTerakhir?.jenjang ? (
+                    <div className="space-y-1 bg-slate-900/20 p-5 rounded-[2rem] border border-slate-800/40">
+                      <DataRow
+                        label="Jenjang"
+                        value={pp.pendidikanTerakhir.jenjang}
+                        className="py-2"
+                      />
+                      <DataRow
+                        label="Institusi"
+                        value={pp.pendidikanTerakhir.namaInstitusi}
+                        className="py-2"
+                      />
+                      <DataRow
+                        label="Jurusan"
+                        value={pp.pendidikanTerakhir.jurusan}
+                        className="py-2"
+                      />
+                      <DataRow
+                        label="Tahun Lulus"
+                        value={pp.pendidikanTerakhir.tahunLulus}
+                        className="py-2 border-0"
+                      />
+                    </div>
+                  ) : (
+                    <div className="bg-slate-900/20 p-5 rounded-[2rem] border border-dashed border-slate-800/40 text-center">
+                      <p className="text-xs text-slate-500 font-bold italic">
+                        Belum diisi
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Sertifikasi & Pelatihan */}
+                <div className="space-y-4">
+                  <h4 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                    <Award className="h-3 w-3" /> Sertifikasi & Pelatihan
+                  </h4>
+                  {pp.sertifikasiPelatihan &&
+                  pp.sertifikasiPelatihan.length > 0 ? (
+                    <div className="space-y-3">
+                      {pp.sertifikasiPelatihan
+                        .slice(0, 3)
+                        .map((cert: any, idx: number) => (
+                          <div
+                            key={idx}
+                            className="bg-slate-900/20 p-4 rounded-[1.5rem] border border-slate-800/40"
+                          >
+                            <p className="text-sm font-bold text-slate-200 mb-1">
+                              {cert.namaSertifikasi || "-"}
+                            </p>
+                            <div className="flex justify-between items-center">
+                              <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 truncate mr-2">
+                                {cert.penyelenggara || "-"}
+                              </span>
+                              <span className="text-[10px] font-black uppercase tracking-widest text-primary flex-shrink-0">
+                                {cert.tahun || "-"}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      {pp.sertifikasiPelatihan.length > 3 && (
+                        <p className="text-[10px] text-center text-slate-500 font-bold italic pt-2">
+                          + {pp.sertifikasiPelatihan.length - 3} sertifikasi
+                          lainnya
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="bg-slate-900/20 p-5 rounded-[2rem] border border-dashed border-slate-800/40 text-center flex flex-col justify-center min-h-[80px]">
+                      <p className="text-xs text-slate-500 font-bold italic">
+                        Belum diisi
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
             </CardContent>
           </Card>
         </div>
 
-        <div className="lg:sticky lg:top-24 space-y-6">
-          <Card>
-            <CardHeader>
-              <SectionTitle icon={<Home className="h-5 w-5" />}>
-                Alamat Domisili
+        {/* Right Column (Sidebar Cards) */}
+        <div className="space-y-8">
+          {/* Section: Dokumen Administratif */}
+          <Card className="border-slate-800 bg-slate-950/40 rounded-[2.5rem] overflow-hidden shadow-xl border-t-4 border-t-amber-500/20">
+            <CardContent className="p-8">
+              <SectionTitle
+                icon={<FileText className="h-5 w-5" />}
+                description="Legalitas & Berkas"
+              >
+                Dokumen
               </SectionTitle>
-              <CardDescription>
-                Dapat diubah oleh Anda melalui tombol "Edit Profil".
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                {typeof employeeProfile.addressCurrent === "string"
-                  ? employeeProfile.addressCurrent
-                  : "Belum diisi."}
-              </p>
-              <Separator className="my-4" />
-              <p className="text-sm text-muted-foreground">
-                <strong>Alamat KTP:</strong>{" "}
-                {formatAddress(employeeProfile.addressKtp)}
-              </p>
+              <div className="space-y-1 mb-6">
+                <DataRow label="NIK (Nomor KTP)" value={iden.nik} />
+                <DataRow label="Nomor NPWP" value={docAdmin.npwp} />
+                <DataRow
+                  label="No. BPJS Kesehatan"
+                  value={docAdmin.bpjsKesehatan}
+                />
+                <DataRow
+                  label="No. BPJS Ketenagakerjaan"
+                  value={docAdmin.bpjsKetenagakerjaan}
+                />
+                {requiresSim && (
+                  <DataRow label="Nomor SIM" value={docAdmin.simNumber} />
+                )}
+              </div>
+              <Separator className="bg-slate-800/60 mb-6" />
+              <div className="space-y-0.5">
+                <FileStatus label="Foto KTP" url={iden.ktpPhotoUrl} />
+                <FileStatus
+                  label="Berkas NPWP"
+                  url={docAdmin.npwpPhotoUrl}
+                  notOwned={docAdmin.noNpwp}
+                  pending={docAdmin.npwpFilePending}
+                />
+                <FileStatus
+                  label="Berkas BPJS Kesehatan"
+                  url={docAdmin.bpjsKesehatanPhotoUrl}
+                  notOwned={docAdmin.noBpjsKesehatan}
+                  pending={docAdmin.bpjsKesehatanFilePending}
+                />
+                <FileStatus
+                  label="Berkas BPJS Ketenagakerjaan"
+                  url={docAdmin.bpjsKetenagakerjaanPhotoUrl}
+                  notOwned={docAdmin.noBpjsKetenagakerjaan}
+                  pending={docAdmin.bpjsKetenagakerjaanFilePending}
+                />
+                {requiresSim && (
+                  <FileStatus label="Foto SIM" url={docAdmin.simPhotoUrl} />
+                )}
+              </div>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader>
-              <SectionTitle icon={<Banknote className="h-5 w-5" />}>
-                Informasi Finansial
+
+          {/* Section: Keuangan */}
+          <Card className="border-slate-800 bg-slate-950/40 rounded-[2.5rem] overflow-hidden shadow-xl border-t-4 border-t-rose-500/20">
+            <CardContent className="p-8">
+              <SectionTitle
+                icon={<Banknote className="h-5 w-5" />}
+                description="Payroll & Bank"
+              >
+                Finansial
               </SectionTitle>
-              <CardDescription>
-                Dapat diubah oleh Anda melalui tombol "Edit Profil".
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <dl className="space-y-1">
-                <InfoRow label="Nama Bank" value={employeeProfile.bankName} />
-                <InfoRow
-                  label="No. Rekening"
-                  value={employeeProfile.bankAccountNumber}
-                />
-                <InfoRow
-                  label="Nama Pemilik"
-                  value={employeeProfile.bankAccountHolderName}
-                />
-              </dl>
+              <div className="space-y-1 mb-6">
+                <DataRow label="Nama Bank" value={rek.bankName} />
+                <DataRow label="Nomor Rekening" value={rek.bankAccountNumber} />
+                <DataRow label="Atas Nama" value={rek.bankAccountHolderName} />
+              </div>
+              <Separator className="bg-slate-800/60 mb-6" />
+              <FileStatus label="Bukti Rekening" url={rek.bankDocumentUrl} />
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader>
-              <SectionTitle icon={<ShieldAlert className="h-5 w-5" />}>
+
+          {/* Section: Data Keluarga */}
+          <Card className="border-slate-800 bg-slate-950/40 rounded-[2.5rem] overflow-hidden shadow-xl border-t-4 border-t-purple-500/20">
+            <CardContent className="p-8 md:p-10">
+              <SectionTitle
+                icon={<Users className="h-5 w-5" />}
+                description="Orang Tua & Tanggungan"
+              >
+                Keluarga & Tanggungan
+              </SectionTitle>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                <div className="bg-slate-900/60 rounded-3xl p-4 border border-slate-800/60 text-center">
+                  <p className="text-[10px] font-black uppercase text-slate-500 tracking-tighter mb-1">
+                    Saudara
+                  </p>
+                  <p className="text-xl font-black text-slate-200">
+                    {totalSiblings}
+                  </p>
+                </div>
+                <div className="bg-slate-900/60 rounded-3xl p-4 border border-slate-800/60 text-center">
+                  <p className="text-[10px] font-black uppercase text-slate-500 tracking-tighter mb-1">
+                    Tanggungan
+                  </p>
+                  <p className="text-xl font-black text-slate-200">
+                    {totalDependents}
+                  </p>
+                </div>
+                <div className="bg-slate-900/60 rounded-3xl p-4 border border-slate-800/60 text-center">
+                  <p className="text-[10px] font-black uppercase text-slate-500 tracking-tighter mb-1">
+                    Status Ayah
+                  </p>
+                  <p className="text-sm font-bold text-slate-200 truncate px-1">
+                    {family.orangTua?.ayah?.status || "-"}
+                  </p>
+                </div>
+                <div className="bg-slate-900/60 rounded-3xl p-4 border border-slate-800/60 text-center">
+                  <p className="text-[10px] font-black uppercase text-slate-500 tracking-tighter mb-1">
+                    Status Ibu
+                  </p>
+                  <p className="text-sm font-bold text-slate-200 truncate px-1">
+                    {family.orangTua?.ibu?.status || "-"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                <div className="space-y-4">
+                  <h4 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                    <User className="h-3 w-3" /> Data Ayah
+                  </h4>
+                  <div className="space-y-1 bg-slate-900/20 p-5 rounded-[2rem] border border-slate-800/40">
+                    <DataRow
+                      label="Nama"
+                      value={family.orangTua?.ayah?.name}
+                      className="py-2"
+                    />
+                    <DataRow
+                      label="Pekerjaan"
+                      value={family.orangTua?.ayah?.occupation}
+                      className="py-2"
+                    />
+                    <DataRow
+                      label="Pendidikan"
+                      value={family.orangTua?.ayah?.education}
+                      className="py-2 border-0"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <h4 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                    <User className="h-3 w-3" /> Data Ibu
+                  </h4>
+                  <div className="space-y-1 bg-slate-900/20 p-5 rounded-[2rem] border border-slate-800/40">
+                    <DataRow
+                      label="Nama"
+                      value={family.orangTua?.ibu?.name}
+                      className="py-2"
+                    />
+                    <DataRow
+                      label="Pekerjaan"
+                      value={family.orangTua?.ibu?.occupation}
+                      className="py-2"
+                    />
+                    <DataRow
+                      label="Pendidikan"
+                      value={family.orangTua?.ibu?.education}
+                      className="py-2 border-0"
+                    />
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Section: Kontak Darurat */}
+          <Card className="border-slate-800 bg-slate-950/40 rounded-[2.5rem] overflow-hidden shadow-xl border-t-4 border-t-cyan-500/20">
+            <CardContent className="p-8">
+              <SectionTitle
+                icon={<Phone className="h-5 w-5" />}
+                description="Emergency Contacts"
+              >
                 Kontak Darurat
               </SectionTitle>
-              <CardDescription>
-                Dapat diubah oleh Anda melalui tombol "Edit Profil".
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-1">
-              <InfoRow
-                label="Nama"
-                value={employeeProfile.emergencyContactName}
-              />
-              <InfoRow
-                label="Hubungan"
-                value={employeeProfile.emergencyContactRelation}
-              />
-              <InfoRow
-                label="Telepon"
-                value={employeeProfile.emergencyContactPhone}
-              />
+              <div className="space-y-4">
+                {contacts.length > 0 ? (
+                  contacts.map((contact, idx) => (
+                    <div
+                      key={contact.id}
+                      className={`p-4 rounded-3xl border border-slate-800/40 ${contact.priority === "Utama" ? "bg-primary/5 border-primary/20 shadow-inner shadow-primary/5" : "bg-slate-900/30"}`}
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-primary">
+                          {contact.priority}
+                        </span>
+                        {contact.priority === "Utama" && (
+                          <CheckCircle2 className="h-3 w-3 text-primary" />
+                        )}
+                      </div>
+                      <p className="text-sm font-bold text-slate-100 mb-1">
+                        {contact.name}
+                      </p>
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                          <Heart className="h-3 w-3" /> {contact.relation}
+                          {contact.relationOther
+                            ? ` (${contact.relationOther})`
+                            : ""}
+                        </span>
+                        <span className="text-xs text-slate-300 font-black flex items-center gap-1.5">
+                          <Phone className="h-3 w-3 text-primary" />{" "}
+                          {contact.phone}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-6 bg-slate-900/30 rounded-3xl border border-dashed border-slate-800/60">
+                    <AlertCircle className="h-8 w-8 text-slate-600 mx-auto mb-2" />
+                    <p className="text-xs text-slate-500 font-bold italic">
+                      Belum ada kontak darurat
+                    </p>
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
         </div>

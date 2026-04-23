@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import { useForm, type FieldErrors } from "react-hook-form";
+import { useForm, useFieldArray, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useAuth } from "@/providers/auth-provider";
@@ -58,12 +58,132 @@ import {
   FileText,
   Check,
   ArrowRight,
+  Plus,
+  Users,
+  Baby,
+  Heart,
+  UserMinus,
+  Calendar,
+  Briefcase,
+  GraduationCap,
+  MapPin,
+  Phone,
+  User,
 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
-import type { EmployeeProfile, Address } from "@/lib/types";
+import type { EmployeeProfile } from "@/lib/types";
+import { RegionSelector } from "./RegionSelector";
 import { format } from "date-fns";
 import { parseDateValue } from "@/lib/utils";
+
+const EDUCATION_OPTIONS = [
+  "Tidak/Belum Sekolah",
+  "SD",
+  "SMP",
+  "SMA/SMK",
+  "D1",
+  "D2",
+  "D3",
+  "D4",
+  "S1",
+  "S2",
+  "S3",
+];
+
+const OCCUPATION_OPTIONS = [
+  "Belum/Tidak Bekerja",
+  "Pelajar/Mahasiswa",
+  "Ibu Rumah Tangga",
+  "Karyawan Swasta",
+  "ASN/PNS",
+  "TNI/Polri",
+  "Guru/Dosen",
+  "Tenaga Kesehatan",
+  "Wiraswasta",
+  "Freelancer",
+  "Buruh/Karyawan Harian",
+  "Petani/Pekebun",
+  "Nelayan",
+  "Sopir/Kurir/Ojek",
+  "Pensiunan",
+  "Lainnya",
+];
+
+const OCCUPATION_STATUS_OPTIONS = [
+  "Tetap",
+  "Kontrak",
+  "Harian",
+  "Usaha Sendiri",
+  "Tidak Bekerja",
+  "Masih Sekolah",
+];
+
+const GENDER_OPTIONS = ["Laki-laki", "Perempuan", "Lainnya"];
+const MARITAL_STATUS_OPTIONS = [
+  "Belum Kawin",
+  "Kawin",
+  "Cerai Hidup",
+  "Cerai Mati",
+];
+const RELIGION_OPTIONS = [
+  "Islam",
+  "Kristen",
+  "Katolik",
+  "Hindu",
+  "Buddha",
+  "Konghucu",
+  "Lainnya",
+];
+const NATIONALITY_OPTIONS = ["WNI", "WNA"];
+
+const PARENT_STATUS_OPTIONS = ["Masih Hidup", "Meninggal"];
+const RELATIONSHIP_OPTIONS = ["Istri", "Suami", "Anak"];
+
+const PARENT_ACTIVITY_OPTIONS = [
+  "Bekerja",
+  "Ibu Rumah Tangga",
+  "Pensiunan",
+  "Tidak Bekerja",
+  "Lainnya",
+];
+
+const SIBLING_ACTIVITY_OPTIONS = [
+  "Sekolah",
+  "Kuliah",
+  "Bekerja",
+  "Belum Bekerja",
+];
+
+const EMERGENCY_RELATION_OPTIONS = [
+  "Ayah",
+  "Ibu",
+  "Suami",
+  "Istri",
+  "Kakak",
+  "Adik",
+  "Paman",
+  "Bibi",
+  "Sepupu",
+  "Wali",
+  "Kerabat Lain",
+];
+
+const EMERGENCY_PRIORITY_OPTIONS = ["Utama", "Cadangan"];
+
+const calculateAge = (birthDate?: string) => {
+  if (!birthDate) return "";
+  const birth = new Date(birthDate);
+  const now = new Date();
+  if (isNaN(birth.getTime())) return "";
+  let age = now.getFullYear() - birth.getFullYear();
+  const monthDiff = now.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < birth.getDate())) {
+    age--;
+  }
+  return age >= 0 ? `${age} thn` : "";
+};
 
 const selfFormSchema = z.object({
   dataDiriIdentitas: z
@@ -77,31 +197,38 @@ const selfFormSchema = z.object({
           message: "Email pribadi tidak valid.",
         }),
       phone: z.string().min(10, "Nomor telepon tidak valid."),
-      gender: z.enum(["Laki-laki", "Perempuan", "Lainnya"]),
+      gender: z.string().min(1, "Jenis kelamin harus dipilih."),
       birthPlace: z.string().min(2, "Tempat lahir harus diisi."),
       birthDate: z
         .string()
         .refine((val) => val, { message: "Tanggal lahir harus diisi." }),
       maritalStatus: z
-        .enum(["Belum Kawin", "Kawin", "Cerai Hidup", "Cerai Mati"])
+        .string()
+        .min(1, "Status pernikahan harus dipilih.")
         .optional(),
-      religion: z.string().optional(),
-      nationality: z.string().optional(),
+      religion: z.string().min(1, "Agama harus dipilih.").optional(),
+      nationality: z
+        .string()
+        .min(1, "Kewarganegaraan harus dipilih.")
+        .optional(),
       countryOfOrigin: z.string().optional(),
-      bloodType: z.enum(["A", "B", "AB", "O"]).nullable().optional(),
-      heightCm: z
+      golonganDarah: z.string().optional(),
+      tinggiBadan: z
         .string()
         .optional()
         .refine((value) => !value || /^[0-9]+$/.test(value), {
           message: "Tinggi badan hanya boleh berisi angka.",
         }),
-      weightKg: z
+      beratBadan: z
         .string()
         .optional()
         .refine((value) => !value || /^[0-9]+(?:\.[0-9]+)?$/.test(value), {
           message: "Berat badan hanya boleh berisi angka.",
         }),
-      hasPhysicalCondition: z.enum(["Ya", "Tidak"]).optional(),
+      hasPhysicalCondition: z
+        .string()
+        .min(1, "Pilihan kelainan fisik harus dipilih.")
+        .optional(),
       physicalConditionDetails: z.string().optional(),
       nik: z
         .string()
@@ -128,45 +255,154 @@ const selfFormSchema = z.object({
       }
     }),
   alamat: z.object({
-    addressKtp: z
+    isDomicileSameAsKtp: z.boolean().optional(),
+    ktp: z
       .object({
         street: z.string().optional(),
         rt: z.string().optional(),
         rw: z.string().optional(),
-        village: z.string().optional(),
-        district: z.string().optional(),
-        city: z.string().optional(),
-        province: z.string().optional(),
-        postalCode: z.string().optional(),
+        kodePos: z.string().optional(),
+        provinsi: z.object({ id: z.string(), name: z.string() }).optional(),
+        kabupatenKota: z
+          .object({ id: z.string(), name: z.string() })
+          .optional(),
+        kecamatan: z.object({ id: z.string(), name: z.string() }).optional(),
+        kelurahan: z.object({ id: z.string(), name: z.string() }).optional(),
       })
       .optional(),
-    isDomicileSameAsKtp: z.boolean().optional(),
-    addressCurrent: z.string().min(10, "Alamat domisili harus diisi."),
-  }),
-  dokumenAdministratif: z.object({
-    noNpwp: z.boolean().optional(),
-    npwpFilePending: z.boolean().optional(),
-    npwp: z.string().optional(),
-    npwpPhotoUrl: z.string().url("URL dokumen NPWP tidak valid.").optional(),
-    noBpjsKesehatan: z.boolean().optional(),
-    bpjsKesehatanFilePending: z.boolean().optional(),
-    bpjsKesehatan: z.string().optional(),
-    bpjsKesehatanPhotoUrl: z
-      .string()
-      .url("URL foto BPJS Kesehatan tidak valid.")
+    domisili: z
+      .object({
+        street: z.string().optional(),
+        rt: z.string().optional(),
+        rw: z.string().optional(),
+        kodePos: z.string().optional(),
+        provinsi: z.object({ id: z.string(), name: z.string() }).optional(),
+        kabupatenKota: z
+          .object({ id: z.string(), name: z.string() })
+          .optional(),
+        kecamatan: z.object({ id: z.string(), name: z.string() }).optional(),
+        kelurahan: z.object({ id: z.string(), name: z.string() }).optional(),
+      })
       .optional(),
-    noBpjsKetenagakerjaan: z.boolean().optional(),
-    bpjsKetenagakerjaanFilePending: z.boolean().optional(),
-    bpjsKetenagakerjaan: z.string().optional(),
-    bpjsKetenagakerjaanPhotoUrl: z
-      .string()
-      .url("URL foto BPJS Ketenagakerjaan tidak valid.")
-      .optional(),
-    simNumber: z.string().optional(),
-    simPhotoUrl: z.string().url("URL foto SIM tidak valid.").optional(),
   }),
+  dokumenAdministratif: z
+    .object({
+      noNpwp: z.boolean().optional(),
+      npwpFilePending: z.boolean().optional(),
+      npwp: z.string().optional(),
+      npwpPhotoUrl: z.string().optional(),
+      noBpjsKesehatan: z.boolean().optional(),
+      bpjsKesehatanFilePending: z.boolean().optional(),
+      bpjsKesehatan: z.string().optional(),
+      bpjsKesehatanPhotoUrl: z.string().optional(),
+      noBpjsKetenagakerjaan: z.boolean().optional(),
+      bpjsKetenagakerjaanFilePending: z.boolean().optional(),
+      bpjsKetenagakerjaan: z.string().optional(),
+      bpjsKetenagakerjaanPhotoUrl: z.string().optional(),
+      simNumber: z.string().optional(),
+      simPhotoUrl: z.string().optional(),
+    })
+    .superRefine((data, ctx) => {
+      // 1. NPWP Logic
+      if (!data.noNpwp) {
+        if (!data.npwp || data.npwp.trim().length === 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Nomor NPWP harus diisi.",
+            path: ["npwp"],
+          });
+        }
+        if (
+          !data.npwpFilePending &&
+          (!data.npwpPhotoUrl || data.npwpPhotoUrl.trim().length === 0)
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Foto NPWP harus diunggah.",
+            path: ["npwpPhotoUrl"],
+          });
+        }
+      }
+
+      // 2. BPJS Kesehatan Logic
+      if (!data.noBpjsKesehatan) {
+        if (!data.bpjsKesehatan || data.bpjsKesehatan.trim().length === 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Nomor BPJS Kesehatan harus diisi.",
+            path: ["bpjsKesehatan"],
+          });
+        }
+        if (
+          !data.bpjsKesehatanPhotoUrl ||
+          data.bpjsKesehatanPhotoUrl.trim().length === 0
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Foto BPJS Kesehatan harus diunggah.",
+            path: ["bpjsKesehatanPhotoUrl"],
+          });
+        }
+      }
+
+      // 3. BPJS Ketenagakerjaan Logic
+      if (!data.noBpjsKetenagakerjaan) {
+        if (
+          !data.bpjsKetenagakerjaan ||
+          data.bpjsKetenagakerjaan.trim().length === 0
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Nomor BPJS Ketenagakerjaan harus diisi.",
+            path: ["bpjsKetenagakerjaan"],
+          });
+        }
+        if (
+          !data.bpjsKetenagakerjaanPhotoUrl ||
+          data.bpjsKetenagakerjaanPhotoUrl.trim().length === 0
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Foto BPJS Ketenagakerjaan harus diunggah.",
+            path: ["bpjsKetenagakerjaanPhotoUrl"],
+          });
+        }
+      }
+
+      // Helper for URL validation (only if not empty)
+      const validateUrl = (
+        url: string | undefined,
+        path: string,
+        label: string,
+      ) => {
+        if (url && url.trim().length > 0) {
+          try {
+            new URL(url);
+          } catch (e) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: `URL ${label} tidak valid.`,
+              path: [path],
+            });
+          }
+        }
+      };
+
+      validateUrl(data.npwpPhotoUrl, "npwpPhotoUrl", "NPWP");
+      validateUrl(
+        data.bpjsKesehatanPhotoUrl,
+        "bpjsKesehatanPhotoUrl",
+        "BPJS Kesehatan",
+      );
+      validateUrl(
+        data.bpjsKetenagakerjaanPhotoUrl,
+        "bpjsKetenagakerjaanPhotoUrl",
+        "BPJS Ketenagakerjaan",
+      );
+      validateUrl(data.simPhotoUrl, "simPhotoUrl", "SIM");
+    }),
   dataRekening: z.object({
-    bankName: z.string().optional(),
+    bankName: z.string().min(1, "Nama bank harus dipilih."),
     bankAccountNumber: z.string().optional(),
     bankAccountHolderName: z.string().optional(),
     bankDocumentUrl: z
@@ -174,16 +410,134 @@ const selfFormSchema = z.object({
       .url("URL bukti rekening tidak valid.")
       .optional(),
   }),
-  kontakDarurat: z.object({
-    emergencyContactName: z.string().min(2, "Nama kontak darurat harus diisi."),
-    emergencyContactRelation: z
-      .string()
-      .min(2, "Hubungan kontak darurat harus diisi."),
-    emergencyContactPhone: z
-      .string()
-      .min(10, "Nomor telepon darurat tidak valid."),
-    emergencyContactAddress: z.string().optional(),
-  }),
+  dataKeluarga: z
+    .object({
+      orangTua: z.object({
+        ayah: z.object({
+          name: z.string().optional(),
+          status: z.string().optional(),
+          birthPlace: z.string().optional(),
+          birthDate: z.string().optional(),
+          activityStatus: z.string().optional(),
+          education: z.string().optional(),
+          occupation: z.string().optional(),
+          occupationOther: z.string().optional(),
+          address: z.string().optional(),
+          phone: z.string().optional(),
+        }),
+        ibu: z.object({
+          name: z.string().optional(),
+          status: z.string().optional(),
+          birthPlace: z.string().optional(),
+          birthDate: z.string().optional(),
+          activityStatus: z.string().optional(),
+          education: z.string().optional(),
+          occupation: z.string().optional(),
+          occupationOther: z.string().optional(),
+          address: z.string().optional(),
+          phone: z.string().optional(),
+        }),
+      }),
+      saudaraKandung: z
+        .array(
+          z.object({
+            id: z.string(),
+            name: z.string().optional(),
+            birthPlace: z.string().optional(),
+            birthDate: z.string().optional(),
+            order: z.string().optional(),
+            education: z.string().optional(),
+            activityStatus: z.string().optional(),
+            occupation: z.string().optional(),
+            occupationOther: z.string().optional(),
+            occupationStatus: z.string().optional(),
+            address: z.string().optional(),
+          }),
+        )
+        .optional(),
+      tanggungan: z
+        .array(
+          z.object({
+            id: z.string(),
+            name: z.string().optional(),
+            gender: z.string().optional(),
+            birthPlace: z.string().optional(),
+            birthDate: z.string().optional(),
+            relation: z.string().optional(),
+            childOrder: z.string().optional(),
+            education: z.string().optional(),
+            activityStatus: z.string().optional(),
+            occupation: z.string().optional(),
+            occupationOther: z.string().optional(),
+            occupationStatus: z.string().optional(),
+            status: z.string().optional(),
+            address: z.string().optional(),
+          }),
+        )
+        .optional(),
+    })
+    .optional(),
+  pendidikanDanPengembangan: z
+    .object({
+      pendidikanTerakhir: z.object({
+        jenjang: z.string().min(1, "Jenjang wajib diisi."),
+        namaInstitusi: z.string().min(2, "Nama institusi wajib diisi."),
+        jurusan: z.string().min(2, "Jurusan wajib diisi."),
+        tahunLulus: z.string().min(4, "Tahun lulus wajib diisi."),
+      }),
+      riwayatPendidikan: z
+        .array(
+          z.object({
+            id: z.string(),
+            jenjang: z.string().optional(),
+            namaInstitusi: z.string().optional(),
+            jurusan: z.string().optional(),
+            tahunLulus: z.string().optional(),
+          }),
+        )
+        .optional(),
+      sertifikasiPelatihan: z
+        .array(
+          z.object({
+            id: z.string(),
+            namaSertifikasi: z.string().optional(),
+            penyelenggara: z.string().optional(),
+            tahun: z.string().optional(),
+            buktiUrl: z.string().optional(),
+          }),
+        )
+        .optional(),
+    })
+    .optional(),
+  kontakDarurat: z
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string().min(2, "Nama lengkap harus diisi."),
+        relation: z.string().min(1, "Hubungan harus dipilih."),
+        relationOther: z.string().optional(),
+        phone: z
+          .string()
+          .min(1, "Nomor telepon wajib diisi.")
+          .transform((val) => val.replace(/[^0-9]/g, ""))
+          .refine((val) => /^(08|62)[0-9]{8,12}$/.test(val), {
+            message: "Format nomor HP Indonesia tidak valid (08... atau 62...)",
+          }),
+        address: z.string().optional(),
+        priority: z.string().min(1, "Prioritas harus dipilih."),
+      }),
+    )
+    .min(1, "Minimal 1 kontak darurat harus diisi.")
+    .superRefine((contacts, ctx) => {
+      const hasMain = contacts.some((c: any) => c.priority === "Utama");
+      if (!hasMain) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Harus ada minimal 1 kontak dengan prioritas 'Utama'.",
+          path: [0, "priority"],
+        });
+      }
+    }),
 });
 
 type FormValues = z.infer<typeof selfFormSchema>;
@@ -195,21 +549,41 @@ interface EmployeeSelfProfileFormProps {
 }
 
 const INDONESIAN_BANKS = [
-  "Bank Central Asia (BCA)",
   "Bank Mandiri",
-  "Bank Rakyat Indonesia (BRI)",
-  "Bank Negara Indonesia (BNI)",
-  "Bank Tabungan Negara (BTN)",
-  "CIMB Niaga",
-  "Bank Syariah Indonesia (BSI)",
+  "Bank BRI",
+  "Bank BNI",
+  "Bank BTN",
+  "Bank Central Asia (BCA)",
+  "Bank CIMB Niaga",
   "Bank Danamon",
-  "PermataBank",
-  "OCBC NISP",
-  "Panin Bank",
-  "Bank BTPN",
-  "Maybank Indonesia",
+  "Bank Permata",
+  "Bank Panin",
+  "Bank Mega",
+  "Bank OCBC NISP",
+  "Bank Maybank Indonesia",
   "Bank Sinarmas",
+  "Bank Bukopin",
+  "Bank BTPN",
+  "Bank Syariah Indonesia (BSI)",
   "Bank Muamalat",
+  "Bank DKI",
+  "Bank Jabar Banten (BJB)",
+  "Bank Jateng",
+  "Bank Jatim",
+  "Bank Sumut",
+  "Bank Nagari",
+  "Bank NTB Syariah",
+  "Bank Papua",
+  "Bank Kalbar",
+  "Bank Kaltimtara",
+  "Bank Kalsel",
+  "Bank Sulselbar",
+  "Bank Sulteng",
+  "Bank Sultra",
+  "Bank SulutGo",
+  "Bank Maluku Malut",
+  "Bank Bengkulu",
+  "Bank Lampung",
 ];
 
 type FileUploadFieldProps = {
@@ -438,27 +812,17 @@ const STEP_CONFIG = [
     fields: ["dataRekening"],
   },
   {
-    title: "Kontak Darurat",
-    description: "Berikan kontak darurat yang bisa dihubungi.",
-    fields: ["kontakDarurat"],
+    title: "Data Keluarga & Tanggungan",
+    description: "Lengkapi data keluarga dan kontak darurat Anda.",
+    fields: ["dataKeluarga", "kontakDarurat"],
+  },
+  {
+    title: "Pendidikan & Pengembangan",
+    description:
+      "Riwayat pendidikan dan sertifikasi atau pelatihan yang pernah diikuti (opsional).",
+    fields: ["pendidikanDanPengembangan"],
   },
 ];
-
-function buildAddressString(address: Address | undefined) {
-  if (!address) return "";
-  return [
-    address.street,
-    address.rt && `RT ${address.rt}`,
-    address.rw && `RW ${address.rw}`,
-    address.village,
-    address.district,
-    address.city,
-    address.province,
-    address.postalCode,
-  ]
-    .filter(Boolean)
-    .join(", ");
-}
 
 export function EmployeeSelfProfileForm({
   initialProfile,
@@ -470,6 +834,20 @@ export function EmployeeSelfProfileForm({
   const firestore = useFirestore();
   const { toast } = useToast();
 
+  const requiresSim = useMemo(() => {
+    const position = (initialProfile.positionTitle || "").toLowerCase();
+    const requiredKeywords = [
+      "driver",
+      "lapangan",
+      "operasional",
+      "sales lapangan",
+    ];
+    return (
+      (initialProfile as any).requiresSIM === true ||
+      requiredKeywords.some((kw) => position.includes(kw))
+    );
+  }, [initialProfile]);
+
   const form = useForm<FormValues>({
     resolver: zodResolver(selfFormSchema),
     defaultValues: {
@@ -478,35 +856,44 @@ export function EmployeeSelfProfileForm({
         nickName: "",
         personalEmail: "",
         phone: "",
-        gender: "Laki-laki",
+        gender: "",
         birthPlace: "",
         birthDate: "",
-        maritalStatus: "Belum Kawin",
+        maritalStatus: "",
         religion: "",
-        nationality: "WNI",
+        nationality: "",
         countryOfOrigin: "",
-        bloodType: null,
-        heightCm: "",
-        weightKg: "",
-        hasPhysicalCondition: "Tidak",
+        golonganDarah: "",
+        tinggiBadan: "",
+        beratBadan: "",
+        hasPhysicalCondition: "",
         physicalConditionDetails: "",
         nik: "",
         profilePhotoUrl: "",
         ktpPhotoUrl: "",
       },
       alamat: {
-        addressKtp: {
+        isDomicileSameAsKtp: false,
+        ktp: {
           street: "",
           rt: "",
           rw: "",
-          village: "",
-          district: "",
-          city: "",
-          province: "",
-          postalCode: "",
+          kodePos: "",
+          provinsi: undefined,
+          kabupatenKota: undefined,
+          kecamatan: undefined,
+          kelurahan: undefined,
         },
-        isDomicileSameAsKtp: false,
-        addressCurrent: "",
+        domisili: {
+          street: "",
+          rt: "",
+          rw: "",
+          kodePos: "",
+          provinsi: undefined,
+          kabupatenKota: undefined,
+          kecamatan: undefined,
+          kelurahan: undefined,
+        },
       },
       dokumenAdministratif: {
         noNpwp: false,
@@ -530,16 +917,110 @@ export function EmployeeSelfProfileForm({
         bankAccountHolderName: "",
         bankDocumentUrl: "",
       },
-      kontakDarurat: {
-        emergencyContactName: "",
-        emergencyContactRelation: "",
-        emergencyContactPhone: "",
-        emergencyContactAddress: "",
+      dataKeluarga: {
+        orangTua: {
+          ayah: {
+            name: "",
+            status: "",
+            birthPlace: "",
+            birthDate: "",
+            activityStatus: "",
+            education: "",
+            occupation: "",
+            occupationOther: "",
+            address: "",
+            phone: "",
+          },
+          ibu: {
+            name: "",
+            status: "",
+            birthPlace: "",
+            birthDate: "",
+            activityStatus: "",
+            education: "",
+            occupation: "",
+            occupationOther: "",
+            address: "",
+            phone: "",
+          },
+        },
+        saudaraKandung: [],
+        tanggungan: [],
       },
+      pendidikanDanPengembangan: {
+        pendidikanTerakhir: {
+          jenjang: "",
+          namaInstitusi: "",
+          jurusan: "",
+          tahunLulus: "",
+        },
+        riwayatPendidikan: [],
+        sertifikasiPelatihan: [],
+      },
+      kontakDarurat: [
+        {
+          id: crypto.randomUUID(),
+          name: "",
+          relation: "",
+          relationOther: "",
+          phone: "",
+          address: "",
+          priority: "Utama",
+        },
+      ],
     },
   });
 
+  const {
+    fields: saudaraFields,
+    append: appendSaudara,
+    remove: removeSaudara,
+  } = useFieldArray({
+    control: form.control,
+    name: "dataKeluarga.saudaraKandung",
+  });
+
+  const {
+    fields: tanggunganFields,
+    append: appendTanggungan,
+    remove: removeTanggungan,
+  } = useFieldArray({
+    control: form.control,
+    name: "dataKeluarga.tanggungan",
+  });
+
+  const {
+    fields: pendidikanFields,
+    append: appendPendidikan,
+    remove: removePendidikan,
+  } = useFieldArray({
+    control: form.control,
+    name: "pendidikanDanPengembangan.riwayatPendidikan",
+  });
+
+  const {
+    fields: sertifikasiFields,
+    append: appendSertifikasi,
+    remove: removeSertifikasi,
+  } = useFieldArray({
+    control: form.control,
+    name: "pendidikanDanPengembangan.sertifikasiPelatihan",
+  });
+
+  const {
+    fields: daruratFields,
+    append: appendDarurat,
+    remove: removeDarurat,
+  } = useFieldArray({
+    control: form.control,
+    name: "kontakDarurat",
+  });
+
+  const hasInitialized = useRef(false);
+
   useEffect(() => {
+    if (hasInitialized.current) return;
+
     const birthDate = initialProfile.birthDate
       ? parseDateValue(initialProfile.birthDate)
       : null;
@@ -550,48 +1031,94 @@ export function EmployeeSelfProfileForm({
     const docAdmin = (initialProfile as any)?.dokumenAdministratif || {};
     const rek = (initialProfile as any)?.dataRekening || {};
     const kd = (initialProfile as any)?.kontakDarurat || {};
+    const dk = (initialProfile as any)?.dataKeluarga || {};
+    const pp = (initialProfile as any)?.pendidikanDanPengembangan || {};
 
-    console.log("DEBUG: Initial profile data:", initialProfile);
-    console.log("DEBUG: Extracted dataDiriIdentitas:", dd);
+    console.log("DEBUG: Initial profile raw data:", initialProfile);
 
-    form.reset({
+    // Helper to normalize dropdown values (trim and fallback to empty string)
+    const normalize = (val: any) => {
+      if (val === null || val === undefined) return "";
+      return String(val).trim();
+    };
+
+    console.log("DEBUG: Data Diri Identitas from DB:", dd);
+    console.log("DEBUG: Gender from DB:", dd.gender || initialProfile.gender);
+    console.log(
+      "DEBUG: Religion from DB:",
+      dd.religion || initialProfile.religion,
+    );
+    console.log(
+      "DEBUG: Marital Status from DB:",
+      dd.maritalStatus || initialProfile.maritalStatus,
+    );
+
+    // Explicitly normalize dropdown values for debugging and safety
+    const genderValue = normalize(dd.gender || initialProfile.gender || "");
+    const maritalStatusValue = normalize(
+      dd.maritalStatus || initialProfile.maritalStatus || "",
+    );
+    const religionValue = normalize(
+      dd.religion || initialProfile.religion || "",
+    );
+    const nationalityValue = normalize(
+      dd.nationality || initialProfile.nationality || "WNI",
+    );
+    const golonganDarahValue = normalize(
+      dd.golonganDarah ||
+        initialProfile.additionalFields?.golonganDarah ||
+        initialProfile.bloodType ||
+        "",
+    );
+    const physicalConditionValue = normalize(
+      dd.hasPhysicalCondition ||
+        initialProfile.additionalFields?.hasPhysicalCondition ||
+        initialProfile.hasPhysicalCondition ||
+        "Tidak",
+    );
+
+    console.log("DEBUG: Normalized Values for Reset:", {
+      gender: genderValue,
+      maritalStatus: maritalStatusValue,
+      religion: religionValue,
+      nationality: nationalityValue,
+      golonganDarah: golonganDarahValue,
+      hasPhysicalCondition: physicalConditionValue,
+    });
+
+    const resetValues = {
       dataDiriIdentitas: {
         fullName: dd.fullName || initialProfile.fullName || "",
         nickName: dd.nickName || initialProfile.nickName || "",
-        personalEmail: dd.personalEmail || initialProfile.personalEmail || "",
+        personalEmail:
+          dd.personalEmail ||
+          initialProfile.personalEmail ||
+          initialProfile.email ||
+          "",
         phone: dd.phone || initialProfile.phone || "",
-        gender: dd.gender || initialProfile.gender || "Laki-laki",
+        gender: genderValue,
         birthPlace: dd.birthPlace || initialProfile.birthPlace || "",
         birthDate: dd.birthDate || formattedBirthDate,
-        maritalStatus:
-          dd.maritalStatus || initialProfile.maritalStatus || "Belum Kawin",
-        religion: dd.religion || initialProfile.religion || "",
-        nationality: dd.nationality || initialProfile.nationality || "",
+        maritalStatus: maritalStatusValue,
+        religion: religionValue,
+        nationality: nationalityValue,
         countryOfOrigin:
           dd.countryOfOrigin ||
           initialProfile.additionalFields?.countryOfOrigin ||
           initialProfile.countryOfOrigin ||
           "",
-        bloodType:
-          dd.bloodType ||
-          initialProfile.additionalFields?.bloodType ||
-          initialProfile.bloodType ||
-          null,
-        heightCm:
-          dd.heightCm ||
-          initialProfile.additionalFields?.heightCm ||
+        golonganDarah: golonganDarahValue,
+        tinggiBadan:
+          dd.tinggiBadan ||
+          initialProfile.additionalFields?.tinggiBadan ||
           initialProfile.heightCm ||
           "",
-        weightKg:
-          dd.weightKg ||
-          initialProfile.additionalFields?.weightKg ||
+        beratBadan:
+          dd.beratBadan ||
+          initialProfile.additionalFields?.beratBadan ||
           initialProfile.weightKg ||
           "",
-        hasPhysicalCondition:
-          dd.hasPhysicalCondition ||
-          initialProfile.additionalFields?.hasPhysicalCondition ||
-          initialProfile.hasPhysicalCondition ||
-          "Tidak",
+        hasPhysicalCondition: physicalConditionValue,
         physicalConditionDetails:
           dd.physicalConditionDetails ||
           initialProfile.additionalFields?.physicalConditionDetails ||
@@ -603,31 +1130,28 @@ export function EmployeeSelfProfileForm({
         ktpPhotoUrl: dd.ktpPhotoUrl || initialProfile.ktpPhotoUrl || "",
       },
       alamat: {
-        addressKtp: {
-          street:
-            al.addressKtp?.street || initialProfile.addressKtp?.street || "",
-          rt: al.addressKtp?.rt || initialProfile.addressKtp?.rt || "",
-          rw: al.addressKtp?.rw || initialProfile.addressKtp?.rw || "",
-          village:
-            al.addressKtp?.village || initialProfile.addressKtp?.village || "",
-          district:
-            al.addressKtp?.district ||
-            initialProfile.addressKtp?.district ||
-            "",
-          city: al.addressKtp?.city || initialProfile.addressKtp?.city || "",
-          province:
-            al.addressKtp?.province ||
-            initialProfile.addressKtp?.province ||
-            "",
-          postalCode:
-            al.addressKtp?.postalCode ||
-            initialProfile.addressKtp?.postalCode ||
-            "",
-        },
         isDomicileSameAsKtp:
           al.isDomicileSameAsKtp ?? initialProfile.isDomicileSameAsKtp ?? false,
-        addressCurrent:
-          al.addressCurrent || initialProfile.addressCurrent || "",
+        ktp: {
+          street: al.ktp?.street || "",
+          rt: al.ktp?.rt || "",
+          rw: al.ktp?.rw || "",
+          kodePos: al.ktp?.kodePos || "",
+          provinsi: al.ktp?.provinsi || undefined,
+          kabupatenKota: al.ktp?.kabupatenKota || undefined,
+          kecamatan: al.ktp?.kecamatan || undefined,
+          kelurahan: al.ktp?.kelurahan || undefined,
+        },
+        domisili: {
+          street: al.domisili?.street || "",
+          rt: al.domisili?.rt || "",
+          rw: al.domisili?.rw || "",
+          kodePos: al.domisili?.kodePos || "",
+          provinsi: al.domisili?.provinsi || undefined,
+          kabupatenKota: al.domisili?.kabupatenKota || undefined,
+          kecamatan: al.domisili?.kecamatan || undefined,
+          kelurahan: al.domisili?.kelurahan || undefined,
+        },
       },
       dokumenAdministratif: {
         noNpwp: docAdmin.noNpwp ?? initialProfile.noNpwp ?? false,
@@ -678,66 +1202,182 @@ export function EmployeeSelfProfileForm({
         bankDocumentUrl:
           rek.bankDocumentUrl || initialProfile.bankDocumentUrl || "",
       },
-      kontakDarurat: {
-        emergencyContactName:
-          kd.emergencyContactName || initialProfile.emergencyContactName || "",
-        emergencyContactRelation:
-          kd.emergencyContactRelation ||
-          initialProfile.emergencyContactRelation ||
-          "",
-        emergencyContactPhone:
-          kd.emergencyContactPhone ||
-          initialProfile.emergencyContactPhone ||
-          "",
-        emergencyContactAddress:
-          kd.emergencyContactAddress ||
-          initialProfile.emergencyContactAddress ||
-          "",
+      kontakDarurat: Array.isArray(kd)
+        ? kd.map((k: any) => ({
+            id: k.id || crypto.randomUUID(),
+            name: k.name || "",
+            relation: k.relation || "",
+            relationOther: k.relationOther || "",
+            phone: k.phone || "",
+            address: k.address || "",
+            priority: k.priority || "Utama",
+          }))
+        : [
+            {
+              id: crypto.randomUUID(),
+              name:
+                kd.emergencyContactName ||
+                initialProfile.emergencyContactName ||
+                "",
+              relation:
+                kd.emergencyContactRelation ||
+                initialProfile.emergencyContactRelation ||
+                "",
+              relationOther: "",
+              phone:
+                kd.emergencyContactPhone ||
+                initialProfile.emergencyContactPhone ||
+                "",
+              address:
+                kd.emergencyContactAddress ||
+                initialProfile.emergencyContactAddress ||
+                "",
+              priority: "Utama",
+            },
+          ],
+      dataKeluarga: {
+        orangTua: {
+          ayah: {
+            name: dk.orangTua?.ayah?.name || "",
+            status: dk.orangTua?.ayah?.status || "",
+            birthPlace: dk.orangTua?.ayah?.birthPlace || "",
+            birthDate: dk.orangTua?.ayah?.birthDate || "",
+            activityStatus: dk.orangTua?.ayah?.activityStatus || "",
+            education: dk.orangTua?.ayah?.education || "",
+            occupation: dk.orangTua?.ayah?.occupation || "",
+            occupationOther: dk.orangTua?.ayah?.occupationOther || "",
+            address: dk.orangTua?.ayah?.address || "",
+            phone: dk.orangTua?.ayah?.phone || "",
+          },
+          ibu: {
+            name: dk.orangTua?.ibu?.name || "",
+            status: dk.orangTua?.ibu?.status || "",
+            birthPlace: dk.orangTua?.ibu?.birthPlace || "",
+            birthDate: dk.orangTua?.ibu?.birthDate || "",
+            activityStatus: dk.orangTua?.ibu?.activityStatus || "",
+            education: dk.orangTua?.ibu?.education || "",
+            occupation: dk.orangTua?.ibu?.occupation || "",
+            occupationOther: dk.orangTua?.ibu?.occupationOther || "",
+            address: dk.orangTua?.ibu?.address || "",
+            phone: dk.orangTua?.ibu?.phone || "",
+          },
+        },
+        saudaraKandung: (dk.saudaraKandung || []).map((s: any) => ({
+          id: s.id || crypto.randomUUID(),
+          name: s.name || "",
+          birthPlace: s.birthPlace || "",
+          birthDate: s.birthDate || "",
+          order: s.order || "",
+          education: s.education || "",
+          activityStatus: s.activityStatus || "",
+          occupation: s.occupation || "",
+          occupationOther: s.occupationOther || "",
+          occupationStatus: s.occupationStatus || "",
+          address: s.address || "",
+        })),
+        tanggungan: (dk.tanggungan || []).map((t: any) => ({
+          id: t.id || crypto.randomUUID(),
+          name: t.name || "",
+          gender: normalize(t.gender || ""),
+          birthPlace: t.birthPlace || "",
+          birthDate: t.birthDate || "",
+          relation: t.relation || "",
+          childOrder: t.childOrder || "",
+          education: t.education || "",
+          activityStatus: t.activityStatus || "",
+          occupation: t.occupation || "",
+          occupationOther: t.occupationOther || "",
+          occupationStatus: t.occupationStatus || "",
+          status: t.status || "",
+          address: t.address || "",
+        })),
       },
-    });
-    console.log("DEBUG: Form reset values:", form.getValues());
+      pendidikanDanPengembangan: {
+        pendidikanTerakhir: {
+          jenjang: pp.pendidikanTerakhir?.jenjang || "",
+          namaInstitusi: pp.pendidikanTerakhir?.namaInstitusi || "",
+          jurusan: pp.pendidikanTerakhir?.jurusan || "",
+          tahunLulus: pp.pendidikanTerakhir?.tahunLulus || "",
+        },
+        riwayatPendidikan: (pp.riwayatPendidikan || []).map((p: any) => ({
+          id: p.id || crypto.randomUUID(),
+          jenjang: p.jenjang || "",
+          namaInstitusi: p.namaInstitusi || "",
+          jurusan: p.jurusan || "",
+          tahunLulus: p.tahunLulus || "",
+        })),
+        sertifikasiPelatihan: (pp.sertifikasiPelatihan || []).map((s: any) => ({
+          id: s.id || crypto.randomUUID(),
+          namaSertifikasi: s.namaSertifikasi || "",
+          penyelenggara: s.penyelenggara || "",
+          tahun: s.tahun || "",
+          buktiUrl: s.buktiUrl || "",
+        })),
+      },
+    };
+
+    console.log("DEBUG: Final normalized form reset values:", resetValues);
+    form.reset(resetValues);
+    hasInitialized.current = true;
   }, [initialProfile, form]);
 
   const [currentStep, setCurrentStep] = useState(0);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
 
-  const watchedAddressKtp = form.watch("alamat.addressKtp");
+  const watchedAddressKtp = form.watch("alamat.ktp");
   const watchedDomicileSame = form.watch("alamat.isDomicileSameAsKtp");
   const watchedHasPhysicalCondition = form.watch(
     "dataDiriIdentitas.hasPhysicalCondition",
   );
   const watchedNationality = form.watch("dataDiriIdentitas.nationality");
 
+  const watchedGender = form.watch("dataDiriIdentitas.gender");
+  const watchedReligion = form.watch("dataDiriIdentitas.religion");
+  const watchedMaritalStatus = form.watch("dataDiriIdentitas.maritalStatus");
+
   const watchedNoNpwp = form.watch("dokumenAdministratif.noNpwp");
   const watchedNpwpFilePending = form.watch(
     "dokumenAdministratif.npwpFilePending",
   );
   const watchedNoBpjsKs = form.watch("dokumenAdministratif.noBpjsKesehatan");
-  const watchedBpjsKsFilePending = form.watch(
-    "dokumenAdministratif.bpjsKesehatanFilePending",
-  );
   const watchedNoBpjsTk = form.watch(
     "dokumenAdministratif.noBpjsKetenagakerjaan",
   );
-  const watchedBpjsTkFilePending = form.watch(
-    "dokumenAdministratif.bpjsKetenagakerjaanFilePending",
-  );
 
+  // Sync domisili = ktp when checkbox is checked
   useEffect(() => {
     if (!watchedDomicileSame) return;
-    const addressValue = buildAddressString(watchedAddressKtp);
-    if (addressValue) {
-      form.setValue("alamat.addressCurrent", addressValue);
-    }
+    const ktp = form.getValues("alamat.ktp");
+    form.setValue("alamat.domisili", ktp);
   }, [watchedDomicileSame, watchedAddressKtp, form]);
+
+  const cleanUndefinedValues = (value: any): any => {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    if (Array.isArray(value)) {
+      return value
+        .map(cleanUndefinedValues)
+        .filter((item) => item !== undefined);
+    }
+    const isPlainObject =
+      typeof value === "object" &&
+      value !== null &&
+      value.constructor === Object;
+    if (isPlainObject) {
+      return Object.fromEntries(
+        Object.entries(value)
+          .map(([key, nestedValue]) => [key, cleanUndefinedValues(nestedValue)])
+          .filter(([, nestedValue]) => nestedValue !== undefined),
+      );
+    }
+    return value;
+  };
 
   const saveEmployeeProfile = async (values: FormValues, isDraft: boolean) => {
     if (!firebaseUser) {
       throw new Error("Authentication not found.");
     }
-
-    console.log("DEBUG: Form values before save:", values);
 
     const batch = writeBatch(firestore);
     const employeeProfileRef = doc(
@@ -747,22 +1387,43 @@ export function EmployeeSelfProfileForm({
     );
     const userRef = doc(firestore, "users", firebaseUser.uid);
 
-    // Payload HARUS hanya nested objects sesuai Firestore Rules
-    // JANGAN tambahkan field flat seperti ...values.dataDiriIdentitas
-    const employeePayload = {
+    const getRegionValue = (region: any) =>
+      region && region.id && region.name
+        ? { id: region.id, name: region.name }
+        : null;
+
+    const employeePayload = cleanUndefinedValues({
       uid: firebaseUser.uid,
       dataDiriIdentitas: values.dataDiriIdentitas,
-      alamat: values.alamat,
+      alamat: {
+        ...values.alamat,
+        ktp: {
+          ...values.alamat.ktp,
+          provinsi: getRegionValue(values.alamat.ktp?.provinsi),
+          kabupatenKota: getRegionValue(values.alamat.ktp?.kabupatenKota),
+          kecamatan: getRegionValue(values.alamat.ktp?.kecamatan),
+          kelurahan: getRegionValue(values.alamat.ktp?.kelurahan),
+        },
+        domisili: {
+          ...values.alamat.domisili,
+          provinsi: getRegionValue(values.alamat.domisili?.provinsi),
+          kabupatenKota: getRegionValue(values.alamat.domisili?.kabupatenKota),
+          kecamatan: getRegionValue(values.alamat.domisili?.kecamatan),
+          kelurahan: getRegionValue(values.alamat.domisili?.kelurahan),
+        },
+      },
       dokumenAdministratif: values.dokumenAdministratif,
       dataRekening: values.dataRekening,
+      dataKeluarga: values.dataKeluarga,
       kontakDarurat: values.kontakDarurat,
+      pendidikanDanPengembangan: values.pendidikanDanPengembangan || {},
       updatedAt: serverTimestamp(),
       completeness: isDraft
         ? { isComplete: false }
         : { isComplete: true, completedAt: serverTimestamp() },
-    };
+    });
 
-    console.log("employeePayload", employeePayload);
+    console.log("FINAL PAYLOAD:", employeePayload);
 
     batch.set(employeeProfileRef, employeePayload, { merge: true });
     batch.update(userRef, {
@@ -987,7 +1648,7 @@ export function EmployeeSelfProfileForm({
                       <FormLabel>Jenis Kelamin*</FormLabel>
                       <Select
                         onValueChange={field.onChange}
-                        value={field.value}
+                        value={field.value || ""}
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -995,9 +1656,11 @@ export function EmployeeSelfProfileForm({
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="Laki-laki">Laki-laki</SelectItem>
-                          <SelectItem value="Perempuan">Perempuan</SelectItem>
-                          <SelectItem value="Lainnya">Lainnya</SelectItem>
+                          {GENDER_OPTIONS.map((opt) => (
+                            <SelectItem key={opt} value={opt}>
+                              {opt}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -1012,7 +1675,7 @@ export function EmployeeSelfProfileForm({
                       <FormLabel>Status Pernikahan</FormLabel>
                       <Select
                         onValueChange={field.onChange}
-                        value={field.value}
+                        value={field.value || ""}
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -1020,14 +1683,11 @@ export function EmployeeSelfProfileForm({
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="Belum Kawin">
-                            Belum Kawin
-                          </SelectItem>
-                          <SelectItem value="Kawin">Kawin</SelectItem>
-                          <SelectItem value="Cerai Hidup">
-                            Cerai Hidup
-                          </SelectItem>
-                          <SelectItem value="Cerai Mati">Cerai Mati</SelectItem>
+                          {MARITAL_STATUS_OPTIONS.map((opt) => (
+                            <SelectItem key={opt} value={opt}>
+                              {opt}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -1042,7 +1702,7 @@ export function EmployeeSelfProfileForm({
                       <FormLabel>Agama</FormLabel>
                       <Select
                         onValueChange={field.onChange}
-                        value={field.value}
+                        value={field.value || ""}
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -1050,13 +1710,11 @@ export function EmployeeSelfProfileForm({
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="Islam">Islam</SelectItem>
-                          <SelectItem value="Kristen">Kristen</SelectItem>
-                          <SelectItem value="Katolik">Katolik</SelectItem>
-                          <SelectItem value="Hindu">Hindu</SelectItem>
-                          <SelectItem value="Buddha">Buddha</SelectItem>
-                          <SelectItem value="Konghucu">Konghucu</SelectItem>
-                          <SelectItem value="Lainnya">Lainnya</SelectItem>
+                          {RELIGION_OPTIONS.map((opt) => (
+                            <SelectItem key={opt} value={opt}>
+                              {opt}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -1071,7 +1729,7 @@ export function EmployeeSelfProfileForm({
                       <FormLabel>Kewarganegaraan</FormLabel>
                       <Select
                         onValueChange={field.onChange}
-                        value={field.value}
+                        value={field.value || ""}
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -1079,8 +1737,11 @@ export function EmployeeSelfProfileForm({
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="WNI">WNI</SelectItem>
-                          <SelectItem value="WNA">WNA</SelectItem>
+                          {NATIONALITY_OPTIONS.map((opt) => (
+                            <SelectItem key={opt} value={opt}>
+                              {opt}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -1180,13 +1841,13 @@ export function EmployeeSelfProfileForm({
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
                 <FormField
                   control={form.control}
-                  name="dataDiriIdentitas.bloodType"
+                  name="dataDiriIdentitas.golonganDarah"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Golongan Darah</FormLabel>
                       <Select
                         onValueChange={field.onChange}
-                        value={field.value}
+                        value={field.value || ""}
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -1206,7 +1867,7 @@ export function EmployeeSelfProfileForm({
                 />
                 <FormField
                   control={form.control}
-                  name="dataDiriIdentitas.heightCm"
+                  name="dataDiriIdentitas.tinggiBadan"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Tinggi Badan (cm)</FormLabel>
@@ -1231,7 +1892,7 @@ export function EmployeeSelfProfileForm({
                 />
                 <FormField
                   control={form.control}
-                  name="dataDiriIdentitas.weightKg"
+                  name="dataDiriIdentitas.beratBadan"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Berat Badan (kg)</FormLabel>
@@ -1262,7 +1923,7 @@ export function EmployeeSelfProfileForm({
                       <FormLabel>Ada Kelainan Fisik?</FormLabel>
                       <Select
                         onValueChange={field.onChange}
-                        value={field.value}
+                        value={field.value || ""}
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -1397,10 +2058,14 @@ export function EmployeeSelfProfileForm({
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+              {/* Region Dropdowns KTP */}
+              <RegionSelector form={form} basePath="alamat.ktp" />
+
+              {/* Manual fields KTP */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <FormField
                   control={form.control}
-                  name="alamat.addressKtp.street"
+                  name="alamat.ktp.street"
                   render={({ field }) => (
                     <FormItem className="md:col-span-2">
                       <FormLabel>Jalan / Nama Jalan</FormLabel>
@@ -1409,6 +2074,7 @@ export function EmployeeSelfProfileForm({
                           {...field}
                           value={field.value ?? ""}
                           placeholder="Jl. Raya Utama No. 123"
+                          className="bg-slate-950/40 rounded-xl h-11 border-slate-800"
                         />
                       </FormControl>
                     </FormItem>
@@ -1416,7 +2082,7 @@ export function EmployeeSelfProfileForm({
                 />
                 <FormField
                   control={form.control}
-                  name="alamat.addressKtp.rt"
+                  name="alamat.ktp.rt"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>RT</FormLabel>
@@ -1427,6 +2093,7 @@ export function EmployeeSelfProfileForm({
                           placeholder="001"
                           maxLength={3}
                           inputMode="numeric"
+                          className="bg-slate-950/40 rounded-xl h-11 border-slate-800"
                         />
                       </FormControl>
                     </FormItem>
@@ -1434,7 +2101,7 @@ export function EmployeeSelfProfileForm({
                 />
                 <FormField
                   control={form.control}
-                  name="alamat.addressKtp.rw"
+                  name="alamat.ktp.rw"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>RW</FormLabel>
@@ -1445,6 +2112,7 @@ export function EmployeeSelfProfileForm({
                           placeholder="002"
                           maxLength={3}
                           inputMode="numeric"
+                          className="bg-slate-950/40 rounded-xl h-11 border-slate-800"
                         />
                       </FormControl>
                     </FormItem>
@@ -1452,71 +2120,7 @@ export function EmployeeSelfProfileForm({
                 />
                 <FormField
                   control={form.control}
-                  name="alamat.addressKtp.village"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Desa / Kelurahan</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          value={field.value ?? ""}
-                          placeholder="Mekar Jaya"
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="alamat.addressKtp.district"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Kecamatan</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          value={field.value ?? ""}
-                          placeholder="Serpong"
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="alamat.addressKtp.city"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Kabupaten / Kota</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          value={field.value ?? ""}
-                          placeholder="Tangerang Selatan"
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="alamat.addressKtp.province"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Provinsi</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          value={field.value ?? ""}
-                          placeholder="Banten"
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="alamat.addressKtp.postalCode"
+                  name="alamat.ktp.kodePos"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Kode Pos</FormLabel>
@@ -1527,6 +2131,7 @@ export function EmployeeSelfProfileForm({
                           placeholder="15310"
                           maxLength={5}
                           inputMode="numeric"
+                          className="bg-slate-950/40 rounded-xl h-11 border-slate-800"
                         />
                       </FormControl>
                     </FormItem>
@@ -1579,23 +2184,82 @@ export function EmployeeSelfProfileForm({
                     </p>
                   </div>
 
-                  <div className="space-y-4">
+                  {/* Region Dropdowns Domisili */}
+                  <RegionSelector form={form} basePath="alamat.domisili" />
+
+                  {/* Manual fields Domisili */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     <FormField
                       control={form.control}
-                      name="alamat.addressCurrent"
+                      name="alamat.domisili.street"
                       render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Alamat Lengkap Domisili*</FormLabel>
+                        <FormItem className="md:col-span-2">
+                          <FormLabel>Jalan / Nama Jalan</FormLabel>
                           <FormControl>
-                            <Textarea
+                            <Input
                               {...field}
-                              rows={4}
-                              placeholder="Contoh: Jl. Sudirman No. 1, Apartemen X Tower Y Unit Z, Jakarta Pusat"
                               value={field.value ?? ""}
-                              className="rounded-2xl"
+                              placeholder="Jl. Raya Utama No. 123"
+                              className="bg-slate-950/40 rounded-xl h-11 border-slate-800"
                             />
                           </FormControl>
-                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="alamat.domisili.rt"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>RT</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              value={field.value ?? ""}
+                              placeholder="001"
+                              maxLength={3}
+                              inputMode="numeric"
+                              className="bg-slate-950/40 rounded-xl h-11 border-slate-800"
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="alamat.domisili.rw"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>RW</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              value={field.value ?? ""}
+                              placeholder="002"
+                              maxLength={3}
+                              inputMode="numeric"
+                              className="bg-slate-950/40 rounded-xl h-11 border-slate-800"
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="alamat.domisili.kodePos"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Kode Pos</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              value={field.value ?? ""}
+                              placeholder="15310"
+                              maxLength={5}
+                              inputMode="numeric"
+                              className="bg-slate-950/40 rounded-xl h-11 border-slate-800"
+                            />
+                          </FormControl>
                         </FormItem>
                       )}
                     />
@@ -1765,72 +2429,51 @@ export function EmployeeSelfProfileForm({
                   />
 
                   {!watchedNoBpjsKs && (
-                    <FormField
-                      control={form.control}
-                      name="dokumenAdministratif.bpjsKesehatan"
-                      render={({ field }) => (
-                        <FormItem className="animate-in fade-in slide-in-from-top-2 duration-300">
-                          <FormLabel>No. BPJS Kesehatan</FormLabel>
-                          <FormControl>
-                            <Input
-                              {...field}
-                              value={field.value ?? ""}
-                              placeholder="Nomor kartu BPJS Kesehatan"
-                              inputMode="numeric"
-                              onChange={(e) => {
-                                const val = e.target.value.replace(
-                                  /[^0-9]/g,
-                                  "",
-                                );
-                                field.onChange(val);
-                              }}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  )}
+                    <>
+                      <FormField
+                        control={form.control}
+                        name="dokumenAdministratif.bpjsKesehatan"
+                        render={({ field }) => (
+                          <FormItem className="animate-in fade-in slide-in-from-top-2 duration-300">
+                            <FormLabel>No. BPJS Kesehatan*</FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                value={field.value ?? ""}
+                                placeholder="Nomor kartu BPJS Kesehatan"
+                                inputMode="numeric"
+                                onChange={(e) => {
+                                  const val = e.target.value.replace(
+                                    /[^0-9]/g,
+                                    "",
+                                  );
+                                  field.onChange(val);
+                                }}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
 
-                  {!watchedNoBpjsKs && (
-                    <FormField
-                      control={form.control}
-                      name="dokumenAdministratif.bpjsKesehatanFilePending"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-row items-center space-x-3 space-y-0 rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
-                          <FormControl>
-                            <Checkbox
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
+                      <FormField
+                        control={form.control}
+                        name="dokumenAdministratif.bpjsKesehatanPhotoUrl"
+                        render={({ field }) => (
+                          <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                            <FileUploadField
+                              label="Upload Kartu BPJS Kesehatan"
+                              value={field.value}
+                              onChange={field.onChange}
+                              userId={firebaseUser?.uid ?? ""}
+                              fieldKey="bpjs_ks_photo"
+                              required
+                              helperText="Kartu digital atau foto kartu fisik."
                             />
-                          </FormControl>
-                          <div className="space-y-1 leading-none">
-                            <FormLabel className="text-sm font-medium cursor-pointer text-slate-300">
-                              Saya akan melengkapi file kartu nanti
-                            </FormLabel>
                           </div>
-                        </FormItem>
-                      )}
-                    />
-                  )}
-
-                  {!watchedNoBpjsKs && !watchedBpjsKsFilePending && (
-                    <FormField
-                      control={form.control}
-                      name="dokumenAdministratif.bpjsKesehatanPhotoUrl"
-                      render={({ field }) => (
-                        <div className="animate-in fade-in slide-in-from-top-2 duration-300">
-                          <FileUploadField
-                            label="Upload Kartu BPJS Kesehatan"
-                            value={field.value}
-                            onChange={field.onChange}
-                            userId={firebaseUser?.uid ?? ""}
-                            fieldKey="bpjs_ks_photo"
-                            helperText="Kartu digital atau foto kartu fisik."
-                          />
-                        </div>
-                      )}
-                    />
+                        )}
+                      />
+                    </>
                   )}
                 </div>
 
@@ -1862,17 +2505,85 @@ export function EmployeeSelfProfileForm({
                   />
 
                   {!watchedNoBpjsTk && (
+                    <>
+                      <FormField
+                        control={form.control}
+                        name="dokumenAdministratif.bpjsKetenagakerjaan"
+                        render={({ field }) => (
+                          <FormItem className="animate-in fade-in slide-in-from-top-2 duration-300">
+                            <FormLabel>No. BPJS Ketenagakerjaan*</FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                value={field.value ?? ""}
+                                placeholder="Nomor kartu BPJS Ketenagakerjaan"
+                                inputMode="numeric"
+                                onChange={(e) => {
+                                  const val = e.target.value.replace(
+                                    /[^0-9]/g,
+                                    "",
+                                  );
+                                  field.onChange(val);
+                                }}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="dokumenAdministratif.bpjsKetenagakerjaanPhotoUrl"
+                        render={({ field }) => (
+                          <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                            <FileUploadField
+                              label="Upload Kartu BPJS Ketenagakerjaan"
+                              value={field.value}
+                              onChange={field.onChange}
+                              userId={firebaseUser?.uid ?? ""}
+                              fieldKey="bpjs_tk_photo"
+                              required
+                              helperText="Kartu digital atau foto kartu fisik."
+                            />
+                          </div>
+                        )}
+                      />
+                    </>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            {requiresSim && (
+              <>
+                <Separator className="bg-slate-800/50" />
+                <section className="space-y-6">
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-1.5 rounded-full bg-primary" />
+                      <h4 className="text-lg font-bold text-slate-100">
+                        Dokumen SIM (Opsional)
+                      </h4>
+                    </div>
+                    <p className="text-sm text-slate-400">
+                      Digunakan untuk posisi yang membutuhkan mobilitas
+                      kendaraan.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <FormField
                       control={form.control}
-                      name="dokumenAdministratif.bpjsKetenagakerjaan"
+                      name="dokumenAdministratif.simNumber"
                       render={({ field }) => (
-                        <FormItem className="animate-in fade-in slide-in-from-top-2 duration-300">
-                          <FormLabel>No. BPJS Ketenagakerjaan</FormLabel>
+                        <FormItem>
+                          <FormLabel>Nomor SIM</FormLabel>
                           <FormControl>
                             <Input
                               {...field}
                               value={field.value ?? ""}
-                              placeholder="Nomor kartu BPJS Ketenagakerjaan"
+                              placeholder="Nomor SIM Anda"
                               inputMode="numeric"
                               onChange={(e) => {
                                 const val = e.target.value.replace(
@@ -1887,51 +2598,27 @@ export function EmployeeSelfProfileForm({
                         </FormItem>
                       )}
                     />
-                  )}
 
-                  {!watchedNoBpjsTk && (
                     <FormField
                       control={form.control}
-                      name="dokumenAdministratif.bpjsKetenagakerjaanFilePending"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-row items-center space-x-3 space-y-0 rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
-                          <FormControl>
-                            <Checkbox
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                            />
-                          </FormControl>
-                          <div className="space-y-1 leading-none">
-                            <FormLabel className="text-sm font-medium cursor-pointer text-slate-300">
-                              Saya akan melengkapi file kartu nanti
-                            </FormLabel>
-                          </div>
-                        </FormItem>
-                      )}
-                    />
-                  )}
-
-                  {!watchedNoBpjsTk && !watchedBpjsTkFilePending && (
-                    <FormField
-                      control={form.control}
-                      name="dokumenAdministratif.bpjsKetenagakerjaanPhotoUrl"
+                      name="dokumenAdministratif.simPhotoUrl"
                       render={({ field }) => (
                         <div className="animate-in fade-in slide-in-from-top-2 duration-300">
                           <FileUploadField
-                            label="Upload Kartu BPJS Ketenagakerjaan"
+                            label="Upload Foto SIM"
                             value={field.value}
                             onChange={field.onChange}
                             userId={firebaseUser?.uid ?? ""}
-                            fieldKey="bpjs_tk_photo"
-                            helperText="Kartu digital atau foto kartu fisik."
+                            fieldKey="sim_photo"
+                            helperText="Foto SIM asli yang terlihat jelas."
                           />
                         </div>
                       )}
                     />
-                  )}
-                </div>
-              </div>
-            </section>
+                  </div>
+                </section>
+              </>
+            )}
           </div>
         );
       case 3:
@@ -1958,11 +2645,21 @@ export function EmployeeSelfProfileForm({
                     <FormItem>
                       <FormLabel>Nama Bank</FormLabel>
                       <FormControl>
-                        <Input
-                          {...field}
-                          value={field.value ?? ""}
-                          placeholder="Contoh: Bank BCA"
-                        />
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Pilih Bank" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {INDONESIAN_BANKS.map((bank) => (
+                              <SelectItem key={bank} value={bank}>
+                                {bank}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -2029,94 +2726,1852 @@ export function EmployeeSelfProfileForm({
         );
       case 4:
         return (
-          <div key="step-darurat" className="space-y-12">
-            {/* Kontak Darurat */}
-            <section className="space-y-6">
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-3">
-                  <div className="h-8 w-1.5 rounded-full bg-primary" />
-                  <h4 className="text-lg font-bold text-slate-100">
-                    Kontak Darurat
-                  </h4>
+          <div
+            key="step-keluarga"
+            className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700"
+          >
+            {/* 1. Data Orang Tua */}
+            <Card className="border-slate-800 bg-slate-950/40 rounded-[2.5rem] overflow-hidden shadow-2xl shadow-blue-500/5">
+              <CardHeader className="bg-slate-900/40 border-b border-slate-800/60 p-8">
+                <div className="flex items-center gap-5">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-500 shadow-inner">
+                    <Users className="h-7 w-7" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-2xl font-black text-slate-100 tracking-tight">
+                      Data Orang Tua
+                    </CardTitle>
+                    <CardDescription className="text-slate-400 mt-1 text-sm font-medium">
+                      Informasi lengkap Ayah dan Ibu kandung Anda.
+                    </CardDescription>
+                  </div>
                 </div>
-                <p className="text-sm text-slate-400">
-                  Hubungan dan kontak yang dapat dihubungi dalam keadaan
-                  darurat.
+              </CardHeader>
+              <CardContent className="p-0">
+                <Tabs defaultValue="ayah" className="w-full">
+                  <TabsList className="w-full justify-start rounded-none h-16 bg-slate-900/20 border-b border-slate-800/40 p-0">
+                    <TabsTrigger
+                      value="ayah"
+                      className="flex-1 h-full rounded-none border-b-2 border-transparent data-[state=active]:border-blue-500 data-[state=active]:bg-blue-500/5 text-slate-400 data-[state=active]:text-blue-400 font-bold uppercase tracking-widest text-xs transition-all duration-300"
+                    >
+                      Ayah Kandung
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="ibu"
+                      className="flex-1 h-full rounded-none border-b-2 border-transparent data-[state=active]:border-pink-500 data-[state=active]:bg-pink-500/5 text-slate-400 data-[state=active]:text-pink-400 font-bold uppercase tracking-widest text-xs transition-all duration-300"
+                    >
+                      Ibu Kandung
+                    </TabsTrigger>
+                  </TabsList>
+                  {/* Tab Ayah */}
+                  <TabsContent
+                    value="ayah"
+                    className="p-10 space-y-8 animate-in fade-in duration-500"
+                  >
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-8">
+                      {/* Row 1: Nama + Status */}
+                      <FormField
+                        control={form.control}
+                        name="dataKeluarga.orangTua.ayah.name"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                              Nama Lengkap Ayah
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                value={field.value || ""}
+                                placeholder="Nama sesuai KTP"
+                                className="bg-slate-900/40 h-12 rounded-xl border-slate-800/80"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="dataKeluarga.orangTua.ayah.status"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                              Kondisi
+                            </FormLabel>
+                            <Select
+                              onValueChange={field.onChange}
+                              value={field.value || ""}
+                            >
+                              <FormControl>
+                                <SelectTrigger className="bg-slate-900/40 h-12 rounded-xl border-slate-800/80">
+                                  <SelectValue placeholder="Pilih kondisi" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent className="bg-slate-900 border-slate-800">
+                                {PARENT_STATUS_OPTIONS.map((opt) => (
+                                  <SelectItem key={opt} value={opt}>
+                                    {opt}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* Row 2: Tempat + Tanggal Lahir */}
+                      <FormField
+                        control={form.control}
+                        name="dataKeluarga.orangTua.ayah.birthPlace"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                              Tempat Lahir
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                value={field.value || ""}
+                                placeholder="Contoh: Jakarta"
+                                className="bg-slate-900/40 h-12 rounded-xl border-slate-800/80"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="dataKeluarga.orangTua.ayah.birthDate"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                              Tanggal Lahir
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                value={field.value || ""}
+                                type="date"
+                                className="bg-slate-900/40 h-12 rounded-xl border-slate-800/80"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* Row 3: Aktivitas + Pekerjaan */}
+                      <FormField
+                        control={form.control}
+                        name="dataKeluarga.orangTua.ayah.activityStatus"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                              Aktivitas Saat Ini
+                            </FormLabel>
+                            <Select
+                              onValueChange={field.onChange}
+                              value={field.value || ""}
+                              disabled={
+                                form.watch(
+                                  "dataKeluarga.orangTua.ayah.status",
+                                ) === "Meninggal"
+                              }
+                            >
+                              <FormControl>
+                                <SelectTrigger className="bg-slate-900/40 h-12 rounded-xl border-slate-800/80">
+                                  <SelectValue placeholder="Pilih Aktivitas" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent className="bg-slate-900 border-slate-800">
+                                {PARENT_ACTIVITY_OPTIONS.map((opt) => (
+                                  <SelectItem key={opt} value={opt}>
+                                    {opt}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="dataKeluarga.orangTua.ayah.occupation"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                              Pekerjaan
+                            </FormLabel>
+                            <Select
+                              onValueChange={field.onChange}
+                              value={field.value || ""}
+                              disabled={
+                                form.watch(
+                                  "dataKeluarga.orangTua.ayah.status",
+                                ) === "Meninggal" ||
+                                form.watch(
+                                  "dataKeluarga.orangTua.ayah.activityStatus",
+                                ) !== "Bekerja"
+                              }
+                            >
+                              <FormControl>
+                                <SelectTrigger className="bg-slate-900/40 h-12 rounded-xl border-slate-800/80">
+                                  <SelectValue placeholder="Pilih Pekerjaan" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent className="bg-slate-900 border-slate-800">
+                                {OCCUPATION_OPTIONS.map((opt) => (
+                                  <SelectItem key={opt} value={opt}>
+                                    {opt}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* Row 4: Nomor Telepon + Pendidikan */}
+                      <FormField
+                        control={form.control}
+                        name="dataKeluarga.orangTua.ayah.phone"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                              Nomor Telepon
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                value={field.value || ""}
+                                placeholder="0812xxx"
+                                className="bg-slate-900/40 h-12 rounded-xl border-slate-800/80"
+                                disabled={
+                                  form.watch(
+                                    "dataKeluarga.orangTua.ayah.status",
+                                  ) === "Meninggal"
+                                }
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="dataKeluarga.orangTua.ayah.education"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                              Pendidikan Terakhir
+                            </FormLabel>
+                            <Select
+                              onValueChange={field.onChange}
+                              value={field.value || ""}
+                            >
+                              <FormControl>
+                                <SelectTrigger className="bg-slate-900/40 h-12 rounded-xl border-slate-800/80">
+                                  <SelectValue placeholder="Pilih Pendidikan" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent className="bg-slate-900 border-slate-800">
+                                {EDUCATION_OPTIONS.map((opt) => (
+                                  <SelectItem key={opt} value={opt}>
+                                    {opt}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* Row 5: Alamat (Full Width) */}
+                      <FormField
+                        control={form.control}
+                        name="dataKeluarga.orangTua.ayah.address"
+                        render={({ field }) => (
+                          <FormItem className="col-span-1 md:col-span-2">
+                            <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                              Alamat Lengkap
+                            </FormLabel>
+                            <FormControl>
+                              <Textarea
+                                {...field}
+                                value={field.value || ""}
+                                placeholder="Masukkan alamat ayah"
+                                className="bg-slate-900/40 rounded-xl border-slate-800/80 resize-none h-24"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </TabsContent>
+
+                  {/* Tab Ibu */}
+                  <TabsContent
+                    value="ibu"
+                    className="p-10 space-y-8 animate-in fade-in duration-500"
+                  >
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-8">
+                      {/* Row 1: Nama + Status */}
+                      <FormField
+                        control={form.control}
+                        name="dataKeluarga.orangTua.ibu.name"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                              Nama Lengkap Ibu
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                value={field.value || ""}
+                                placeholder="Nama sesuai KTP"
+                                className="bg-slate-900/40 h-12 rounded-xl border-slate-800/80"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="dataKeluarga.orangTua.ibu.status"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                              Kondisi
+                            </FormLabel>
+                            <Select
+                              onValueChange={field.onChange}
+                              value={field.value || ""}
+                            >
+                              <FormControl>
+                                <SelectTrigger className="bg-slate-900/40 h-12 rounded-xl border-slate-800/80">
+                                  <SelectValue placeholder="Pilih kondisi" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent className="bg-slate-900 border-slate-800">
+                                {PARENT_STATUS_OPTIONS.map((opt) => (
+                                  <SelectItem key={opt} value={opt}>
+                                    {opt}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* Row 2: Tempat + Tanggal Lahir */}
+                      <FormField
+                        control={form.control}
+                        name="dataKeluarga.orangTua.ibu.birthPlace"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                              Tempat Lahir
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                value={field.value || ""}
+                                placeholder="Contoh: Jakarta"
+                                className="bg-slate-900/40 h-12 rounded-xl border-slate-800/80"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="dataKeluarga.orangTua.ibu.birthDate"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                              Tanggal Lahir
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                value={field.value || ""}
+                                type="date"
+                                className="bg-slate-900/40 h-12 rounded-xl border-slate-800/80"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* Row 3: Aktivitas + Pekerjaan */}
+                      <FormField
+                        control={form.control}
+                        name="dataKeluarga.orangTua.ibu.activityStatus"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                              Aktivitas Saat Ini
+                            </FormLabel>
+                            <Select
+                              onValueChange={field.onChange}
+                              value={field.value || ""}
+                              disabled={
+                                form.watch(
+                                  "dataKeluarga.orangTua.ibu.status",
+                                ) === "Meninggal"
+                              }
+                            >
+                              <FormControl>
+                                <SelectTrigger className="bg-slate-900/40 h-12 rounded-xl border-slate-800/80">
+                                  <SelectValue placeholder="Pilih Aktivitas" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent className="bg-slate-900 border-slate-800">
+                                {PARENT_ACTIVITY_OPTIONS.map((opt) => (
+                                  <SelectItem key={opt} value={opt}>
+                                    {opt}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="dataKeluarga.orangTua.ibu.occupation"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                              Pekerjaan
+                            </FormLabel>
+                            <Select
+                              onValueChange={field.onChange}
+                              value={field.value || ""}
+                              disabled={
+                                form.watch(
+                                  "dataKeluarga.orangTua.ibu.status",
+                                ) === "Meninggal" ||
+                                form.watch(
+                                  "dataKeluarga.orangTua.ibu.activityStatus",
+                                ) !== "Bekerja"
+                              }
+                            >
+                              <FormControl>
+                                <SelectTrigger className="bg-slate-900/40 h-12 rounded-xl border-slate-800/80">
+                                  <SelectValue placeholder="Pilih Pekerjaan" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent className="bg-slate-900 border-slate-800">
+                                {OCCUPATION_OPTIONS.map((opt) => (
+                                  <SelectItem key={opt} value={opt}>
+                                    {opt}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* Row 4: Nomor Telepon + Pendidikan */}
+                      <FormField
+                        control={form.control}
+                        name="dataKeluarga.orangTua.ibu.phone"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                              Nomor Telepon
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                value={field.value || ""}
+                                placeholder="0812xxx"
+                                className="bg-slate-900/40 h-12 rounded-xl border-slate-800/80"
+                                disabled={
+                                  form.watch(
+                                    "dataKeluarga.orangTua.ibu.status",
+                                  ) === "Meninggal"
+                                }
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="dataKeluarga.orangTua.ibu.education"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                              Pendidikan Terakhir
+                            </FormLabel>
+                            <Select
+                              onValueChange={field.onChange}
+                              value={field.value || ""}
+                            >
+                              <FormControl>
+                                <SelectTrigger className="bg-slate-900/40 h-12 rounded-xl border-slate-800/80">
+                                  <SelectValue placeholder="Pilih Pendidikan" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent className="bg-slate-900 border-slate-800">
+                                {EDUCATION_OPTIONS.map((opt) => (
+                                  <SelectItem key={opt} value={opt}>
+                                    {opt}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* Row 5: Alamat (Full Width) */}
+                      <FormField
+                        control={form.control}
+                        name="dataKeluarga.orangTua.ibu.address"
+                        render={({ field }) => (
+                          <FormItem className="col-span-1 md:col-span-2">
+                            <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                              Alamat Lengkap
+                            </FormLabel>
+                            <FormControl>
+                              <Textarea
+                                {...field}
+                                value={field.value || ""}
+                                placeholder="Masukkan alamat ibu"
+                                className="bg-slate-900/40 rounded-xl border-slate-800/80 resize-none h-24"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </TabsContent>
+                </Tabs>
+              </CardContent>
+            </Card>
+
+            {/* 2. Saudara Kandung */}
+            <div className="space-y-6 pt-10 pb-10 border-b border-slate-800/40">
+              <div className="flex items-center justify-between pb-4">
+                <div className="flex items-center gap-4">
+                  <div className="h-12 w-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 shadow-lg shadow-emerald-500/5">
+                    <Heart className="h-6 w-6 text-emerald-500" />
+                  </div>
+                  <div>
+                    <h4 className="text-xl font-bold text-slate-100 tracking-tight">
+                      Saudara Kandung
+                    </h4>
+                    <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold mt-1">
+                      Daftar Kakak & Adik Kandung (termasuk Anda)
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  onClick={() =>
+                    appendSaudara({
+                      id: crypto.randomUUID(),
+                      name: "",
+                      birthPlace: "",
+                      birthDate: "",
+                      education: "",
+                      activityStatus: "",
+                      occupation: "",
+                      address: "",
+                    })
+                  }
+                  className="rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold px-6 h-11 shadow-lg shadow-emerald-500/20 transition-all duration-300"
+                >
+                  <Plus className="mr-2 h-5 w-5" /> Tambah Saudara
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-8">
+                {saudaraFields.map((field, index) => (
+                  <div
+                    key={field.id}
+                    className="group relative bg-slate-900/40 rounded-[2.5rem] border border-slate-800/60 shadow-xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500"
+                    style={{ animationDelay: `${index * 100}ms` }}
+                  >
+                    <div className="absolute top-0 left-0 w-2 h-full bg-emerald-500/40 group-hover:bg-emerald-500 transition-colors duration-500" />
+
+                    <div className="p-8 md:p-10">
+                      <div className="flex items-center justify-between mb-10 pb-6 border-b border-slate-800/60">
+                        <div className="flex items-center gap-4">
+                          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-950 text-emerald-400 font-black text-sm border border-slate-800/50 shadow-inner">
+                            {index + 1}
+                          </span>
+                          <h5 className="text-lg font-bold text-slate-200 uppercase tracking-wider">
+                            Saudara {index + 1}
+                          </h5>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeSaudara(index)}
+                          className="h-10 w-10 rounded-xl hover:bg-red-500/10 hover:text-red-400 text-slate-500 transition-all duration-300"
+                        >
+                          <Trash2 className="h-5 w-5" />
+                        </Button>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-x-10 gap-y-8">
+                        {/* Row 1: Nama + Anak Ke */}
+                        <FormField
+                          control={form.control}
+                          name={`dataKeluarga.saudaraKandung.${index}.name`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                                Nama Lengkap
+                              </FormLabel>
+                              <FormControl>
+                                <Input
+                                  {...field}
+                                  value={field.value || ""}
+                                  placeholder="Nama saudara"
+                                  className="bg-slate-950/40 h-12 rounded-xl border-slate-800/80"
+                                />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name={`dataKeluarga.saudaraKandung.${index}.order`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                                Anak Ke-
+                              </FormLabel>
+                              <FormControl>
+                                <Input
+                                  {...field}
+                                  value={field.value || ""}
+                                  type="number"
+                                  placeholder="Contoh: 1"
+                                  className="bg-slate-950/40 h-12 rounded-xl border-slate-800/80"
+                                />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+
+                        {/* Row 2: Tempat + Tanggal Lahir + Status (Grid 3 in 2-col parent) */}
+                        <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-8">
+                          <FormField
+                            control={form.control}
+                            name={`dataKeluarga.saudaraKandung.${index}.birthPlace`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                                  Tempat Lahir
+                                </FormLabel>
+                                <FormControl>
+                                  <Input
+                                    {...field}
+                                    value={field.value || ""}
+                                    placeholder="Contoh: Jakarta"
+                                    className="bg-slate-950/40 h-12 rounded-xl border-slate-800/80"
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name={`dataKeluarga.saudaraKandung.${index}.birthDate`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <div className="flex items-center justify-between">
+                                  <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                                    Tanggal Lahir
+                                  </FormLabel>
+                                  <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">
+                                    {calculateAge(field.value)}
+                                  </span>
+                                </div>
+                                <FormControl>
+                                  <Input
+                                    {...field}
+                                    value={field.value || ""}
+                                    type="date"
+                                    className="bg-slate-950/40 h-12 rounded-xl border-slate-800/80"
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name={`dataKeluarga.saudaraKandung.${index}.activityStatus`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                                  Status
+                                </FormLabel>
+                                <Select
+                                  onValueChange={field.onChange}
+                                  value={field.value || ""}
+                                >
+                                  <FormControl>
+                                    <SelectTrigger className="bg-slate-950/40 h-12 rounded-xl border-slate-800/80">
+                                      <SelectValue placeholder="Pilih Status" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent className="bg-slate-900 border-slate-800">
+                                    {SIBLING_ACTIVITY_OPTIONS.map((opt) => (
+                                      <SelectItem key={opt} value={opt}>
+                                        {opt}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+
+                        {/* Row 3: Pendidikan + Pekerjaan */}
+                        <FormField
+                          control={form.control}
+                          name={`dataKeluarga.saudaraKandung.${index}.education`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                                Pendidikan
+                              </FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                value={field.value || ""}
+                              >
+                                <FormControl>
+                                  <SelectTrigger className="bg-slate-950/40 h-12 rounded-xl border-slate-800/80">
+                                    <SelectValue placeholder="Pilih Pendidikan" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent className="bg-slate-900 border-slate-800">
+                                  {EDUCATION_OPTIONS.map((opt) => (
+                                    <SelectItem key={opt} value={opt}>
+                                      {opt}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name={`dataKeluarga.saudaraKandung.${index}.occupation`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                                Pekerjaan
+                              </FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                value={field.value || ""}
+                                disabled={
+                                  form.watch(
+                                    `dataKeluarga.saudaraKandung.${index}.activityStatus`,
+                                  ) !== "Bekerja"
+                                }
+                              >
+                                <FormControl>
+                                  <SelectTrigger className="bg-slate-950/40 h-12 rounded-xl border-slate-800/80">
+                                    <SelectValue placeholder="Pilih Pekerjaan" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent className="bg-slate-900 border-slate-800">
+                                  {OCCUPATION_OPTIONS.map((opt) => (
+                                    <SelectItem key={opt} value={opt}>
+                                      {opt}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </FormItem>
+                          )}
+                        />
+
+                        {/* Row 4: Alamat (Full Width) */}
+                        <FormField
+                          control={form.control}
+                          name={`dataKeluarga.saudaraKandung.${index}.address`}
+                          render={({ field }) => (
+                            <FormItem className="col-span-1 md:col-span-2">
+                              <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                                Alamat Lengkap
+                              </FormLabel>
+                              <FormControl>
+                                <Textarea
+                                  {...field}
+                                  value={field.value || ""}
+                                  placeholder="Masukkan alamat saudara"
+                                  className="bg-slate-950/40 rounded-xl border-slate-800/80 resize-none h-24"
+                                />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {saudaraFields.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-20 rounded-[3rem] border-2 border-dashed border-slate-800/40 bg-slate-950/20 text-slate-500 space-y-6">
+                    <div className="h-20 w-20 rounded-[2rem] bg-emerald-500/5 flex items-center justify-center border border-emerald-500/10">
+                      <Heart className="h-10 w-10 text-emerald-500/20" />
+                    </div>
+                    <div className="text-center max-w-sm px-6">
+                      <p className="font-bold text-slate-200 text-lg tracking-tight">
+                        Belum ada data saudara
+                      </p>
+                      <p className="text-sm mt-2 text-slate-500 leading-relaxed italic">
+                        Silahkan klik tombol "Tambah Saudara" di atas untuk
+                        melengkapi data keluarga Anda.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 3. Tanggungan */}
+            <div className="space-y-6 pt-10 pb-10 border-b border-slate-800/40">
+              <div className="flex items-center justify-between pb-4">
+                <div className="flex items-center gap-4">
+                  <div className="h-12 w-12 rounded-2xl bg-amber-500/10 flex items-center justify-center border border-amber-500/20 shadow-lg shadow-amber-500/5">
+                    <Baby className="h-6 w-6 text-amber-500" />
+                  </div>
+                  <div>
+                    <h4 className="text-xl font-bold text-slate-100 tracking-tight">
+                      Tanggungan
+                    </h4>
+                    <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold mt-1">
+                      Data Pasangan & Anak
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  onClick={() =>
+                    appendTanggungan({
+                      id: crypto.randomUUID(),
+                      name: "",
+                      relation: "",
+                      childOrder: "",
+                      birthPlace: "",
+                      birthDate: "",
+                      education: "",
+                      activityStatus: "",
+                      occupation: "",
+                    })
+                  }
+                  className="rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-6 h-11 shadow-lg shadow-amber-500/20 transition-all duration-300"
+                >
+                  <Plus className="mr-2 h-5 w-5" /> Tambah Tanggungan
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-8">
+                {tanggunganFields.map((field, index) => (
+                  <div
+                    key={field.id}
+                    className="group relative bg-slate-900/40 rounded-[2.5rem] border border-slate-800/60 shadow-xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500"
+                    style={{ animationDelay: `${index * 100}ms` }}
+                  >
+                    <div className="absolute top-0 left-0 w-2 h-full bg-amber-500/40 group-hover:bg-amber-500 transition-colors duration-500" />
+
+                    <div className="p-8 md:p-10">
+                      <div className="flex items-center justify-between mb-10 pb-6 border-b border-slate-800/60">
+                        <div className="flex items-center gap-4">
+                          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-950 text-amber-400 font-black text-sm border border-slate-800/50 shadow-inner">
+                            {index + 1}
+                          </span>
+                          <h5 className="text-lg font-bold text-slate-200 uppercase tracking-wider">
+                            Tanggungan {index + 1}
+                          </h5>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeTanggungan(index)}
+                          className="h-10 w-10 rounded-xl hover:bg-red-500/10 hover:text-red-400 text-slate-500 transition-all duration-300"
+                        >
+                          <Trash2 className="h-5 w-5" />
+                        </Button>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-8">
+                        {/* Row 1: Nama + Anak Ke / Hubungan */}
+                        <FormField
+                          control={form.control}
+                          name={`dataKeluarga.tanggungan.${index}.name`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                                Nama Lengkap
+                              </FormLabel>
+                              <FormControl>
+                                <Input
+                                  {...field}
+                                  value={field.value || ""}
+                                  placeholder="Nama lengkap"
+                                  className="bg-slate-950/40 h-12 rounded-xl border-slate-800/80"
+                                />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                        <div className="grid grid-cols-2 gap-6">
+                          <FormField
+                            control={form.control}
+                            name={`dataKeluarga.tanggungan.${index}.relation`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                                  Hubungan
+                                </FormLabel>
+                                <Select
+                                  onValueChange={field.onChange}
+                                  value={field.value || ""}
+                                >
+                                  <FormControl>
+                                    <SelectTrigger className="bg-slate-950/40 h-12 rounded-xl border-slate-800/80">
+                                      <SelectValue placeholder="Pilih Hubungan" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent className="bg-slate-900 border-slate-800">
+                                    {["Istri", "Suami", "Anak"].map((opt) => (
+                                      <SelectItem key={opt} value={opt}>
+                                        {opt}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name={`dataKeluarga.tanggungan.${index}.childOrder`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                                  Anak Ke-
+                                </FormLabel>
+                                <FormControl>
+                                  <Input
+                                    {...field}
+                                    value={field.value || ""}
+                                    type="number"
+                                    placeholder="-"
+                                    className="bg-slate-950/40 h-12 rounded-xl border-slate-800/80"
+                                    disabled={
+                                      form.watch(
+                                        `dataKeluarga.tanggungan.${index}.relation`,
+                                      ) !== "Anak"
+                                    }
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+
+                        {/* Row 2: Tempat + Tanggal Lahir + Status */}
+                        <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-8">
+                          <FormField
+                            control={form.control}
+                            name={`dataKeluarga.tanggungan.${index}.birthPlace`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                                  Tempat Lahir
+                                </FormLabel>
+                                <FormControl>
+                                  <Input
+                                    {...field}
+                                    value={field.value || ""}
+                                    placeholder="Contoh: Jakarta"
+                                    className="bg-slate-950/40 h-12 rounded-xl border-slate-800/80"
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name={`dataKeluarga.tanggungan.${index}.birthDate`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <div className="flex items-center justify-between">
+                                  <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                                    Tanggal Lahir
+                                  </FormLabel>
+                                  <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest">
+                                    {calculateAge(field.value)}
+                                  </span>
+                                </div>
+                                <FormControl>
+                                  <Input
+                                    {...field}
+                                    value={field.value || ""}
+                                    type="date"
+                                    className="bg-slate-950/40 h-12 rounded-xl border-slate-800/80"
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name={`dataKeluarga.tanggungan.${index}.activityStatus`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                                  Status
+                                </FormLabel>
+                                <Select
+                                  onValueChange={field.onChange}
+                                  value={field.value || ""}
+                                >
+                                  <FormControl>
+                                    <SelectTrigger className="bg-slate-950/40 h-12 rounded-xl border-slate-800/80">
+                                      <SelectValue placeholder="Pilih Status" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent className="bg-slate-900 border-slate-800">
+                                    {SIBLING_ACTIVITY_OPTIONS.map((opt) => (
+                                      <SelectItem key={opt} value={opt}>
+                                        {opt}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+
+                        {/* Row 3: Pendidikan + Pekerjaan */}
+                        <FormField
+                          control={form.control}
+                          name={`dataKeluarga.tanggungan.${index}.education`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                                Pendidikan
+                              </FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                value={field.value || ""}
+                              >
+                                <FormControl>
+                                  <SelectTrigger className="bg-slate-950/40 h-12 rounded-xl border-slate-800/80">
+                                    <SelectValue placeholder="Pilih Pendidikan" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent className="bg-slate-900 border-slate-800">
+                                  {EDUCATION_OPTIONS.map((opt) => (
+                                    <SelectItem key={opt} value={opt}>
+                                      {opt}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name={`dataKeluarga.tanggungan.${index}.occupation`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                                Pekerjaan
+                              </FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                value={field.value || ""}
+                                disabled={
+                                  form.watch(
+                                    `dataKeluarga.tanggungan.${index}.activityStatus`,
+                                  ) !== "Bekerja"
+                                }
+                              >
+                                <FormControl>
+                                  <SelectTrigger className="bg-slate-950/40 h-12 rounded-xl border-slate-800/80">
+                                    <SelectValue placeholder="Pilih Pekerjaan" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent className="bg-slate-900 border-slate-800">
+                                  {OCCUPATION_OPTIONS.map((opt) => (
+                                    <SelectItem key={opt} value={opt}>
+                                      {opt}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </FormItem>
+                          )}
+                        />
+
+                        {/* Row 4: Alamat (Full Width) */}
+                        <FormField
+                          control={form.control}
+                          name={`dataKeluarga.tanggungan.${index}.address`}
+                          render={({ field }) => (
+                            <FormItem className="col-span-1 md:col-span-2">
+                              <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                                Alamat Lengkap
+                              </FormLabel>
+                              <FormControl>
+                                <Textarea
+                                  {...field}
+                                  value={field.value || ""}
+                                  placeholder="Masukkan alamat tanggungan"
+                                  className="bg-slate-950/40 rounded-xl border-slate-800/80 resize-none h-24"
+                                />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {tanggunganFields.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-20 rounded-[3rem] border-2 border-dashed border-slate-800/40 bg-slate-950/20 text-slate-500 space-y-6">
+                    <div className="h-20 w-20 rounded-[2rem] bg-amber-500/5 flex items-center justify-center border border-amber-500/10">
+                      <Baby className="h-10 w-10 text-amber-500/20" />
+                    </div>
+                    <div className="text-center max-w-sm px-6">
+                      <p className="font-bold text-slate-200 text-lg tracking-tight">
+                        Belum ada data tanggungan
+                      </p>
+                      <p className="text-sm mt-2 text-slate-500 leading-relaxed italic">
+                        Daftarkan anggota keluarga inti yang menjadi tanggungan
+                        Anda (Istri, Suami, atau Anak).
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 4. Kontak Darurat */}
+            <div className="space-y-6 pt-10 pb-10">
+              <div className="flex items-center justify-between pb-4">
+                <div className="flex items-center gap-4">
+                  <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center border border-primary/20 shadow-lg shadow-primary/5">
+                    <Phone className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <h4 className="text-xl font-bold text-slate-100 tracking-tight flex items-center gap-2">
+                      Kontak Darurat
+                      <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20 font-bold uppercase tracking-widest">
+                        Wajib
+                      </span>
+                    </h4>
+                    <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold mt-1">
+                      Siapa yang harus kami hubungi saat darurat?
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  onClick={() =>
+                    appendDarurat({
+                      id: crypto.randomUUID(),
+                      name: "",
+                      relation: "",
+                      relationOther: "",
+                      phone: "",
+                      address: "",
+                      priority:
+                        daruratFields.length === 0 ? "Utama" : "Cadangan",
+                    })
+                  }
+                  className="rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold px-6 h-11 shadow-lg shadow-primary/20 transition-all duration-300"
+                >
+                  <Plus className="mr-2 h-5 w-5" /> Tambah Kontak
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-8">
+                {daruratFields.map((field, index) => (
+                  <div
+                    key={field.id}
+                    className="group relative bg-slate-900/40 rounded-[2.5rem] border border-slate-800/60 shadow-xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500"
+                    style={{ animationDelay: `${index * 100}ms` }}
+                  >
+                    <div
+                      className={`absolute top-0 left-0 w-2 h-full transition-colors duration-500 ${form.watch(`kontakDarurat.${index}.priority`) === "Utama" ? "bg-primary" : "bg-slate-700 group-hover:bg-slate-600"}`}
+                    />
+
+                    <div className="p-8 md:p-10">
+                      <div className="flex items-center justify-between mb-10 pb-6 border-b border-slate-800/60">
+                        <div className="flex items-center gap-4">
+                          <span
+                            className={`flex h-10 w-10 items-center justify-center rounded-xl font-black text-sm border shadow-inner ${form.watch(`kontakDarurat.${index}.priority`) === "Utama" ? "bg-primary/10 text-primary border-primary/20" : "bg-slate-950 text-slate-400 border-slate-800/50"}`}
+                          >
+                            {index + 1}
+                          </span>
+                          <div>
+                            <h5 className="text-lg font-bold text-slate-200 uppercase tracking-wider flex items-center gap-3">
+                              Kontak {index + 1}
+                              {form.watch(`kontakDarurat.${index}.priority`) ===
+                                "Utama" && (
+                                <span className="text-[9px] bg-primary text-primary-foreground px-2 py-0.5 rounded-full font-black uppercase tracking-tighter">
+                                  UTAMA
+                                </span>
+                              )}
+                            </h5>
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeDarurat(index)}
+                          className="h-10 w-10 rounded-xl hover:bg-red-500/10 hover:text-red-400 text-slate-500 transition-all duration-300"
+                          disabled={daruratFields.length === 1}
+                        >
+                          <Trash2 className="h-5 w-5" />
+                        </Button>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-8">
+                        {/* Row 1: Nama + Prioritas */}
+                        <FormField
+                          control={form.control}
+                          name={`kontakDarurat.${index}.name`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                                Nama Lengkap*
+                              </FormLabel>
+                              <FormControl>
+                                <Input
+                                  {...field}
+                                  value={field.value || ""}
+                                  placeholder="Contoh: Budi Santoso"
+                                  className="bg-slate-950/40 h-12 rounded-xl border-slate-800/80"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name={`kontakDarurat.${index}.priority`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                                Prioritas Kontak*
+                              </FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                value={field.value || ""}
+                              >
+                                <FormControl>
+                                  <SelectTrigger className="bg-slate-950/40 h-12 rounded-xl border-slate-800/80">
+                                    <SelectValue placeholder="Pilih Prioritas" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent className="bg-slate-900 border-slate-800">
+                                  {EMERGENCY_PRIORITY_OPTIONS.map((opt) => (
+                                    <SelectItem key={opt} value={opt}>
+                                      {opt}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        {/* Row 2: Hubungan + Nomor HP */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                          <FormField
+                            control={form.control}
+                            name={`kontakDarurat.${index}.relation`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                                  Hubungan*
+                                </FormLabel>
+                                <Select
+                                  onValueChange={field.onChange}
+                                  value={field.value || ""}
+                                >
+                                  <FormControl>
+                                    <SelectTrigger className="bg-slate-950/40 h-12 rounded-xl border-slate-800/80">
+                                      <SelectValue placeholder="Pilih Hubungan" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent className="bg-slate-900 border-slate-800">
+                                    {EMERGENCY_RELATION_OPTIONS.map((opt) => (
+                                      <SelectItem key={opt} value={opt}>
+                                        {opt}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          {form.watch(`kontakDarurat.${index}.relation`) ===
+                            "Kerabat Lain" && (
+                            <FormField
+                              control={form.control}
+                              name={`kontakDarurat.${index}.relationOther`}
+                              render={({ field }) => (
+                                <FormItem className="animate-in slide-in-from-top-2 duration-300">
+                                  <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                                    Hubungan Spesifik*
+                                  </FormLabel>
+                                  <FormControl>
+                                    <Input
+                                      {...field}
+                                      value={field.value || ""}
+                                      placeholder="Sebutkan hubungan"
+                                      className="bg-slate-950/40 h-12 rounded-xl border-slate-800/80"
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          )}
+                        </div>
+                        <FormField
+                          control={form.control}
+                          name={`kontakDarurat.${index}.phone`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                                Nomor HP Indonesia*
+                              </FormLabel>
+                              <FormControl>
+                                <Input
+                                  {...field}
+                                  value={field.value || ""}
+                                  placeholder="Contoh: 081234567890"
+                                  className="bg-slate-950/40 h-12 rounded-xl border-slate-800/80"
+                                  onChange={(e) => {
+                                    const cleaned = e.target.value.replace(
+                                      /[^0-9]/g,
+                                      "",
+                                    );
+                                    field.onChange(cleaned);
+                                  }}
+                                />
+                              </FormControl>
+                              <FormDescription className="text-[10px] text-slate-500 italic">
+                                Gunakan format 08... atau 62...
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        {/* Row 3: Alamat (Full Width) */}
+                        <FormField
+                          control={form.control}
+                          name={`kontakDarurat.${index}.address`}
+                          render={({ field }) => (
+                            <FormItem className="col-span-1 md:col-span-2">
+                              <FormLabel className="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                                Alamat Lengkap
+                              </FormLabel>
+                              <FormControl>
+                                <Textarea
+                                  {...field}
+                                  value={field.value || ""}
+                                  placeholder="Masukkan alamat kontak darurat"
+                                  className="bg-slate-950/40 rounded-xl border-slate-800/80 resize-none h-24"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {daruratFields.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-20 rounded-[3rem] border-2 border-dashed border-slate-800/40 bg-slate-950/20 text-slate-500 space-y-6">
+                    <div className="h-20 w-20 rounded-[2rem] bg-primary/5 flex items-center justify-center border border-primary/10">
+                      <Phone className="h-10 w-10 text-primary/20" />
+                    </div>
+                    <div className="text-center max-w-sm px-6">
+                      <p className="font-bold text-slate-200 text-lg tracking-tight">
+                        Belum ada kontak darurat
+                      </p>
+                      <p className="text-sm mt-2 text-slate-500 leading-relaxed italic">
+                        Harap tambahkan minimal 1 kontak utama yang bisa
+                        dihubungi dalam keadaan darurat.
+                      </p>
+                      <Button
+                        type="button"
+                        variant="link"
+                        onClick={() =>
+                          appendDarurat({
+                            id: crypto.randomUUID(),
+                            name: "",
+                            relation: "",
+                            relationOther: "",
+                            phone: "",
+                            address: "",
+                            priority: "Utama",
+                          })
+                        }
+                        className="text-primary mt-4 font-bold"
+                      >
+                        Tambah Sekarang
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      case 5:
+        return (
+          <div
+            key="step-pendidikan"
+            className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700"
+          >
+            {/* Pendidikan Terakhir */}
+            <div className="space-y-6">
+              <div className="space-y-1.5">
+                <h4 className="text-xl font-bold text-slate-100 flex items-center gap-3 tracking-tight">
+                  <div className="h-2 w-2 rounded-full bg-blue-500" />
+                  Pendidikan Terakhir
+                </h4>
+                <p className="text-sm text-slate-400 max-w-xl leading-relaxed">
+                  Pendidikan terakhir wajib diisi. Riwayat pendidikan lainnya
+                  dapat ditambahkan jika diperlukan.
                 </p>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <FormField
-                  control={form.control}
-                  name="kontakDarurat.emergencyContactName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Nama Lengkap Kontak Darurat*</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          value={field.value ?? ""}
-                          placeholder="Nama orang terdekat"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="kontakDarurat.emergencyContactRelation"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Hubungan*</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          value={field.value ?? ""}
-                          placeholder="Contoh: Orang Tua, Istri, Suami, atau Saudara"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="kontakDarurat.emergencyContactPhone"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Nomor Telepon Darurat*</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          value={field.value ?? ""}
-                          placeholder="Nomor aktif orang terdekat"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="kontakDarurat.emergencyContactAddress"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Alamat Kontak Darurat</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          {...field}
-                          rows={3}
-                          placeholder="Masukkan alamat lengkap kontak darurat"
-                          value={field.value ?? ""}
-                          className="rounded-2xl"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+
+              <div className="relative bg-slate-900/30 border border-slate-800/60 rounded-[2rem] p-6 sm:p-8 shadow-sm">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  <FormField
+                    control={form.control}
+                    name="pendidikanDanPengembangan.pendidikanTerakhir.jenjang"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-slate-400 text-xs uppercase tracking-wider font-semibold">
+                          Jenjang*
+                        </FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value || ""}
+                        >
+                          <FormControl>
+                            <SelectTrigger className="bg-slate-950/40 rounded-xl h-11 border-slate-800">
+                              <SelectValue placeholder="Pilih jenjang" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {EDUCATION_OPTIONS.map((opt) => (
+                              <SelectItem key={opt} value={opt}>
+                                {opt}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="pendidikanDanPengembangan.pendidikanTerakhir.namaInstitusi"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-slate-400 text-xs uppercase tracking-wider font-semibold">
+                          Nama Institusi*
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            value={field.value || ""}
+                            placeholder="Contoh: Universitas Indonesia"
+                            className="bg-slate-950/40 rounded-xl h-11 border-slate-800"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="pendidikanDanPengembangan.pendidikanTerakhir.jurusan"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-slate-400 text-xs uppercase tracking-wider font-semibold">
+                          Jurusan*
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            value={field.value || ""}
+                            placeholder="Contoh: Teknik Informatika"
+                            className="bg-slate-950/40 rounded-xl h-11 border-slate-800"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="pendidikanDanPengembangan.pendidikanTerakhir.tahunLulus"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-slate-400 text-xs uppercase tracking-wider font-semibold">
+                          Tahun Lulus*
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            value={field.value || ""}
+                            placeholder="Contoh: 2020"
+                            inputMode="numeric"
+                            maxLength={4}
+                            className="bg-slate-950/40 rounded-xl h-11 border-slate-800"
+                            onChange={(e) =>
+                              field.onChange(
+                                e.target.value.replace(/[^0-9]/g, ""),
+                              )
+                            }
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
               </div>
-            </section>
+            </div>
+
+            <Separator className="bg-slate-800/50" />
+
+            {/* Riwayat Pendidikan Lainnya */}
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="space-y-1.5">
+                  <h4 className="text-xl font-bold text-slate-100 flex items-center gap-3 tracking-tight">
+                    <div className="h-2 w-2 rounded-full bg-indigo-500" />
+                    Riwayat Pendidikan Lainnya
+                  </h4>
+                  <p className="text-sm text-slate-400 max-w-xl leading-relaxed">
+                    Tambahkan riwayat pendidikan sebelumnya jika relevan.
+                    (Opsional)
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    appendPendidikan({
+                      id: crypto.randomUUID(),
+                      jenjang: "",
+                      namaInstitusi: "",
+                      jurusan: "",
+                      tahunLulus: "",
+                    })
+                  }
+                  className="rounded-xl border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/10 hover:text-blue-300 shadow-sm"
+                >
+                  <Plus className="mr-2 h-4 w-4" /> Tambah Pendidikan
+                </Button>
+              </div>
+
+              <div className="space-y-6">
+                {pendidikanFields.map((field, index) => (
+                  <div
+                    key={field.id}
+                    className="relative bg-slate-900/30 border border-slate-800/60 rounded-[2rem] p-6 sm:p-8 shadow-sm"
+                  >
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removePendidikan(index)}
+                      className="absolute right-4 top-4 h-8 w-8 rounded-full text-slate-500 hover:text-red-400 hover:bg-red-500/10"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                      <FormField
+                        control={form.control}
+                        name={`pendidikanDanPengembangan.riwayatPendidikan.${index}.jenjang`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-slate-400 text-xs uppercase tracking-wider font-semibold">
+                              Jenjang
+                            </FormLabel>
+                            <Select
+                              onValueChange={field.onChange}
+                              value={field.value || ""}
+                            >
+                              <FormControl>
+                                <SelectTrigger className="bg-slate-950/40 rounded-xl h-11 border-slate-800">
+                                  <SelectValue placeholder="Pilih jenjang" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {EDUCATION_OPTIONS.map((opt) => (
+                                  <SelectItem key={opt} value={opt}>
+                                    {opt}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name={`pendidikanDanPengembangan.riwayatPendidikan.${index}.namaInstitusi`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-slate-400 text-xs uppercase tracking-wider font-semibold">
+                              Nama Institusi
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                value={field.value || ""}
+                                placeholder="Contoh: Universitas Indonesia"
+                                className="bg-slate-950/40 rounded-xl h-11 border-slate-800"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name={`pendidikanDanPengembangan.riwayatPendidikan.${index}.jurusan`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-slate-400 text-xs uppercase tracking-wider font-semibold">
+                              Jurusan
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                value={field.value || ""}
+                                placeholder="Contoh: Teknik Informatika"
+                                className="bg-slate-950/40 rounded-xl h-11 border-slate-800"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name={`pendidikanDanPengembangan.riwayatPendidikan.${index}.tahunLulus`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-slate-400 text-xs uppercase tracking-wider font-semibold">
+                              Tahun Lulus
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                value={field.value || ""}
+                                placeholder="Contoh: 2020"
+                                inputMode="numeric"
+                                maxLength={4}
+                                className="bg-slate-950/40 rounded-xl h-11 border-slate-800"
+                                onChange={(e) =>
+                                  field.onChange(
+                                    e.target.value.replace(/[^0-9]/g, ""),
+                                  )
+                                }
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
+                ))}
+                {pendidikanFields.length === 0 && (
+                  <div className="text-center p-12 border border-dashed border-slate-800 rounded-[2rem] text-slate-500 text-sm">
+                    Belum ada data pendidikan yang ditambahkan.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <Separator className="bg-slate-800/50" />
+
+            {/* Sertifikasi & Pelatihan */}
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="space-y-1.5">
+                  <h4 className="text-xl font-bold text-slate-100 flex items-center gap-3 tracking-tight">
+                    <div className="h-2 w-2 rounded-full bg-emerald-500" />
+                    Sertifikasi & Pelatihan
+                  </h4>
+                  <p className="text-sm text-slate-400 max-w-xl leading-relaxed">
+                    Tambahkan sertifikasi atau pelatihan yang relevan.
+                    (Opsional)
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    appendSertifikasi({
+                      id: crypto.randomUUID(),
+                      namaSertifikasi: "",
+                      penyelenggara: "",
+                      tahun: "",
+                      buktiUrl: "",
+                    })
+                  }
+                  className="rounded-xl border-emerald-500/30 bg-emerald-500/5 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 shadow-sm"
+                >
+                  <Plus className="mr-2 h-4 w-4" /> Tambah Sertifikasi
+                </Button>
+              </div>
+
+              <div className="space-y-6">
+                {sertifikasiFields.map((field, index) => (
+                  <div
+                    key={field.id}
+                    className="relative bg-slate-900/30 border border-slate-800/60 rounded-[2rem] p-6 sm:p-8 shadow-sm"
+                  >
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeSertifikasi(index)}
+                      className="absolute right-4 top-4 h-8 w-8 rounded-full text-slate-500 hover:text-red-400 hover:bg-red-500/10"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      <FormField
+                        control={form.control}
+                        name={`pendidikanDanPengembangan.sertifikasiPelatihan.${index}.namaSertifikasi`}
+                        render={({ field }) => (
+                          <FormItem className="lg:col-span-2">
+                            <FormLabel className="text-slate-400 text-xs uppercase tracking-wider font-semibold">
+                              Nama Sertifikasi / Pelatihan
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                value={field.value || ""}
+                                placeholder="Contoh: AWS Certified Solutions Architect"
+                                className="bg-slate-950/40 rounded-xl h-11 border-slate-800"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name={`pendidikanDanPengembangan.sertifikasiPelatihan.${index}.tahun`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-slate-400 text-xs uppercase tracking-wider font-semibold">
+                              Tahun
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                value={field.value || ""}
+                                placeholder="Contoh: 2022"
+                                inputMode="numeric"
+                                maxLength={4}
+                                className="bg-slate-950/40 rounded-xl h-11 border-slate-800"
+                                onChange={(e) =>
+                                  field.onChange(
+                                    e.target.value.replace(/[^0-9]/g, ""),
+                                  )
+                                }
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name={`pendidikanDanPengembangan.sertifikasiPelatihan.${index}.penyelenggara`}
+                        render={({ field }) => (
+                          <FormItem className="lg:col-span-2">
+                            <FormLabel className="text-slate-400 text-xs uppercase tracking-wider font-semibold">
+                              Penyelenggara
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                value={field.value || ""}
+                                placeholder="Contoh: Amazon Web Services"
+                                className="bg-slate-950/40 rounded-xl h-11 border-slate-800"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name={`pendidikanDanPengembangan.sertifikasiPelatihan.${index}.buktiUrl`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-slate-400 text-xs uppercase tracking-wider font-semibold">
+                              Bukti Sertifikat
+                            </FormLabel>
+                            <FormControl>
+                              <div className="pt-2">
+                                <FileUploadField
+                                  label="Upload Sertifikat"
+                                  value={field.value}
+                                  onChange={field.onChange}
+                                  userId={firebaseUser?.uid ?? ""}
+                                  fieldKey={`sertifikat_${index}`}
+                                  helperText="Format gambar atau PDF."
+                                />
+                              </div>
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
+                ))}
+                {sertifikasiFields.length === 0 && (
+                  <div className="text-center p-12 border border-dashed border-slate-800 rounded-[2rem] text-slate-500 text-sm">
+                    Belum ada sertifikasi yang ditambahkan.
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         );
       default:

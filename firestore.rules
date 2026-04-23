@@ -160,7 +160,7 @@ service cloud.firestore {
         function isUpdatingOwnAllowedFields() {
           let allowedFields = [
             'uid', 'dataDiriIdentitas', 'alamat', 'dokumenAdministratif',
-            'dataRekening', 'kontakDarurat', 'updatedAt', 'completeness'
+            'dataRekening', 'dataKeluarga', 'kontakDarurat', 'updatedAt', 'completeness'
           ];
           return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedFields);
         }

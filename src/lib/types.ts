@@ -70,11 +70,191 @@ export const EMPLOYMENT_STATUSES = [
 ] as const;
 export type EmploymentStatus = (typeof EMPLOYMENT_STATUSES)[number];
 
+export type FamilyMember = {
+  id: string;
+  name?: string;
+  birthPlace?: string;
+  birthDate?: string;
+  order?: string;
+  education?: string;
+  activityStatus?: string;
+  occupation?: string;
+  occupationOther?: string;
+  occupationStatus?: string;
+  address?: string;
+};
+
+export type Dependent = {
+  id: string;
+  name?: string;
+  gender?: string;
+  birthPlace?: string;
+  birthDate?: string;
+  relation?: string;
+  childOrder?: string;
+  education?: string;
+  activityStatus?: string;
+  occupation?: string;
+  occupationOther?: string;
+  occupationStatus?: string;
+  status?: string;
+  address?: string;
+};
+
+export type EmergencyContact = {
+  id: string;
+  name: string;
+  relation: string;
+  relationOther?: string;
+  phone: string;
+  address?: string;
+  priority: string;
+};
+
+export type DataKeluarga = {
+  orangTua?: {
+    ayah?: {
+      name?: string;
+      status?: string;
+      birthPlace?: string;
+      birthDate?: string;
+      activityStatus?: string;
+      education?: string;
+      occupation?: string;
+      occupationOther?: string;
+      address?: string;
+      phone?: string;
+    };
+    ibu?: {
+      name?: string;
+      status?: string;
+      birthPlace?: string;
+      birthDate?: string;
+      activityStatus?: string;
+      education?: string;
+      occupation?: string;
+      occupationOther?: string;
+      address?: string;
+      phone?: string;
+    };
+  };
+  saudaraKandung?: FamilyMember[];
+  tanggungan?: FamilyMember[]; // Changed to FamilyMember based on earlier code
+};
+
+export type RegionData = {
+  id: string;
+  name: string;
+};
+
+export type AddressDetail = {
+  street?: string;
+  rt?: string;
+  rw?: string;
+  provinsi?: RegionData;
+  kabupatenKota?: RegionData;
+  kecamatan?: RegionData;
+  kelurahan?: RegionData;
+  kodePos?: string;
+};
+
+export interface RiwayatPendidikan {
+  id: string;
+  jenjang?: string;
+  namaInstitusi?: string;
+  jurusan?: string;
+  tahunLulus?: string;
+}
+
+export interface SertifikasiPelatihan {
+  id: string;
+  namaSertifikasi?: string;
+  penyelenggara?: string;
+  tahun?: string;
+  buktiUrl?: string;
+}
+
 export type EmployeeProfile = {
   id?: string;
   uid: string;
 
-  // --- Data Pribadi ---
+  // --- Data Pribadi (Nested) ---
+  dataDiriIdentitas: {
+    fullName: string;
+    nickName?: string;
+    personalEmail?: string;
+    phone: string;
+    gender?: string;
+    birthPlace?: string;
+    birthDate?: string;
+    maritalStatus?: string;
+    religion?: string;
+    nationality?: string;
+    countryOfOrigin?: string;
+    golonganDarah?: string;
+    tinggiBadan?: string;
+    beratBadan?: string;
+    hasPhysicalCondition?: string;
+    physicalConditionDetails?: string;
+    nik?: string;
+    profilePhotoUrl?: string;
+    ktpPhotoUrl?: string;
+  };
+
+  // --- Alamat (Nested) ---
+  alamat: {
+    addressKtp?: string; // Legacy field
+    addressCurrent?: string; // Legacy field
+    isDomicileSameAsKtp?: boolean;
+    ktp?: AddressDetail;
+    domisili?: AddressDetail;
+  };
+
+  // --- Identitas & Dokumen (Nested) ---
+  dokumenAdministratif: {
+    noNpwp?: boolean;
+    npwpFilePending?: boolean;
+    npwp?: string;
+    npwpPhotoUrl?: string;
+    noBpjsKesehatan?: boolean;
+    bpjsKesehatanFilePending?: boolean;
+    bpjsKesehatan?: string;
+    bpjsKesehatanPhotoUrl?: string;
+    noBpjsKetenagakerjaan?: boolean;
+    bpjsKetenagakerjaanFilePending?: boolean;
+    bpjsKetenagakerjaan?: string;
+    bpjsKetenagakerjaanPhotoUrl?: string;
+    simNumber?: string;
+    simPhotoUrl?: string;
+  };
+
+  // --- Keuangan (Nested) ---
+  dataRekening: {
+    bankName?: string;
+    bankAccountNumber?: string;
+    bankAccountHolderName?: string;
+    bankDocumentUrl?: string;
+  };
+
+  // --- Keluarga & Tanggungan ---
+  dataKeluarga?: DataKeluarga;
+
+  // --- Kontak Darurat ---
+  kontakDarurat: EmergencyContact[];
+
+  // --- Pendidikan & Pengembangan ---
+  pendidikanDanPengembangan?: {
+    pendidikanTerakhir?: {
+      jenjang?: string;
+      namaInstitusi?: string;
+      jurusan?: string;
+      tahunLulus?: string;
+    };
+    riwayatPendidikan: RiwayatPendidikan[];
+    sertifikasiPelatihan: SertifikasiPelatihan[];
+  };
+
+  // --- Flat Fields (kept for compatibility) ---
   fullName: string;
   nickName?: string;
   nationality?: string;
@@ -83,27 +263,21 @@ export type EmployeeProfile = {
   personalEmail?: string;
   email: string;
   profilePhotoUrl?: string;
-  gender?: "Laki-laki" | "Perempuan" | "Lainnya";
+  gender?: "Laki-laki" | "Perempuan" | "Lainnya" | string;
   birthPlace?: string;
   birthDate?: string; // YYYY-MM-DD
-  maritalStatus?: "Belum Kawin" | "Kawin" | "Cerai Hidup" | "Cerai Mati";
+  maritalStatus?: "Belum Kawin" | "Kawin" | "Cerai Hidup" | "Cerai Mati" | string;
   religion?: string;
-  bloodType?: "A" | "B" | "AB" | "O";
+  bloodType?: "A" | "B" | "AB" | "O" | string;
   heightCm?: string;
   weightKg?: string;
-  hasPhysicalCondition?: "Ya" | "Tidak";
+  hasPhysicalCondition?: "Ya" | "Tidak" | string;
   physicalConditionDetails?: string;
+  nik?: string;
   address?: Address;
   addressKtp?: Address;
   addressCurrent?: string;
   isDomicileSameAsKtp?: boolean;
-  contact?: {
-    phone: string;
-    email: string;
-  };
-
-  // --- Identitas & Dokumen ---
-  nik?: string;
   ktpPhotoUrl?: string;
   simNumber?: string;
   simPhotoUrl?: string;
@@ -123,32 +297,23 @@ export type EmployeeProfile = {
   bankAccountNumber?: string;
   bankAccountHolderName?: string;
   bankDocumentUrl?: string;
-  identityVerificationStatus?: VerificationStatus;
-  documentVerificationStatus?: VerificationStatus;
-  documents?: DocumentRecord[];
-
-  // --- Kontak Darurat ---
   emergencyContactName?: string;
   emergencyContactRelation?: string;
   emergencyContactPhone?: string;
   emergencyContactAddress?: string;
 
-  // --- Pendidikan & Pelatihan ---
-  education?: Education[];
-  certifications?: Certification[];
-  trainingHistory?: TrainingRecord[];
 
   // --- Informasi Kepegawaian ---
-  employeeNumber?: string; // NIK internal
-  positionTitle?: string; // Jabatan/Posisi
-  division?: string; // Departemen/Bagian
+  employeeNumber?: string;
+  positionTitle?: string;
+  division?: string;
   department?: string;
   brandId?: string;
   brandName?: string;
-  workLocation?: string; // Office Site ID or 'Remote'
-  managerUid?: string; // Atasan langsung
+  workLocation?: string;
+  managerUid?: string;
   managerName?: string;
-  supervisorUid?: string; // Used for interns, synonymous with managerUid
+  supervisorUid?: string;
   supervisorName?: string;
   joinDate?: Timestamp;
   contractEndDate?: Timestamp;
