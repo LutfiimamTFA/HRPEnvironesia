@@ -301,6 +301,7 @@ const selfFormSchema = z.object({
       bpjsKetenagakerjaanPhotoUrl: z.string().optional(),
       simNumber: z.string().optional(),
       simPhotoUrl: z.string().optional(),
+      ijazahUrl: z.string().optional(),
     })
     .superRefine((data, ctx) => {
       // 1. NPWP Logic
@@ -409,6 +410,7 @@ const selfFormSchema = z.object({
       .string()
       .url("URL bukti rekening tidak valid.")
       .optional(),
+    buktiRekeningUrl: z.string().optional(),
   }),
   dataKeluarga: z
     .object({
@@ -910,12 +912,14 @@ export function EmployeeSelfProfileForm({
         bpjsKetenagakerjaanPhotoUrl: "",
         simNumber: "",
         simPhotoUrl: "",
+        ijazahUrl: "",
       },
       dataRekening: {
         bankName: "",
         bankAccountNumber: "",
         bankAccountHolderName: "",
         bankDocumentUrl: "",
+        buktiRekeningUrl: "",
       },
       dataKeluarga: {
         orangTua: {
@@ -1190,6 +1194,7 @@ export function EmployeeSelfProfileForm({
           "",
         simNumber: docAdmin.simNumber || initialProfile.simNumber || "",
         simPhotoUrl: docAdmin.simPhotoUrl || initialProfile.simPhotoUrl || "",
+        ijazahUrl: docAdmin.ijazahUrl || (initialProfile as any)?.ijazahUrl || "",
       },
       dataRekening: {
         bankName: rek.bankName || initialProfile.bankName || "",
@@ -1201,6 +1206,7 @@ export function EmployeeSelfProfileForm({
           "",
         bankDocumentUrl:
           rek.bankDocumentUrl || initialProfile.bankDocumentUrl || "",
+        buktiRekeningUrl: rek.buktiRekeningUrl || (initialProfile as any)?.buktiRekeningUrl || "",
       },
       kontakDarurat: Array.isArray(kd)
         ? kd.map((k: any) => ({
@@ -1421,6 +1427,36 @@ export function EmployeeSelfProfileForm({
       completeness: isDraft
         ? { isComplete: false }
         : { isComplete: true, completedAt: serverTimestamp() },
+      // --- Flat compatibility fields (fix dropdown reset on refresh) ---
+      fullName: values.dataDiriIdentitas.fullName,
+      phone: values.dataDiriIdentitas.phone,
+      gender: values.dataDiriIdentitas.gender || "",
+      birthPlace: values.dataDiriIdentitas.birthPlace || "",
+      birthDate: values.dataDiriIdentitas.birthDate || "",
+      maritalStatus: values.dataDiriIdentitas.maritalStatus || "",
+      religion: values.dataDiriIdentitas.religion || "",
+      nationality: values.dataDiriIdentitas.nationality || "",
+      bloodType: values.dataDiriIdentitas.golonganDarah || "",
+      heightCm: values.dataDiriIdentitas.tinggiBadan || "",
+      weightKg: values.dataDiriIdentitas.beratBadan || "",
+      hasPhysicalCondition: values.dataDiriIdentitas.hasPhysicalCondition || "",
+      physicalConditionDetails: values.dataDiriIdentitas.physicalConditionDetails || "",
+      nik: values.dataDiriIdentitas.nik || "",
+      profilePhotoUrl: values.dataDiriIdentitas.profilePhotoUrl || "",
+      ktpPhotoUrl: values.dataDiriIdentitas.ktpPhotoUrl || "",
+      // --- Explicitly requested fields for synchronization ---
+      hasNpwp: !values.dokumenAdministratif.noNpwp,
+      npwpNumber: values.dokumenAdministratif.npwp || "",
+      npwpUrl: values.dokumenAdministratif.npwpPhotoUrl || "",
+      hasBpjsKesehatan: !values.dokumenAdministratif.noBpjsKesehatan,
+      bpjsKesehatanNumber: values.dokumenAdministratif.bpjsKesehatan || "",
+      bpjsKesehatanUrl: values.dokumenAdministratif.bpjsKesehatanPhotoUrl || "",
+      hasBpjsKetenagakerjaan: !values.dokumenAdministratif.noBpjsKetenagakerjaan,
+      bpjsKetenagakerjaanNumber: values.dokumenAdministratif.bpjsKetenagakerjaan || "",
+      bpjsKetenagakerjaanUrl: values.dokumenAdministratif.bpjsKetenagakerjaanPhotoUrl || "",
+      ijazahUrl: values.dokumenAdministratif.ijazahUrl || "",
+      buktiRekeningUrl: values.dataRekening.buktiRekeningUrl || values.dataRekening.bankDocumentUrl || "",
+      bankProofUrl: values.dataRekening.buktiRekeningUrl || values.dataRekening.bankDocumentUrl || "",
     });
 
     console.log("FINAL PAYLOAD:", employeePayload);
@@ -2619,6 +2655,41 @@ export function EmployeeSelfProfileForm({
                 </section>
               </>
             )}
+
+            <Separator className="bg-slate-800/50" />
+            
+            <section className="space-y-6">
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-3">
+                  <div className="h-8 w-1.5 rounded-full bg-primary" />
+                  <h4 className="text-lg font-bold text-slate-100">
+                    Ijazah Terakhir
+                  </h4>
+                </div>
+                <p className="text-sm text-slate-400">
+                  Unggah scan/foto Ijazah Terakhir untuk keperluan validasi pendidikan.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <FormField
+                  control={form.control}
+                  name="dokumenAdministratif.ijazahUrl"
+                  render={({ field }) => (
+                    <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                      <FileUploadField
+                        label="Upload Ijazah Terakhir"
+                        value={field.value}
+                        onChange={field.onChange}
+                        userId={firebaseUser?.uid ?? ""}
+                        fieldKey="ijazah_terakhir"
+                        helperText="Format JPG/PNG atau PDF. Maksimal 10MB."
+                      />
+                    </div>
+                  )}
+                />
+              </div>
+            </section>
           </div>
         );
       case 3:

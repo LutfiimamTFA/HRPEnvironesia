@@ -1,0 +1,1954 @@
+"use client";
+
+import React, { useMemo, useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/providers/auth-provider";
+import { useRoleGuard } from "@/hooks/useRoleGuard";
+import { MENU_CONFIG } from "@/lib/menu-config";
+import {
+  useDoc,
+  useCollection,
+  useFirestore,
+  useMemoFirebase,
+} from "@/firebase";
+import {
+  doc,
+  collection,
+  setDoc,
+  addDoc,
+  serverTimestamp,
+  query,
+  orderBy,
+} from "firebase/firestore";
+import type {
+  UserProfile,
+  EmployeeMasterData,
+  EmployeeProfile,
+  Brand,
+  HrdEmploymentInfo,
+} from "@/lib/types";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
+import {
+  CheckCircle,
+  AlertTriangle,
+  XCircle,
+  MapPin,
+  Save,
+  Loader2,
+  ArrowLeft,
+  History,
+  Briefcase,
+  Building2,
+  ShieldCheck,
+  CreditCard,
+  ClipboardList,
+  User,
+  Heart,
+  Mail,
+  FileText,
+  Phone,
+  GraduationCap,
+  Pencil,
+  Settings,
+  AlertOctagon,
+  Eye,
+  Download,
+  Image as ImageIcon,
+  Plus,
+  X,
+  Trash2,
+} from "lucide-react";
+import { useForm } from "react-hook-form";
+import { useToast } from "@/hooks/use-toast";
+import { calculateProfileCompleteness } from "@/lib/employee-completeness";
+import { getEmployeeDocumentUrls, getDocumentStatus } from "@/lib/employee-documents";
+import { normalizeEmployeeRow } from "@/lib/employee-row-normalizer";
+import { getHrdEmployeeStruktur } from "@/lib/employee-hrd-profile";
+
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { format, differenceInMonths, differenceInDays, addMonths, addDays } from "date-fns";
+
+const TIPE_KARYAWAN_OPTIONS = [
+  "Karyawan Tetap",
+  "Kontrak",
+  "Probation",
+  "Magang",
+  "Freelance",
+];
+
+const STATUS_KERJA_OPTIONS = [
+  "Training",
+  "Masa Percobaan",
+  "Aktif",
+  "Kontrak",
+  "Magang",
+  "Resigned",
+  "Terminated",
+];
+
+const DURASI_OPTIONS = [
+  "1 Bulan",
+  "3 Bulan",
+  "6 Bulan",
+  "12 Bulan",
+  "24 Bulan",
+  "Custom",
+];
+
+
+
+
+
+function formatAddress(addr?: any): string | null {
+  if (!addr) return null;
+  const parts = [
+    addr.street ? `Jl. ${addr.street}` : null,
+    addr.kelurahan?.name ? `Kel. ${addr.kelurahan.name}` : null,
+    addr.kecamatan?.name ? `Kec. ${addr.kecamatan.name}` : null,
+    addr.kabupatenKota?.name,
+    addr.provinsi?.name,
+    addr.kodePos,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(", ") : null;
+}
+
+const DataRow = ({ label, value, className }: { label: string; value?: string | null; className?: string }) => (
+  <div className="py-2.5 group transition-all">
+    <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 mb-1 group-hover:text-emerald-500/50 transition-colors">{label}</p>
+    <p className={`text-sm font-medium text-slate-200 truncate ${className || ""}`} title={value || "Belum diisi"}>
+      {value || "Belum diisi"}
+    </p>
+  </div>
+);
+
+export default function EmployeeDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { userProfile, firebaseUser } = useAuth();
+  const hasAccess = useRoleGuard(["hrd", "super-admin"]);
+  const firestore = useFirestore();
+  const { toast } = useToast();
+  const router = useRouter();
+  const [isSaving, setIsSaving] = useState(false);
+  const [editingSection, setEditingSection] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("ringkasan");
+
+  const resolvedParams = React.use(params);
+  const employeeId = resolvedParams.id;
+
+  const menuConfig = useMemo(() => {
+    if (!userProfile) return [];
+    return MENU_CONFIG[userProfile.role] || [];
+  }, [userProfile]);
+
+  // Fetch data
+  const { data: userDoc, isLoading: userLoading } = useDoc<UserProfile>(
+    useMemoFirebase(
+      () => (employeeId ? doc(firestore, "users", employeeId) : null),
+      [firestore, employeeId],
+    ),
+  );
+  const { data: empDoc, isLoading: empLoading } = useDoc<EmployeeMasterData>(
+    useMemoFirebase(
+      () => (employeeId ? doc(firestore, "employees", employeeId) : null),
+      [firestore, employeeId],
+    ),
+  );
+  const { data: profileDoc, isLoading: profileLoading } =
+    useDoc<EmployeeProfile>(
+      useMemoFirebase(
+        () => (employeeId ? doc(firestore, "employee_profiles", employeeId) : null),
+        [firestore, employeeId],
+      ),
+    );
+  const { data: brands, isLoading: brandsLoading } = useCollection<Brand>(
+    useMemoFirebase(() => collection(firestore, "brands"), [firestore]),
+  );
+
+  // History query
+  const historyQuery = useMemoFirebase(() => {
+    if (!employeeId) return null;
+    return query(
+      collection(firestore, "employees", employeeId, "employment_history"),
+      orderBy("changedAt", "desc"),
+    );
+  }, [firestore, employeeId]);
+  
+  const { data: historyData } = useCollection(historyQuery);
+
+
+  const isLoading =
+    userLoading || empLoading || profileLoading || brandsLoading;
+
+  // Derive master/hrd data
+  const normalizedData = useMemo(() => {
+    if (isLoading) return null;
+    const norm = normalizeEmployeeRow(empDoc, profileDoc, userDoc, brands || []);
+    return norm;
+  }, [empDoc, profileDoc, userDoc, brands, isLoading]);
+
+  const hrdStruktur = useMemo(() => {
+    if (isLoading) return null;
+    return getHrdEmployeeStruktur(empDoc, profileDoc, userDoc, brands || []);
+  }, [empDoc, profileDoc, userDoc, brands, isLoading]);
+
+  const hrdInfo = profileDoc?.hrdEmploymentInfo || {};
+
+  const employmentDefaultValues = useMemo(
+    () => ({
+      brandId: normalizedData?.brandId || "",
+      brand: normalizedData?.brandName || "",
+      divisi: normalizedData?.divisi || "",
+      jabatan: normalizedData?.jabatan || "",
+      tipeKaryawan: normalizedData?.tipeKaryawan || "",
+      statusKerja: normalizedData?.statusKerja || "",
+      atasanLangsung: hrdInfo.atasanLangsung || "",
+      sistemKerja: hrdInfo.sistemKerja || "",
+      lokasiKerja: hrdInfo.lokasiKerja || "",
+      tanggalMasuk: hrdInfo.tanggalMasuk || "",
+      nomorKontrakSK: hrdInfo.nomorKontrakSK || "",
+      masaPercobaanMulai: hrdInfo.masaPercobaanMulai || "",
+      masaPercobaanSelesai: hrdInfo.masaPercobaanSelesai || "",
+      masaPercobaan: hrdInfo.masaPercobaan || "",
+      kontrakMulai: hrdInfo.kontrakMulai || "",
+      kontrakSelesai: hrdInfo.kontrakSelesai || "",
+      durasiKontrak: hrdInfo.durasiKontrak || "",
+      statusKontrak: hrdInfo.statusKontrak || "Draft",
+      catatanKontrak: hrdInfo.catatanKontrak || "",
+      contractDocumentUrl: hrdInfo.contractDocumentUrl || "",
+      mentor: hrdInfo.mentor || "",
+      evaluator: hrdInfo.evaluator || "",
+      tanggalEvaluasi: hrdInfo.tanggalEvaluasi || "",
+      nomorSK: hrdInfo.nomorSK || "",
+      hariKerja: hrdInfo.hariKerja || "",
+      jamKerja: hrdInfo.jamKerja || "",
+      
+      // Payroll
+      gajiPokok: hrdInfo.gajiPokok || 0,
+      allowances: hrdInfo.allowances || [],
+      bonusInsentif: hrdInfo.bonusInsentif || 0,
+      thr: hrdInfo.thr || 0,
+      
+      // Granular BPJS
+      bpjsKesPerusahaan: hrdInfo.bpjsKesPerusahaan || 0,
+      bpjsKesKaryawan: hrdInfo.bpjsKesKaryawan || 0,
+      bpjsTkPerusahaan: hrdInfo.bpjsTkPerusahaan || 0,
+      bpjsTkKaryawan: hrdInfo.bpjsTkKaryawan || 0,
+      
+      potonganPPh21: hrdInfo.potonganPPh21 || 0,
+      potonganLain: hrdInfo.potonganLain || 0,
+      catatanPayroll: hrdInfo.catatanPayroll || "",
+      
+      // Payroll Account Override
+      useDifferentPayrollAccount: hrdInfo.useDifferentPayrollAccount || false,
+      customPayrollBank: hrdInfo.customPayrollBank || "",
+      customPayrollAccountNumber: hrdInfo.customPayrollAccountNumber || "",
+      customPayrollAccountHolder: hrdInfo.customPayrollAccountHolder || "",
+
+      // Kehadiran & Cuti
+      jadwalKerja: hrdInfo.jadwalKerja || "",
+      shift: hrdInfo.shift || "",
+      hadir: hrdInfo.hadir || 0,
+      terlambat: hrdInfo.terlambat || 0,
+      izin: hrdInfo.izin || 0,
+      sakit: hrdInfo.sakit || 0,
+      alpha: hrdInfo.alpha || 0,
+      jatahCuti: hrdInfo.jatahCuti || 12,
+      sisaCuti: hrdInfo.sisaCuti || 12,
+
+      asetPerusahaan: hrdInfo.asetPerusahaan || "",
+      catatanBenefit: hrdInfo.catatanBenefit || "",
+      catatanInternalHrd: hrdInfo.catatanInternalHrd || "",
+      catatanAdministrasi: hrdInfo.catatanAdministrasi || "",
+      tanggalEfektif: format(new Date(), "yyyy-MM-dd"),
+      additionalFields: {
+        historyType: "promotion",
+        historyTitle: "",
+        historyDescription: "",
+        historyDate: format(new Date(), "yyyy-MM-dd"),
+      },
+    }),
+    [normalizedData, hrdInfo],
+  );
+
+  const form = useForm<HrdEmploymentInfo>({
+    defaultValues: employmentDefaultValues,
+  });
+
+  const lastResetKeyRef = React.useRef("");
+
+  // Re-init form when data loaded
+  useEffect(() => {
+    if (isLoading || !employeeId) return;
+
+    const resetKey = JSON.stringify(employmentDefaultValues);
+    if (lastResetKeyRef.current === resetKey) return;
+
+    lastResetKeyRef.current = resetKey;
+    form.reset(employmentDefaultValues);
+  }, [isLoading, employeeId, employmentDefaultValues, form]);
+  
+  // Auto-calculate contract duration or end date
+  const watchKontrakMulai = form.watch("kontrakMulai");
+  const watchKontrakSelesai = form.watch("kontrakSelesai");
+  const watchDurasiKontrak = form.watch("durasiKontrak");
+
+  // Effect 1: Calculate End Date from Duration if standard preset is used
+  useEffect(() => {
+    if (!watchKontrakMulai || !watchDurasiKontrak) return;
+    
+    const match = watchDurasiKontrak.match(/^(\d+)\s*Bulan$/i);
+    if (match) {
+      const months = parseInt(match[1], 10);
+      try {
+        const startDate = new Date(watchKontrakMulai);
+        const endDate = addMonths(startDate, months);
+        const formattedEnd = format(endDate, "yyyy-MM-dd");
+        
+        if (formattedEnd !== watchKontrakSelesai) {
+          form.setValue("kontrakSelesai", formattedEnd);
+        }
+      } catch (e) {}
+    }
+  }, [watchKontrakMulai, watchDurasiKontrak, form]);
+
+  // Effect 2: Calculate Duration string if end date is changed manually
+  useEffect(() => {
+    if (watchKontrakMulai && watchKontrakSelesai) {
+      try {
+        const startDate = new Date(watchKontrakMulai);
+        const endDate = new Date(watchKontrakSelesai);
+        
+        if (endDate > startDate) {
+          const totalDays = differenceInDays(endDate, startDate);
+          const months = Math.floor(totalDays / 30);
+          const days = totalDays % 30;
+          let duration = "";
+          if (months > 0) duration += `${months} Bulan `;
+          if (days > 0) duration += `${days} Hari`;
+          
+          const finalDuration = duration.trim() || "0 Hari";
+          // Only update if it doesn't match a standard preset or is different
+          const currentDuration = watchDurasiKontrak || "";
+          if (finalDuration !== currentDuration && !currentDuration.endsWith("Bulan")) {
+             form.setValue("durasiKontrak", finalDuration);
+          }
+        }
+      } catch (e) {}
+    }
+  }, [watchKontrakMulai, watchKontrakSelesai, form]);
+
+  const handleSaveHrd = async (values: HrdEmploymentInfo) => {
+    if (!firebaseUser || !userProfile || !employeeId) return;
+    setIsSaving(true);
+    try {
+      const b = brands?.find((b) => b.id === values.brandId);
+      const updatedValues = { ...values, brand: b ? b.name : "" };
+
+      // Determine what changed for history
+      const changes: any[] = [];
+      const trackChange = (
+        field: string,
+        label: string,
+        oldVal: any,
+        newVal: any,
+      ) => {
+        const ov = String(oldVal || "");
+        const nv = String(newVal || "");
+        if (ov !== nv) {
+          changes.push({
+            field,
+            label,
+            oldValue: ov || "-",
+            newValue: nv || "-",
+            title: `Perbarui ${label}`,
+          });
+        }
+      };
+
+      trackChange("brandId", "Brand", normalizedData?.brandId, updatedValues.brandId);
+      trackChange("divisi", "Divisi", normalizedData?.divisi, updatedValues.divisi);
+      trackChange("jabatan", "Jabatan", normalizedData?.jabatan, updatedValues.jabatan);
+      trackChange("tipeKaryawan", "Tipe Karyawan", normalizedData?.tipeKaryawan, updatedValues.tipeKaryawan);
+      trackChange("statusKerja", "Status Kerja", normalizedData?.statusKerja, updatedValues.statusKerja);
+      trackChange("nomorKontrakSK", "No Kontrak/SK", hrdInfo.nomorKontrakSK, updatedValues.nomorKontrakSK);
+      trackChange("kontrakMulai", "Kontrak Mulai", hrdInfo.kontrakMulai, updatedValues.kontrakMulai);
+      trackChange("kontrakSelesai", "Kontrak Selesai", hrdInfo.kontrakSelesai, updatedValues.kontrakSelesai);
+      trackChange("statusKontrak", "Status Kontrak", hrdInfo.statusKontrak, updatedValues.statusKontrak);
+      trackChange("sistemKerja", "Sistem Kerja", hrdInfo.sistemKerja, updatedValues.sistemKerja);
+      trackChange("lokasiKerja", "Lokasi Kerja", hrdInfo.lokasiKerja, updatedValues.lokasiKerja);
+      trackChange("mentor", "Mentor", hrdInfo.mentor, updatedValues.mentor);
+      trackChange("evaluator", "Evaluator", hrdInfo.evaluator, updatedValues.evaluator);
+      trackChange("nomorSK", "No SK Pengangkatan", hrdInfo.nomorSK, updatedValues.nomorSK);
+      trackChange("tanggalEvaluasi", "Tanggal Evaluasi", hrdInfo.tanggalEvaluasi, updatedValues.tanggalEvaluasi);
+      
+      // Payroll changes
+      trackChange("gajiPokok", "Gaji Pokok", hrdInfo.gajiPokok, updatedValues.gajiPokok);
+      trackChange("bonusInsentif", "Bonus/Insentif", hrdInfo.bonusInsentif, updatedValues.bonusInsentif);
+      
+      // Save to employee_profiles.hrdEmploymentInfo
+      const profileRef = doc(firestore, "employee_profiles", employeeId);
+      await setDoc(
+        profileRef,
+        {
+          hrdEmploymentInfo: { ...updatedValues, updatedAt: serverTimestamp() },
+        },
+        { merge: true },
+      );
+
+      // Save to employees collection for master data sync
+      const empRef = doc(firestore, "employees", employeeId);
+      await setDoc(
+        empRef,
+        {
+          brandId: updatedValues.brandId,
+          brandName: updatedValues.brand,
+          division: updatedValues.divisi,
+          positionTitle: updatedValues.jabatan,
+          employmentType: updatedValues.tipeKaryawan,
+          employmentStatus: updatedValues.statusKerja,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+
+      // Save history
+      if (changes.length > 0) {
+        const historyCol = collection(
+          firestore,
+          "employees",
+          employeeId,
+          "employment_history",
+        );
+        for (const change of changes) {
+          await addDoc(historyCol, {
+            ...change,
+            type: editingSection || "payroll_update",
+            effectiveDate: updatedValues.tanggalEfektif || format(new Date(), "yyyy-MM-dd"),
+            note: updatedValues.catatanAdministrasi || "Update administrasi HRD rutin",
+            changedAt: serverTimestamp(),
+            changedBy: firebaseUser.uid,
+            changedByName: userProfile.fullName,
+          });
+        }
+      }
+
+      toast({
+        title: "Tersimpan",
+        description: `Data ${editingSection || 'kepegawaian'} berhasil diperbarui.`,
+      });
+      setEditingSection(null);
+    } catch (e: any) {
+      toast({
+        variant: "destructive",
+        title: "Gagal Menyimpan",
+        description: e.message,
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleAddCareerHistory = async (data: {
+    type: string;
+    title: string;
+    description: string;
+    effectiveDate: string;
+    notes: string;
+  }) => {
+    if (!firebaseUser || !userProfile || !employeeId) return;
+    setIsSaving(true);
+    try {
+      const historyCol = collection(
+        firestore,
+        "employees",
+        employeeId,
+        "employment_history",
+      );
+      await addDoc(historyCol, {
+        type: data.type,
+        title: data.title,
+        field: "career_event",
+        oldValue: "-",
+        newValue: data.description,
+        note: data.notes,
+        effectiveDate: data.effectiveDate,
+        changedAt: serverTimestamp(),
+        changedBy: firebaseUser.uid,
+        changedByName: userProfile.fullName,
+      });
+      
+      toast({
+        title: "Riwayat Ditambahkan",
+        description: "Event karier baru telah dicatat dalam timeline.",
+      });
+      setEditingSection(null);
+    } catch (e: any) {
+      toast({
+        variant: "destructive",
+        title: "Gagal Menambah Riwayat",
+        description: e.message,
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (!hasAccess) return null;
+
+  if (isLoading) {
+    return (
+      <>
+        <div className="flex items-center gap-4 mb-6">
+          <Skeleton className="h-10 w-10 rounded-full" />
+          <Skeleton className="h-8 w-64" />
+        </div>
+        <Skeleton className="h-96 w-full" />
+      </>
+    );
+  }
+
+  // Derive display name/email
+  const fullName =
+    empDoc?.fullName ||
+    profileDoc?.dataDiriIdentitas?.fullName ||
+    userDoc?.fullName ||
+    "Karyawan Tidak Dikenal";
+  const email =
+    empDoc?.email ||
+    profileDoc?.dataDiriIdentitas?.personalEmail ||
+    userDoc?.email ||
+    "";
+  const completeness = calculateProfileCompleteness(profileDoc ?? null);
+
+  const dd: any = profileDoc?.dataDiriIdentitas ?? {};
+  const al: any = profileDoc?.alamat ?? {};
+  const docAdmin: any = profileDoc?.dokumenAdministratif ?? {};
+  const rek: any = profileDoc?.dataRekening ?? {};
+  const contacts: any[] = profileDoc?.kontakDarurat ?? [];
+  const pp: any = profileDoc?.pendidikanDanPengembangan ?? {};
+  const docsObj: any = (profileDoc as any)?.documents ?? {};
+
+  const docUrls = getEmployeeDocumentUrls(profileDoc);
+  const profilePhotoUrl = docUrls.profilePhotoUrl;
+  const ktpPhotoUrl = docUrls.ktpPhotoUrl;
+  const ijazahUrl = docUrls.ijazahUrl;
+  const npwpUrl = docUrls.npwpUrl;
+  const bpjsKesUrl = docUrls.bpjsKesehatanUrl;
+  const bpjsKetUrl = docUrls.bpjsKetenagakerjaanUrl;
+  const buktiRekeningUrl = docUrls.bankProofUrl;
+
+  const employeePhone = dd.phone || "";
+  const brandLabel = hrdStruktur?.brandName || "Belum diatur";
+  const divisionLabel = hrdStruktur?.divisi || "Belum diatur";
+  const positionLabel = hrdStruktur?.jabatan || "Belum diatur";
+  const employmentStatusLabel = hrdStruktur?.statusKerja || "Belum diatur";
+  
+  const profileStatusLabel =
+    completeness.status === "complete"
+      ? "Lengkap"
+      : completeness.status === "partial"
+        ? "Sebagian"
+        : "Belum Mengisi";
+        
+  const profileStatusClass =
+    completeness.status === "complete"
+      ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/20"
+      : completeness.status === "partial"
+        ? "bg-amber-500/15 text-amber-400 border-amber-500/20"
+        : "bg-red-500/15 text-red-400 border-red-500/20";
+        
+  const employmentStatusClass = (employmentStatusLabel || "")
+    .toLowerCase()
+    .includes("aktif")
+    ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/20"
+    : (employmentStatusLabel || "").toLowerCase().includes("resigned") ||
+        (employmentStatusLabel || "").toLowerCase().includes("terminated")
+      ? "bg-red-500/15 text-red-400 border-red-500/20"
+      : "bg-blue-500/15 text-blue-400 border-blue-500/20";
+
+  const initials = fullName
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase())
+    .join("");
+
+  const actionItems: string[] = [];
+  if (!hrdStruktur?.brandName) actionItems.push("Brand / Perusahaan belum diatur.");
+  else if (!hrdStruktur?.divisi) actionItems.push("Divisi belum diatur.");
+  else if (!hrdStruktur?.jabatan) actionItems.push("Jabatan belum diatur.");
+  
+  if (hrdStruktur?.statusKerja === "Belum diatur") actionItems.push("Status Kerja belum diatur.");
+  if (!buktiRekeningUrl) actionItems.push("Bukti rekening payroll belum diunggah karyawan.");
+  if (!ktpPhotoUrl) actionItems.push("KTP karyawan belum diunggah.");
+  if (completeness.status !== "complete") actionItems.push("Karyawan belum melengkapi profil mandiri 100%.");
+
+
+
+  const sidebarMenuItems = [
+    { id: "ringkasan", label: "Ringkasan", icon: Briefcase },
+    { id: "pribadi", label: "Profil Pribadi", icon: User },
+    { id: "alamat", label: "Alamat & Kontak", icon: MapPin },
+    { id: "rekening", label: "Rekening & Payroll", icon: CreditCard },
+    { id: "pendidikan", label: "Pendidikan", icon: GraduationCap },
+    { id: "dokumen", label: "Dokumen", icon: FileText },
+    { id: "hrd", label: "Kepegawaian HRD", icon: ShieldCheck },
+    { id: "riwayat", label: "Riwayat", icon: History },
+  ];
+
+  return (
+    <div className="max-w-[1600px] mx-auto space-y-8 px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      {/* Premium Header */}
+      <div className="relative overflow-hidden rounded-[2.5rem] border border-slate-800 bg-slate-950/40 p-8 shadow-2xl backdrop-blur-xl">
+        <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-emerald-500/5 blur-[100px]"></div>
+        <div className="absolute -left-20 -bottom-20 h-64 w-64 rounded-full bg-blue-500/5 blur-[100px]"></div>
+        
+        <div className="relative flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col sm:flex-row items-center gap-6 text-center sm:text-left">
+            <div className="relative">
+              <div className="flex h-24 w-24 items-center justify-center rounded-[2rem] bg-gradient-to-br from-slate-800 to-slate-900 text-3xl font-bold text-white shadow-2xl ring-1 ring-slate-700">
+                {profilePhotoUrl ? (
+                  <img src={profilePhotoUrl} alt={fullName} className="h-full w-full object-cover rounded-[2rem]" />
+                ) : (
+                  initials || "HR"
+                )}
+              </div>
+              <div className="absolute -bottom-1 -right-1 h-8 w-8 rounded-full border-4 border-slate-950 bg-emerald-500 flex items-center justify-center shadow-lg">
+                <CheckCircle className="h-4 w-4 text-white" />
+              </div>
+            </div>
+            
+            <div>
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 mb-2">
+                <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-emerald-500/80">
+                  Employee ID: {employeeId.substring(0, 8).toUpperCase()}
+                </p>
+                <Badge variant="outline" className={`rounded-full px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest ${employmentStatusClass}`}>
+                  {employmentStatusLabel}
+                </Badge>
+              </div>
+              <h1 className="text-4xl font-bold tracking-tight text-white mb-1">
+                {fullName}
+              </h1>
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-4 text-slate-400">
+                <div className="flex items-center gap-1.5 text-sm">
+                  <Mail className="h-4 w-4 text-slate-500" />
+                  {email || "-"}
+                </div>
+                <div className="flex items-center gap-1.5 text-sm">
+                  <Phone className="h-4 w-4 text-slate-500" />
+                  {employeePhone || "-"}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <Button 
+              variant="outline" 
+              className="rounded-2xl border-slate-800 bg-slate-900/50 px-6 text-slate-300 hover:bg-slate-800 hover:text-white"
+              onClick={() => router.push('/admin/hrd/employee-data/karyawan')}
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Kembali
+            </Button>
+            <Button 
+              className="rounded-2xl bg-emerald-600 px-6 text-white hover:bg-emerald-500 shadow-lg shadow-emerald-600/20"
+              onClick={() => {
+                setActiveTab("hrd");
+                setEditingSection("struktur");
+              }}
+            >
+              <Pencil className="h-4 w-4 mr-2" />
+              Quick Action
+            </Button>
+            <div className="h-10 w-[1px] bg-slate-800 mx-2 hidden sm:block"></div>
+            <Button variant="ghost" size="icon" className="rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white">
+              <Settings className="h-5 w-5" />
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col lg:flex-row gap-8">
+        {/* Sidebar Navigation */}
+        <aside className="w-full lg:w-72 flex-shrink-0">
+          <div className="sticky top-8 space-y-2 rounded-[2rem] border border-slate-800 bg-slate-950/40 p-4 backdrop-blur-xl">
+            <p className="px-4 py-2 text-[10px] font-bold uppercase tracking-[0.3em] text-slate-500">
+              Navigation
+            </p>
+            {sidebarMenuItems.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setActiveTab(item.id)}
+                className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3.5 text-sm font-medium transition-all duration-300 ${
+                  activeTab === item.id
+                    ? "bg-emerald-600 text-white shadow-lg shadow-emerald-600/20"
+                    : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                }`}
+              >
+                <item.icon className={`h-5 w-5 ${activeTab === item.id ? "text-white" : "text-slate-500"}`} />
+                {item.label}
+                {item.id === 'dokumen' && (
+                  <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-slate-800 text-[10px] text-slate-400">
+                    8
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        {/* Main Content Area */}
+        <main className="flex-1 min-w-0">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <div className="animate-in fade-in slide-in-from-right-4 duration-500">
+          <TabsContent value="ringkasan" className="space-y-8">
+            {actionItems.length > 0 && (
+              <Card className="overflow-hidden border-amber-500/30 bg-amber-500/5 backdrop-blur-md">
+                <div className="flex">
+                  <div className="w-1.5 bg-amber-500"></div>
+                  <div className="flex-1 p-6">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/20 text-amber-500">
+                        <AlertOctagon className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-bold text-amber-200">Perhatian: Data Belum Lengkap</h3>
+                        <p className="text-sm text-amber-500/70">Terdapat beberapa item yang memerlukan tindakan administrasi HRD.</p>
+                      </div>
+                    </div>
+                    <ul className="grid gap-3 sm:grid-cols-2">
+                      {actionItems.map((item, idx) => (
+                        <li key={idx} className="flex items-start gap-3 rounded-2xl bg-amber-500/5 p-3 text-sm text-amber-200/80 ring-1 ring-amber-500/10">
+                          <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </Card>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+               {/* Summary Column */}
+               <div className="space-y-8">
+                 <Card className="overflow-hidden border-slate-800 bg-slate-950/40 backdrop-blur-xl">
+                   <CardHeader className="border-b border-slate-800/50 bg-slate-900/20">
+                     <CardTitle className="text-base font-bold text-white flex items-center gap-2">
+                        <User className="h-5 w-5 text-emerald-500" />
+                        Quick Profile
+                     </CardTitle>
+                   </CardHeader>
+                   <CardContent className="p-0">
+                     <div className="p-6 flex flex-col items-center text-center border-b border-slate-800/50">
+                        <div className="relative mb-4 group">
+                          <div className="h-32 w-32 rounded-[2.5rem] bg-slate-800 p-1 ring-1 ring-slate-700 shadow-2xl transition-transform duration-500 group-hover:scale-105">
+                            {profilePhotoUrl ? (
+                              <img src={profilePhotoUrl} alt={fullName} className="h-full w-full object-cover rounded-[2.3rem]" />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-4xl font-bold text-slate-600">
+                                {initials}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <h2 className="text-xl font-bold text-white mb-1">{fullName}</h2>
+                        <p className="text-sm text-slate-400 mb-4">{positionLabel}</p>
+                        <div className="flex gap-2">
+                          <Badge className={employmentStatusClass}>{employmentStatusLabel}</Badge>
+                          <Badge variant="outline" className="border-slate-800 text-slate-400">{normalizedData?.tipeKaryawan || "Tipe N/A"}</Badge>
+                        </div>
+                     </div>
+                     <div className="p-6 space-y-4">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-slate-500">Completeness</span>
+                          <span className="text-emerald-400 font-bold">{completeness.percentage}%</span>
+                        </div>
+                        <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 rounded-full transition-all duration-1000" 
+                            style={{ width: `${completeness.percentage}%` }}
+                          ></div>
+                        </div>
+                     </div>
+                   </CardContent>
+                 </Card>
+
+                 <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl">
+                   <CardHeader>
+                     <CardTitle className="text-sm font-bold uppercase tracking-widest text-slate-500">Informasi Kontak</CardTitle>
+                   </CardHeader>
+                   <CardContent className="space-y-1">
+                      <DataRow label="Work Email" value={email} />
+                      <DataRow label="Phone Number" value={employeePhone} />
+                      <DataRow label="Personal Email" value={dd.personalEmail} />
+                   </CardContent>
+                 </Card>
+               </div>
+
+               {/* Detail Column */}
+               <div className="lg:col-span-2 space-y-8">
+                 <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl">
+                   <CardHeader className="border-b border-slate-800/50 flex flex-row items-center justify-between">
+                     <div>
+                       <CardTitle className="text-lg font-bold text-white">Struktur Organisasi</CardTitle>
+                       <CardDescription className="text-slate-500">Detail penempatan dan hierarki karyawan.</CardDescription>
+                     </div>
+                     <Building2 className="h-8 w-8 text-slate-800" />
+                   </CardHeader>
+                   <CardContent className="p-8">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-2">
+                        <DataRow label="Brand / Unit" value={brandLabel} />
+                        <DataRow label="Division" value={divisionLabel} />
+                        <DataRow label="Position" value={positionLabel} />
+                        <DataRow label="Manager/Atasan" value={hrdInfo.atasanLangsung} />
+                        <DataRow label="Location" value={hrdInfo.lokasiKerja} />
+                        <DataRow label="Employment Type" value={normalizedData?.tipeKaryawan} />
+                      </div>
+                   </CardContent>
+                 </Card>
+
+                 <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl">
+                    <CardHeader className="border-b border-slate-800/50">
+                      <CardTitle className="text-lg font-bold text-white">Payroll Overview</CardTitle>
+                      <CardDescription className="text-slate-500">Ringkasan data keuangan dan payroll.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-8">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="rounded-[1.5rem] bg-slate-900/50 p-6 border border-slate-800">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Bank Account</p>
+                          <p className="text-lg font-bold text-white">{rek.bankName || "N/A"}</p>
+                          <p className="text-xs text-slate-400 font-mono mt-1">{rek.bankAccountNumber || "**** ****"}</p>
+                        </div>
+                        <div className="rounded-[1.5rem] bg-slate-900/50 p-6 border border-slate-800">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Base Salary</p>
+                          <p className="text-lg font-bold text-emerald-400">
+                            {hrdInfo.gajiPokok ? `Rp ${hrdInfo.gajiPokok.toLocaleString()}` : "Confidential"}
+                          </p>
+                        </div>
+                        <div className="rounded-[1.5rem] bg-slate-900/50 p-6 border border-slate-800">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Join Date</p>
+                          <p className="text-lg font-bold text-white">{hrdInfo.tanggalMasuk || "N/A"}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                 </Card>
+               </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="pribadi" className="space-y-8">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              {/* KOLOM KIRI: Identitas & Kesehatan */}
+              <div className="lg:col-span-2 space-y-8">
+                <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl">
+                  <CardHeader className="border-b border-slate-800/50 bg-slate-900/20">
+                    <CardTitle className="flex items-center gap-2 text-lg font-bold text-white">
+                      <User className="h-5 w-5 text-blue-500" />
+                      Identitas Dasar
+                    </CardTitle>
+                    <CardDescription className="text-slate-500">Informasi identitas dan data pribadi sesuai dokumen resmi.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-8">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-2">
+                      <DataRow label="Nama Lengkap" value={dd.fullName} />
+                      <DataRow label="Nama Panggilan" value={dd.nickName} />
+                      <DataRow label="Jenis Kelamin" value={dd.gender} />
+                      <DataRow label="Tempat Lahir" value={dd.birthPlace} />
+                      <DataRow label="Tanggal Lahir" value={dd.birthDate} />
+                      <DataRow label="Status Pernikahan" value={dd.maritalStatus} />
+                      <DataRow label="Agama" value={dd.religion} />
+                      <DataRow label="Kewarganegaraan" value={dd.nationality} />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl">
+                  <CardHeader className="border-b border-slate-800/50 bg-slate-900/20">
+                    <CardTitle className="flex items-center gap-2 text-lg font-bold text-white">
+                      <Heart className="h-5 w-5 text-red-500" />
+                      Fisik & Kesehatan
+                    </CardTitle>
+                    <CardDescription className="text-slate-500">Data kesehatan dan kondisi fisik karyawan.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-8">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-2">
+                      <DataRow label="Golongan Darah" value={dd.golonganDarah || dd.bloodType} />
+                      <DataRow label="Tinggi Badan (cm)" value={dd.tinggiBadan || dd.heightCm} />
+                      <DataRow label="Berat Badan (kg)" value={dd.beratBadan || dd.weightKg} />
+                      <DataRow label="Kondisi Fisik Khusus" value={dd.hasPhysicalCondition || "Tidak ada"} />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* KOLOM KANAN: Dokumen Kunci */}
+              <div className="space-y-8">
+                <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl overflow-hidden">
+                   <CardHeader className="border-b border-slate-800/50 bg-slate-900/20">
+                      <CardTitle className="text-sm font-bold uppercase tracking-widest text-slate-500 flex items-center gap-2">
+                        <FileText className="h-4 w-4" />
+                        Kartu Identitas (KTP)
+                      </CardTitle>
+                   </CardHeader>
+                   <CardContent className="p-6">
+                      <div className="space-y-4">
+                         <div className="rounded-2xl bg-slate-900/50 p-4 border border-slate-800">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Nomor NIK</p>
+                            <p className="text-lg font-bold text-white font-mono tracking-wider">{dd.nik || "N/A"}</p>
+                         </div>
+                         {ktpPhotoUrl ? (
+                           <div 
+                            className="relative group aspect-video w-full rounded-2xl overflow-hidden border border-slate-800 bg-slate-900 cursor-pointer"
+                            onClick={() => ktpPhotoUrl && window.open(ktpPhotoUrl, "_blank")}
+                           >
+                              <img src={ktpPhotoUrl} alt="KTP" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                              <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                 <Eye className="h-6 w-6 text-white" />
+                              </div>
+                           </div>
+                         ) : (
+                           <div className="aspect-video w-full rounded-2xl border-2 border-dashed border-slate-800 bg-slate-900/30 flex items-center justify-center text-slate-600">
+                              <p className="text-xs">Foto KTP belum diunggah</p>
+                           </div>
+                         )}
+                      </div>
+                   </CardContent>
+                </Card>
+              </div>
+            </div>
+          </TabsContent>
+          <TabsContent value="alamat" className="space-y-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl">
+                <CardHeader className="border-b border-slate-800/50 bg-slate-900/20">
+                    <CardTitle className="flex items-center gap-2 text-lg font-bold text-white">
+                    <MapPin className="h-5 w-5 text-emerald-500" />
+                    Alamat KTP
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-8">
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-6 min-h-[120px] flex items-center">
+                    <p className="text-slate-200 leading-relaxed italic">
+                      {formatAddress(al.ktp) || "Alamat KTP belum dilengkapi."}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl">
+                <CardHeader className="border-b border-slate-800/50 bg-slate-900/20">
+                  <CardTitle className="flex items-center gap-2 text-lg font-bold text-white">
+                    <MapPin className="h-5 w-5 text-blue-500" />
+                    Alamat Domisili
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-8">
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-6 min-h-[120px] flex items-center">
+                    <p className="text-slate-200 leading-relaxed italic">
+                      {formatAddress(al.domisili) || "Alamat domisili belum dilengkapi."}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+            
+            <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl">
+               <CardHeader className="border-b border-slate-800/50">
+                  <CardTitle className="text-lg font-bold text-white flex items-center gap-2">
+                    <Phone className="h-5 w-5 text-purple-500" />
+                    Kontak Darurat
+                  </CardTitle>
+               </CardHeader>
+               <CardContent className="p-8">
+                  {contacts.length === 0 ? (
+                    <div className="text-center py-8 text-slate-500">Belum ada kontak darurat.</div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {contacts.map((c, i) => (
+                        <div key={i} className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+                           <div className="flex justify-between items-start mb-4">
+                              <h4 className="font-bold text-white text-lg">{c.name}</h4>
+                              <Badge variant="outline" className="border-slate-700 text-slate-400 uppercase text-[10px] tracking-widest">{c.relation}</Badge>
+                           </div>
+                           <div className="space-y-4">
+                              <DataRow label="Telepon" value={c.phone} />
+                              <DataRow label="Alamat" value={c.address} />
+                           </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+               </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="rekening" className="space-y-8">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              {/* Kolom Kiri: Detail Rekening */}
+              <div className="lg:col-span-2 space-y-8">
+                <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl overflow-hidden">
+                  <CardHeader className="border-b border-slate-800/50 bg-slate-900/20">
+                    <CardTitle className="flex items-center gap-2 text-lg font-bold text-white">
+                      <CreditCard className="h-5 w-5 text-blue-500" />
+                      Informasi Rekening Utama
+                    </CardTitle>
+                    <CardDescription className="text-slate-500">Data rekening yang digunakan untuk pengiriman payroll.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-8">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4">
+                      <DataRow label="Nama Bank" value={rek.bankName} />
+                      <DataRow label="Cabang Bank" value={rek.bankBranch || "N/A"} />
+                      <DataRow label="Nomor Rekening" value={rek.bankAccountNumber} className="font-mono text-lg text-blue-400" />
+                      <DataRow label="Atas Nama (Pemilik)" value={rek.bankAccountHolderName} />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl overflow-hidden">
+                  <CardHeader className="border-b border-slate-800/50 flex flex-row items-center justify-between">
+                    <div>
+                      <CardTitle className="text-lg font-bold text-white">Status Verifikasi & Catatan</CardTitle>
+                      <CardDescription className="text-slate-500">Kelola status keabsahan data rekening.</CardDescription>
+                    </div>
+                    <div className="flex gap-2">
+                       <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 px-4 py-1.5 rounded-xl">Valid / Terverifikasi</Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-8">
+                    <div className="space-y-6">
+                      <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-6">
+                         <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-3">Catatan Administrasi HRD</p>
+                         <p className="text-sm text-slate-300">
+                           {hrdInfo.catatanBenefit || "Belum ada catatan khusus mengenai payroll karyawan ini."}
+                         </p>
+                      </div>
+                      
+                      <div className="flex flex-wrap gap-3">
+                         <Button className="rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20">
+                            <CheckCircle className="h-4 w-4 mr-2" />
+                            Verifikasi Sekarang
+                         </Button>
+                         <Button variant="outline" className="rounded-xl border-slate-700 text-slate-300 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30">
+                            <AlertTriangle className="h-4 w-4 mr-2" />
+                            Minta Revisi
+                         </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Kolom Kanan: Bukti Rekening */}
+              <div className="space-y-8">
+                <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl overflow-hidden h-full">
+                  <CardHeader className="border-b border-slate-800/50 bg-slate-900/20">
+                    <CardTitle className="text-base font-bold text-white flex items-center gap-2">
+                       <ImageIcon className="h-4 w-4 text-purple-500" />
+                       Lampiran Bukti
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-8 flex flex-col items-center">
+                    {buktiRekeningUrl ? (
+                      <div className="w-full space-y-6">
+                        <div 
+                          className="relative group aspect-[3/4] w-full rounded-3xl overflow-hidden border-2 border-slate-800 bg-slate-900 shadow-2xl cursor-pointer"
+                          onClick={() => buktiRekeningUrl && window.open(buktiRekeningUrl, "_blank")}
+                        >
+                           <img 
+                            src={buktiRekeningUrl} 
+                            alt="Bukti Rekening" 
+                            className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110" 
+                           />
+                           <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center backdrop-blur-[2px]">
+                              <div className="bg-white/10 p-4 rounded-2xl backdrop-blur-md border border-white/20">
+                                 <Eye className="h-8 w-8 text-white" />
+                              </div>
+                           </div>
+                        </div>
+                        
+                        <div className="space-y-3">
+                           <p className="text-center text-xs text-slate-500 italic">Klik gambar untuk memperbesar</p>
+                           <Button 
+                            variant="outline" 
+                            className="w-full rounded-2xl border-slate-800 bg-slate-900/50 text-slate-300 hover:bg-slate-800"
+                            onClick={() => buktiRekeningUrl && window.open(buktiRekeningUrl, "_blank")}
+                           >
+                              <Download className="h-4 w-4 mr-2" />
+                              Download Dokumen
+                           </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="w-full aspect-[3/4] rounded-3xl border-2 border-dashed border-slate-800 bg-slate-900/30 flex flex-col items-center justify-center text-slate-600 p-12 text-center">
+                        <AlertTriangle className="h-12 w-12 mb-4 opacity-20" />
+                        <p className="text-sm font-bold text-slate-500 mb-1">Bukti Belum Tersedia</p>
+                        <p className="text-xs text-slate-600">Karyawan belum mengunggah foto buku tabungan atau bukti rekening.</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="pendidikan" className="space-y-8">
+            <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl">
+              <CardHeader className="border-b border-slate-800/50 bg-slate-900/20">
+                <CardTitle className="flex items-center gap-2 text-lg font-bold text-white">
+                  <GraduationCap className="h-5 w-5 text-emerald-500" />
+                  Pendidikan Terakhir
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-2">
+                  <DataRow label="Jenjang Pendidikan" value={pp.pendidikanTerakhir?.jenjang} />
+                  <DataRow label="Nama Institusi" value={pp.pendidikanTerakhir?.namaInstitusi} />
+                  <DataRow label="Jurusan / Bidang Studi" value={pp.pendidikanTerakhir?.jurusan} />
+                  <DataRow label="Tahun Lulus" value={pp.pendidikanTerakhir?.tahunLulus} />
+                  <DataRow label="IPK / Nilai Akhir" value={pp.pendidikanTerakhir?.gpa} />
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="dokumen" className="space-y-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+              {[
+                { label: "Pas Foto Profil", file: profilePhotoUrl, type: "Photo", status: profilePhotoUrl ? "Sudah Upload" : "Belum Upload" },
+                { label: "Kartu Tanda Penduduk (KTP)", file: ktpPhotoUrl, type: "Identity", value: dd.nik, status: ktpPhotoUrl ? "Sudah Upload" : (dd.nik ? "Belum Upload Bukti" : "Belum Upload") },
+                { label: "NPWP", file: npwpUrl, type: "Tax", value: docAdmin.npwp, status: getDocumentStatus(docAdmin.npwp, !docAdmin.noNpwp, npwpUrl) },
+                { label: "BPJS Kesehatan", file: bpjsKesUrl, type: "Insurance", value: docAdmin.bpjsKesehatan, status: getDocumentStatus(docAdmin.bpjsKesehatan, !docAdmin.noBpjsKesehatan, bpjsKesUrl) },
+                { label: "BPJS Ketenagakerjaan", file: bpjsKetUrl, type: "Insurance", value: docAdmin.bpjsKetenagakerjaan, status: getDocumentStatus(docAdmin.bpjsKetenagakerjaan, !docAdmin.noBpjsKetenagakerjaan, bpjsKetUrl) },
+                { label: "Ijazah Terakhir", file: ijazahUrl, type: "Education", status: ijazahUrl ? "Sudah Upload" : "Belum Upload" },
+                { label: "Bukti Rekening / Tabungan", file: buktiRekeningUrl, type: "Payroll", status: buktiRekeningUrl ? "Sudah Upload" : "Belum Upload" },
+              ].map((docItem) => (
+                <Card key={docItem.label} className="group border-slate-800 bg-slate-950/40 backdrop-blur-xl hover:border-slate-700 transition-all duration-300">
+                  <CardHeader className="pb-4 border-b border-slate-800/50">
+                    <div className="flex justify-between items-start">
+                       <Badge variant="outline" className="text-[9px] uppercase tracking-tighter border-slate-800 text-slate-500">{docItem.type}</Badge>
+                       <Badge 
+                         variant="outline" 
+                         className={`text-[9px] uppercase tracking-tighter ${
+                           docItem.status === "Valid" || docItem.status === "Sudah Upload" 
+                             ? "border-emerald-500/20 text-emerald-500 bg-emerald-500/5" 
+                             : docItem.status === "Tidak Punya"
+                               ? "border-slate-700 text-slate-500 bg-slate-800/50"
+                               : "border-red-500/20 text-red-500 bg-red-500/5"
+                         }`}
+                       >
+                         {docItem.status}
+                       </Badge>
+                    </div>
+                    <CardTitle className="text-sm font-bold text-slate-200 mt-2">{docItem.label}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-6 space-y-4">
+                     {docItem.file ? (
+                        <div className="space-y-4">
+                           {docItem.type === "Photo" || docItem.type === "Identity" || docItem.type === "Payroll" || (docItem.file && /\.(jpg|jpeg|png|webp|gif)/i.test(docItem.file)) ? (
+                              <div 
+                                className="relative aspect-video rounded-xl overflow-hidden border border-slate-800 bg-slate-900/50 cursor-pointer group-hover:ring-1 group-hover:ring-emerald-500/30 transition-all"
+                                onClick={() => docItem.file && window.open(docItem.file, "_blank")}
+                              >
+                                 <img src={docItem.file} className="h-full w-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" alt={docItem.label} />
+                              </div>
+                           ) : (
+                              <div className="aspect-video rounded-xl border border-slate-800 bg-slate-900/50 flex flex-col items-center justify-center text-slate-500">
+                                 <FileText className="h-8 w-8 mb-2 opacity-20" />
+                                 <span className="text-[10px] uppercase tracking-widest font-bold">PDF / Document</span>
+                              </div>
+                           )}
+                           <div className="flex gap-2">
+                             <Button 
+                              variant="outline" 
+                              className="flex-1 rounded-xl border-slate-800 bg-slate-900/30 text-[10px] text-slate-400 hover:text-white hover:bg-slate-800 h-9"
+                              onClick={() => docItem.file && window.open(docItem.file, "_blank")}
+                             >
+                                <Eye className="h-3 w-3 mr-2" />
+                                Lihat
+                             </Button>
+                             <Button 
+                              variant="outline" 
+                              className="flex-1 rounded-xl border-slate-800 bg-slate-900/30 text-[10px] text-slate-400 hover:text-white hover:bg-slate-800 h-9"
+                              onClick={() => {
+                                if (docItem.file) {
+                                  const link = document.createElement('a');
+                                  link.href = docItem.file;
+                                  link.download = docItem.label;
+                                  link.target = "_blank";
+                                  link.click();
+                                }
+                              }}
+                             >
+                                <Download className="h-3 w-3 mr-2" />
+                                Download
+                             </Button>
+                           </div>
+                        </div>
+                     ) : (
+                        <div className="aspect-video rounded-xl border-2 border-dashed border-slate-800 bg-slate-900/20 flex flex-col items-center justify-center text-slate-600">
+                           <AlertOctagon className="h-6 w-6 mb-2 opacity-20" />
+                           <span className="text-[10px] font-bold uppercase tracking-widest text-center px-4">
+                             {docItem.status === "Tidak Punya" ? "Karyawan Tidak Memiliki" : (docItem.label === "Ijazah Terakhir" ? "Ijazah terakhir belum diunggah karyawan." : "Belum Diunggah")}
+                           </span>
+                        </div>
+                     )}
+                  </CardContent>
+                </Card>
+              ))}
+
+            </div>
+          </TabsContent>
+
+          <TabsContent value="hrd" className="space-y-8">
+            {/* Header Dashboard HRD */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+               <div>
+                  <h3 className="text-2xl font-bold text-white tracking-tight">Administrasi Kepegawaian</h3>
+                  <p className="text-sm text-slate-500">Pusat data kepegawaian, payroll, dan riwayat karier karyawan.</p>
+               </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+              {/* 1. Struktur & Status Kerja */}
+              <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl group hover:border-emerald-500/30 transition-all duration-300">
+                <CardHeader className="border-b border-slate-800/50 flex flex-row items-center justify-between pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 border border-emerald-500/20">
+                      <Briefcase className="h-5 w-5" />
+                    </div>
+                    <CardTitle className="text-base font-bold text-white">Struktur & Status</CardTitle>
+                  </div>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10" onClick={() => setEditingSection("struktur")}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                </CardHeader>
+                <CardContent className="pt-6">
+                  <div className="grid grid-cols-1 gap-y-2">
+                    <DataRow label="Brand / Unit" value={hrdStruktur?.brandName} />
+                    <DataRow label="Divisi" value={hrdStruktur?.divisi} />
+                    <DataRow label="Jabatan" value={hrdStruktur?.jabatan} />
+                    <DataRow label="Tipe Karyawan" value={hrdStruktur?.tipeKaryawan} />
+                    <DataRow label="Status Kerja" value={hrdStruktur?.statusKerja} className={employmentStatusClass} />
+                    <DataRow label="Sistem Kerja" value={hrdStruktur?.sistemKerja} />
+                    <DataRow label="Atasan Langsung" value={hrdInfo.atasanLangsung} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* 2. Masa Kerja & Kontrak */}
+              <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl group hover:border-blue-500/30 transition-all duration-300">
+                <CardHeader className="border-b border-slate-800/50 flex flex-row items-center justify-between pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-500 border border-blue-500/20">
+                      <History className="h-5 w-5" />
+                    </div>
+                    <CardTitle className="text-base font-bold text-white">Masa Kerja & Kontrak</CardTitle>
+                  </div>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-slate-500 hover:text-blue-400 hover:bg-blue-500/10" onClick={() => setEditingSection("kontrak")}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                </CardHeader>
+                <CardContent className="pt-6">
+                  <div className="grid grid-cols-1 gap-y-2">
+                    <DataRow label="Tanggal Masuk" value={hrdInfo.tanggalMasuk || "N/A"} />
+                    <DataRow label="Tipe Kepegawaian" value={hrdStruktur?.tipeKaryawan} />
+                    
+                    {hrdStruktur?.tipeKaryawan === "Karyawan Tetap" ? (
+                      <>
+                        <DataRow label="SK Pengangkatan" value={hrdInfo.nomorSK || hrdInfo.nomorKontrakSK || "-"} />
+                        <DataRow label="Status" value="Pegawai Tetap" className="text-emerald-400 font-bold" />
+                      </>
+                    ) : (
+                      <>
+                        <DataRow label="No Kontrak / SK" value={hrdInfo.nomorKontrakSK || "-"} />
+                        <div className="grid grid-cols-2 gap-4">
+                          <DataRow label="Mulai" value={hrdInfo.kontrakMulai || "-"} />
+                          <DataRow label="Selesai" value={hrdInfo.kontrakSelesai || (hrdStruktur?.tipeKaryawan === "Karyawan Tetap" ? "Tidak terbatas" : "-")} />
+                        </div>
+                        <DataRow label="Durasi" value={hrdInfo.durasiKontrak || "-"} />
+                      </>
+                    )}
+
+                    {/* Conditional Info */}
+                    {hrdStruktur?.tipeKaryawan === "Magang" && hrdInfo.mentor && (
+                      <DataRow label="Mentor" value={hrdInfo.mentor} />
+                    )}
+                    {hrdStruktur?.tipeKaryawan === "Training" && hrdInfo.evaluator && (
+                      <DataRow label="Evaluator" value={hrdInfo.evaluator} />
+                    )}
+                    {hrdStruktur?.tipeKaryawan === "Probation" && (
+                      <DataRow label="Periode Probation" value={`${hrdInfo.masaPercobaanMulai || "?"} s/d ${hrdInfo.masaPercobaanSelesai || "?"}`} />
+                    )}
+
+                    <div className="h-px bg-slate-800/50 my-2"></div>
+                    <DataRow label="Jadwal & Lokasi" value={`${hrdInfo.hariKerja || "Senin-Jumat"} | ${hrdInfo.lokasiKerja || "Office"}`} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* 3. Payroll & Benefit */}
+              <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl group hover:border-emerald-500/30 transition-all duration-300">
+                <CardHeader className="border-b border-slate-800/50 flex flex-row items-center justify-between pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 border border-emerald-500/20">
+                      <CreditCard className="h-5 w-5" />
+                    </div>
+                    <CardTitle className="text-base font-bold text-white">Payroll & Benefit</CardTitle>
+                  </div>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10" onClick={() => setEditingSection("payroll")}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                </CardHeader>
+                <CardContent className="pt-6 space-y-4">
+                  <div className="grid grid-cols-1 gap-y-2">
+                    <DataRow label="Gaji Pokok" value={hrdInfo.gajiPokok ? `Rp ${hrdInfo.gajiPokok.toLocaleString()}` : "N/A"} />
+                    
+                    {hrdInfo.allowances && hrdInfo.allowances.length > 0 && (
+                      <div className="space-y-2 mt-2">
+                         <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Rincian Tunjangan</p>
+                         {hrdInfo.allowances.map((al: any) => (
+                           <div key={al.id} className="flex justify-between items-center text-xs py-1 border-b border-slate-800/50 last:border-0">
+                              <span className="text-slate-400">{al.name}</span>
+                              <span className="font-bold text-white">Rp {al.amount.toLocaleString()}</span>
+                           </div>
+                         ))}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-4 mt-4">
+                       <DataRow label="Bonus / Insentif" value={hrdInfo.bonusInsentif ? `Rp ${hrdInfo.bonusInsentif.toLocaleString()}` : "N/A"} />
+                       <DataRow label="THR" value={hrdInfo.thr ? `Rp ${hrdInfo.thr.toLocaleString()}` : "N/A"} />
+                    </div>
+
+                    <div className="h-px bg-slate-800/50 my-2"></div>
+                    
+                    <div className="space-y-3">
+                       <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">BPJS (Kesehatan & TK)</p>
+                       <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                          <div>
+                             <p className="text-[8px] text-slate-500 uppercase">Potongan Karyawan</p>
+                             <p className="text-xs font-bold text-red-400">Rp {((hrdInfo.bpjsKesKaryawan || 0) + (hrdInfo.bpjsTkKaryawan || 0)).toLocaleString()}</p>
+                          </div>
+                          <div>
+                             <p className="text-[8px] text-slate-500 uppercase">Beban Perusahaan</p>
+                             <p className="text-xs font-bold text-emerald-400">Rp {((hrdInfo.bpjsKesPerusahaan || 0) + (hrdInfo.bpjsTkPerusahaan || 0)).toLocaleString()}</p>
+                          </div>
+                       </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-900/40 p-4 rounded-2xl border border-slate-800/50">
+                    <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-2">Rekening Payroll</p>
+                    {hrdInfo.useDifferentPayrollAccount ? (
+                       <div className="space-y-1">
+                         <p className="text-xs font-bold text-white">{hrdInfo.customPayrollBank || "Belum diatur"}</p>
+                         <p className="text-xs text-slate-400 font-mono">{hrdInfo.customPayrollAccountNumber || "-"}</p>
+                         <p className="text-[10px] text-slate-500 italic">a.n. {hrdInfo.customPayrollAccountHolder || "-"}</p>
+                       </div>
+                    ) : (
+                       <div className="space-y-1">
+                         <p className="text-xs font-bold text-white">{rek.bankName || "N/A"}</p>
+                         <p className="text-xs text-slate-400 font-mono">{rek.bankAccountNumber || "-"}</p>
+                         <p className="text-[10px] text-slate-500 italic">a.n. {rek.bankAccountHolderName || "-"}</p>
+                       </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* 4. Kehadiran & Cuti */}
+              <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl group hover:border-purple-500/30 transition-all duration-300">
+                <CardHeader className="border-b border-slate-800/50 flex flex-row items-center justify-between pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-purple-500/10 flex items-center justify-center text-purple-500 border border-purple-500/20">
+                      <ClipboardList className="h-5 w-5" />
+                    </div>
+                    <CardTitle className="text-base font-bold text-white">Kehadiran & Cuti</CardTitle>
+                  </div>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-slate-500 hover:text-purple-400 hover:bg-purple-500/10" onClick={() => setEditingSection("cuti")}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                </CardHeader>
+                <CardContent className="pt-6">
+                  <div className="grid grid-cols-2 gap-4 mb-6">
+                    <div className="bg-slate-900/40 p-3 rounded-2xl border border-slate-800/50">
+                      <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-1">Sisa Cuti</p>
+                      <p className="text-xl font-black text-emerald-400">{hrdInfo.sisaCuti || 0} <span className="text-xs font-normal text-slate-500">Hari</span></p>
+                    </div>
+                    <div className="bg-slate-900/40 p-3 rounded-2xl border border-slate-800/50">
+                      <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-1">Jadwal</p>
+                      <p className="text-sm font-bold text-white">{hrdInfo.jadwalKerja || "N/A"}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                       <div className="p-2 rounded-xl bg-slate-900/40 border border-slate-800/50">
+                          <p className="text-[9px] text-slate-500 uppercase mb-1">Hadir</p>
+                          <p className="text-sm font-bold text-emerald-400">{hrdInfo.hadir || 0}</p>
+                       </div>
+                       <div className="p-2 rounded-xl bg-slate-900/40 border border-slate-800/50">
+                          <p className="text-[9px] text-slate-500 uppercase mb-1">Telat</p>
+                          <p className="text-sm font-bold text-amber-400">{hrdInfo.terlambat || 0}</p>
+                       </div>
+                       <div className="p-2 rounded-xl bg-slate-900/40 border border-slate-800/50">
+                          <p className="text-[9px] text-slate-500 uppercase mb-1">Izin/Sakit</p>
+                          <p className="text-sm font-bold text-blue-400">{(hrdInfo.izin || 0) + (hrdInfo.sakit || 0)}</p>
+                       </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* 5. Karier & Kinerja */}
+              <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl group hover:border-sky-500/30 transition-all duration-300 xl:col-span-2">
+                <CardHeader className="border-b border-slate-800/50 flex flex-row items-center justify-between pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-sky-500/10 flex items-center justify-center text-sky-500 border border-sky-500/20">
+                      <GraduationCap className="h-5 w-5" />
+                    </div>
+                    <CardTitle className="text-base font-bold text-white">Riwayat Karier & Kinerja</CardTitle>
+                  </div>
+                  <Button variant="outline" size="sm" className="rounded-xl border-slate-800 bg-slate-900/50 text-slate-400 hover:text-white" onClick={() => setEditingSection("tambah_riwayat")}>
+                    <Plus className="h-3.5 w-3.5 mr-2" /> Event Karier
+                  </Button>
+                </CardHeader>
+                <CardContent className="pt-8">
+                  {historyData && historyData.length > 0 ? (
+                    <div className="relative pl-6 space-y-8 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-800/50">
+                      {historyData.slice(0, 5).map((h: any) => (
+                        <div key={h.id} className="relative">
+                          <div className="absolute -left-[22px] top-1 h-4 w-4 rounded-full border-2 border-slate-900 shadow-lg bg-emerald-500"></div>
+                          <div className="flex flex-col gap-1">
+                             <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <p className="text-xs font-bold text-white uppercase tracking-wider">{h.title || h.label || h.type}</p>
+                                  <Badge variant="outline" className="text-[8px] py-0 border-slate-800 text-slate-500 uppercase">{h.type}</Badge>
+                                </div>
+                                <p className="text-[10px] text-slate-500">{h.changedAt?.toDate ? format(h.changedAt.toDate(), "dd MMM yyyy") : h.effectiveDate}</p>
+                             </div>
+                             <p className="text-xs text-slate-400 leading-relaxed">{h.newValue || h.note}</p>
+                             {h.note && h.newValue && <p className="text-[10px] text-slate-500 italic mt-1 italic">"{h.note}"</p>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-10 text-center opacity-50">
+                       <History className="h-10 w-10 text-slate-600 mb-2" />
+                       <p className="text-sm font-medium text-slate-500">Belum ada riwayat karier yang tercatat.</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* 6. Catatan Internal HRD */}
+              <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl group hover:border-red-500/30 transition-all duration-300">
+                <CardHeader className="border-b border-slate-800/50 flex flex-row items-center justify-between pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-red-500/10 flex items-center justify-center text-red-500 border border-red-500/20">
+                      <AlertOctagon className="h-5 w-5" />
+                    </div>
+                    <CardTitle className="text-base font-bold text-white">Catatan Internal</CardTitle>
+                  </div>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10" onClick={() => setEditingSection("catatan")}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                </CardHeader>
+                <CardContent className="pt-6">
+                  <div className="bg-slate-900/40 p-4 rounded-2xl border border-slate-800/50 min-h-[150px]">
+                    <p className="text-sm text-slate-400 leading-relaxed italic">
+                       {hrdInfo.catatanInternalHrd || "Catatan rahasia HRD belum diisi."}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Editing Sheets */}
+            <Sheet open={!!editingSection} onOpenChange={(open) => !open && setEditingSection(null)}>
+               <SheetContent className="sm:max-w-2xl bg-slate-950 border-slate-800 text-slate-100 overflow-y-auto">
+                  <SheetHeader className="mb-8">
+                     <SheetTitle className="text-2xl font-bold text-white flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 border border-emerald-500/20">
+                           <Pencil className="h-5 w-5" />
+                        </div>
+                        Ubah {editingSection}
+                     </SheetTitle>
+                     <SheetDescription className="text-slate-500">
+                        Pastikan data sesuai dengan Single Source of Truth (SSOT).
+                     </SheetDescription>
+                  </SheetHeader>
+
+                  <Form {...form}>
+                    <form onSubmit={form.handleSubmit((data) => {
+                       if (editingSection === 'tambah_riwayat') {
+                          handleAddCareerHistory({
+                             type: data.additionalFields?.historyType || 'promotion',
+                             title: data.additionalFields?.historyTitle || '',
+                             description: data.additionalFields?.historyDescription || '',
+                             effectiveDate: data.additionalFields?.historyDate || format(new Date(), 'yyyy-MM-dd'),
+                             notes: data.catatanAdministrasi || '',
+                          });
+                       } else {
+                          handleSaveHrd(data);
+                       }
+                    })} className="space-y-6 pb-20">
+                        {editingSection === 'struktur' && (
+                           <div className="space-y-6">
+                              <FormField control={form.control} name="brandId" render={({ field }) => (
+                                 <FormItem>
+                                    <FormLabel className="text-xs font-bold uppercase tracking-widest text-slate-500">Brand / Perusahaan</FormLabel>
+                                    <Select onValueChange={field.onChange} value={field.value}>
+                                       <FormControl><SelectTrigger className="bg-slate-900/50 border-slate-800 h-12 rounded-xl"><SelectValue placeholder="Pilih Brand" /></SelectTrigger></FormControl>
+                                       <SelectContent className="bg-slate-900 border-slate-800">{brands?.map((b) => (<SelectItem key={b.id!} value={b.id!}>{b.name}</SelectItem>))}</SelectContent>
+                                    </Select>
+                                 </FormItem>
+                              )} />
+                              <div className="grid grid-cols-2 gap-4">
+                                 <FormField control={form.control} name="divisi" render={({ field }) => (
+                                    <FormItem><FormLabel className="text-xs font-bold text-slate-500">Divisi</FormLabel><FormControl><Input {...field} className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                                 )} />
+                                 <FormField control={form.control} name="jabatan" render={({ field }) => (
+                                    <FormItem><FormLabel className="text-xs font-bold text-slate-500">Jabatan</FormLabel><FormControl><Input {...field} className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                                 )} />
+                              </div>
+                              <div className="grid grid-cols-2 gap-4">
+                                 <FormField control={form.control} name="tipeKaryawan" render={({ field }) => (
+                                    <FormItem><FormLabel className="text-xs font-bold text-slate-500">Tipe Karyawan</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger className="bg-slate-900 border-slate-800"><SelectValue /></SelectTrigger></FormControl><SelectContent className="bg-slate-900 border-slate-800">{TIPE_KARYAWAN_OPTIONS.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent></Select></FormItem>
+                                 )} />
+                                 <FormField control={form.control} name="statusKerja" render={({ field }) => (
+                                    <FormItem><FormLabel className="text-xs font-bold text-slate-500">Status Kerja</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger className="bg-slate-900 border-slate-800"><SelectValue /></SelectTrigger></FormControl><SelectContent className="bg-slate-900 border-slate-800">{STATUS_KERJA_OPTIONS.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent></Select></FormItem>
+                                 )} />
+                              </div>
+                              <FormField control={form.control} name="atasanLangsung" render={({ field }) => (
+                                 <FormItem><FormLabel className="text-xs font-bold text-slate-500">Atasan Langsung</FormLabel><FormControl><Input {...field} className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                              )} />
+                           </div>
+                        )}
+
+                        {editingSection === 'tambah_riwayat' && (
+                           <div className="space-y-6">
+                              <FormField control={form.control} name="additionalFields.historyType" render={({ field }) => (
+                                 <FormItem>
+                                    <FormLabel className="text-xs font-bold text-slate-500">Tipe Event</FormLabel>
+                                    <Select onValueChange={field.onChange} value={field.value || "promotion"}>
+                                       <FormControl><SelectTrigger className="bg-slate-900 border-slate-800"><SelectValue /></SelectTrigger></FormControl>
+                                       <SelectContent className="bg-slate-900 border-slate-800">
+                                          <SelectItem value="promotion">Promotion</SelectItem>
+                                          <SelectItem value="mutation">Mutation</SelectItem>
+                                          <SelectItem value="award">Award</SelectItem>
+                                          <SelectItem value="sanction">Sanction</SelectItem>
+                                          <SelectItem value="appraisal">Appraisal</SelectItem>
+                                          <SelectItem value="other">Other</SelectItem>
+                                       </SelectContent>
+                                    </Select>
+                                 </FormItem>
+                              )} />
+                              <FormField control={form.control} name="additionalFields.historyTitle" render={({ field }) => (
+                                 <FormItem><FormLabel className="text-xs font-bold text-slate-500">Judul Event</FormLabel><FormControl><Input {...field} value={field.value || ""} placeholder="Contoh: Kenaikan Jabatan Senior" className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                              )} />
+                              <FormField control={form.control} name="additionalFields.historyDescription" render={({ field }) => (
+                                 <FormItem><FormLabel className="text-xs font-bold text-slate-500">Deskripsi Singkat</FormLabel><FormControl><Textarea {...field} value={field.value || ""} placeholder="Detail perubahan..." className="bg-slate-900 border-slate-800 min-h-[100px]" /></FormControl></FormItem>
+                              )} />
+                              <FormField control={form.control} name="additionalFields.historyDate" render={({ field }) => (
+                                 <FormItem><FormLabel className="text-xs font-bold text-slate-500">Tanggal Efektif</FormLabel><FormControl><Input type="date" {...field} value={field.value || ""} className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                              )} />
+                           </div>
+                        )}
+
+                        {editingSection === 'catatan' && (
+                           <div className="space-y-6">
+                              <FormField control={form.control} name="catatanInternalHrd" render={({ field }) => (
+                                 <FormItem>
+                                    <FormLabel className="text-xs font-bold text-slate-500">Catatan Internal HRD (Rahasia)</FormLabel>
+                                    <FormControl><Textarea {...field} className="bg-slate-900 border-slate-800 min-h-[300px] text-sm leading-relaxed" placeholder="Masukkan catatan rahasia terkait performa, behavior, atau informasi sensitif lainnya..." /></FormControl>
+                                 </FormItem>
+                              )} />
+                           </div>
+                        )}
+
+                        {editingSection === 'kontrak' && (
+                           <div className="space-y-6">
+                              {/* 1. Tipe & Status Utama */}
+                              <div className="grid grid-cols-2 gap-4">
+                                 <FormField control={form.control} name="tipeKaryawan" render={({ field }) => (
+                                    <FormItem>
+                                       <FormLabel className="text-xs font-black text-slate-500 uppercase">Jenis Kontrak / Tipe</FormLabel>
+                                       <Select onValueChange={field.onChange} value={field.value || ""}>
+                                          <FormControl><SelectTrigger className="bg-slate-900 border-slate-800"><SelectValue /></SelectTrigger></FormControl>
+                                          <SelectContent className="bg-slate-900 border-slate-800">
+                                             {TIPE_KARYAWAN_OPTIONS.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                                          </SelectContent>
+                                       </Select>
+                                       {normalizedData?.tipeKaryawan === "Karyawan Tetap" && field.value !== "Karyawan Tetap" && (
+                                          <div className="flex items-center gap-2 mt-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                                             <AlertTriangle className="h-3 w-3 text-amber-500" />
+                                             <p className="text-[10px] text-amber-200 font-medium">Warning: Perubahan dari Tetap ke {field.value} tidak umum.</p>
+                                          </div>
+                                       )}
+                                    </FormItem>
+                                 )} />
+                                 <FormField control={form.control} name="statusKontrak" render={({ field }) => (
+                                    <FormItem>
+                                       <FormLabel className="text-xs font-black text-slate-500 uppercase">Status Siklus</FormLabel>
+                                       <Select onValueChange={field.onChange} value={field.value || ""}>
+                                          <FormControl><SelectTrigger className="bg-slate-900 border-slate-800"><SelectValue /></SelectTrigger></FormControl>
+                                          <SelectContent className="bg-slate-900 border-slate-800">
+                                             <SelectItem value="Draft">Draft</SelectItem>
+                                             <SelectItem value="Aktif">Aktif</SelectItem>
+                                             <SelectItem value="Diperpanjang">Diperpanjang</SelectItem>
+                                             <SelectItem value="Selesai">Selesai</SelectItem>
+                                             <SelectItem value="Expired">Expired</SelectItem>
+                                          </SelectContent>
+                                       </Select>
+                                    </FormItem>
+                                 )} />
+                              </div>
+
+                              {/* 2. Kondisional berdasarkan Tipe */}
+                              <div className="space-y-4 pt-4 border-t border-slate-800">
+                                 {/* Magang / Intern */}
+                                 {(form.watch("tipeKaryawan") === "Magang") && (
+                                    <>
+                                       <div className="grid grid-cols-2 gap-4">
+                                          <FormField control={form.control} name="kontrakMulai" render={({ field }) => (
+                                             <FormItem><FormLabel className="text-xs font-bold text-slate-500">Mulai Magang</FormLabel><FormControl><Input type="date" {...field} value={field.value || ""} className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                                          )} />
+                                          <FormField control={form.control} name="durasiKontrak" render={({ field }) => (
+                                             <FormItem>
+                                                <FormLabel className="text-xs font-bold text-slate-500">Durasi Magang</FormLabel>
+                                                <Select onValueChange={field.onChange} value={DURASI_OPTIONS.includes(field.value || "") ? field.value : "Custom"}>
+                                                   <FormControl><SelectTrigger className="bg-slate-900 border-slate-800"><SelectValue /></SelectTrigger></FormControl>
+                                                   <SelectContent className="bg-slate-900 border-slate-800">
+                                                      {DURASI_OPTIONS.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                                                   </SelectContent>
+                                                </Select>
+                                                {!DURASI_OPTIONS.includes(field.value || "") && field.value !== "Custom" && (
+                                                   <Input {...field} value={field.value || ""} className="mt-2 bg-slate-900 border-slate-800" placeholder="Isi durasi manual..." />
+                                                )}
+                                                {field.value === "Custom" && (
+                                                   <Input onChange={(e) => field.onChange(e.target.value)} className="mt-2 bg-slate-900 border-slate-800" placeholder="Contoh: 45 Hari" />
+                                                )}
+                                             </FormItem>
+                                          )} />
+                                       </div>
+                                       <FormField control={form.control} name="kontrakSelesai" render={({ field }) => (
+                                          <FormItem><FormLabel className="text-xs font-bold text-slate-500">Selesai Magang (Auto)</FormLabel><FormControl><Input type="date" {...field} value={field.value || ""} className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                                       )} />
+                                       <FormField control={form.control} name="mentor" render={({ field }) => (
+                                          <FormItem><FormLabel className="text-xs font-bold text-slate-500">Mentor / Pembimbing</FormLabel><FormControl><Input {...field} value={field.value || ""} placeholder="Nama Mentor" className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                                       )} />
+                                    </>
+                                 )}
+
+                                 {/* Training */}
+                                 {(form.watch("tipeKaryawan") === "Training") && (
+                                    <>
+                                       <div className="grid grid-cols-2 gap-4">
+                                          <FormField control={form.control} name="kontrakMulai" render={({ field }) => (
+                                             <FormItem><FormLabel className="text-xs font-bold text-slate-500">Mulai Training</FormLabel><FormControl><Input type="date" {...field} value={field.value || ""} className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                                          )} />
+                                          <FormField control={form.control} name="durasiKontrak" render={({ field }) => (
+                                             <FormItem>
+                                                <FormLabel className="text-xs font-bold text-slate-500">Durasi Training</FormLabel>
+                                                <Select onValueChange={field.onChange} value={DURASI_OPTIONS.includes(field.value || "") ? field.value : "Custom"}>
+                                                   <FormControl><SelectTrigger className="bg-slate-900 border-slate-800"><SelectValue /></SelectTrigger></FormControl>
+                                                   <SelectContent className="bg-slate-900 border-slate-800">
+                                                      {DURASI_OPTIONS.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                                                   </SelectContent>
+                                                </Select>
+                                             </FormItem>
+                                          )} />
+                                       </div>
+                                       <FormField control={form.control} name="kontrakSelesai" render={({ field }) => (
+                                          <FormItem><FormLabel className="text-xs font-bold text-slate-500">Selesai Training (Auto)</FormLabel><FormControl><Input type="date" {...field} value={field.value || ""} className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                                       )} />
+                                       <FormField control={form.control} name="evaluator" render={({ field }) => (
+                                          <FormItem><FormLabel className="text-xs font-bold text-slate-500">Evaluator / Penanggung Jawab</FormLabel><FormControl><Input {...field} value={field.value || ""} placeholder="Nama Evaluator" className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                                       )} />
+                                    </>
+                                 )}
+
+                                 {/* Probation */}
+                                 {(form.watch("tipeKaryawan") === "Probation") && (
+                                    <>
+                                       <div className="grid grid-cols-2 gap-4">
+                                          <FormField control={form.control} name="masaPercobaanMulai" render={({ field }) => (
+                                             <FormItem><FormLabel className="text-xs font-bold text-slate-500">Mulai Probation</FormLabel><FormControl><Input type="date" {...field} value={field.value || ""} className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                                          )} />
+                                          <FormField control={form.control} name="masaPercobaanSelesai" render={({ field }) => (
+                                             <FormItem><FormLabel className="text-xs font-bold text-slate-500">Selesai Probation</FormLabel><FormControl><Input type="date" {...field} value={field.value || ""} className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                                          )} />
+                                       </div>
+                                       <FormField control={form.control} name="tanggalEvaluasi" render={({ field }) => (
+                                          <FormItem><FormLabel className="text-xs font-bold text-slate-500">Tanggal Evaluasi Akhir</FormLabel><FormControl><Input type="date" {...field} value={field.value || ""} className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                                       )} />
+                                    </>
+                                 )}
+
+                                 {/* Kontrak */}
+                                 {(form.watch("tipeKaryawan") === "Kontrak") && (
+                                    <>
+                                       <FormField control={form.control} name="nomorKontrakSK" render={({ field }) => (
+                                          <FormItem><FormLabel className="text-xs font-bold text-slate-500">Nomor Kontrak</FormLabel><FormControl><Input {...field} value={field.value || ""} placeholder="Contoh: 001/KTR/ENV/2024" className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                                       )} />
+                                       <div className="grid grid-cols-2 gap-4">
+                                          <FormField control={form.control} name="kontrakMulai" render={({ field }) => (
+                                             <FormItem><FormLabel className="text-xs font-bold text-slate-500">Kontrak Mulai</FormLabel><FormControl><Input type="date" {...field} value={field.value || ""} className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                                          )} />
+                                          <FormField control={form.control} name="durasiKontrak" render={({ field }) => (
+                                             <FormItem>
+                                                <FormLabel className="text-xs font-bold text-slate-500">Durasi Kontrak</FormLabel>
+                                                <Select onValueChange={field.onChange} value={DURASI_OPTIONS.includes(field.value || "") ? field.value : "Custom"}>
+                                                   <FormControl><SelectTrigger className="bg-slate-900 border-slate-800"><SelectValue /></SelectTrigger></FormControl>
+                                                   <SelectContent className="bg-slate-900 border-slate-800">
+                                                      {DURASI_OPTIONS.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                                                   </SelectContent>
+                                                </Select>
+                                             </FormItem>
+                                          )} />
+                                       </div>
+                                       <FormField control={form.control} name="kontrakSelesai" render={({ field }) => (
+                                          <FormItem><FormLabel className="text-xs font-bold text-slate-500">Kontrak Selesai (Auto)</FormLabel><FormControl><Input type="date" {...field} value={field.value || ""} className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                                       )} />
+                                    </>
+                                 )}
+
+                                 {/* Karyawan Tetap */}
+                                 {(form.watch("tipeKaryawan") === "Karyawan Tetap") && (
+                                    <>
+                                       <FormField control={form.control} name="tanggalMasuk" render={({ field }) => (
+                                          <FormItem><FormLabel className="text-xs font-bold text-slate-500">Tanggal Efektif Aktif / Pengangkatan</FormLabel><FormControl><Input type="date" {...field} value={field.value || ""} className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                                       )} />
+                                       <FormField control={form.control} name="nomorSK" render={({ field }) => (
+                                          <FormItem><FormLabel className="text-xs font-bold text-slate-500">Nomor SK Pengangkatan</FormLabel><FormControl><Input {...field} value={field.value || ""} placeholder="Contoh: 001/SK-P/ENV/2024" className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                                       )} />
+                                    </>
+                                 )}
+
+                                 {/* General Schedule & Location */}
+                                 <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-800">
+                                    <FormField control={form.control} name="sistemKerja" render={({ field }) => (
+                                       <FormItem><FormLabel className="text-xs font-bold text-slate-500">Sistem Kerja</FormLabel><Select onValueChange={field.onChange} value={field.value || ""}><FormControl><SelectTrigger className="bg-slate-900 border-slate-800"><SelectValue /></SelectTrigger></FormControl><SelectContent className="bg-slate-900 border-slate-800">
+                                          <SelectItem value="WFO">WFO</SelectItem>
+                                          <SelectItem value="WFH">WFH</SelectItem>
+                                          <SelectItem value="Hybrid">Hybrid</SelectItem>
+                                          <SelectItem value="Shift">Shift</SelectItem>
+                                       </SelectContent></Select></FormItem>
+                                    )} />
+                                    <FormField control={form.control} name="lokasiKerja" render={({ field }) => (
+                                       <FormItem><FormLabel className="text-xs font-bold text-slate-500">Lokasi Kerja</FormLabel><FormControl><Input {...field} value={field.value || ""} className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                                    )} />
+                                 </div>
+                                 <FormField control={form.control} name="catatanKontrak" render={({ field }) => (
+                                    <FormItem><FormLabel className="text-xs font-bold text-slate-500">Catatan Khusus</FormLabel><FormControl><Textarea {...field} value={field.value || ""} className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                                 )} />
+                              </div>
+                           </div>
+                        )}
+
+                        {editingSection === 'payroll' && (
+                           <div className="space-y-6">
+                              <FormField control={form.control} name="gajiPokok" render={({ field }) => (
+                                 <FormItem><FormLabel className="text-xs font-bold text-slate-500">Gaji Pokok</FormLabel><FormControl><Input type="number" {...field} value={field.value || ""} onChange={e => field.onChange(Number(e.target.value))} className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                              )} />
+                              
+                              <div className="space-y-4">
+                                 <div className="flex items-center justify-between">
+                                    <p className="text-sm font-bold text-white">Daftar Tunjangan</p>
+                                    <Button type="button" variant="outline" size="sm" className="h-8 text-[10px] uppercase font-bold" onClick={() => {
+                                       const current = form.getValues("allowances") || [];
+                                       form.setValue("allowances", [...current, { id: Math.random().toString(36).substr(2, 9), name: "", category: "tetap", amount: 0, period: "bulanan" }]);
+                                    }}><Plus className="h-3 w-3 mr-1" /> Tambah</Button>
+                                 </div>
+                                 <div className="space-y-3">
+                                    {(form.watch("allowances") || []).map((al, idx) => (
+                                       <div key={al.id} className="p-4 rounded-xl border border-slate-800 bg-slate-900/30 flex flex-col gap-3">
+                                          <div className="flex items-center gap-2">
+                                             <Input placeholder="Nama Tunjangan" value={al.name} onChange={e => {
+                                                const current = [...(form.getValues("allowances") || [])];
+                                                current[idx].name = e.target.value;
+                                                form.setValue("allowances", current);
+                                             }} className="flex-1 h-9 text-sm" />
+                                             <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => {
+                                                const current = [...(form.getValues("allowances") || [])];
+                                                current.splice(idx, 1);
+                                                form.setValue("allowances", current);
+                                             }}><Trash2 className="h-4 w-4" /></Button>
+                                          </div>
+                                          <div className="grid grid-cols-2 gap-2">
+                                             <Select value={al.category} onValueChange={val => {
+                                                const current = [...(form.getValues("allowances") || [])];
+                                                current[idx].category = val as any;
+                                                form.setValue("allowances", current);
+                                             }}>
+                                                <SelectTrigger className="h-8 text-[10px]"><SelectValue /></SelectTrigger>
+                                                <SelectContent className="bg-slate-900"><SelectItem value="tetap">Tetap</SelectItem><SelectItem value="tidak_tetap">Tidak Tetap</SelectItem><SelectItem value="fasilitas">Fasilitas</SelectItem></SelectContent>
+                                             </Select>
+                                             <Input type="number" placeholder="Nominal" value={al.amount || ""} onChange={e => {
+                                                const current = [...(form.getValues("allowances") || [])];
+                                                current[idx].amount = Number(e.target.value);
+                                                form.setValue("allowances", current);
+                                             }} className="h-8 text-sm" />
+                                          </div>
+                                       </div>
+                                    ))}
+                                 </div>
+                              </div>
+
+                              <div className="h-px bg-slate-800 my-4"></div>
+
+                              <div className="grid grid-cols-2 gap-4">
+                                 <FormField control={form.control} name="bpjsKesKaryawan" render={({ field }) => (
+                                    <FormItem><FormLabel className="text-[10px] font-bold text-slate-500 uppercase">BPJS Kes (Karyawan)</FormLabel><FormControl><Input type="number" {...field} value={field.value || ""} onChange={e => field.onChange(Number(e.target.value))} className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                                 )} />
+                                 <FormField control={form.control} name="bpjsKesPerusahaan" render={({ field }) => (
+                                    <FormItem><FormLabel className="text-[10px] font-bold text-slate-500 uppercase">BPJS Kes (Persh)</FormLabel><FormControl><Input type="number" {...field} value={field.value || ""} onChange={e => field.onChange(Number(e.target.value))} className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                                 )} />
+                              </div>
+                              <div className="grid grid-cols-2 gap-4">
+                                 <FormField control={form.control} name="bpjsTkKaryawan" render={({ field }) => (
+                                    <FormItem><FormLabel className="text-[10px] font-bold text-slate-500 uppercase">BPJS TK (Karyawan)</FormLabel><FormControl><Input type="number" {...field} value={field.value || ""} onChange={e => field.onChange(Number(e.target.value))} className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                                 )} />
+                                 <FormField control={form.control} name="bpjsTkPerusahaan" render={({ field }) => (
+                                    <FormItem><FormLabel className="text-[10px] font-bold text-slate-500 uppercase">BPJS TK (Persh)</FormLabel><FormControl><Input type="number" {...field} value={field.value || ""} onChange={e => field.onChange(Number(e.target.value))} className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                                 )} />
+                              </div>
+
+                              <div className="grid grid-cols-3 gap-4">
+                                 <FormField control={form.control} name="thr" render={({ field }) => (
+                                    <FormItem><FormLabel className="text-[10px] font-bold text-slate-500 uppercase">THR</FormLabel><FormControl><Input type="number" {...field} value={field.value || ""} onChange={e => field.onChange(Number(e.target.value))} className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                                 )} />
+                                 <FormField control={form.control} name="potonganPPh21" render={({ field }) => (
+                                    <FormItem><FormLabel className="text-[10px] font-bold text-slate-500 uppercase">PPh 21</FormLabel><FormControl><Input type="number" {...field} value={field.value || ""} onChange={e => field.onChange(Number(e.target.value))} className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                                 )} />
+                                 <FormField control={form.control} name="potonganLain" render={({ field }) => (
+                                    <FormItem><FormLabel className="text-[10px] font-bold text-slate-500 uppercase">Potongan Lain</FormLabel><FormControl><Input type="number" {...field} value={field.value || ""} onChange={e => field.onChange(Number(e.target.value))} className="bg-slate-900 border-slate-800" /></FormControl></FormItem>
+                                 )} />
+                              </div>
+                           </div>
+                        )}
+
+                        <div className="pt-6 border-t border-slate-800 space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <FormField control={form.control} name="tanggalEfektif" render={({ field }) => (
+                                   <FormItem>
+                                      <FormLabel className="text-xs font-black text-blue-500 uppercase">Tanggal Efektif Perubahan</FormLabel>
+                                      <FormControl><Input type="date" {...field} className="bg-blue-500/5 border-blue-500/20" /></FormControl>
+                                   </FormItem>
+                                )} />
+                                <FormField control={form.control} name="catatanAdministrasi" render={({ field }) => (
+                                   <FormItem>
+                                      <FormLabel className="text-xs font-black text-amber-500 uppercase">Alasan Perubahan (Log Audit)</FormLabel>
+                                      <FormControl><Input {...field} required className="bg-amber-500/5 border-amber-500/20" placeholder="Contoh: Penyesuaian Gaji Tahunan" /></FormControl>
+                                   </FormItem>
+                                )} />
+                            </div>
+                            <div className="flex gap-3 pt-4">
+                               <Button type="button" variant="ghost" className="flex-1 h-12" onClick={() => setEditingSection(null)}>Batal</Button>
+                               <Button type="submit" disabled={isSaving} className="flex-1 h-12 bg-emerald-600 hover:bg-emerald-500">{isSaving ? "Menyimpan..." : "Simpan Data"}</Button>
+                            </div>
+                        </div>
+                    </form>
+                  </Form>
+               </SheetContent>
+            </Sheet>
+          </TabsContent>
+
+          <TabsContent value="riwayat">
+             {/* Extended History View */}
+             <Card className="border-slate-800 bg-slate-950/40">
+                <CardHeader className="border-b border-slate-800/50">
+                   <CardTitle className="text-lg font-bold">Audit Trail Lengkap</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                   <Table>
+                      <TableHeader className="bg-slate-900/50">
+                         <TableRow className="border-slate-800/50">
+                            <TableHead className="text-[10px] uppercase font-black text-slate-500 h-10 px-6">Waktu</TableHead>
+                            <TableHead className="text-[10px] uppercase font-black text-slate-500 h-10">Tipe</TableHead>
+                            <TableHead className="text-[10px] uppercase font-black text-slate-500 h-10">Perubahan</TableHead>
+                            <TableHead className="text-[10px] uppercase font-black text-slate-500 h-10">Alasan / Catatan</TableHead>
+                            <TableHead className="text-[10px] uppercase font-black text-slate-500 h-10 text-right px-6">Admin</TableHead>
+                         </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {historyData?.map((h: any) => (
+                          <TableRow key={h.id} className="border-slate-800/50 hover:bg-slate-900/30">
+                            <TableCell className="px-6 text-[10px] text-slate-500 font-mono">
+                               {h.changedAt?.toDate ? format(h.changedAt.toDate(), "dd/MM/yyyy HH:mm") : "-"}
+                            </TableCell>
+                            <TableCell>
+                               <Badge variant="outline" className="text-[9px] uppercase border-slate-800 text-slate-500">{h.type}</Badge>
+                            </TableCell>
+                            <TableCell className="text-xs">
+                               {h.label ? (
+                                 <p><span className="text-slate-500">{h.label}:</span> <span className="text-white font-medium">{h.oldValue}</span> → <span className="text-emerald-400 font-bold">{h.newValue}</span></p>
+                               ) : h.title}
+                            </TableCell>
+                            <TableCell className="text-[11px] text-slate-400 italic">"{h.note || "-"}"</TableCell>
+                            <TableCell className="px-6 text-right text-[10px] font-bold text-slate-300">{h.changedByName}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                   </Table>
+                </CardContent>
+             </Card>
+          </TabsContent>
+        </div>
+      </Tabs>
+    </main>
+  </div>
+</div>
+  );
+}
+

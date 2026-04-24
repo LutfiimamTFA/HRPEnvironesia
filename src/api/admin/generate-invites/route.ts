@@ -61,8 +61,8 @@ export async function POST(req: NextRequest) {
         totalSlots: quantity,
         claimedSlots: 0,
         createdBy: decodedToken.uid,
-        createdAt: now,
-        updatedAt: now,
+        createdAt: now as any,
+        updatedAt: now as any,
     };
     
     await batchRef.set(batchData);

@@ -36,6 +36,7 @@ import {
 import type { UserProfile, EmployeeProfile } from "@/lib/types";
 import { format } from "date-fns";
 import { parseDateValue } from "@/lib/utils";
+import { calculateProfileCompleteness } from "@/lib/employee-completeness";
 
 const SectionTitle = ({
   children,
@@ -260,110 +261,15 @@ export function EmployeeProfileDisplay({
     );
   })();
 
-  const calculateCompleteness = () => {
-    const blocks = [];
-    let completedMandatoryCount = 0;
-    const totalMandatoryCount = 6;
-
-    // 1. Data Diri & Identitas
-    const isIdenComplete = Boolean(
-      iden.fullName &&
-      iden.phone &&
-      iden.gender &&
-      iden.birthPlace &&
-      iden.birthDate &&
-      iden.maritalStatus &&
-      iden.religion &&
-      iden.nationality,
-    );
-    blocks.push({
-      name: "Data Diri & Identitas",
-      isComplete: isIdenComplete,
-      mandatory: true,
-    });
-    if (isIdenComplete) completedMandatoryCount++;
-
-    // 2. Alamat — accept new structured format OR legacy addressCurrent
-    const isAddrComplete = Boolean(
-      addr.ktp?.provinsi?.id || addr.addressCurrent,
-    );
-    blocks.push({
-      name: "Alamat",
-      isComplete: isAddrComplete,
-      mandatory: true,
-    });
-    if (isAddrComplete) completedMandatoryCount++;
-
-    // 3. Dokumen Administratif
-    const isNpwpComplete =
-      docAdmin.noNpwp ||
-      docAdmin.npwpFilePending ||
-      (docAdmin.npwp && docAdmin.npwpPhotoUrl);
-    const isBpjsKesComplete =
-      docAdmin.noBpjsKesehatan ||
-      docAdmin.bpjsKesehatanFilePending ||
-      (docAdmin.bpjsKesehatan && docAdmin.bpjsKesehatanPhotoUrl);
-    const isBpjsTkComplete =
-      docAdmin.noBpjsKetenagakerjaan ||
-      docAdmin.bpjsKetenagakerjaanFilePending ||
-      (docAdmin.bpjsKetenagakerjaan && docAdmin.bpjsKetenagakerjaanPhotoUrl);
-    const isDocAdminComplete = Boolean(
-      isNpwpComplete && isBpjsKesComplete && isBpjsTkComplete,
-    );
-    blocks.push({
-      name: "Dokumen Administratif",
-      isComplete: isDocAdminComplete,
-      mandatory: true,
-    });
-    if (isDocAdminComplete) completedMandatoryCount++;
-
-    // 4. Data Rekening & Finansial
-    const isRekComplete = Boolean(rek.bankName);
-    blocks.push({
-      name: "Data Rekening & Finansial",
-      isComplete: isRekComplete,
-      mandatory: true,
-    });
-    if (isRekComplete) completedMandatoryCount++;
-
-    // 5. Data Keluarga & Tanggungan (Membutuhkan minimal 1 kontak darurat utama)
-    const hasEmergency = contacts.some((c: any) => c.priority === "Utama");
-    blocks.push({
-      name: "Data Keluarga & Tanggungan",
-      isComplete: hasEmergency,
-      mandatory: true,
-    });
-    if (hasEmergency) completedMandatoryCount++;
-
-    // 6. Pendidikan Terakhir
-    const pendTerakhir = pp.pendidikanTerakhir || {};
-    const isPendTerakhirComplete = Boolean(
-      pendTerakhir.jenjang &&
-      pendTerakhir.namaInstitusi &&
-      pendTerakhir.jurusan &&
-      pendTerakhir.tahunLulus,
-    );
-    blocks.push({
-      name: "Pendidikan Terakhir",
-      isComplete: isPendTerakhirComplete,
-      mandatory: true,
-    });
-    if (isPendTerakhirComplete) completedMandatoryCount++;
-
-    return {
-      completedMandatoryCount,
-      totalMandatoryCount,
-      isFullyComplete: completedMandatoryCount === totalMandatoryCount,
-      percentage: Math.round(
-        (completedMandatoryCount / totalMandatoryCount) * 100,
-      ),
-      missingBlocks: blocks
-        .filter((b) => b.mandatory && !b.isComplete)
-        .map((b) => b.name),
-    };
+  // Use SSOT helper — same calculation as HRD view
+  const _completeness = calculateProfileCompleteness(employeeProfile);
+  const completeness = {
+    completedMandatoryCount: _completeness.sections.filter((s) => s.mandatory && s.isComplete).length,
+    totalMandatoryCount: _completeness.sections.filter((s) => s.mandatory).length,
+    isFullyComplete: _completeness.status === "complete",
+    percentage: _completeness.percentage,
+    missingBlocks: _completeness.sections.filter((s) => s.mandatory && !s.isComplete).map((s) => s.name),
   };
-
-  const completeness = calculateCompleteness();
 
   return (
     <div className="space-y-8 pb-12 animate-in fade-in duration-700">

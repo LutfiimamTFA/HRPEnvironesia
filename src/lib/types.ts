@@ -265,6 +265,14 @@ export type EmployeeProfile = {
     bankDocumentUrl?: string;
   };
 
+  // --- Bank Account and Payroll Account ---
+  bankAccount?: {
+    photoUrl?: string;
+  };
+  payrollAccount?: {
+    proofUrl?: string;
+  };
+
   // --- Keluarga & Tanggungan ---
   dataKeluarga?: DataKeluarga;
 
@@ -388,6 +396,108 @@ export type EmployeeProfile = {
   hrdNotes?: string;
   internalNotes?: string;
   additionalFields?: Record<string, any>;
+  hrdEmploymentInfo?: HrdEmploymentInfo;
+};
+
+export type AllowanceItem = {
+  id: string;
+  name: string;
+  category: "tetap" | "tidak_tetap" | "tahunan" | "fasilitas";
+  amount: number;
+  period: "bulanan" | "harian" | "tahunan" | "sekali_bayar";
+  note?: string;
+};
+
+export type EmploymentHistory = {
+  id?: string;
+  type: "promotion" | "mutation" | "status_change" | "payroll_update" | "appraisal" | "award" | "sanction" | "other";
+  field?: string;
+  oldValue?: any;
+  newValue?: any;
+  note: string;
+  effectiveDate: string;
+  changedAt: Timestamp;
+  changedBy: string; // Admin UID
+  changedByName?: string;
+};
+
+export type HrdEmploymentInfo = {
+  jabatan?: string;
+  divisi?: string;
+  brand?: string;
+  brandId?: string;
+  statusKerja?: string;
+  tipeKaryawan?: string;
+  tanggalMasuk?: string;
+  nomorKontrakSK?: string;
+  masaPercobaanMulai?: string;
+  masaPercobaanSelesai?: string;
+  masaPercobaan?: string; // Duration or notes
+  kontrakMulai?: string;
+  kontrakSelesai?: string;
+  durasiKontrak?: string;
+  statusKontrak?: string;
+  catatanKontrak?: string;
+  contractDocumentUrl?: string;
+  mentor?: string;
+  evaluator?: string;
+  tanggalEvaluasi?: string;
+  nomorSK?: string;
+  hariKerja?: string;
+  jamKerja?: string;
+  sistemKerja?: string;
+  lokasiKerja?: string;
+  gajiPokok?: number;
+  tunjanganTetap?: number;
+  tunjanganTidakTetap?: number;
+  allowances?: AllowanceItem[];
+  bonusInsentif?: number;
+  thr?: number;
+  potonganBPJSKes?: number; // Legacy
+  potonganBPJSTK?: number; // Legacy
+  
+  // Granular BPJS
+  bpjsKesPerusahaan?: number;
+  bpjsKesKaryawan?: number;
+  bpjsTkPerusahaan?: number;
+  bpjsTkKaryawan?: number;
+  
+  potonganPPh21?: number;
+  potonganLain?: number;
+  catatanPayroll?: string;
+
+  // Kehadiran & Cuti
+  jadwalKerja?: string;
+  shift?: string;
+  hadir?: number;
+  terlambat?: number;
+  izin?: number;
+  sakit?: number;
+  alpha?: number;
+  jatahCuti?: number;
+  sisaCuti?: number;
+
+  // Payroll Account Override
+  useDifferentPayrollAccount?: boolean;
+  customPayrollBank?: string;
+  customPayrollAccountNumber?: string;
+  customPayrollAccountHolder?: string;
+  customPayrollBankBookUrl?: string;
+  
+  atasanLangsung?: string;
+  asetPerusahaan?: string;
+  catatanBenefit?: string;
+  catatanInternalHrd?: string;
+  catatanAdministrasi?: string;
+  tanggalEfektif?: string;
+  additionalFields?: {
+    historyType?: string;
+    historyTitle?: string;
+    historyDescription?: string;
+    historyDate?: string;
+  };
+  updatedAt?: Timestamp;
+  updatedBy?: string;
 };
 
 export type Brand = {
