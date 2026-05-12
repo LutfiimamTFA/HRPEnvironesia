@@ -41,6 +41,9 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import {
+  getStorage,
+  ref,
+  uploadBytesResumable,
   getDownloadURL,
 } from "firebase/storage";
 import { 
@@ -230,7 +233,7 @@ export function OfferingTemplateDialog({
     uploadTask.on(
       "state_changed",
       null,
-      (error) => {
+      (error: Error) => {
         handleStorageError(error);
         setIsUploading(false);
       },

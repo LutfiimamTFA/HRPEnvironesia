@@ -7,7 +7,7 @@ import { UserProfile, EmployeeProfile } from "./types";
  * 1. employee_profiles.photoUrl
  * 2. employee_profiles.profilePhotoUrl (legacy/form field)
  * 3. employee_profiles.avatarUrl
- * 4. userProfile.photoURL (Firestore users collection)
+ * 4. userProfile.photoUrl (Firestore users collection)
  * 5. authUser.photoURL (Firebase Auth)
  */
 export function getEmployeePhotoUrl(
@@ -29,7 +29,7 @@ export function getEmployeePhotoUrl(
   }
 
   // 2. Try from userProfile (sync source)
-  if (userProfile?.photoURL) return userProfile.photoURL;
+  if (userProfile?.photoUrl) return userProfile.photoUrl;
 
   // 3. Try from authUser
   if (authUser?.photoURL) return authUser.photoURL;
