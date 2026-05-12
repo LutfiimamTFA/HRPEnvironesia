@@ -128,50 +128,70 @@ export async function POST(req: NextRequest) {
     const brandId = formData.get("brandId") as string;
 
     if (!file) {
-      return NextResponse.json({ message: "File tidak ditemukan" }, { status: 400 });
+      return NextResponse.json({ success: false, message: "File tidak ditemukan" }, { status: 400 });
     }
 
     if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json({ message: "Ukuran file melebihi 1 MB" }, { status: 400 });
+      return NextResponse.json({ success: false, message: "Ukuran file melebihi 1 MB" }, { status: 400 });
     }
 
-    // Google Drive Authentication
+    // Google Drive Authentication ENV
+    console.log("Google Drive ENV Check:", {
+      hasClientEmail: !!process.env.GOOGLE_DRIVE_CLIENT_EMAIL,
+      hasPrivateKey: !!process.env.GOOGLE_DRIVE_PRIVATE_KEY,
+      hasRootFolderId: !!process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID,
+      privateKeyLength: process.env.GOOGLE_DRIVE_PRIVATE_KEY?.length || 0,
+    });
+
     const clientEmail = process.env.GOOGLE_DRIVE_CLIENT_EMAIL;
     const privateKeyRaw = process.env.GOOGLE_DRIVE_PRIVATE_KEY;
     const rootFolderId = process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
 
-    // Debugging environment variables
+    // Detailed server-side check
     if (!clientEmail || !privateKeyRaw || !rootFolderId) {
-      const missing = [];
-      if (!clientEmail) missing.push("GOOGLE_DRIVE_CLIENT_EMAIL");
-      if (!privateKeyRaw) missing.push("GOOGLE_DRIVE_PRIVATE_KEY");
-      if (!rootFolderId) missing.push("GOOGLE_DRIVE_ROOT_FOLDER_ID");
-      
-      console.error(`Missing Google Drive environment variables: ${missing.join(", ")}`);
+      console.error("CRITICAL: Missing Google Drive credentials at runtime");
+    }
+
+    // 1. Check for missing ENV
+    const missingEnv: string[] = [];
+    if (!clientEmail) missingEnv.push("GOOGLE_DRIVE_CLIENT_EMAIL");
+    if (!privateKeyRaw) missingEnv.push("GOOGLE_DRIVE_PRIVATE_KEY");
+    if (!rootFolderId) missingEnv.push("GOOGLE_DRIVE_ROOT_FOLDER_ID");
+
+    if (missingEnv.length > 0) {
       return NextResponse.json({ 
-        message: "Konfigurasi storage server bermasalah", 
-        error: `Missing: ${missing.join(", ")}`
+        success: false,
+        message: "Konfigurasi Google Drive belum lengkap",
+        missingEnv: missingEnv
       }, { status: 500 });
     }
 
-    // Process private key for multiline support
-    const privateKey = privateKeyRaw.replace(/\\n/g, "\n");
+    // 2. Check for placeholder values
+    if (privateKeyRaw && (privateKeyRaw.includes("ISI_PRIVATE_KEY") || privateKeyRaw.includes("PLACEHOLDER"))) {
+      return NextResponse.json({ 
+        success: false,
+        message: "GOOGLE_DRIVE_PRIVATE_KEY masih placeholder"
+      }, { status: 500 });
+    }
+
+    // Process private key
+    const privateKey = privateKeyRaw!.replace(/\\n/g, "\n");
 
     const auth = new google.auth.JWT({
       email: clientEmail,
       key: privateKey,
-      scopes: ["https://www.googleapis.com/auth/drive.file"],
+      scopes: ["https://www.googleapis.com/auth/drive"],
     });
 
     const drive = google.drive({ version: "v3", auth });
 
     // Resolve target folder (Stage 2)
-    let targetFolderId = rootFolderId;
+    let targetFolderId = rootFolderId!;
     let driveFolderPath = "/";
     
     try {
       if (category) {
-        const resolved = await resolveDrivePath(drive, rootFolderId, category, {
+        const resolved = await resolveDrivePath(drive, rootFolderId!, category, {
           ownerUid,
           applicationId,
           brandId,
@@ -182,8 +202,9 @@ export async function POST(req: NextRequest) {
     } catch (err: any) {
       console.error("Folder resolution error:", err);
       return NextResponse.json({ 
+        success: false,
         message: `Gagal memproses folder tujuan: ${err.message}`,
-        details: "Pastikan Folder ID di ENV benar dan Service Account memiliki akses 'Editor'."
+        details: "Pastikan Folder ID benar dan Service Account memiliki akses 'Editor'."
       }, { status: 400 });
     }
 
@@ -208,6 +229,7 @@ export async function POST(req: NextRequest) {
     const driveFile = driveResponse.data;
 
     return NextResponse.json({
+      success: true,
       fileId: driveFile.id,
       fileName: driveFile.name,
       fileSize: parseInt(driveFile.size || "0"),
@@ -219,23 +241,25 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error("Google Drive Upload Error:", error);
+    console.error("Google Drive Upload API Error:", error);
     
     let message = "Terjadi kesalahan server saat upload";
     let status = 500;
 
-    if (error.message?.includes("invalid_grant")) {
-      message = "Google Auth Failed: Credential atau Private Key tidak valid";
+    if (error.message?.includes("invalid_grant") || error.message?.includes("PEM routines")) {
+      message = "Google Drive Error: Private Key tidak valid atau salah format";
     } else if (error.message?.includes("access_denied") || error.code === 403) {
-      message = "Google Drive Access Denied: Service Account tidak memiliki izin ke folder ini";
+      message = "Google Drive Access Denied. Cek apakah service account sudah Editor pada root folder dan scope API menggunakan https://www.googleapis.com/auth/drive.";
     } else if (error.message?.includes("File not found") || error.code === 404) {
       message = "Google Drive Error: Root folder ID tidak ditemukan atau tidak valid";
     } else if (error.code === 'ENOTFOUND') {
       message = "Network Error: Tidak dapat menghubungi server Google API";
+    } else {
+      message = error.message || message;
     }
 
     return NextResponse.json(
-      { message, error: error.message },
+      { success: false, message, error: error.message },
       { status: status }
     );
   }

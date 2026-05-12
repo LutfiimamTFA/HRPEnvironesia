@@ -58,7 +58,7 @@ export async function uploadFile(
 
   // 2. Compression (if enabled)
   let processedFile = file;
-  if (options.compress !== false) {
+  if (options.compress !== false && file.type.startsWith('image/')) {
     processedFile = await compressImage(file);
   }
 
@@ -113,16 +113,29 @@ async function uploadToGoogleDrive(
     body: formData,
   });
 
+  const data = await response.json().catch(() => null);
+
   if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || "Gagal upload ke Google Drive");
+    let errorMessage = data?.message || data?.error || data?.details || "Gagal upload ke Google Drive";
+    
+    // Add missing ENV details if provided
+    if (data?.missingEnv && Array.isArray(data.missingEnv)) {
+      errorMessage += ` (Missing ENV: ${data.missingEnv.join(", ")})`;
+    }
+    
+    throw new Error(errorMessage);
   }
 
-  const result = await response.json();
-  
   return {
-    ...result,
     storageProvider: "googleDrive",
-    uploadedAt: serverTimestamp(), // Sync with Firestore timestamp logic
+    fileId: data.fileId,
+    fileName: data.fileName,
+    fileSize: data.fileSize,
+    fileType: data.fileType,
+    driveFolderId: data.driveFolderId,
+    driveFolderPath: data.driveFolderPath,
+    webViewLink: data.webViewLink,
+    uploadedAt: new Date().toISOString(),
+    uploadedBy: data.uploadedBy,
   };
 }
