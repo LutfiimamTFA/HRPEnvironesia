@@ -4,10 +4,10 @@ import admin from "@/lib/firebase/admin";
 
 /**
  * GET /api/storage/view?fileId={fileId}
- * 
+ *
  * Proxies Google Drive files through the server so users can view
  * private Drive files without needing the Drive owner's Google account.
- * 
+ *
  * Access control:
  * - User must be authenticated (Firebase ID token in cookie/header)
  * - Super Admin / HRD can view all documents
@@ -25,8 +25,9 @@ export async function GET(req: NextRequest) {
     let userRole: string | null = null;
 
     const authHeader = req.headers.get("authorization");
-    const cookieToken = req.cookies.get("firebase-token")?.value 
-      || req.cookies.get("__session")?.value;
+    const cookieToken =
+      req.cookies.get("firebase-token")?.value ||
+      req.cookies.get("__session")?.value;
     const token = authHeader?.replace("Bearer ", "") || cookieToken;
 
     if (token) {
@@ -39,44 +40,82 @@ export async function GET(req: NextRequest) {
     }
 
     if (!uid) {
-      return new NextResponse("Unauthorized. Please login to HRP.", { status: 401 });
+      return new NextResponse("Unauthorized. Please login to HRP.", {
+        status: 401,
+      });
     }
 
     // --- ROLE CHECK: Get user role from Firestore ---
     try {
-      const userDoc = await admin.firestore().collection("users").doc(uid).get();
+      const userDoc = await admin
+        .firestore()
+        .collection("users")
+        .doc(uid)
+        .get();
       const userData = userDoc.data();
       userRole = userData?.role || userData?.roles?.[0] || "employee";
     } catch {
       userRole = "employee";
     }
 
-    const isPrivileged = userRole === "Super Admin" 
-      || userRole === "superadmin"
-      || userRole === "HRD" 
-      || userRole === "hrd"
-      || userRole === "admin";
+    const isPrivileged =
+      userRole === "Super Admin" ||
+      userRole === "superadmin" ||
+      userRole === "HRD" ||
+      userRole === "hrd" ||
+      userRole === "admin";
 
     // For non-privileged users, verify they own the file
     if (!isPrivileged) {
+      let hasAccess = false;
+
+      // 1. Check employee_profiles (employee documents)
       try {
-        // Check if this fileId belongs to the user's employee_profiles
-        const profileDoc = await admin.firestore()
+        const profileDoc = await admin
+          .firestore()
           .collection("employee_profiles")
           .doc(uid)
           .get();
         const profileData = profileDoc.data();
-        
+
         if (profileData) {
           const profileJson = JSON.stringify(profileData);
-          if (!profileJson.includes(fileId)) {
-            return new NextResponse("Forbidden. You don't have access to this file.", { status: 403 });
+          if (profileJson.includes(fileId)) {
+            hasAccess = true;
           }
-        } else {
-          return new NextResponse("Forbidden. Profile not found.", { status: 403 });
         }
       } catch {
-        return new NextResponse("Forbidden. Access check failed.", { status: 403 });
+        // Continue to next check
+      }
+
+      // 2. Check applications (candidate documents)
+      if (!hasAccess) {
+        try {
+          const applicationsSnap = await admin
+            .firestore()
+            .collection("applications")
+            .where("candidateUid", "==", uid)
+            .limit(100)
+            .get();
+
+          for (const appDoc of applicationsSnap.docs) {
+            const appData = appDoc.data();
+            const appJson = JSON.stringify(appData);
+            if (appJson.includes(fileId)) {
+              hasAccess = true;
+              break;
+            }
+          }
+        } catch {
+          // Continue
+        }
+      }
+
+      if (!hasAccess) {
+        return new NextResponse(
+          "Forbidden. You don't have access to this file.",
+          { status: 403 },
+        );
       }
     }
 
@@ -85,7 +124,9 @@ export async function GET(req: NextRequest) {
     const privateKeyRaw = process.env.GOOGLE_DRIVE_PRIVATE_KEY;
 
     if (!clientEmail || !privateKeyRaw) {
-      return new NextResponse("Server storage credentials not configured", { status: 500 });
+      return new NextResponse("Server storage credentials not configured", {
+        status: 500,
+      });
     }
 
     const privateKey = privateKeyRaw.replace(/\\n/g, "\n");
@@ -109,7 +150,7 @@ export async function GET(req: NextRequest) {
     // Download file content
     const response = await drive.files.get(
       { fileId, alt: "media", supportsAllDrives: true },
-      { responseType: "arraybuffer" }
+      { responseType: "arraybuffer" },
     );
 
     const buffer = Buffer.from(response.data as ArrayBuffer);
@@ -123,7 +164,6 @@ export async function GET(req: NextRequest) {
         "X-Content-Type-Options": "nosniff",
       },
     });
-
   } catch (error: any) {
     console.error("[/api/storage/view] Error:", error.message);
     if (error.code === 404) {

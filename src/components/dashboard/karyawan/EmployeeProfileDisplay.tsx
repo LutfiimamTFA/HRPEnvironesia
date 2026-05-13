@@ -37,6 +37,7 @@ import type { UserProfile, EmployeeProfile } from "@/lib/types";
 import { format } from "date-fns";
 import { parseDateValue } from "@/lib/utils";
 import { calculateProfileCompleteness } from "@/lib/employee-completeness";
+import { SecureDriveImage } from "@/components/SecureDriveImage";
 
 const SectionTitle = ({
   children,
@@ -285,23 +286,28 @@ export function EmployeeProfileDisplay({
       .map((s) => s.name),
   };
 
+  // Safe file/url helper for image sources
+  const safeSrc = (src?: unknown): string | null =>
+    typeof src === "string" && src.trim().length > 0 ? src.trim() : null;
+
   // Extract profile photo fileId from metadata or viewUrl
-  const getProfilePhotoUrl = () => {
+  const extractProfilePhotoFileId = (): string | null => {
     const file = (iden as any)?.profilePhotoFile;
-    if (file?.fileId) {
-      return `/api/storage/view?fileId=${file.fileId}`;
+    const profilePhotoFileId = safeSrc(file?.fileId);
+    if (profilePhotoFileId) {
+      return profilePhotoFileId;
     }
-    if (iden.profilePhotoUrl) {
-      // Try to extract fileId from /api/storage/view?fileId=...
-      const match = iden.profilePhotoUrl.match(/fileId=([a-zA-Z0-9_-]+)/);
+    const safeProfilePhotoUrl = safeSrc(iden.profilePhotoUrl);
+    if (safeProfilePhotoUrl) {
+      const match = safeProfilePhotoUrl.match(/fileId=([a-zA-Z0-9_-]+)/);
       if (match?.[1]) {
-        return `/api/storage/view?fileId=${match[1]}`;
+        return match[1].trim();
       }
     }
     return null;
   };
 
-  const profilePhotoUrl = getProfilePhotoUrl();
+  const profilePhotoFileId = safeSrc(extractProfilePhotoFileId());
 
   return (
     <div className="space-y-8 pb-12 animate-in fade-in duration-700">
@@ -311,20 +317,18 @@ export function EmployeeProfileDisplay({
         <div className="relative flex flex-col md:flex-row items-center gap-8 md:gap-10">
           <div className="relative group/avatar">
             <Avatar className="h-32 w-32 md:h-40 md:w-40 rounded-[2.5rem] border-4 border-slate-800 shadow-2xl transition-all duration-500 group-hover/avatar:scale-[1.02] group-hover/avatar:border-primary/30">
-              {profilePhotoUrl && (
-                <img
-                  src={profilePhotoUrl}
+              {profilePhotoFileId ? (
+                <SecureDriveImage
+                  fileId={profilePhotoFileId}
                   alt="Profile Photo"
                   className="w-full h-full object-cover rounded-[2.5rem]"
-                  onError={(e) => {
-                    // Let AvatarFallback handle the display on error
-                    (e.target as HTMLImageElement).style.display = "none";
-                  }}
+                  fallbackIcon={<User className="h-16 w-16 text-slate-400" />}
                 />
+              ) : (
+                <AvatarFallback className="bg-slate-800 text-slate-400">
+                  <User className="h-16 w-16" />
+                </AvatarFallback>
               )}
-              <AvatarFallback className="bg-slate-800 text-slate-400">
-                <User className="h-16 w-16" />
-              </AvatarFallback>
             </Avatar>
           </div>
 

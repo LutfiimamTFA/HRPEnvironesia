@@ -16,6 +16,7 @@ import {
   X,
   ShieldQuestion,
   ShieldCheck,
+  Loader2,
 } from "lucide-react";
 import { useAuth } from "@/providers/auth-provider";
 import { updateDocumentNonBlocking } from "@/firebase";
@@ -23,6 +24,8 @@ import { doc, serverTimestamp } from "firebase/firestore";
 import { useFirestore } from "@/firebase";
 import { useToast } from "@/hooks/use-toast";
 import { Separator } from "../ui/separator";
+import { extractFileIdFromUrl, openSecureFile } from "@/lib/candidate-docs-utils";
+import { useState } from "react";
 
 interface CandidateDocumentsCardProps {
   application: JobApplication;
@@ -92,8 +95,59 @@ export function CandidateDocumentsCard({
   const { userProfile } = useAuth();
   const firestore = useFirestore();
   const { toast } = useToast();
+  const [loadingDoc, setLoadingDoc] = useState<"cv" | "ijazah" | null>(null);
+
+  const handleViewDocument = async (docType: "cv" | "ijazah") => {
+    setLoadingDoc(docType);
+    try {
+      const fileId =
+        docType === "cv"
+          ? application.cvFileId || extractFileIdFromUrl(application.cvUrl)
+          : application.ijazahFileId || extractFileIdFromUrl(application.ijazahUrl);
+
+      const fileName =
+        docType === "cv" ? application.cvFileName : application.ijazahFileName;
+
+      if (!fileId) {
+        toast({
+          variant: "destructive",
+          title: "Dokumen tidak tersedia",
+          description: "FileId tidak ditemukan untuk dokumen ini.",
+        });
+        return;
+      }
+
+      await openSecureFile(fileId, fileName);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Gagal membuka dokumen",
+        description: error?.message || "Tidak dapat membuka dokumen. Silakan coba lagi.",
+      });
+    } finally {
+      setLoadingDoc(null);
+    }
+  }
 
   const handleVerificationToggle = async (docType: "cv" | "ijazah") => {
+    if (!userProfile) return;
+
+    const field = docType === "cv" ? "cvVerified" : "ijazahVerified";
+    const currentValue = application[field];
+
+    try {
+      await updateDocumentNonBlocking(
+        doc(firestore, "applications", application.id!),
+        {
+          [field]: !currentValue,
+        },
+      );
+      toast({ title: "Verifikasi Diperbarui" });
+      onVerificationChange();
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Gagal memperbarui verifikasi" });
+    }
+  };
     if (!userProfile) return;
 
     const field = docType === "cv" ? "cvVerified" : "ijazahVerified";
@@ -122,12 +176,11 @@ export function CandidateDocumentsCard({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-3">
-          {profile.cvUrl ? (
-            <a
-              href={profile.cvUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors dark:border-border dark:bg-muted dark:hover:bg-muted/80"
+          {application.cvFileId || application.cvUrl ? (
+            <button
+              onClick={() => handleViewDocument("cv")}
+              disabled={loadingDoc === "cv"}
+              className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors dark:border-border dark:bg-muted dark:hover:bg-muted/80 w-full disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <div className="flex items-center gap-3">
                 <FileText className="h-5 w-5 text-primary" />
@@ -135,19 +188,22 @@ export function CandidateDocumentsCard({
                   Curriculum Vitae (CV)
                 </span>
               </div>
-              <Eye className="h-4 w-4 text-slate-700 dark:text-muted-foreground" />
-            </a>
+              {loadingDoc === "cv" ? (
+                <Loader2 className="h-4 w-4 text-slate-700 dark:text-muted-foreground animate-spin" />
+              ) : (
+                <Eye className="h-4 w-4 text-slate-700 dark:text-muted-foreground" />
+              )}
+            </button>
           ) : (
             <div className="flex items-center p-3 rounded-lg border border-dashed text-slate-700 text-sm">
               CV belum diunggah.
             </div>
           )}
-          {profile.ijazahUrl ? (
-            <a
-              href={profile.ijazahUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors dark:border-border dark:bg-muted dark:hover:bg-muted/80"
+          {application.ijazahFileId || application.ijazahUrl ? (
+            <button
+              onClick={() => handleViewDocument("ijazah")}
+              disabled={loadingDoc === "ijazah"}
+              className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors dark:border-border dark:bg-muted dark:hover:bg-muted/80 w-full disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <div className="flex items-center gap-3">
                 <FileText className="h-5 w-5 text-primary" />
@@ -155,8 +211,12 @@ export function CandidateDocumentsCard({
                   Ijazah / SKL
                 </span>
               </div>
-              <Eye className="h-4 w-4 text-slate-700 dark:text-muted-foreground" />
-            </a>
+              {loadingDoc === "ijazah" ? (
+                <Loader2 className="h-4 w-4 text-slate-700 dark:text-muted-foreground animate-spin" />
+              ) : (
+                <Eye className="h-4 w-4 text-slate-700 dark:text-muted-foreground" />
+              )}
+            </button>
           ) : (
             <div className="flex items-center p-3 rounded-lg border border-dashed border-slate-300 text-slate-700 text-sm dark:border-border dark:text-muted-foreground">
               Ijazah/SKL belum diunggah.

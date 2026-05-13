@@ -200,7 +200,7 @@ const DataRow = ({
   </div>
 );
 
-import { normalizeGoogleDriveImageUrl } from "@/lib/profile-photo";
+import { SecureDriveImage } from "@/components/SecureDriveImage";
 
 const DocumentPreviewCard = ({
   label,
@@ -1329,6 +1329,27 @@ export default function EmployeeDetailPage({
   const bpjsKetUrl = docUrls.bpjsKetenagakerjaanUrl;
   const buktiRekeningUrl = docUrls.bankProofUrl;
 
+  const safeSrc = (src?: unknown): string | null =>
+    typeof src === "string" && src.trim().length > 0 ? src.trim() : null;
+
+  const extractProfilePhotoFileId = (): string | null => {
+    const profilePhotoFile =
+      (profileDoc as any)?.dataDiriIdentitas?.profilePhotoFile ||
+      (profileDoc as any)?.profilePhotoFile;
+    const profilePhotoFileId = safeSrc(profilePhotoFile?.fileId);
+    if (profilePhotoFileId) return profilePhotoFileId;
+
+    const safeProfilePhotoUrl = safeSrc(profilePhotoUrl);
+    if (safeProfilePhotoUrl) {
+      const match = safeProfilePhotoUrl.match(/fileId=([^&]+)/);
+      if (match?.[1]) return match[1].trim();
+    }
+
+    return null;
+  };
+
+  const profilePhotoFileId = safeSrc(extractProfilePhotoFileId());
+
   const employeePhone = dd.phone || "";
   const employeeIdLabel =
     hrdInfo.employeeId ||
@@ -1403,13 +1424,6 @@ export default function EmployeeDetailPage({
               ? "bg-red-500/15 text-red-400 border-red-500/20"
               : "bg-slate-500/15 text-slate-400 border-slate-500/20";
 
-  const initials = fullName
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((word) => word[0]?.toUpperCase())
-    .join("");
-
   const actionItems: string[] = [];
   if (!hrdStruktur?.brandName)
     actionItems.push("Brand / Perusahaan belum diatur.");
@@ -1444,15 +1458,6 @@ export default function EmployeeDetailPage({
 
         <div className="relative flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-col sm:flex-row items-center gap-6 text-center sm:text-left">
-            <div className="relative">
-              <div className="flex h-24 w-24 items-center justify-center rounded-[2rem] bg-gradient-to-br from-slate-800 to-slate-900 text-3xl font-bold text-white shadow-2xl ring-1 ring-slate-700">
-                {initials || "HR"}
-              </div>
-              <div className="absolute -bottom-1 -right-1 h-8 w-8 rounded-full border-4 border-slate-950 bg-emerald-500 flex items-center justify-center shadow-lg">
-                <CheckCircle className="h-4 w-4 text-white" />
-              </div>
-            </div>
-
             <div>
               <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 mb-2">
                 <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-emerald-500/80">
@@ -1601,39 +1606,17 @@ export default function EmployeeDetailPage({
                         <div className="p-6 flex flex-col items-center text-center border-b border-slate-800/50">
                           <div className="relative mb-4 group">
                             <div className="h-32 w-32 rounded-[2.5rem] bg-slate-800 p-1 ring-1 ring-slate-700 shadow-2xl transition-transform duration-500 group-hover:scale-105 flex items-center justify-center overflow-hidden">
-                              {profilePhotoUrl ? (
-                                <img
-                                  src={profilePhotoUrl}
+                              {profilePhotoFileId ? (
+                                <SecureDriveImage
+                                  fileId={profilePhotoFileId}
                                   alt={fullName}
-                                  className="w-full h-full object-cover"
-                                  onError={(e) => {
-                                    // On image load error, hide it and show fallback icon
-                                    const container = (
-                                      e.target as HTMLImageElement
-                                    ).parentElement;
-                                    if (container) {
-                                      (
-                                        e.target as HTMLImageElement
-                                      ).style.display = "none";
-                                      const icon = container.querySelector(
-                                        "[data-fallback-icon]",
-                                      );
-                                      if (icon) {
-                                        (icon as HTMLElement).style.display =
-                                          "flex";
-                                      }
-                                    }
-                                  }}
+                                  className="w-full h-full object-cover rounded-[2.5rem]"
+                                  fallbackIcon={
+                                    <User className="h-12 w-12 text-slate-400" />
+                                  }
                                 />
-                              ) : null}
-                              {!profilePhotoUrl && (
-                                <User className="h-12 w-12 text-slate-400" />
-                              )}
-                              {profilePhotoUrl && (
-                                <div
-                                  data-fallback-icon
-                                  className="absolute inset-0 flex items-center justify-center bg-slate-800 hidden"
-                                >
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center rounded-[2.5rem] bg-slate-800">
                                   <User className="h-12 w-12 text-slate-400" />
                                 </div>
                               )}

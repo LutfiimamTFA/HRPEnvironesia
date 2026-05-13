@@ -26,6 +26,7 @@ import {
   ShieldCheck,
   Sparkles,
   Search,
+  Loader2,
 } from "lucide-react";
 import {
   Dialog,
@@ -35,6 +36,11 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { CandidateFitAnalysis } from "./CandidateFitAnalysis";
+import {
+  extractFileIdFromUrl,
+  openSecureFile,
+} from "@/lib/candidate-docs-utils";
+import { useToast } from "@/hooks/use-toast";
 import type {
   Profile,
   Education,
@@ -391,16 +397,22 @@ export function CandidateStepContent({
                 <HeavyDocumentCard
                   label="Curriculum Vitae (CV)"
                   url={profile.cvUrl}
+                  fileId={application.cvFileId}
                   verified={application.cvVerified}
                   job={job}
                   application={application}
                   profile={profile}
+                  onViewDocument={() => handleViewDocument("cv")}
+                  loading={loadingDoc === "cv"}
                   showAnalysis
                 />
                 <HeavyDocumentCard
                   label="Ijazah / SKL"
                   url={profile.ijazahUrl}
+                  fileId={application.ijazahFileId}
                   verified={application.ijazahVerified}
+                  onViewDocument={() => handleViewDocument("ijazah")}
+                  loading={loadingDoc === "ijazah"}
                 />
                 <HeavyDocumentCard
                   label="Portfolio / Website"
@@ -574,21 +586,27 @@ function EmptyState({ icon: Icon, text }: { icon: any; text: string }) {
 function HeavyDocumentCard({
   label,
   url,
+  fileId,
   verified,
   isUrl,
   showAnalysis,
   job,
   application,
   profile,
+  onViewDocument,
+  loading,
 }: {
   label: string;
   url?: string;
+  fileId?: string;
   verified?: boolean;
   isUrl?: boolean;
   showAnalysis?: boolean;
   job?: Job;
   application?: JobApplication;
   profile?: Profile;
+  onViewDocument?: () => void;
+  loading?: boolean;
 }) {
   if (!url) {
     return (
@@ -657,20 +675,32 @@ function HeavyDocumentCard({
             </DialogContent>
           </Dialog>
         )}
-        <Button
-          variant="outline"
-          size="icon"
-          className="rounded-2xl h-14 w-14 shrink-0 shadow-lg group-hover:bg-primary group-hover:border-primary group-hover:text-primary-foreground transition-all duration-500"
-          asChild
-        >
-          <a href={url} target="_blank" rel="noopener noreferrer">
-            {isUrl ? (
+        {isUrl ? (
+          <Button
+            variant="outline"
+            size="icon"
+            className="rounded-2xl h-14 w-14 shrink-0 shadow-lg group-hover:bg-primary group-hover:border-primary group-hover:text-primary-foreground transition-all duration-500"
+            asChild
+          >
+            <a href={url} target="_blank" rel="noopener noreferrer">
               <ChevronRight className="h-7 w-7" />
+            </a>
+          </Button>
+        ) : (
+          <Button
+            variant="outline"
+            size="icon"
+            className="rounded-2xl h-14 w-14 shrink-0 shadow-lg group-hover:bg-primary group-hover:border-primary group-hover:text-primary-foreground transition-all duration-500"
+            onClick={onViewDocument}
+            disabled={loading}
+          >
+            {loading ? (
+              <Loader2 className="h-7 w-7 animate-spin" />
             ) : (
               <Eye className="h-7 w-7" />
             )}
-          </a>
-        </Button>
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -760,6 +790,31 @@ export function CandidateStepView({
   job: Job;
 }) {
   const [activeStep, setActiveStep] = useState(1);
+  const [loadingDoc, setLoadingDoc] = useState<"cv" | "ijazah" | null>(null);
+  const { toast } = useToast();
+
+  const handleViewDocument = async (docType: "cv" | "ijazah") => {
+    setLoadingDoc(docType);
+    try {
+      const fileId =
+        docType === "cv"
+          ? application.cvFileId || extractFileIdFromUrl(application.cvUrl)
+          : application.ijazahFileId ||
+            extractFileIdFromUrl(application.ijazahUrl);
+
+      const fileName =
+        docType === "cv"
+          ? profile.cvFileName || "CV.pdf"
+          : profile.ijazahFileName || "Ijazah.pdf";
+
+      await openSecureFile(fileId, fileName);
+    } catch (error) {
+      console.error(`Error opening ${docType} document:`, error);
+    } finally {
+      setLoadingDoc(null);
+    }
+  };
+
   return (
     <Card className="shadow-2xl border-none p-2 rounded-[2.5rem] bg-card/50 backdrop-blur-sm border-t-8 border-t-primary">
       <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-4">
