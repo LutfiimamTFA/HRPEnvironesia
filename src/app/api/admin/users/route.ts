@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import admin from "@/lib/firebase/admin";
-import { UserRole, ROLES, EMPLOYMENT_TYPES, EmploymentType } from "@/lib/types";
+import { ROLES } from "@/lib/constants";
 import { Timestamp } from "firebase-admin/firestore";
 import { z } from "zod";
 
@@ -11,15 +11,8 @@ const createSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
   role: z.enum(ROLES),
-  employmentType: z.enum(EMPLOYMENT_TYPES),
   isActive: z.boolean().default(true),
-  brandId: z.union([z.string(), z.array(z.string())]).optional(),
-  isDivisionManager: z.boolean().optional(),
-  managedDivision: z.string().nullable().optional(),
 });
-
-const safeArray = (value: unknown) =>
-  Array.isArray(value) ? value : value ? [value] : [];
 
 const removeUndefined = (obj: Record<string, unknown>) => {
   Object.keys(obj).forEach((key) => {
@@ -92,17 +85,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const {
-      email,
-      password,
-      fullName,
-      role,
-      employmentType,
-      brandId,
-      isActive,
-      isDivisionManager,
-      managedDivision,
-    } = parseResult.data;
+    const { email, password, fullName, role, isActive } = parseResult.data;
     const requesterRole = authResult.role;
 
     // --- New Validation Logic ---
@@ -118,16 +101,6 @@ export async function POST(req: NextRequest) {
     // --- End New Validation ---
 
     const db = admin.firestore();
-    const normalizedBrandIds = safeArray(brandId).filter(Boolean) as string[];
-    let selectedBrandDoc = null as any;
-    let selectedBrandName: string | undefined;
-
-    if (typeof brandId === "string" && brandId) {
-      selectedBrandDoc = await db.collection("brands").doc(brandId).get();
-      if (selectedBrandDoc.exists) {
-        selectedBrandName = selectedBrandDoc.data()?.name;
-      }
-    }
 
     try {
       await admin.auth().getUserByEmail(email);
@@ -145,6 +118,7 @@ export async function POST(req: NextRequest) {
       email,
       password,
       emailVerified: true,
+      disabled: !isActive,
       displayName: fullName,
     });
 
@@ -154,83 +128,10 @@ export async function POST(req: NextRequest) {
       fullName,
       nameLower: fullName.toLowerCase(),
       role,
-      employmentType,
       isActive,
       createdAt: Timestamp.now(),
       createdBy: authResult.uid,
     };
-
-    if (role === "hrd") {
-      userProfile.brandId = normalizedBrandIds;
-      if (normalizedBrandIds.length > 0) {
-        userProfile.brandIds = normalizedBrandIds;
-      }
-    } else if (
-      role !== "super-admin" &&
-      typeof brandId === "string" &&
-      brandId
-    ) {
-      userProfile.brandId = brandId;
-      userProfile.brandIds = [brandId];
-      if (selectedBrandName) {
-        userProfile.brandName = selectedBrandName;
-      }
-    }
-
-    if (role === "manager" && isDivisionManager) {
-      if (!brandId || Array.isArray(brandId)) {
-        return NextResponse.json(
-          { error: "Manager Divisi harus memiliki satu brand penempatan." },
-          { status: 400 },
-        );
-      }
-      if (!managedDivision) {
-        return NextResponse.json(
-          { error: "Manager Divisi harus memiliki divisi yang dikelola." },
-          { status: 400 },
-        );
-      }
-
-      const brandDoc =
-        selectedBrandDoc || (await db.collection("brands").doc(brandId).get());
-      if (!brandDoc.exists) {
-        return NextResponse.json(
-          { error: "Brand penempatan tidak ditemukan." },
-          { status: 400 },
-        );
-      }
-
-      const divQuery = await db
-        .collection("brands")
-        .doc(brandId)
-        .collection("divisions")
-        .where("name", "==", managedDivision)
-        .get();
-      if (divQuery.empty) {
-        return NextResponse.json(
-          { error: "Divisi tidak ditemukan." },
-          { status: 400 },
-        );
-      }
-
-      const divisionDoc = divQuery.docs[0];
-
-      userProfile.isDivisionManager = true;
-      userProfile.structuralLevel = "division_manager";
-      userProfile.structuralPosition = "division_manager";
-      userProfile.managedBrandId = brandId;
-      userProfile.managedBrandName = brandDoc.data()?.name || undefined;
-      userProfile.managedDivision = managedDivision;
-      userProfile.managedDivisionId = divisionDoc.id;
-      userProfile.managedDivisionName = managedDivision;
-      userProfile.managedDivisionIds = [divisionDoc.id];
-      userProfile.division = managedDivision;
-      userProfile.divisionId = divisionDoc.id;
-      userProfile.divisionIds = [divisionDoc.id];
-      userProfile.brandId = brandId;
-      userProfile.brandIds = [brandId];
-      userProfile.brandName = brandDoc.data()?.name || undefined;
-    }
 
     removeUndefined(userProfile);
 

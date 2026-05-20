@@ -1,6 +1,11 @@
-"use client";
-
 import type { Timestamp } from "firebase/firestore";
+export {
+  ROLES,
+  ROLES_INTERNAL,
+  EMPLOYMENT_TYPES,
+  EMPLOYMENT_STAGES,
+  EMPLOYMENT_STATUSES,
+} from "./constants";
 
 export type FileMetadata = {
   fileName: string;
@@ -12,30 +17,9 @@ export type FileMetadata = {
   uploadedBy: string;
 };
 
-export const ROLES = [
-  "super-admin",
-  "hrd",
-  "manager",
-  "kandidat",
-  "karyawan",
-] as const;
-export const ROLES_INTERNAL = [
-  "super-admin",
-  "hrd",
-  "manager",
-  "karyawan",
-] as const;
-
 export type UserRole = (typeof ROLES)[number];
-export const EMPLOYMENT_TYPES = ["karyawan", "magang", "training"] as const;
 export type EmploymentType = (typeof EMPLOYMENT_TYPES)[number];
 
-export const EMPLOYMENT_STAGES = [
-  "intern_education",
-  "intern_pre_probation",
-  "probation",
-  "active",
-] as const;
 export type EmploymentStage = (typeof EMPLOYMENT_STAGES)[number];
 
 export type StructuralLevel = "management" | "division_manager" | "staff";
@@ -45,7 +29,9 @@ export type ManagementScope = {
   brandName: string;
   divisionIds: string[];
   divisionNames: string[];
-  scopeType: "brand_level" | "selected_divisions";
+  divisionId?: string | null;
+  divisionName?: string | null;
+  scopeType: "brand" | "all" | "selected_divisions";
   scopeLabel: string;
 };
 
@@ -82,6 +68,7 @@ export type UserProfile = {
   // New Hierarchy Fields
   structuralLevel?: StructuralLevel;
   managementScopes?: ManagementScope[];
+  managementRole?: string;
   workRole?: string;
   brandName?: string;
   divisionId?: string;
@@ -126,12 +113,6 @@ export type EmployeeProfileWithMaster = EmployeeMasterData &
     employeeProfile?: EmployeeProfile | null;
   };
 
-export const EMPLOYMENT_STATUSES = [
-  "active",
-  "probation",
-  "resigned",
-  "terminated",
-] as const;
 export type EmploymentStatus = (typeof EMPLOYMENT_STATUSES)[number];
 
 export type FamilyMember = {
@@ -1838,7 +1819,7 @@ export type OvertimeSubmission = {
   attachments?: string[];
   status: OvertimeSubmissionStatus;
   approvalStatus?: string;
-  
+
   // Coordinator Layer Fields
   overtimeCoordinatorUid?: string;
   overtimeCoordinatorName?: string;
@@ -1847,7 +1828,12 @@ export type OvertimeSubmission = {
   overtimeCoordinatorEmail?: string;
   overtimeInstructionNote?: string;
   approvalFlowType?: "staff_to_coordinator_to_manager_to_hrd" | string;
-  coordinatorDecision?: "approved" | "rejected" | "revision_requested" | string | null;
+  coordinatorDecision?:
+    | "approved"
+    | "rejected"
+    | "revision_requested"
+    | string
+    | null;
   coordinatorApprovedAt?: Timestamp | null;
   coordinatorApprovedBy?: string | null;
   coordinatorApprovedByName?: string | null;
@@ -1857,7 +1843,6 @@ export type OvertimeSubmission = {
   coordinatorProxyApprovedByName?: string;
   coordinatorProxyNote?: string;
   coordinatorProxyMethod?: string;
-
 
   directSupervisorUid?: string;
   directSupervisorName?: string;
@@ -1875,14 +1860,14 @@ export type OvertimeSubmission = {
   managerUid?: string | null;
   managerNotes?: string | null;
   managerDecisionAt?: Timestamp | null;
-  
+
   hrdReviewerUid?: string | null;
   hrdNotes?: string | null;
   hrdDecisionAt?: Timestamp | null;
   hrdApprovedAt?: Timestamp | null;
   hrdApprovedBy?: string | null;
   hrdApprovedByName?: string | null;
-  
+
   approvedMinutesFinal?: number | null;
   payrollStatus?: "pending_payroll" | "processing" | "paid" | "excluded" | null;
   payrollStatusUpdatedAt?: Timestamp | null;

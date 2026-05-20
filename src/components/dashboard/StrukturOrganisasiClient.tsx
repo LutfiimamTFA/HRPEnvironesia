@@ -617,6 +617,7 @@ function ManagementTab({
   const [selectedWorkRole, setSelectedWorkRole] = useState<string>("");
   const [selectedBrand, setSelectedBrand] = useState<string>("");
   const [selectedDivisions, setSelectedDivisions] = useState<string[]>([]);
+  const [isBrandScope, setIsBrandScope] = useState(false);
   const [currentScopes, setCurrentScopes] = useState<ManagementScope[]>([]);
 
   // Dynamic divisions for current brand selection
@@ -627,8 +628,13 @@ function ManagementTab({
     const fetchDivisions = async () => {
       if (!selectedBrand || selectedBrand === "all") {
         setDivisions([]);
+        setSelectedDivisions([]);
+        setIsBrandScope(false);
         return;
       }
+      setDivisions([]);
+      setSelectedDivisions([]);
+      setIsBrandScope(false);
       setIsLoadingDivisions(true);
       try {
         const divRef = collection(
@@ -665,17 +671,18 @@ function ManagementTab({
   );
 
   const WORK_ROLES = [
-    "Direktur Pengembangan Bisnis",
-    "Direktur General Affairs",
-    "Direktur Operasional",
-    "General Manager",
-    "Direktur Lainnya",
+    "Director of Operational Environesia",
+    "Director of Business Development Environesia",
+    "Director of Corporate Services and Innovation Environesia",
   ];
 
   const handleEditScope = (user: UserProfile) => {
     setSelectedUser(user);
     setSelectedWorkRole(user.workRole || "");
     setCurrentScopes(user.managementScopes || []);
+    setSelectedBrand("");
+    setSelectedDivisions([]);
+    setIsBrandScope(false);
     setIsDialogOpen(true);
   };
 
@@ -684,6 +691,7 @@ function ManagementTab({
     setSelectedWorkRole("");
     setSelectedBrand("");
     setSelectedDivisions([]);
+    setIsBrandScope(false);
     setCurrentScopes([]);
   };
 
@@ -703,14 +711,18 @@ function ManagementTab({
       return;
     }
 
-    const isBrandLevel = selectedDivisions.length === 0;
-    const isAllDivisions =
-      selectedDivisions.length === divisions.length && divisions.length > 0;
+    const isAllBrands = selectedBrand === "all";
+    const hasNoDivisions = selectedBrand !== "all" && divisions.length === 0;
+    const isBrandLevel =
+      isAllBrands ||
+      isBrandScope ||
+      hasNoDivisions ||
+      selectedDivisions.length === 0;
 
-    const finalDivisionIds =
-      isBrandLevel || isAllDivisions ? ["all"] : selectedDivisions;
-    const finalDivisionNames =
-      isBrandLevel || isAllDivisions
+    const finalDivisionIds = isBrandLevel ? ["all"] : selectedDivisions;
+    const finalDivisionNames = isAllBrands
+      ? ["Semua Brand / Perusahaan"]
+      : isBrandLevel
         ? ["Seluruh Brand / Perusahaan"]
         : divisions
             .filter((d: Division) => selectedDivisions.includes(d.id!))
@@ -722,10 +734,20 @@ function ManagementTab({
         selectedBrand === "all" ? "Semua Brand" : brand?.name || "Unknown",
       divisionIds: finalDivisionIds,
       divisionNames: finalDivisionNames,
-      scopeType: isBrandLevel ? "brand_level" : "selected_divisions",
-      scopeLabel: isBrandLevel
-        ? "Seluruh Brand / Perusahaan"
-        : "Divisi Tertentu",
+      divisionId: isBrandLevel ? null : selectedDivisions[0] || null,
+      divisionName: isBrandLevel
+        ? null
+        : divisions.find((d) => d.id === selectedDivisions[0])?.name || null,
+      scopeType: isAllBrands
+        ? "all"
+        : isBrandLevel
+          ? "brand"
+          : "selected_divisions",
+      scopeLabel: isAllBrands
+        ? "Semua Brand / Perusahaan"
+        : isBrandLevel
+          ? "Seluruh Brand / Perusahaan"
+          : "Divisi Tertentu",
     };
 
     setCurrentScopes([...currentScopes, newScope]);
@@ -734,6 +756,7 @@ function ManagementTab({
   };
 
   const handleRemoveScope = (index: number) => {
+    if (!window.confirm("Hapus scope kewenangan ini?")) return;
     setCurrentScopes(currentScopes.filter((_, i) => i !== index));
   };
 
@@ -743,7 +766,10 @@ function ManagementTab({
       const userRef = doc(firestore, "users", selectedUser.uid);
       const updateData = {
         managementScopes: currentScopes,
+        managementRole: selectedWorkRole,
         workRole: selectedWorkRole,
+        jobTitle: selectedWorkRole,
+        positionTitle: selectedWorkRole,
         structuralLevel: "management",
         updatedAt: serverTimestamp(),
       };
@@ -872,13 +898,6 @@ function ManagementTab({
                           ))}
                         </SelectContent>
                       </Select>
-                      {selectedWorkRole === "Direktur Lainnya" && (
-                        <Input
-                          className="mt-3 h-12 bg-slate-900 border-slate-700 text-base"
-                          placeholder="Sebutkan jabatan lainnya secara spesifik..."
-                          onChange={(e) => setSelectedWorkRole(e.target.value)}
-                        />
-                      )}
                     </div>
                   </div>
 
@@ -967,28 +986,20 @@ function ManagementTab({
                                 <>
                                   <div className="flex items-center space-x-3 pb-3 border-b border-slate-800 mb-3">
                                     <Checkbox
-                                      id="add-all-divs"
+                                      id="add-brand-scope"
                                       className="h-5 w-5 border-emerald-500/50 data-[state=checked]:bg-emerald-500"
-                                      checked={
-                                        selectedDivisions.length ===
-                                          divisions.length &&
-                                        divisions.length > 0
-                                      }
+                                      checked={isBrandScope}
                                       onCheckedChange={(checked) => {
-                                        if (checked)
-                                          setSelectedDivisions(
-                                            divisions.map(
-                                              (d: Division) => d.id!,
-                                            ),
-                                          );
-                                        else setSelectedDivisions([]);
+                                        const enabled = Boolean(checked);
+                                        setIsBrandScope(enabled);
+                                        if (enabled) setSelectedDivisions([]);
                                       }}
                                     />
                                     <label
-                                      htmlFor="add-all-divs"
+                                      htmlFor="add-brand-scope"
                                       className="text-sm font-black leading-none cursor-pointer text-emerald-400"
                                     >
-                                      Pilih Semua Divisi
+                                      Seluruh Brand / Perusahaan
                                     </label>
                                   </div>
                                   {divisions.map((div: Division) => (
@@ -1003,6 +1014,7 @@ function ManagementTab({
                                           div.id!,
                                         )}
                                         onCheckedChange={(checked) => {
+                                          setIsBrandScope(false);
                                           if (checked)
                                             setSelectedDivisions([
                                               ...selectedDivisions,
@@ -1036,11 +1048,26 @@ function ManagementTab({
                                     bisa ditambahkan untuk seluruh brand.
                                   </p>
                                 </div>
+                              ) : selectedBrand ? (
+                                <div className="flex flex-col items-center justify-center h-40 p-4 text-center">
+                                  <Info className="h-8 w-8 text-slate-600 mb-2" />
+                                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">
+                                    Brand Tanpa Divisi
+                                  </p>
+                                  <p className="text-[10px] text-slate-600 italic leading-relaxed">
+                                    Brand ini belum memiliki divisi. Scope akan
+                                    berlaku untuk seluruh brand.
+                                  </p>
+                                </div>
                               ) : (
-                                <div className="flex flex-col items-center justify-center h-40 opacity-40">
-                                  <Search className="h-10 w-10 mb-3" />
-                                  <p className="text-xs font-bold uppercase tracking-widest">
-                                    Pilih brand
+                                <div className="flex flex-col items-center justify-center h-40 p-4 text-center">
+                                  <Info className="h-8 w-8 text-slate-600 mb-2" />
+                                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">
+                                    Brand Tanpa Divisi
+                                  </p>
+                                  <p className="text-[10px] text-slate-600 italic leading-relaxed">
+                                    Brand ini belum memiliki divisi. Scope akan
+                                    berlaku untuk seluruh brand.
                                   </p>
                                 </div>
                               )}
@@ -1271,14 +1298,6 @@ function ManagementTab({
                     ))}
                   </SelectContent>
                 </Select>
-                {selectedWorkRole === "Direktur Lainnya" && (
-                  <Input
-                    className="mt-3 h-12 bg-slate-900 border-slate-700 text-base"
-                    placeholder="Sebutkan jabatan lainnya secara spesifik..."
-                    value={selectedWorkRole}
-                    onChange={(e) => setSelectedWorkRole(e.target.value)}
-                  />
-                )}
               </div>
 
               <Separator className="bg-slate-800" />
@@ -1344,25 +1363,20 @@ function ManagementTab({
                             <>
                               <div className="flex items-center space-x-3 pb-3 border-b border-slate-800 mb-3">
                                 <Checkbox
-                                  id="edit-all-divs"
+                                  id="edit-brand-scope"
                                   className="h-5 w-5 border-emerald-500/50 data-[state=checked]:bg-emerald-500"
-                                  checked={
-                                    selectedDivisions.length ===
-                                      divisions.length && divisions.length > 0
-                                  }
+                                  checked={isBrandScope}
                                   onCheckedChange={(checked) => {
-                                    if (checked)
-                                      setSelectedDivisions(
-                                        divisions.map((d: Division) => d.id!),
-                                      );
-                                    else setSelectedDivisions([]);
+                                    const enabled = Boolean(checked);
+                                    setIsBrandScope(enabled);
+                                    if (enabled) setSelectedDivisions([]);
                                   }}
                                 />
                                 <label
-                                  htmlFor="edit-all-divs"
+                                  htmlFor="edit-brand-scope"
                                   className="text-sm font-black leading-none cursor-pointer text-emerald-400"
                                 >
-                                  Pilih Semua Divisi
+                                  Seluruh Brand / Perusahaan
                                 </label>
                               </div>
                               {divisions.map((div: Division) => (
@@ -1377,6 +1391,7 @@ function ManagementTab({
                                       div.id!,
                                     )}
                                     onCheckedChange={(checked) => {
+                                      setIsBrandScope(false);
                                       if (checked)
                                         setSelectedDivisions([
                                           ...selectedDivisions,
@@ -1418,6 +1433,8 @@ function ManagementTab({
                       disabled={
                         !selectedBrand ||
                         (selectedBrand !== "all" &&
+                          divisions.length > 0 &&
+                          !isBrandScope &&
                           selectedDivisions.length === 0)
                       }
                     >
@@ -1432,48 +1449,57 @@ function ManagementTab({
                       Scope Terpilih:
                     </Label>
                     <div className="grid grid-cols-1 gap-4 max-h-[500px] overflow-y-auto pr-3 custom-scrollbar">
-                      {currentScopes.map((scope, idx) => (
-                        <div
-                          key={idx}
-                          className="group relative flex flex-col p-5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-emerald-500/50 transition-all shadow-lg hover:shadow-emerald-500/5"
-                        >
-                          <div className="flex justify-between items-start mb-3">
-                            <div className="flex items-center gap-3">
-                              <div className="p-2 bg-emerald-500/10 rounded-lg">
-                                <Building2 className="h-5 w-5 text-emerald-500" />
-                              </div>
-                              <span className="font-black text-white text-base tracking-tight">
-                                {scope.brandName}
-                              </span>
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-10 w-10 text-slate-500 hover:text-red-500"
-                              onClick={() => handleRemoveScope(idx)}
+                      {currentScopes.length > 0 ? (
+                        currentScopes.map((scope, idx) => {
+                          return (
+                            <div
+                              key={idx}
+                              className="group relative flex flex-col p-5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-emerald-500/50 transition-all shadow-lg hover:shadow-emerald-500/5"
                             >
-                              <Trash2 className="h-5 w-5" />
-                            </Button>
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            {scope.divisionIds.includes("all") ? (
-                              <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-xs px-3 py-1 font-bold">
-                                Seluruh Unit Kerja / Divisi
-                              </Badge>
-                            ) : (
-                              scope.divisionNames.map((dn, i) => (
-                                <Badge
-                                  key={i}
-                                  variant="secondary"
-                                  className="bg-slate-800 text-slate-300 border-slate-700 text-xs px-2.5 py-1"
+                              <div className="flex justify-between items-start mb-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="p-2 bg-emerald-500/10 rounded-lg">
+                                    <Building2 className="h-5 w-5 text-emerald-500" />
+                                  </div>
+                                  <span className="font-black text-white text-base tracking-tight">
+                                    {scope.brandName}
+                                  </span>
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-slate-500 hover:text-red-500"
+                                  onClick={() => handleRemoveScope(idx)}
                                 >
-                                  {dn}
-                                </Badge>
-                              ))
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Hapus Scope
+                                </Button>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {scope.divisionIds.includes("all") ? (
+                                  <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-xs px-3 py-1 font-bold">
+                                    Seluruh Unit Kerja / Divisi
+                                  </Badge>
+                                ) : (
+                                  scope.divisionNames.map((dn, i) => (
+                                    <Badge
+                                      key={i}
+                                      variant="secondary"
+                                      className="bg-slate-800 text-slate-300 border-slate-700 text-xs px-2.5 py-1"
+                                    >
+                                      {dn}
+                                    </Badge>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <p className="text-sm text-slate-500 italic p-4 border-2 border-dashed border-slate-800 rounded-xl w-full text-center">
+                          Belum ada scope aktif.
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
