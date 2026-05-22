@@ -20,7 +20,10 @@ export default function ValidasiDinasPage() {
   if (!hasAccess) return null;
 
   return (
-    <DashboardLayout pageTitle="Validasi Dinas Staff" menuConfig={menuConfig}>
+    <DashboardLayout
+      pageTitle="Validasi Perjalanan Dinas Tim"
+      menuConfig={menuConfig}
+    >
       <BusinessTripClient mode="manager" />
     </DashboardLayout>
   );

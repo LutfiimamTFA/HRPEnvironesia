@@ -222,7 +222,7 @@ const REVIEW_ITEMS: MenuGroup = {
     {
       key: "review.dinas.validation",
       href: "/admin/manager/validasi-dinas",
-      label: "Validasi Dinas Staff",
+      label: "Validasi Perjalanan Dinas Tim",
       icon: createElement(MapPin),
     },
   ],
@@ -236,8 +236,8 @@ const MANAGEMENT_MENU_ITEMS: MenuGroup = {
       href: "/admin/management/perjalanan-dinas",
       label: "Perjalanan Dinas / Misi Dinas",
       icon: createElement(MapPin),
-    }
-  ]
+    },
+  ],
 };
 
 const DEVELOPER_MENU_ITEMS: MenuGroup = {
@@ -449,7 +449,7 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
           icon: createElement(Video),
         },
       ],
-    }
+    },
   ],
   "super-admin": [
     RECRUITMENT_MENU_ITEMS,

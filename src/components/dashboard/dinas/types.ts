@@ -18,6 +18,7 @@ export const MISSION_STATUSES = [
 export const MEMBER_STATUSES = [
   "waiting_manager_validation",
   "approved_by_manager",
+  "validated_by_assigner",
   "replacement_requested",
   "rejected_by_manager",
   "waiting_staff_confirmation",
@@ -75,6 +76,18 @@ export type BusinessTripMission = {
   missionName?: string;
   assignmentNumber?: string;
   assignmentLetterUrl?: string;
+  assignmentLetterDriveUrl?: string;
+  assignmentLetterDriveFileId?: string;
+  assignmentLetterSource?:
+    | "local_upload"
+    | "system_drive_upload"
+    | "google_drive"
+    | "google_drive_link"
+    | "firebase_storage";
+  assignmentLetterAccessMode?: "anyone_with_link" | "internal_viewer";
+  assignmentLetterUploadedBy?: string;
+  documentSource?: "firebase_storage" | "google_drive_link" | "google_drive";
+  assignmentLetterUploadedAt?: any;
   assignmentLetterFileName?: string;
   assignedByUid?: string;
   assignedByName?: string;
@@ -101,8 +114,8 @@ export type BusinessTripMission = {
   managerApprovedCount?: number;
   staffConfirmedCount?: number;
   missionCode?: string;
-  documentSource?: "firebase_storage" | "google_drive_link";
   googleDriveLink?: string;
+  googleDriveWebViewLink?: string;
   duplicateMissionIds?: string[];
   status?: MissionStatus;
   createdAt?: any;
@@ -142,6 +155,7 @@ export type BusinessTripMissionMember = {
   reportIssues?: string;
   reportRecommendations?: string;
   reportAttachmentUrl?: string;
+  requiresManagerValidation?: boolean;
   // Sampling specific fields
   samplingPointsCount?: number;
   sampleTypes?: string;

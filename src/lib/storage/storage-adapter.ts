@@ -63,6 +63,7 @@ export interface UploadResult {
   googleDriveWebViewLink?: string;
   thumbnailUrl?: string;
   directViewUrl?: string;
+  accessMode?: "anyone_with_link" | "internal_viewer";
   uploadedAt: any;
   uploadedBy: string;
   originalFileName?: string;
@@ -148,6 +149,55 @@ export async function uploadFile(
   }
 
   return result;
+}
+
+export async function uploadFileToGoogleDrive(
+  file: File,
+  userId: string,
+  options: UploadOptions = {},
+): Promise<UploadResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("userId", userId);
+
+  if (options.category) formData.append("category", options.category);
+  if (options.ownerUid) formData.append("ownerUid", options.ownerUid);
+  if (options.applicationId)
+    formData.append("applicationId", options.applicationId);
+  if (options.offeringId) formData.append("offeringId", options.offeringId);
+  if (options.brandId) formData.append("brandId", options.brandId);
+
+  const response = await fetch("/api/storage/google-drive-upload", {
+    method: "POST",
+    body: formData,
+  });
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok || !data?.success) {
+    let message =
+      data?.message || data?.error || "Gagal upload file ke Google Drive.";
+    throw new Error(message);
+  }
+
+  return {
+    storageProvider: data.storageProvider || "googleDrive",
+    fileId: data.fileId,
+    fileName: data.fileName,
+    fileSize: data.fileSize,
+    fileType: data.fileType,
+    driveFolderId: data.driveFolderId,
+    driveFolderPath: data.driveFolderPath,
+    downloadUrl: data.downloadUrl,
+    viewUrl: data.viewUrl,
+    webViewLink: data.webViewLink,
+    googleDriveWebViewLink: data.googleDriveWebViewLink,
+    directViewUrl: data.directViewUrl,
+    thumbnailUrl: data.thumbnailUrl,
+    accessMode: data.accessMode,
+    uploadedAt: data.uploadedAt,
+    uploadedBy: data.uploadedBy,
+  };
 }
 
 /**

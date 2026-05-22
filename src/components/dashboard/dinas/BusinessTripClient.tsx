@@ -7,6 +7,7 @@ import {
   addDoc,
   collection,
   collectionGroup,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -57,7 +58,6 @@ import {
   MapPin,
   ClipboardCheck,
   ArrowRightCircle,
-  DollarSign,
   Upload,
   XCircle,
   FileCheck,
@@ -93,6 +93,7 @@ const MISSION_STATUSES = [
 const MEMBER_STATUSES = [
   "waiting_manager_validation",
   "approved_by_manager",
+  "validated_by_assigner",
   "replacement_requested",
   "rejected_by_manager",
   "waiting_staff_confirmation",
@@ -246,6 +247,7 @@ function renderStatusLabel(status?: MissionStatus | MemberStatus) {
     cancelled: "destructive",
     waiting_manager_validation: "warning",
     approved_by_manager: "success",
+    validated_by_assigner: "success",
     replacement_requested: "destructive",
     rejected_by_manager: "destructive",
     confirmed_by_staff: "success",
@@ -254,10 +256,119 @@ function renderStatusLabel(status?: MissionStatus | MemberStatus) {
     returned: "success",
   };
 
-  return (
-    <Badge variant={styleMap[status] || "secondary"}>
-      {status.replace(/_/g, " ")}
-    </Badge>
+  const label =
+    status === "validated_by_assigner"
+      ? "tervalidasi oleh pemberi"
+      : status.replace(/_/g, " ");
+
+  return <Badge variant={styleMap[status] || "secondary"}>{label}</Badge>;
+}
+
+function buildManagerValidationSummaries(members: BusinessTripMissionMember[]) {
+  const managerMap = new Map<
+    string,
+    {
+      managerUid: string;
+      managerName: string;
+      divisionName: string;
+      memberUids: string[];
+      memberNames: string[];
+      status: "approved" | "rejected" | "pending";
+      notes?: string;
+      decidedAt?: any;
+    }
+  >();
+
+  members
+    .filter((member) => String(member.memberStatus) !== "archived")
+    .forEach((member) => {
+      const managerUid = member.managerUid || "unassigned";
+      const key = `${managerUid}::${member.divisionName || ""}`;
+      const existing = managerMap.get(key);
+      const managerName = member.managerName || "Manager belum ditentukan";
+      const divisionName = member.divisionName || "Divisi belum diatur";
+      const status = member.managerValidationStatus;
+      const mappedStatus =
+        status === "approved_by_manager" || status === "validated_by_assigner"
+          ? "approved"
+          : status === "rejected_by_manager"
+            ? "rejected"
+            : "pending";
+
+      if (!existing) {
+        managerMap.set(key, {
+          managerUid: managerUid === "unassigned" ? "" : managerUid,
+          managerName,
+          divisionName,
+          memberUids: [member.employeeUid],
+          memberNames: [member.employeeName],
+          status: mappedStatus,
+          notes: member.managerValidationNote || member.staffConfirmationNote,
+          decidedAt: member.updatedAt,
+        });
+        return;
+      }
+
+      existing.memberUids = Array.from(
+        new Set([...existing.memberUids, member.employeeUid]),
+      );
+      existing.memberNames = Array.from(
+        new Set([...existing.memberNames, member.employeeName]),
+      );
+      if (existing.status !== "rejected" && mappedStatus === "rejected") {
+        existing.status = "rejected";
+      } else if (existing.status === "pending" && mappedStatus === "approved") {
+        existing.status = "approved";
+      }
+      if (!existing.notes && member.managerValidationNote) {
+        existing.notes = member.managerValidationNote;
+      }
+      if (!existing.decidedAt && member.updatedAt) {
+        existing.decidedAt = member.updatedAt;
+      }
+    });
+
+  return Array.from(managerMap.values());
+}
+
+async function syncManagerValidationDocs(
+  firestore: Firestore | null,
+  missionId: string,
+  members: BusinessTripMissionMember[],
+) {
+  if (!firestore || !missionId) return;
+  const summaries = buildManagerValidationSummaries(members);
+  const validationsRef = collection(
+    firestore,
+    "business_trip_missions",
+    missionId,
+    "manager_validations",
+  );
+
+  const existingSnap = await getDocs(validationsRef);
+
+  await Promise.all(
+    summaries.map((summary) => {
+      const docId =
+        summary.managerUid || `${summary.managerName}-${summary.divisionName}`;
+      return setDoc(doc(validationsRef, docId), {
+        ...summary,
+        decidedAt: summary.decidedAt || null,
+      });
+    }),
+  );
+
+  await Promise.all(
+    existingSnap.docs
+      .filter(
+        (docSnap) =>
+          !summaries.some(
+            (summary) =>
+              summary.managerUid === docSnap.id ||
+              `${summary.managerName}-${summary.divisionName}` === docSnap.id,
+          ),
+      )
+      .map((docSnap) => deleteDoc(doc(validationsRef, docSnap.id))),
   );
 }
 
@@ -298,11 +409,6 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
       ? collection(firestore, "business_trip_missions", missionId, "timeline")
       : null;
 
-  const getMissionExpensesCollection = (missionId?: string) =>
-    firestore && missionId
-      ? collection(firestore, "business_trip_missions", missionId, "expenses")
-      : null;
-
   const getBusinessTripMissionDoc = (missionId?: string) =>
     firestore && missionId
       ? doc(firestore, "business_trip_missions", missionId)
@@ -330,18 +436,6 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
     recommendations: "",
     attachment: null as File | null,
   });
-  const [expenseForm, setExpenseForm] = useState({
-    category: "Transportasi" as ExpenseCategory,
-    amount: "",
-    description: "",
-    receipt: null as File | null,
-    note: "",
-  });
-  const [settlementForm, setSettlementForm] = useState({
-    decision: "approved" as "approved" | "partial" | "rejected",
-    approvedAmount: "",
-    note: "",
-  });
   const [missionForm, setMissionForm] = useState({
     missionName: "",
     assignmentNumber: "",
@@ -354,9 +448,6 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
     endDate: "",
     instructionHtml: "",
     instructionText: "",
-    costScheme: "reimburse" as CostSchema,
-    advanceAmount: "",
-    budgetEstimate: "",
   });
   const [assignmentLetter, setAssignmentLetter] = useState<File | null>(null);
 
@@ -426,6 +517,7 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
       return query(
         missionCollection,
         where("managerUids", "array-contains", userProfile.uid),
+        where("status", "==", "pending_manager_validation"),
         orderBy("createdAt", "desc"),
       );
     }
@@ -463,9 +555,6 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
       endDate: "",
       instructionHtml: "",
       instructionText: "",
-      costScheme: "reimburse",
-      advanceAmount: "",
-      budgetEstimate: "",
     });
     setSelectedStaffUids([]);
     setAssignmentLetter(null);
@@ -568,16 +657,18 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
     const members = membersSnap.docs.map(
       (m) => m.data() as BusinessTripMissionMember,
     );
-    const managerApprovedCount = members.filter(
-      (member) => member.managerValidationStatus === "approved_by_manager",
+    const managerValidations = buildManagerValidationSummaries(members);
+    const managerApprovedCount = managerValidations.filter(
+      (item) => item.status === "approved",
     ).length;
+    const managerValidationCount = managerValidations.length;
     const staffConfirmedCount = members.filter(
       (member) => member.staffConfirmationStatus === "confirmed_by_staff",
     ).length;
     const totalMembers = members.length;
-    const allApproved = members.every(
-      (member) => member.managerValidationStatus === "approved_by_manager",
-    );
+    const allApproved =
+      managerValidationCount === 0 ||
+      managerValidations.every((item) => item.status === "approved");
     const allConfirmed = members.every(
       (member) => member.staffConfirmationStatus === "confirmed_by_staff",
     );
@@ -612,6 +703,7 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
 
     const updatePayload: Record<string, any> = {
       managerApprovedCount,
+      managerValidationCount,
       staffConfirmedCount,
       totalMembers,
       updatedAt: serverTimestamp(),
@@ -716,9 +808,6 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
         instructionHtml: missionForm.instructionHtml,
         instructionText:
           missionForm.instructionText || stripHtml(missionForm.instructionHtml),
-        costScheme: missionForm.costScheme,
-        advanceAmount: Number(missionForm.advanceAmount) || 0,
-        budgetEstimate: Number(missionForm.budgetEstimate) || 0,
         assignedStaffUids,
         assignedStaffCount: assignedStaffUids.length,
         totalMembers: assignedStaffUids.length,
@@ -816,6 +905,14 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
     decision: "approve" | "replace" | "reject",
   ) => {
     if (!firestore || !userProfile || !member.missionId || !member.id) return;
+    if (member.employeeUid === userProfile.uid) {
+      return toast({
+        variant: "destructive",
+        title: "Anda tidak bisa memvalidasi diri sendiri.",
+        description:
+          "Konfirmasi keikutsertaan Anda dilakukan sebagai anggota, bukan sebagai validator diri sendiri.",
+      });
+    }
     if ((decision === "replace" || decision === "reject") && !actionNote) {
       return toast({ variant: "destructive", title: "Alasan wajib diisi." });
     }
@@ -1072,135 +1169,6 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
     }
   };
 
-  const handleSubmitExpense = async (member: BusinessTripMissionMember) => {
-    if (!firestore || !userProfile || !member || !member.missionId) return;
-    const amount = Number(expenseForm.amount);
-    if (!expenseForm.description || !amount || amount <= 0) {
-      return toast({
-        variant: "destructive",
-        title: "Isi deskripsi dan jumlah biaya dengan benar.",
-      });
-    }
-    if (
-      !expenseForm.receipt &&
-      selectedMission?.costScheme !== "company_paid"
-    ) {
-      return toast({
-        variant: "destructive",
-        title: "Upload nota diperlukan untuk skema biaya ini.",
-      });
-    }
-
-    setIsSaving(true);
-    try {
-      let receiptUrl: string | null = null;
-      if (expenseForm.receipt) {
-        const uploaded = await uploadFile(
-          expenseForm.receipt,
-          `business_trip_missions/${userProfile?.uid}/${Date.now()}_${expenseForm.receipt.name}`,
-          userProfile?.uid || "",
-          { compress: false },
-        );
-        receiptUrl = uploaded.downloadUrl ?? null;
-      }
-      const expensesCollection = getMissionExpensesCollection(member.missionId);
-      if (!expensesCollection) return;
-      await addDoc(expensesCollection, {
-        employeeUid: member.employeeUid,
-        employeeName: member.employeeName,
-        category: expenseForm.category,
-        amount,
-        description: expenseForm.description,
-        receiptUrl,
-        receiptFileName: expenseForm.receipt?.name || null,
-        submittedAt: serverTimestamp(),
-        submittedBy: userProfile?.uid,
-        submittedByName: userProfile?.fullName,
-      });
-      const missionRef = getBusinessTripMissionDoc(member.missionId);
-      if (!missionRef) return;
-      await updateDoc(missionRef, {
-        status: "expense_submitted",
-        updatedAt: serverTimestamp(),
-      });
-      await appendTimelineEntry(
-        member.missionId,
-        `${member.employeeName} mengirim nota/reimburse.`,
-      );
-      toast({ title: "Nota terkirim." });
-      setExpenseForm({
-        category: "Transportasi",
-        amount: "",
-        description: "",
-        receipt: null,
-        note: "",
-      });
-      await loadMissionDetail(member.missionId);
-    } catch (error: any) {
-      console.error(error);
-      toast({
-        variant: "destructive",
-        title: "Gagal mengirim expense",
-        description: error?.message || "Coba lagi.",
-      });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleFinanceDecision = async (mission: BusinessTripMission) => {
-    if (!firestore || !userProfile || !mission.id) return;
-    if (
-      settlementForm.decision === "partial" &&
-      !settlementForm.approvedAmount
-    ) {
-      return toast({
-        variant: "destructive",
-        title: "Jumlah disetujui wajib diisi untuk approve sebagian.",
-      });
-    }
-    setIsSaving(true);
-    try {
-      const status =
-        settlementForm.decision === "approved"
-          ? "completed"
-          : "settlement_review";
-      const missionRef = getBusinessTripMissionDoc(mission.id!);
-      if (!missionRef) return;
-      await updateDoc(missionRef, {
-        status,
-        updatedAt: serverTimestamp(),
-        settlement: {
-          status: settlementForm.decision,
-          approvedAmount:
-            settlementForm.decision === "partial"
-              ? Number(settlementForm.approvedAmount)
-              : mission.budgetEstimate || 0,
-          note: settlementForm.note,
-          approvedAt: serverTimestamp(),
-          byUid: userProfile?.uid,
-          byName: userProfile?.fullName,
-        },
-      });
-      await appendTimelineEntry(
-        mission.id!,
-        `Finance memutuskan biaya: ${settlementForm.decision}.`,
-      );
-      toast({ title: "Keputusan biaya tersimpan." });
-      setSettlementForm({ decision: "approved", approvedAmount: "", note: "" });
-      await loadMissionDetail(mission.id!);
-    } catch (error: any) {
-      console.error(error);
-      toast({
-        variant: "destructive",
-        title: "Gagal menyimpan keputusan",
-        description: error?.message || "Coba lagi.",
-      });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   const summaryCounts = useMemo(() => {
     const items = missionItems || [];
     const all = items.length;
@@ -1209,8 +1177,6 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
         "pending_manager_validation",
         "waiting_staff_confirmation",
         "pending_hrd_finalization",
-        "expense_submitted",
-        "settlement_review",
       ].includes(item.status),
     ).length;
     const completed = items.filter(
@@ -1227,7 +1193,6 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
     if (mode === "manager") return "Validasi Dinas Staff";
     if (mode === "staff") return "Konfirmasi & Laporan Dinas";
     if (mode === "hrd-monitor") return "Monitoring Dinas";
-    if (mode === "hrd-finance") return "Verifikasi Biaya Dinas";
     return "Dinas";
   }, [mode]);
 
@@ -1245,8 +1210,6 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
               "Lihat tugas Anda, konfirmasi kesiapan, dan kelola laporan serta nota."}
             {mode === "hrd-monitor" &&
               "Pantau semua misi dinas dan kelola finalisasi administrasi."}
-            {mode === "hrd-finance" &&
-              "Verifikasi biaya dinas dan selesaikan pengajuan reimburse."}
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-4">
@@ -1358,59 +1321,6 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-              <div>
-                <Label htmlFor="costScheme">Skema Biaya</Label>
-                <Select
-                  value={missionForm.costScheme}
-                  onValueChange={(value) =>
-                    setMissionForm((prev) => ({
-                      ...prev,
-                      costScheme: value as CostSchema,
-                    }))
-                  }
-                >
-                  <SelectTrigger id="costScheme" className="mt-1 w-full">
-                    <SelectValue placeholder="Pilih skema biaya" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {COST_SCHEMAS.map((schema) => (
-                      <SelectItem key={schema} value={schema}>
-                        {schema}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="advanceAmount">Advance (Rp)</Label>
-                <Input
-                  id="advanceAmount"
-                  type="number"
-                  value={missionForm.advanceAmount}
-                  onChange={(event) =>
-                    setMissionForm((prev) => ({
-                      ...prev,
-                      advanceAmount: event.target.value,
-                    }))
-                  }
-                  placeholder="0"
-                />
-              </div>
-              <div>
-                <Label htmlFor="budgetEstimate">Estimasi Anggaran (Rp)</Label>
-                <Input
-                  id="budgetEstimate"
-                  type="number"
-                  value={missionForm.budgetEstimate}
-                  onChange={(event) =>
-                    setMissionForm((prev) => ({
-                      ...prev,
-                      budgetEstimate: event.target.value,
-                    }))
-                  }
-                  placeholder="0"
-                />
               </div>
               <div>
                 <Label htmlFor="destinationCity">Kota Tujuan</Label>
@@ -1656,7 +1566,6 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
                   <TableHead>Jumlah Anggota</TableHead>
                   <TableHead>Progress Validasi</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Skema Biaya</TableHead>
                   <TableHead>Aksi</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1699,11 +1608,13 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
                         </TableCell>
                         <TableCell>
                           {`${item.managerApprovedCount ?? 0}/${
-                            item.assignedStaffCount ?? item.totalMembers ?? 0
+                            item.managerValidationCount ??
+                            item.assignedStaffCount ??
+                            item.totalMembers ??
+                            0
                           }`}
                         </TableCell>
                         <TableCell>{renderStatusLabel(status)}</TableCell>
-                        <TableCell>{item.costScheme || "-"}</TableCell>
                         <TableCell>
                           <Button
                             variant="secondary"
@@ -1780,20 +1691,6 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
               <div>
                 <p className="text-sm text-muted-foreground">Status Misi</p>
                 {renderStatusLabel(selectedMission.status)}
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Skema Biaya</p>
-                <p className="font-semibold">
-                  {selectedMission.costScheme || "-"}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  Estimasi Anggaran
-                </p>
-                <p className="font-semibold">
-                  {formatCurrency(selectedMission.budgetEstimate)}
-                </p>
               </div>
             </div>
             <div>
@@ -1894,55 +1791,66 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
               </CardContent>
             </Card>
 
-            {mode === "manager" &&
-            selectedMember &&
-            selectedMember.managerUid === userProfile?.uid &&
-            selectedMember.managerValidationStatus ===
-              "waiting_manager_validation" ? (
+            {mode === "manager" && selectedMember ? (
               <div className="space-y-4">
-                <p className="font-semibold">Keputusan Validasi</p>
-                <Textarea
-                  value={actionNote}
-                  onChange={(event) => setActionNote(event.target.value)}
-                  placeholder="Alasan jika tolak atau minta ganti."
-                  rows={4}
-                />
-                <Textarea
-                  value={replacementSuggestion}
-                  onChange={(event) =>
-                    setReplacementSuggestion(event.target.value)
-                  }
-                  placeholder="Rekomendasi staff pengganti (opsional)."
-                  rows={3}
-                />
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    onClick={() =>
-                      handleManagerDecision(selectedMember, "approve")
-                    }
-                    disabled={isSaving}
-                  >
-                    <CheckCircle2 className="mr-2 h-4 w-4" /> Setujui
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() =>
-                      handleManagerDecision(selectedMember, "replace")
-                    }
-                    disabled={isSaving}
-                  >
-                    <ArrowRightCircle className="mr-2 h-4 w-4" /> Minta Ganti
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    onClick={() =>
-                      handleManagerDecision(selectedMember, "reject")
-                    }
-                    disabled={isSaving}
-                  >
-                    <XCircle className="mr-2 h-4 w-4" /> Tolak
-                  </Button>
-                </div>
+                {selectedMember.employeeUid === userProfile?.uid && (
+                  <div className="rounded-2xl border border-yellow-500/40 bg-yellow-500/10 p-4 text-sm text-yellow-900">
+                    Anda juga ditugaskan dalam perjalanan dinas ini. Konfirmasi
+                    keikutsertaan dilakukan sebagai anggota, bukan sebagai
+                    validator diri sendiri.
+                  </div>
+                )}
+                {selectedMember.managerUid === userProfile?.uid &&
+                selectedMember.employeeUid !== userProfile?.uid &&
+                selectedMember.managerValidationStatus ===
+                  "waiting_manager_validation" ? (
+                  <div className="space-y-4">
+                    <p className="font-semibold">Keputusan Validasi</p>
+                    <Textarea
+                      value={actionNote}
+                      onChange={(event) => setActionNote(event.target.value)}
+                      placeholder="Alasan jika tolak atau minta ganti."
+                      rows={4}
+                    />
+                    <Textarea
+                      value={replacementSuggestion}
+                      onChange={(event) =>
+                        setReplacementSuggestion(event.target.value)
+                      }
+                      placeholder="Rekomendasi staff pengganti (opsional)."
+                      rows={3}
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        onClick={() =>
+                          handleManagerDecision(selectedMember, "approve")
+                        }
+                        disabled={isSaving}
+                      >
+                        <CheckCircle2 className="mr-2 h-4 w-4" /> Setujui
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() =>
+                          handleManagerDecision(selectedMember, "replace")
+                        }
+                        disabled={isSaving}
+                      >
+                        <ArrowRightCircle className="mr-2 h-4 w-4" /> Minta
+                        Ganti
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        onClick={() =>
+                          handleManagerDecision(selectedMember, "reject")
+                        }
+                        disabled={isSaving}
+                      >
+                        <XCircle className="mr-2 h-4 w-4" /> Tolak
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : null}
 
@@ -2163,88 +2071,6 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
               </div>
             ) : null}
 
-            {mode === "staff" &&
-            selectedMember &&
-            selectedMember.reportStatus === "submitted" ? (
-              <div className="space-y-4">
-                <p className="font-semibold">Upload Nota / Reimburse</p>
-                <div className="grid gap-4 md:grid-cols-3">
-                  <div>
-                    <Label htmlFor="category">Kategori Nota</Label>
-                    <Select
-                      value={expenseForm.category}
-                      onValueChange={(value) =>
-                        setExpenseForm((prev) => ({
-                          ...prev,
-                          category: value as ExpenseCategory,
-                        }))
-                      }
-                    >
-                      <SelectTrigger id="category" className="mt-1 w-full">
-                        <SelectValue placeholder="Pilih kategori" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {EXPENSE_CATEGORIES.map((category) => (
-                          <SelectItem key={category} value={category}>
-                            {category}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label htmlFor="amount">Jumlah (Rp)</Label>
-                    <Input
-                      id="amount"
-                      type="number"
-                      value={expenseForm.amount}
-                      onChange={(event) =>
-                        setExpenseForm((prev) => ({
-                          ...prev,
-                          amount: event.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="receipt">Bukti Nota</Label>
-                    <input
-                      id="receipt"
-                      type="file"
-                      accept="image/*,.pdf,.doc,.docx"
-                      onChange={(event) =>
-                        setExpenseForm((prev) => ({
-                          ...prev,
-                          receipt: event.target.files?.[0] || null,
-                        }))
-                      }
-                      className="mt-2"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <Label htmlFor="description">Deskripsi Biaya</Label>
-                  <Textarea
-                    id="description"
-                    value={expenseForm.description}
-                    onChange={(event) =>
-                      setExpenseForm((prev) => ({
-                        ...prev,
-                        description: event.target.value,
-                      }))
-                    }
-                    rows={3}
-                  />
-                </div>
-                <Button
-                  onClick={() => handleSubmitExpense(selectedMember)}
-                  disabled={isSaving}
-                >
-                  <DollarSign className="mr-2 h-4 w-4" /> Kirim Nota
-                </Button>
-              </div>
-            ) : null}
-
             {mode === "hrd-monitor" &&
             selectedMission &&
             selectedMission.status === "pending_hrd_finalization" ? (
@@ -2255,85 +2081,6 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
                 >
                   <CheckCircle2 className="mr-2 h-4 w-4" /> Finalisasi
                   Administrasi
-                </Button>
-              </div>
-            ) : null}
-
-            {mode === "hrd-finance" &&
-            selectedMission &&
-            [
-              "report_submitted",
-              "expense_submitted",
-              "settlement_review",
-            ].includes(selectedMission.status || "") ? (
-              <div className="space-y-4">
-                <p className="font-semibold">Verifikasi Biaya</p>
-                <div className="grid gap-4 md:grid-cols-3">
-                  <div>
-                    <Label htmlFor="settlementDecision">Keputusan</Label>
-                    <Select
-                      value={settlementForm.decision}
-                      onValueChange={(value) =>
-                        setSettlementForm((prev) => ({
-                          ...prev,
-                          decision: value as
-                            | "approved"
-                            | "partial"
-                            | "rejected",
-                        }))
-                      }
-                    >
-                      <SelectTrigger
-                        id="settlementDecision"
-                        className="mt-1 w-full"
-                      >
-                        <SelectValue placeholder="Pilih keputusan" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="approved">Approve</SelectItem>
-                        <SelectItem value="partial">
-                          Approve Sebagian
-                        </SelectItem>
-                        <SelectItem value="rejected">Reject</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {settlementForm.decision === "partial" ? (
-                    <div>
-                      <Label htmlFor="approvedAmount">Jumlah Disetujui</Label>
-                      <Input
-                        id="approvedAmount"
-                        type="number"
-                        value={settlementForm.approvedAmount}
-                        onChange={(event) =>
-                          setSettlementForm((prev) => ({
-                            ...prev,
-                            approvedAmount: event.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-                  ) : null}
-                  <div className="md:col-span-3">
-                    <Label htmlFor="settlementNote">Catatan Finance</Label>
-                    <Textarea
-                      id="settlementNote"
-                      value={settlementForm.note}
-                      onChange={(event) =>
-                        setSettlementForm((prev) => ({
-                          ...prev,
-                          note: event.target.value,
-                        }))
-                      }
-                      rows={3}
-                    />
-                  </div>
-                </div>
-                <Button
-                  onClick={() => handleFinanceDecision(selectedMission)}
-                  disabled={isSaving}
-                >
-                  <DollarSign className="mr-2 h-4 w-4" /> Simpan Keputusan
                 </Button>
               </div>
             ) : null}

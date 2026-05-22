@@ -4,6 +4,11 @@ import { Readable } from "stream";
 
 // Max file size: 1 MB
 const MAX_FILE_SIZE = 1 * 1024 * 1024;
+const DRIVE_ACCESS_MODE =
+  (process.env.GOOGLE_DRIVE_ACCESS_MODE as
+    | "anyone_with_link"
+    | "internal_viewer") || "anyone_with_link";
+const DRIVE_INTERNAL_DOMAIN = process.env.GOOGLE_DRIVE_INTERNAL_DOMAIN || "";
 
 /**
  * Helper to find or create a folder in Google Drive (Service Account Mode)
@@ -305,10 +310,10 @@ export async function POST(req: NextRequest) {
         webViewLink: appsScriptData.webViewLink,
         googleDriveWebViewLink: appsScriptData.webViewLink,
         directViewUrl: appsScriptData.directViewUrl,
-        viewUrl: appsScriptData.fileId
-          ? `/api/storage/view?fileId=${appsScriptData.fileId}`
-          : appsScriptData.directViewUrl || appsScriptData.webViewLink || "",
+        viewUrl:
+          appsScriptData.webViewLink || appsScriptData.directViewUrl || "",
         thumbnailUrl: appsScriptData.thumbnailUrl,
+        accessMode: DRIVE_ACCESS_MODE,
         uploadedAt: appsScriptData.uploadedAt || new Date().toISOString(),
         uploadedBy: userId,
       });
@@ -364,6 +369,33 @@ export async function POST(req: NextRequest) {
 
       const driveFile = driveResponse.data;
 
+      if (!driveFile.id) {
+        throw new Error("Google Drive upload gagal: file id tidak ditemukan.");
+      }
+
+      if (DRIVE_ACCESS_MODE === "anyone_with_link") {
+        await drive.permissions.create({
+          fileId: driveFile.id,
+          requestBody: { type: "anyone", role: "reader" },
+          supportsAllDrives: true,
+        });
+      } else if (DRIVE_ACCESS_MODE === "internal_viewer") {
+        if (!DRIVE_INTERNAL_DOMAIN) {
+          throw new Error(
+            "GOOGLE_DRIVE_INTERNAL_DOMAIN belum diisi untuk internal_viewer mode.",
+          );
+        }
+        await drive.permissions.create({
+          fileId: driveFile.id,
+          requestBody: {
+            type: "domain",
+            role: "reader",
+            domain: DRIVE_INTERNAL_DOMAIN,
+          },
+          supportsAllDrives: true,
+        });
+      }
+
       return NextResponse.json({
         success: true,
         storageProvider: "googleDrive",
@@ -375,9 +407,8 @@ export async function POST(req: NextRequest) {
         driveFolderPath: resolved.folderPath,
         webViewLink: driveFile.webViewLink,
         googleDriveWebViewLink: driveFile.webViewLink,
-        viewUrl: driveFile.id
-          ? `/api/storage/view?fileId=${driveFile.id}`
-          : driveFile.webViewLink || "",
+        viewUrl: driveFile.webViewLink || "",
+        accessMode: DRIVE_ACCESS_MODE,
         uploadedAt: new Date().toISOString(),
         uploadedBy: userId,
       });

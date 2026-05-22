@@ -17,8 +17,14 @@ import {
   Timestamp,
   updateDoc,
 } from "firebase/firestore";
-import { uploadFile } from "@/lib/storage/storage-adapter";
+import { uploadFileToGoogleDrive } from "@/lib/storage/storage-adapter";
+import {
+  extractFileIdFromUrl,
+  openSecureFile,
+} from "@/lib/candidate-docs-utils";
 import { useToast } from "@/hooks/use-toast";
+import { AppModal } from "@/components/ui/AppModal";
+import { DialogTitle } from "@/components/ui/dialog";
 import {
   Card,
   CardContent,
@@ -930,6 +936,11 @@ export function ManagementDinasClient() {
     string[]
   >([]);
   const [manageStaffReason, setManageStaffReason] = useState("");
+  const [isDocumentViewerOpen, setIsDocumentViewerOpen] = useState(false);
+  const [isDocumentPreviewing, setIsDocumentPreviewing] = useState(false);
+  const [documentViewerError, setDocumentViewerError] = useState<string | null>(
+    null,
+  );
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const editFileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -940,6 +951,90 @@ export function ManagementDinasClient() {
         .map((member) => member.employeeUid),
     [activeMissionMembers],
   );
+
+  const isGoogleDriveLink = (url?: string | null) =>
+    !!url && /drive\.google\.com|docs\.google\.com/.test(url);
+
+  const isApiStorageViewUrl = (url?: string) =>
+    !!url?.includes("/api/storage/view?fileId=") ||
+    /api\/storage\/view\?fileId=/.test(url || "");
+
+  const activeDocumentUrl = useMemo(() => {
+    if (!activeMission) return "";
+    const assignmentDriveUrl = activeMission.assignmentLetterDriveUrl?.trim();
+    const manualLink = activeMission.googleDriveLink?.trim();
+    const webViewLink = activeMission.googleDriveWebViewLink?.trim();
+    const legacyUrl = activeMission.assignmentLetterUrl?.trim();
+
+    if (isApiStorageViewUrl(legacyUrl) && !assignmentDriveUrl) {
+      return manualLink || webViewLink || "";
+    }
+
+    return (
+      assignmentDriveUrl ||
+      manualLink ||
+      webViewLink ||
+      (isApiStorageViewUrl(legacyUrl) ? "" : legacyUrl) ||
+      ""
+    );
+  }, [activeMission]);
+
+  const activeDocumentLabel = useMemo(() => {
+    if (!activeMission) return "Surat Tugas/SPD";
+    return (
+      activeMission.assignmentLetterFileName ||
+      (activeMission.googleDriveLink
+        ? "Google Drive Link Manual"
+        : "Surat Tugas/SPD")
+    );
+  }, [activeMission]);
+
+  const activeDocumentSourceLabel = useMemo(() => {
+    if (!activeMission) return "";
+    if (
+      activeMission.assignmentLetterSource === "local_upload" ||
+      activeMission.assignmentLetterSource === "system_drive_upload"
+    ) {
+      return "Upload File via Drive HRP";
+    }
+    if (activeMission.assignmentLetterSource === "google_drive_link") {
+      return "Google Drive Link Manual";
+    }
+    if (activeMission.assignmentLetterSource === "google_drive") {
+      return "Upload File via Drive HRP";
+    }
+    if (activeMission.documentSource === "google_drive_link") {
+      return "Google Drive Link Manual";
+    }
+    if (activeMission.documentSource === "firebase_storage") {
+      return "Upload File";
+    }
+    return "Upload File via Drive HRP";
+  }, [activeMission]);
+
+  const handleOpenDocumentViewer = () => {
+    setDocumentViewerError(null);
+    setIsDocumentViewerOpen(true);
+  };
+
+  const handlePreviewDocument = async () => {
+    if (!activeMission) return;
+    setDocumentViewerError(null);
+
+    const storedUrl = activeDocumentUrl;
+    const isApiView =
+      !!storedUrl?.includes("/api/storage/view?fileId=") ||
+      /api\/storage\/view\?fileId=/.test(storedUrl || "");
+
+    if (!storedUrl || isApiView) {
+      setDocumentViewerError(
+        "Dokumen belum bisa dibuka lintas akun. Pastikan permission Google Drive sudah dibuka untuk viewer internal.",
+      );
+      return;
+    }
+
+    window.open(storedUrl, "_blank", "noopener,noreferrer");
+  };
 
   const refreshMissionList = () => {
     setMissionRefreshId((prev) => prev + 1);
@@ -1498,37 +1593,71 @@ export function ManagementDinasClient() {
       }
 
       let assignmentLetterUrl = activeMission.assignmentLetterUrl || "";
+      let assignmentLetterDriveUrl =
+        activeMission.assignmentLetterDriveUrl ||
+        activeMission.googleDriveLink ||
+        "";
+      let assignmentLetterDriveFileId =
+        activeMission.assignmentLetterDriveFileId || "";
       let assignmentLetterFileName =
         activeMission.assignmentLetterFileName || "";
-      let documentSource =
+      let assignmentLetterSource:
+        | "local_upload"
+        | "system_drive_upload"
+        | "google_drive"
+        | "google_drive_link"
+        | "firebase_storage" =
+        activeMission.assignmentLetterSource ||
         activeMission.documentSource ||
         (missionForm.googleDriveLink
           ? "google_drive_link"
-          : "firebase_storage");
+          : "system_drive_upload");
+      let documentSource =
+        activeMission.documentSource ||
+        (missionForm.googleDriveLink ? "google_drive_link" : "google_drive");
+      let assignmentLetterUploadedAt =
+        activeMission.assignmentLetterUploadedAt || null;
+      let assignmentLetterUploadedBy =
+        activeMission.assignmentLetterUploadedBy || "";
+      let assignmentLetterAccessMode:
+        | "anyone_with_link"
+        | "internal_viewer"
+        | null = activeMission.assignmentLetterAccessMode || null;
       let documentUpdated = false;
       const existingDriveLink = activeMission.googleDriveLink || "";
       const newDriveLink = missionForm.googleDriveLink?.trim() || "";
 
       if (editAssignmentLetterFile) {
-        const filePath = `business_trip_missions/${userProfile?.uid || ""}/${Date.now()}_${editAssignmentLetterFile.name}`;
-        const uploadResult = await uploadFile(
+        const uploadResult = await uploadFileToGoogleDrive(
           editAssignmentLetterFile,
-          filePath,
           userProfile?.uid || "",
-          { compress: false },
         );
-        assignmentLetterUrl =
-          uploadResult.downloadUrl ||
+        assignmentLetterDriveUrl =
+          uploadResult.googleDriveWebViewLink ||
+          uploadResult.webViewLink ||
+          uploadResult.directViewUrl ||
           uploadResult.viewUrl ||
-          assignmentLetterUrl;
+          assignmentLetterDriveUrl;
+        assignmentLetterDriveFileId = uploadResult.fileId || "";
+        assignmentLetterUrl = assignmentLetterDriveUrl || assignmentLetterUrl;
         assignmentLetterFileName =
           uploadResult.fileName || editAssignmentLetterFile.name;
-        documentSource = "firebase_storage";
+        documentSource = "google_drive";
+        assignmentLetterSource = "system_drive_upload";
+        assignmentLetterAccessMode =
+          uploadResult.accessMode || "anyone_with_link";
+        assignmentLetterUploadedAt = serverTimestamp();
+        assignmentLetterUploadedBy = userProfile?.uid || "";
         documentUpdated = true;
       } else if (newDriveLink !== existingDriveLink) {
         assignmentLetterUrl = newDriveLink;
+        assignmentLetterDriveUrl = newDriveLink;
+        assignmentLetterDriveFileId = "";
         assignmentLetterFileName = "";
         documentSource = "google_drive_link";
+        assignmentLetterSource = "google_drive_link";
+        assignmentLetterUploadedAt = null;
+        assignmentLetterUploadedBy = "";
         documentUpdated = true;
       }
 
@@ -1558,8 +1687,14 @@ export function ManagementDinasClient() {
         budgetEstimate:
           Number(parseRupiahInput(missionForm.budgetEstimate)) || 0,
         assignmentLetterUrl,
+        assignmentLetterDriveUrl,
+        assignmentLetterDriveFileId,
         assignmentLetterFileName,
         documentSource,
+        assignmentLetterSource,
+        assignmentLetterAccessMode,
+        assignmentLetterUploadedAt,
+        assignmentLetterUploadedBy,
         googleDriveLink: newDriveLink,
         updatedAt: serverTimestamp(),
       });
@@ -1683,6 +1818,9 @@ export function ManagementDinasClient() {
       const newMembers = await Promise.all(
         selectedStaff.map(async (staff) => {
           const memberRef = doc(membersRef);
+          const memberManagerUid =
+            staff.managerUid || (staff.isDivisionManager ? staff.uid : "");
+          const isManagerAsStaff = staff.isDivisionManager;
           const memberData: BusinessTripMissionMember = {
             missionId: activeMission.id || "",
             missionName: activeMission.missionName || "",
@@ -1694,10 +1832,16 @@ export function ManagementDinasClient() {
             brandName: staff.brandName || "-",
             divisionId: staff.divisionId || "",
             divisionName: staff.divisionName || "-",
-            managerUid: staff.managerUid || "",
-            managerName: staff.managerName || "",
-            memberStatus: "waiting_manager_validation",
-            managerValidationStatus: "waiting_manager_validation",
+            managerUid: memberManagerUid,
+            managerName: staff.managerName || staff.fullName,
+            requiresManagerValidation: !isManagerAsStaff,
+            memberStatus: "waiting_staff_confirmation",
+            managerValidationStatus: isManagerAsStaff
+              ? "validated_by_assigner"
+              : "waiting_manager_validation",
+            managerValidationNote: isManagerAsStaff
+              ? "Disetujui oleh pemberi tugas"
+              : undefined,
             staffConfirmationStatus: "waiting_staff_confirmation",
             missionStatus: activeMission.status || "pending_manager_validation",
             createdAt: serverTimestamp(),
@@ -1733,10 +1877,17 @@ export function ManagementDinasClient() {
       const activeMembers = activeMissionMembers.filter(
         (member) => member.memberStatus !== "archived",
       );
-      const managerValidations = buildManagerValidationSummaries([
-        ...activeMembers,
-        ...newMembers,
-      ]);
+      const combinedMembers = [...activeMembers, ...newMembers];
+      const managerValidations =
+        buildManagerValidationSummaries(combinedMembers);
+      const assignedManagerUids = Array.from(
+        new Set(
+          combinedMembers.map((member) => member.managerUid).filter(Boolean),
+        ),
+      );
+      const allApproved = managerValidations.every(
+        (item) => item.status === "approved",
+      );
 
       await updateDoc(missionDocRef, {
         memberCount: (activeMission.memberCount ?? 0) + selectedStaff.length,
@@ -1744,7 +1895,11 @@ export function ManagementDinasClient() {
         managerApprovedCount: managerValidations.filter(
           (item) => item.status === "approved",
         ).length,
+        managerUids: assignedManagerUids,
         managerValidations,
+        status: allApproved
+          ? "waiting_staff_confirmation"
+          : activeMission.status || "pending_manager_validation",
         updatedAt: serverTimestamp(),
       });
 
@@ -1920,12 +2075,14 @@ export function ManagementDinasClient() {
                 member.staffConfirmationStatus === "confirmed_by_staff",
             ).length;
             const documentUrl =
-              activeMission.assignmentLetterUrl ||
+              activeMission.assignmentLetterDriveUrl?.trim() ||
+              activeMission.googleDriveWebViewLink ||
               activeMission.googleDriveLink ||
+              activeMission.assignmentLetterUrl ||
               "";
             const documentLabel =
               activeMission.assignmentLetterFileName ||
-              (activeMission.googleDriveLink ? "Link Google Drive" : "");
+              (documentUrl ? "Surat Tugas/SPD" : "Surat Tugas/SPD");
 
             return (
               <>
@@ -1974,40 +2131,50 @@ export function ManagementDinasClient() {
                           <p className="text-sm text-muted-foreground">
                             Nama dokumen
                           </p>
-                          <p className="font-medium">{documentLabel}</p>
+                          <p className="font-medium text-foreground">
+                            {documentLabel}
+                          </p>
                         </div>
                         <div>
                           <p className="text-sm text-muted-foreground">
                             Sumber dokumen
                           </p>
-                          <p className="font-medium capitalize">
-                            {activeMission.documentSource === "firebase_storage"
-                              ? "Upload"
-                              : "Google Drive"}
+                          <p className="font-medium capitalize text-foreground">
+                            {activeMission.assignmentLetterSource ===
+                            "local_upload"
+                              ? "Upload File via Drive HRP"
+                              : activeMission.assignmentLetterSource ===
+                                  "system_drive_upload"
+                                ? "Upload File via Drive HRP"
+                                : activeMission.assignmentLetterSource ===
+                                    "google_drive_link"
+                                  ? "Google Drive Link Manual"
+                                  : activeMission.documentSource ===
+                                      "firebase_storage"
+                                    ? "Upload File"
+                                    : "Upload File via Drive HRP"}
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          <a
-                            href={documentUrl}
-                            target="_blank"
-                            rel="noreferrer"
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={handleOpenDocumentViewer}
                           >
-                            <Button size="sm" variant="outline">
-                              Lihat Dokumen
-                            </Button>
-                          </a>
-                          {activeMission.documentSource ===
-                            "google_drive_link" && (
-                            <a
-                              href={activeMission.googleDriveLink}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              <Button size="sm" variant="secondary">
-                                Buka Link
-                              </Button>
-                            </a>
-                          )}
+                            Lihat Dokumen
+                          </Button>
+                          {activeMission.googleDriveLink &&
+                            activeMission.googleDriveLink !== documentUrl && (
+                              <a
+                                href={activeMission.googleDriveLink}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                <Button size="sm" variant="secondary">
+                                  Buka Link
+                                </Button>
+                              </a>
+                            )}
                         </div>
                       </div>
                     ) : (
@@ -2066,7 +2233,7 @@ export function ManagementDinasClient() {
                     description="Instruksi lengkap untuk seluruh anggota dinas."
                   />
                   <div
-                    className="prose max-w-none text-sm"
+                    className="prose prose-neutral max-w-none text-foreground leading-relaxed prose-ol:list-decimal prose-ul:list-disc prose-ul:pl-5 prose-li:mt-2 prose-p:mt-2"
                     dangerouslySetInnerHTML={{
                       __html: activeMission.instructionHtml || "",
                     }}
@@ -2442,34 +2609,48 @@ export function ManagementDinasClient() {
                 <p className="text-sm text-muted-foreground">
                   Dokumen Surat Tugas/SPD aktif
                 </p>
-                {activeMission.assignmentLetterUrl ||
+                {activeMission.assignmentLetterDriveUrl ||
+                activeMission.assignmentLetterUrl ||
                 activeMission.googleDriveLink ? (
                   <div className="mt-3 space-y-2">
                     <p className="text-sm font-medium text-foreground">
                       {activeMission.assignmentLetterFileName ||
+                        activeMission.assignmentLetterDriveUrl ||
                         activeMission.googleDriveLink ||
                         "Surat Tugas aktif"}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       Sumber dokumen:{" "}
-                      {activeMission.documentSource === "firebase_storage"
-                        ? "Upload"
-                        : "Google Drive"}
+                      {activeMission.assignmentLetterSource === "local_upload"
+                        ? "Upload File via Drive HRP"
+                        : activeMission.assignmentLetterSource ===
+                            "system_drive_upload"
+                          ? "Upload File via Drive HRP"
+                          : activeMission.assignmentLetterSource ===
+                              "google_drive_link"
+                            ? "Google Drive Link Manual"
+                            : activeMission.documentSource ===
+                                "firebase_storage"
+                              ? "Upload File"
+                              : "Upload File via Drive HRP"}
                     </p>
+                    {activeMission.assignmentLetterSource ===
+                    "google_drive_link" ? (
+                      <p className="text-xs text-amber-700">
+                        Pastikan link Google Drive sudah bisa diakses oleh akun
+                        HRP lain.
+                      </p>
+                    ) : null}
                     <div className="flex flex-wrap gap-2 mt-2">
-                      <a
-                        href={
-                          activeMission.assignmentLetterUrl ||
-                          activeMission.googleDriveLink
-                        }
-                        target="_blank"
-                        rel="noreferrer"
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleOpenDocumentViewer}
                       >
-                        <Button size="sm" variant="outline">
-                          Lihat Dokumen
-                        </Button>
-                      </a>
-                      {activeMission.documentSource === "google_drive_link" &&
+                        Lihat Dokumen
+                      </Button>
+                      {activeMission.assignmentLetterSource ===
+                        "google_drive_link" &&
                         activeMission.googleDriveLink && (
                           <a
                             href={activeMission.googleDriveLink}
@@ -2804,28 +2985,53 @@ export function ManagementDinasClient() {
       }
 
       let assignmentLetterUrl = missionForm.googleDriveLink;
+      let assignmentLetterDriveUrl = missionForm.googleDriveLink || "";
+      let assignmentLetterDriveFileId = "";
       let assignmentLetterFileName = assignmentLetterFile?.name || "";
-      let documentSource: "firebase_storage" | "google_drive_link" =
-        missionForm.googleDriveLink ? "google_drive_link" : "firebase_storage";
+      let assignmentLetterAccessMode:
+        | "anyone_with_link"
+        | "internal_viewer"
+        | null = null;
+      let documentSource:
+        | "google_drive"
+        | "google_drive_link"
+        | "firebase_storage" = missionForm.googleDriveLink
+        ? "google_drive_link"
+        : "google_drive";
+      let assignmentLetterSource:
+        | "local_upload"
+        | "system_drive_upload"
+        | "google_drive_link"
+        | "google_drive"
+        | "firebase_storage" = missionForm.googleDriveLink
+        ? "google_drive_link"
+        : "system_drive_upload";
+      let assignmentLetterUploadedAt: any = null;
+      let assignmentLetterUploadedBy = "";
 
       if (assignmentLetterFile) {
         try {
-          const filePath = `business_trip_missions/${userProfile.uid}/${Date.now()}_${assignmentLetterFile.name}`;
-          const uploadResult = await uploadFile(
+          const uploadResult = await uploadFileToGoogleDrive(
             assignmentLetterFile,
-            filePath,
             userProfile.uid,
-            { compress: false },
           );
-          assignmentLetterUrl =
-            uploadResult.downloadUrl ||
+
+          assignmentLetterDriveUrl =
+            uploadResult.googleDriveWebViewLink ||
+            uploadResult.webViewLink ||
+            uploadResult.directViewUrl ||
             uploadResult.viewUrl ||
-            assignmentLetterUrl;
-          assignmentLetterFileName = uploadResult.fileName;
-          documentSource =
-            uploadResult.storageProvider === "firebaseStorage"
-              ? "firebase_storage"
-              : "google_drive_link";
+            assignmentLetterDriveUrl;
+          assignmentLetterDriveFileId = uploadResult.fileId || "";
+          assignmentLetterUrl = assignmentLetterDriveUrl || assignmentLetterUrl;
+          assignmentLetterFileName =
+            uploadResult.fileName || assignmentLetterFileName;
+          documentSource = "google_drive";
+          assignmentLetterSource = "system_drive_upload";
+          assignmentLetterAccessMode =
+            uploadResult.accessMode || "anyone_with_link";
+          assignmentLetterUploadedAt = serverTimestamp();
+          assignmentLetterUploadedBy = userProfile.uid;
         } catch (uploadError: any) {
           console.warn("Upload file gagal:", uploadError);
           if (missionForm.googleDriveLink) {
@@ -2834,9 +3040,12 @@ export function ManagementDinasClient() {
               description:
                 "Menggunakan link Google Drive sebagai sumber dokumen.",
             });
+            assignmentLetterDriveUrl = missionForm.googleDriveLink;
+            assignmentLetterDriveFileId = "";
             assignmentLetterUrl = missionForm.googleDriveLink;
             assignmentLetterFileName = "";
             documentSource = "google_drive_link";
+            assignmentLetterSource = "google_drive_link";
           } else {
             throw uploadError;
           }
@@ -2852,14 +3061,60 @@ export function ManagementDinasClient() {
       const assignmentNumber =
         missionForm.assignmentNumber || `SPD-${Date.now()}`;
       const instructionText = stripHtml(missionForm.instructionNote);
+      const assignedManagerUids = Array.from(
+        new Set(
+          selectedStaffData
+            .map(
+              (staff) =>
+                staff.managerUid || (staff.isDivisionManager ? staff.uid : ""),
+            )
+            .filter(Boolean),
+        ),
+      );
+
+      const managerValidationSummaries = buildManagerValidationSummaries(
+        selectedStaffData.map((staff) => ({
+          missionId: missionRef.id,
+          missionName: missionForm.missionName,
+          assignmentNumber,
+          employeeUid: staff.uid,
+          employeeName: staff.fullName,
+          brandId: staff.brandId || "",
+          brandName: staff.brandName || "-",
+          divisionId: staff.divisionId || "",
+          divisionName: staff.divisionName || "-",
+          managerUid:
+            staff.managerUid || (staff.isDivisionManager ? staff.uid : ""),
+          managerName: staff.managerName || staff.fullName,
+          managerValidationStatus: staff.isDivisionManager
+            ? "validated_by_assigner"
+            : "waiting_manager_validation",
+          managerValidationNote: staff.isDivisionManager
+            ? "Disetujui oleh pemberi tugas"
+            : undefined,
+          staffConfirmationStatus: "waiting_staff_confirmation",
+        })) as BusinessTripMissionMember[],
+      );
+
+      const initialStatus = managerValidationSummaries.every(
+        (item) => item.status === "approved",
+      )
+        ? "waiting_staff_confirmation"
+        : "pending_manager_validation";
 
       await setDoc(missionRef, {
         missionName: missionForm.missionName,
         assignmentNumber,
         missionCode: assignmentNumber,
         assignmentLetterUrl,
+        assignmentLetterDriveUrl,
+        assignmentLetterDriveFileId,
         assignmentLetterFileName,
         documentSource,
+        assignmentLetterSource,
+        assignmentLetterAccessMode,
+        assignmentLetterUploadedAt,
+        assignmentLetterUploadedBy,
         googleDriveLink: missionForm.googleDriveLink || "",
         assignedByUid: userProfile.uid,
         assignedByName: userProfile.fullName,
@@ -2879,14 +3134,14 @@ export function ManagementDinasClient() {
         instructionNote: missionForm.instructionNote, // HTML (legacy compat)
         instructionHtml: missionForm.instructionNote, // HTML (canonical)
         instructionText, // Plain text
-        costScheme: missionForm.costScheme,
-        advanceAmount: Number(missionForm.advanceAmount) || 0,
-        budgetEstimate:
-          Number(parseRupiahInput(missionForm.budgetEstimate)) || 0,
         memberCount: selectedStaffData.length,
-        managerApprovedCount: 0,
+        managerApprovedCount: managerValidationSummaries.filter(
+          (item) => item.status === "approved",
+        ).length,
+        managerValidationCount: managerValidationSummaries.length,
+        managerUids: assignedManagerUids,
         staffConfirmedCount: 0,
-        status: "pending_manager_validation",
+        status: initialStatus,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -2900,6 +3155,10 @@ export function ManagementDinasClient() {
             "members",
           );
           const memberRef = doc(membersCollection);
+          const memberManagerUid =
+            staff.managerUid || (staff.isDivisionManager ? staff.uid : "");
+          const isManagerAsStaff = staff.isDivisionManager;
+
           await setDoc(memberRef, {
             missionId: missionRef.id,
             missionName: missionForm.missionName,
@@ -2911,13 +3170,19 @@ export function ManagementDinasClient() {
             brandName: staff.brandName || "-",
             divisionId: staff.divisionId || "",
             divisionName: staff.divisionName || "-",
-            managerUid: staff.managerUid || "",
-            managerName: staff.managerName || "",
+            managerUid: memberManagerUid,
+            managerName: staff.managerName || staff.fullName,
+            requiresManagerValidation: !isManagerAsStaff,
             startDate: Timestamp.fromDate(new Date(missionForm.startDate)),
             endDate: Timestamp.fromDate(new Date(missionForm.endDate)),
             durationDays,
-            memberStatus: "waiting_manager_validation",
-            managerValidationStatus: "waiting_manager_validation",
+            memberStatus: "waiting_staff_confirmation",
+            managerValidationStatus: isManagerAsStaff
+              ? "validated_by_assigner"
+              : "waiting_manager_validation",
+            managerValidationNote: isManagerAsStaff
+              ? "Disetujui oleh pemberi tugas"
+              : undefined,
             staffConfirmationStatus: "waiting_staff_confirmation",
             missionStatus: "pending_manager_validation",
             createdAt: serverTimestamp(),
@@ -3032,7 +3297,6 @@ export function ManagementDinasClient() {
                       <TableHead>Jumlah Anggota</TableHead>
                       <TableHead>Progress Validasi Manager</TableHead>
                       <TableHead>Progress Konfirmasi Staff</TableHead>
-                      <TableHead>Skema Biaya</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Aksi</TableHead>
                     </TableRow>
@@ -3095,9 +3359,6 @@ export function ManagementDinasClient() {
                             {`${mission.staffConfirmedCount ?? 0}/${
                               mission.memberCount ?? 0
                             } konfirmasi`}
-                          </TableCell>
-                          <TableCell className="capitalize">
-                            {mission.costScheme?.replace("_", " ")}
                           </TableCell>
                           <TableCell>
                             {renderStatusLabel(mission.status)}
@@ -3414,165 +3675,119 @@ export function ManagementDinasClient() {
               )}
             </section>
 
-            {/* ── SECTION 4: BIAYA & DOKUMEN ───────────────────────────── */}
+            {/* ── SECTION 4: DOKUMEN SURAT TUGAS/SPD ──────────────────────── */}
             <section className="space-y-4">
               <SectionHeader
-                icon={Wallet}
-                title="4. Biaya & Dokumen"
-                description="Skema biaya, estimasi anggaran, dan upload Surat Tugas/SPD."
+                icon={FileText}
+                title="4. Dokumen Surat Tugas/SPD"
+                description="Upload dokumen Surat Tugas/SPD atau berikan link Google Drive sebagai alternatif."
               />
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>
-                    Skema Biaya <span className="text-destructive">*</span>
-                  </Label>
-                  <Select
-                    value={missionForm.costScheme}
-                    onValueChange={(val: any) =>
-                      setMissionForm({ ...missionForm, costScheme: val })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {COST_SCHEMAS.map((t) => (
-                        <SelectItem key={t} value={t} className="capitalize">
-                          {t.replace("_", " ")}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Estimasi Anggaran</Label>
-                  <Input
-                    type="text"
-                    value={formatRupiah(missionForm.budgetEstimate)}
-                    onChange={(e) =>
-                      setMissionForm({
-                        ...missionForm,
-                        budgetEstimate: parseRupiahInput(e.target.value),
-                      })
-                    }
-                    placeholder="Rp 0"
-                  />
-                </div>
-
-                {/* Upload Surat Tugas */}
-                <div className="space-y-3 md:col-span-2">
-                  <Label>
-                    Upload Surat Tugas / SPD{" "}
-                    <span className="text-muted-foreground font-normal">
-                      (wajib salah satu: file atau link Drive)
-                    </span>
-                  </Label>
-                  <div className="rounded-xl border border-dashed border-border bg-muted/30 p-4 space-y-3">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="shrink-0"
-                        onClick={() => fileInputRef.current?.click()}
-                      >
-                        Pilih File PDF/DOC/DOCX
-                      </Button>
-                      <div className="min-w-0 flex-1 text-sm">
-                        {assignmentLetterFile ? (
-                          <div>
-                            <p className="font-medium text-foreground truncate">
-                              {assignmentLetterFile.name}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {(
-                                assignmentLetterFile.size /
-                                1024 /
-                                1024
-                              ).toFixed(2)}{" "}
-                              MB
-                            </p>
-                          </div>
-                        ) : (
-                          <p className="text-muted-foreground">
-                            Pilih file PDF/DOC/DOCX, maks 10 MB.
+              <div className="space-y-3">
+                <Label>
+                  Upload Surat Tugas / SPD{" "}
+                  <span className="text-muted-foreground font-normal">
+                    (wajib salah satu: file atau link Drive)
+                  </span>
+                </Label>
+                <div className="rounded-xl border border-dashed border-border bg-muted/30 p-4 space-y-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="shrink-0"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      Pilih File PDF/DOC/DOCX
+                    </Button>
+                    <div className="min-w-0 flex-1 text-sm">
+                      {assignmentLetterFile ? (
+                        <div>
+                          <p className="font-medium text-foreground truncate">
+                            {assignmentLetterFile.name}
                           </p>
-                        )}
-                      </div>
-                      {assignmentLetterFile && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="text-muted-foreground hover:text-destructive shrink-0"
-                          onClick={() => {
-                            setAssignmentLetterFile(null);
-                            setAssignmentLetterError(null);
-                            if (fileInputRef.current)
-                              fileInputRef.current.value = "";
-                          }}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
+                          <p className="text-xs text-muted-foreground">
+                            {(assignmentLetterFile.size / 1024 / 1024).toFixed(
+                              2,
+                            )}{" "}
+                            MB
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-muted-foreground">
+                          Pilih file PDF/DOC/DOCX, maks 10 MB.
+                        </p>
                       )}
                     </div>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".pdf,.doc,.docx"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0] || null;
-                        if (!file) {
+                    {assignmentLetterFile && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="text-muted-foreground hover:text-destructive shrink-0"
+                        onClick={() => {
                           setAssignmentLetterFile(null);
-                          return;
-                        }
-                        const validation = validateAssignmentLetterFile(file);
-                        if (!validation.isValid) {
-                          setAssignmentLetterFile(null);
-                          setAssignmentLetterError(validation.message || null);
-                          return;
-                        }
-                        setAssignmentLetterError(null);
-                        setAssignmentLetterFile(file);
-                      }}
-                    />
-                    {assignmentLetterError && (
-                      <p className="text-sm text-destructive">
-                        {assignmentLetterError}
-                      </p>
+                          setAssignmentLetterError(null);
+                          if (fileInputRef.current)
+                            fileInputRef.current.value = "";
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
                     )}
-
-                    {/* Separator */}
-                    <div className="relative">
-                      <div className="absolute inset-0 flex items-center">
-                        <span className="w-full border-t border-border" />
-                      </div>
-                      <div className="relative flex justify-center text-xs uppercase">
-                        <span className="bg-muted/30 px-3 text-muted-foreground">
-                          atau
-                        </span>
-                      </div>
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,.doc,.docx"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] || null;
+                      if (!file) {
+                        setAssignmentLetterFile(null);
+                        return;
+                      }
+                      const validation = validateAssignmentLetterFile(file);
+                      if (!validation.isValid) {
+                        setAssignmentLetterFile(null);
+                        setAssignmentLetterError(validation.message || null);
+                        return;
+                      }
+                      setAssignmentLetterError(null);
+                      setAssignmentLetterFile(file);
+                    }}
+                  />
+                  {assignmentLetterError && (
+                    <p className="text-sm text-destructive">
+                      {assignmentLetterError}
+                    </p>
+                  )}
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center">
+                      <span className="w-full border-t border-border" />
                     </div>
-
-                    <div className="space-y-2">
-                      <Label className="text-sm">
-                        Link Google Drive (opsional)
-                      </Label>
-                      <Input
-                        value={missionForm.googleDriveLink}
-                        onChange={(e) =>
-                          setMissionForm({
-                            ...missionForm,
-                            googleDriveLink: e.target.value,
-                          })
-                        }
-                        placeholder="https://drive.google.com/..."
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Alternatif jika upload file tidak tersedia atau quota
-                        Firebase penuh.
-                      </p>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-muted/30 px-3 text-muted-foreground">
+                        atau
+                      </span>
                     </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm">
+                      Link Google Drive (opsional)
+                    </Label>
+                    <Input
+                      value={missionForm.googleDriveLink}
+                      onChange={(e) =>
+                        setMissionForm({
+                          ...missionForm,
+                          googleDriveLink: e.target.value,
+                        })
+                      }
+                      placeholder="https://drive.google.com/..."
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Alternatif jika upload file tidak tersedia.
+                    </p>
                   </div>
                 </div>
               </div>
@@ -3636,6 +3851,74 @@ export function ManagementDinasClient() {
       ) : activeMode === "manage" ? (
         renderMissionManageView()
       ) : null}
+
+      <AppModal
+        open={isDocumentViewerOpen}
+        onOpenChange={setIsDocumentViewerOpen}
+      >
+        <div className="space-y-6 p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <DialogTitle className="text-xl font-semibold">
+                Pratinjau Dokumen Surat Tugas/SPD
+              </DialogTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                Lihat dokumen dari dalam HRP tanpa membuka API mentah.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsDocumentViewerOpen(false)}
+            >
+              Tutup
+            </Button>
+          </div>
+
+          <div className="rounded-lg border border-border bg-muted/50 p-4">
+            <p className="text-sm text-muted-foreground">Nama dokumen</p>
+            <p className="font-medium text-foreground mt-1">
+              {activeDocumentLabel}
+            </p>
+            <p className="text-sm text-muted-foreground mt-3">
+              Sumber dokumen: {activeDocumentSourceLabel}
+            </p>
+            {activeMission?.googleDriveLink ? (
+              <a
+                href={activeMission.googleDriveLink}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <Button size="sm" variant="secondary" className="w-full">
+                  Buka Google Drive
+                </Button>
+              </a>
+            ) : null}
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handlePreviewDocument}
+              disabled={isDocumentPreviewing || !activeDocumentUrl}
+            >
+              {isDocumentPreviewing ? "Memuat..." : "Pratinjau Dokumen"}
+            </Button>
+
+            {!activeDocumentUrl ? (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                Dokumen belum bisa dipreview. Silakan buka melalui Google Drive
+                atau hubungi admin.
+              </div>
+            ) : null}
+
+            {documentViewerError ? (
+              <div className="rounded-md border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive-foreground">
+                {documentViewerError}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </AppModal>
     </div>
   );
 }
