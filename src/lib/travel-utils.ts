@@ -12,7 +12,7 @@ import {
   BusinessTripMissionMember,
 } from "@/components/dashboard/dinas/types";
 import { normalizeEmployeeRow } from "@/lib/employee-row-normalizer";
-import { UserProfile } from "@/providers/auth-provider";
+import { UserProfile } from "@/lib/types";
 import { Firestore } from "firebase/firestore";
 
 type ApprovalTargetStaff = {
@@ -29,7 +29,12 @@ type ApprovalTargetStaff = {
  *   The director is assumed to be the `managerUid` of the division manager.
  */
 export async function determineApprovalTarget(
-  staff: ApprovalTargetStaff,
+  firestore: Firestore,
+  staff: ApprovalTargetStaff & {
+    brandId?: string;
+    divisionId?: string;
+    employeeUid?: string;
+  },
   fallbackDirectorUid: string,
   fallbackDirectorName: string,
 ): Promise<{
@@ -37,27 +42,73 @@ export async function determineApprovalTarget(
   approverName: string | null;
   level: "division_manager" | "director";
 }> {
-  if (staff.isDivisionManager) {
-    if (staff.managerUid) {
-      return {
-        approverUid: staff.managerUid,
-        approverName: staff.managerName || null,
-        level: "director",
-      };
-    }
+  // Prefer authoritative source: master division document under brands/{brandId}/divisions/{divisionId}
+  const brandId = (staff as any).brandId;
+  const divisionId = (staff as any).divisionId;
 
-    return {
-      approverUid: fallbackDirectorUid,
-      approverName: fallbackDirectorName || null,
-      level: "director",
-    };
+  if (brandId && divisionId) {
+    try {
+      const divRef = doc(firestore, "brands", brandId, "divisions", divisionId);
+      const divSnap = await getDoc(divRef);
+      if (divSnap.exists()) {
+        const masterDiv = divSnap.data() as any;
+        // Regular staff: approver is division manager (masterDiv.managerId)
+        if (!staff.isDivisionManager) {
+          if (
+            masterDiv.managerId &&
+            masterDiv.managerId !== staff.employeeUid
+          ) {
+            return {
+              approverUid: masterDiv.managerId,
+              approverName: masterDiv.managerName || null,
+              level: "division_manager",
+            };
+          }
+          // If no manager in master data, fail early per new policy
+          throw new Error(
+            `Struktur organisasi belum lengkap untuk divisi ${divisionId} (brand ${brandId}).`,
+          );
+        }
+
+        // Division manager: approver is the manager's direct supervisor / director
+        if (staff.isDivisionManager) {
+          if (
+            masterDiv.managerDirectSupervisorId &&
+            masterDiv.managerDirectSupervisorId !== staff.employeeUid
+          ) {
+            return {
+              approverUid: masterDiv.managerDirectSupervisorId,
+              approverName: masterDiv.managerDirectSupervisorName || null,
+              level: "director",
+            };
+          }
+          // fallback to explicit fallback director only when master data has no direct supervisor
+          if (fallbackDirectorUid) {
+            return {
+              approverUid: fallbackDirectorUid,
+              approverName: fallbackDirectorName || null,
+              level: "director",
+            };
+          }
+          throw new Error(
+            `Struktur organisasi belum lengkap untuk Manager Divisi ${divisionId} (brand ${brandId}).`,
+          );
+        }
+      }
+      // If master division document not found, fail instead of using stale fields
+      throw new Error(
+        `Divisi master tidak ditemukan untuk ${divisionId} in brand ${brandId}`,
+      );
+    } catch (err) {
+      // Bubble up for caller to handle and present clear error
+      throw err;
+    }
   }
 
-  return {
-    approverUid: staff.managerUid || null,
-    approverName: staff.managerName || null,
-    level: "division_manager",
-  };
+  // If no brand/division metadata is available, do not fallback to stale manager fields.
+  throw new Error(
+    "Tidak dapat menentukan approver: brand/division tidak tersedia pada data karyawan.",
+  );
 }
 
 /**
@@ -134,7 +185,7 @@ export async function createTravelMission(params: {
     instructionNote: missionForm.instructionNote,
     instructionHtml: missionForm.instructionHtml,
     assignedByUid: userProfile.uid,
-    assignedByName: userProfile.displayName,
+    assignedByName: userProfile.fullName,
     // visibility and status are derived later
     status: "draft_mission",
     createdAt: serverTimestamp() as any,
@@ -146,18 +197,17 @@ export async function createTravelMission(params: {
   // Fetch employee profiles for selected staff
   const staffDocs = await Promise.all(
     selectedStaffUids.map(async (uid) => {
-      const snap = await getDoc(
-        doc(collection(firestore, "employee_profiles"), uid),
-      );
+      const snap = await getDoc(doc(firestore, "employee_profiles", uid));
       return { uid, data: snap.exists() ? snap.data() : null } as const;
     }),
   );
 
   const memberDocs: BusinessTripMissionMember[] = [];
   for (const { uid, data } of staffDocs) {
-    const normalized = normalizeEmployeeRow(data);
+    const normalized = normalizeEmployeeRow(data, null, null);
     const { approverUid, approverName, level } = await determineApprovalTarget(
-      normalized,
+      firestore,
+      { ...(normalized as any), employeeUid: uid },
       directorUid,
       directorName,
     );
@@ -175,7 +225,7 @@ export async function createTravelMission(params: {
       brandId: normalized.brandId,
       brandName: normalized.brandName,
       divisionId: normalized.divisionId,
-      divisionName: normalized.divisionName,
+      divisionName: (normalized as any).divisi || normalized.divisionId || "",
       managerUid: normalized.managerUid,
       managerName: normalized.managerName,
       directSupervisorUid: normalized.managerUid,
@@ -204,7 +254,7 @@ export async function createTravelMission(params: {
       createdAt: serverTimestamp() as any,
       read: false,
       byUid: userProfile.uid,
-      byName: userProfile.displayName || userProfile.uid,
+      byName: userProfile.fullName || userProfile.uid,
     });
   }
 
@@ -265,7 +315,7 @@ export async function createTravelMission(params: {
       createdAt: serverTimestamp() as any,
       read: false,
       byUid: userProfile.uid,
-      byName: userProfile.displayName || userProfile.uid,
+      byName: userProfile.fullName || userProfile.uid,
     });
   });
 

@@ -1,11 +1,20 @@
 import type { Timestamp } from "firebase/firestore";
-export {
+import {
   ROLES,
   ROLES_INTERNAL,
   EMPLOYMENT_TYPES,
   EMPLOYMENT_STAGES,
   EMPLOYMENT_STATUSES,
 } from "./constants";
+
+// Re-export for convenience
+export {
+  ROLES,
+  ROLES_INTERNAL,
+  EMPLOYMENT_TYPES,
+  EMPLOYMENT_STAGES,
+  EMPLOYMENT_STATUSES,
+};
 
 export type FileMetadata = {
   fileName: string;

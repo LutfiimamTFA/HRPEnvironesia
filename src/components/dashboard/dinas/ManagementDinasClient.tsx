@@ -1271,7 +1271,7 @@ export function ManagementDinasClient() {
 
     // HRD and Super Admin can see all missions for monitoring
     const isHrdOrSuperAdmin =
-      userProfile.role === "hrd" || userProfile.role === "super_admin";
+      userProfile.role === "hrd" || userProfile.role === "super-admin";
 
     if (isHrdOrSuperAdmin) {
       return query(
@@ -1510,14 +1510,71 @@ export function ManagementDinasClient() {
   const loadActiveMissionData = async (mission: BusinessTripMission) => {
     if (!firestore || !mission.id) return;
     setDetailLoading(true);
+
+    const formatErrorDetails = (reason: unknown) => {
+      const out: {
+        code?: string;
+        name?: string;
+        message?: string;
+        stack?: string;
+        raw?: string;
+      } = {};
+
+      if (!reason) {
+        out.message = "Unknown error";
+        out.raw = "undefined or null";
+        return out;
+      }
+
+      if (reason instanceof Error) {
+        out.name = reason.name;
+        out.message = reason.message || reason.name;
+        out.stack = reason.stack;
+        out.code = (reason as any)?.code || undefined;
+        out.raw = String(reason);
+        return out;
+      }
+
+      if (typeof reason === "string") {
+        out.message = reason;
+        out.raw = reason;
+        return out;
+      }
+
+      if (typeof reason === "object") {
+        out.name = (reason as any)?.name || undefined;
+        out.message =
+          (reason as any)?.message ||
+          (reason as any)?.error ||
+          JSON.stringify(reason) ||
+          String(reason);
+        out.code = (reason as any)?.code || undefined;
+        out.stack = (reason as any)?.stack || undefined;
+        try {
+          out.raw = JSON.stringify(reason);
+        } catch {
+          out.raw = String(reason);
+        }
+        return out;
+      }
+
+      out.message = String(reason);
+      out.raw = String(reason);
+      return out;
+    };
+
+    const membersPath = `business_trip_missions/${mission.id}/members`;
+    const timelinePath = `business_trip_missions/${mission.id}/timeline`;
+    const staffChangesPath = `business_trip_missions/${mission.id}/staff_changes`;
+
     try {
-      const membersSnap = await getDocs(
+      const membersPromise = getDocs(
         collection(firestore, "business_trip_missions", mission.id, "members"),
       );
-      const timelineSnap = await getDocs(
+      const timelinePromise = getDocs(
         collection(firestore, "business_trip_missions", mission.id, "timeline"),
       );
-      const staffChangesSnap = await getDocs(
+      const staffChangesPromise = getDocs(
         collection(
           firestore,
           "business_trip_missions",
@@ -1526,32 +1583,111 @@ export function ManagementDinasClient() {
         ),
       );
 
-      setActiveMissionMembers(
-        membersSnap.docs.map((memberDoc) => ({
-          id: memberDoc.id,
-          ...(memberDoc.data() as BusinessTripMissionMember),
-        })),
-      );
-      setActiveMissionTimeline(
-        timelineSnap.docs
-          .map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as any) }))
-          .sort((a, b) => {
-            const aTs = (a.createdAt as any)?.seconds ?? 0;
-            const bTs = (b.createdAt as any)?.seconds ?? 0;
-            return bTs - aTs;
-          }),
-      );
-      setActiveMissionStaffChanges(
-        staffChangesSnap.docs
-          .map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as any) }))
-          .sort((a, b) => {
-            const aTs = (a.requestedAt as any)?.seconds ?? 0;
-            const bTs = (b.requestedAt as any)?.seconds ?? 0;
-            return bTs - aTs;
-          }),
-      );
+      const results = await Promise.allSettled([
+        membersPromise,
+        timelinePromise,
+        staffChangesPromise,
+      ]);
+
+      const [membersResult, timelineResult, staffChangesResult] = results;
+
+      if (membersResult.status === "fulfilled") {
+        setActiveMissionMembers(
+          membersResult.value.docs.map((memberDoc) => ({
+            id: memberDoc.id,
+            ...(memberDoc.data() as BusinessTripMissionMember),
+          })),
+        );
+      } else {
+        const membersErr = formatErrorDetails(membersResult.reason);
+        console.error("[BusinessTripDetail] Failed to load members", {
+          subcollection: "members",
+          path: membersPath,
+          missionId: mission.id,
+          uid: userProfile?.uid,
+          fullName: userProfile?.fullName,
+          role: userProfile?.role,
+          position: userProfile?.positionTitle || userProfile?.jobTitle,
+          jobTitle: userProfile?.jobTitle,
+          code: membersErr.code,
+          message: membersErr.message,
+          stack: membersErr.stack,
+          raw: membersErr.raw,
+        });
+        setActiveMissionMembers([]);
+      }
+
+      if (timelineResult.status === "fulfilled") {
+        setActiveMissionTimeline(
+          timelineResult.value.docs
+            .map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as any) }))
+            .sort((a, b) => {
+              const aTs = (a.createdAt as any)?.seconds ?? 0;
+              const bTs = (b.createdAt as any)?.seconds ?? 0;
+              return bTs - aTs;
+            }),
+        );
+      } else {
+        const timelineErr = formatErrorDetails(timelineResult.reason);
+        console.error("[BusinessTripDetail] Failed to load timeline", {
+          subcollection: "timeline",
+          path: timelinePath,
+          missionId: mission.id,
+          uid: userProfile?.uid,
+          fullName: userProfile?.fullName,
+          role: userProfile?.role,
+          position: userProfile?.positionTitle || userProfile?.jobTitle,
+          jobTitle: userProfile?.jobTitle,
+          code: timelineErr.code,
+          message: timelineErr.message,
+          stack: timelineErr.stack,
+          raw: timelineErr.raw,
+        });
+        setActiveMissionTimeline([]);
+      }
+
+      if (staffChangesResult.status === "fulfilled") {
+        setActiveMissionStaffChanges(
+          staffChangesResult.value.docs
+            .map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as any) }))
+            .sort((a, b) => {
+              const aTs = (a.requestedAt as any)?.seconds ?? 0;
+              const bTs = (b.requestedAt as any)?.seconds ?? 0;
+              return bTs - aTs;
+            }),
+        );
+      } else {
+        const scErr = formatErrorDetails(staffChangesResult.reason);
+        console.warn(
+          "[BusinessTripDetail] Failed to load staff_changes, continuing detail render",
+          {
+            subcollection: "staff_changes",
+            path: staffChangesPath,
+            missionId: mission.id,
+            uid: userProfile?.uid,
+            fullName: userProfile?.fullName,
+            role: userProfile?.role,
+            position: userProfile?.positionTitle || userProfile?.jobTitle,
+            jobTitle: userProfile?.jobTitle,
+            code: scErr.code,
+            name: scErr.name,
+            message: scErr.message,
+            stack: scErr.stack,
+            raw: scErr.raw,
+            stringValue: String(staffChangesResult.reason),
+          },
+        );
+        // staff_changes is optional for rendering — continue with empty array
+        setActiveMissionStaffChanges([]);
+      }
     } catch (error: any) {
-      console.error(error);
+      console.error("Failed to load active mission data", {
+        missionId: mission.id,
+        uid: userProfile?.uid,
+        role: userProfile?.role,
+        jobTitle: userProfile?.jobTitle || userProfile?.positionTitle,
+        error: error?.message || error,
+      });
       toast({
         variant: "destructive",
         title: "Gagal memuat detail perjalanan dinas",
@@ -3266,7 +3402,8 @@ export function ManagementDinasClient() {
             staff.managerUid || (staff.isDivisionManager ? staff.uid : "");
           const isManagerAsStaff = staff.isDivisionManager;
           const approvalTarget = await determineApprovalTarget(
-            staff,
+            firestore,
+            { ...(staff as any), employeeUid: staff.uid },
             userProfile.uid,
             userProfile.fullName,
           );

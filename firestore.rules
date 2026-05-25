@@ -745,6 +745,29 @@ service cloud.firestore {
         allow update, delete: if isSuperAdmin() || isHrd();
       }
 
+      // Staff changes subcollection for mission staffing history
+      match /staff_changes/{changeId} {
+        allow get: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && (
+          get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid ||
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids) ||
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids) ||
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.approvalTargetUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.approvalTargetUids) ||
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.managerUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.managerUids)
+        ));
+        allow list: if isSuperAdmin() || isHrd() || isManagement() || isSignedIn();
+        allow create: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && (
+          get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid ||
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.approvalTargetUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.approvalTargetUids) ||
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.managerUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.managerUids)
+        ));
+        allow update: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && (
+          get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid ||
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.approvalTargetUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.approvalTargetUids) ||
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.managerUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.managerUids)
+        ));
+        allow delete: if isSuperAdmin() || isHrd() || isManagement();
+      }
+
       // Manager validations cache
       match /manager_validations/{validationId} {
         allow get: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && (

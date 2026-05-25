@@ -611,12 +611,32 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
     return null;
   };
 
+  const fetchMasterDivision = async (
+    brandId?: string | null,
+    divisionId?: string | null,
+  ) => {
+    if (!firestore || !brandId || !divisionId) return null;
+    try {
+      const snap = await getDoc(
+        doc(firestore, "brands", brandId, "divisions", divisionId),
+      );
+      return snap.exists() ? (snap.data() as any) : null;
+    } catch (err) {
+      console.warn("Failed to fetch master division", brandId, divisionId, err);
+      return null;
+    }
+  };
+
   const resolveApproverForStaff = async (staff: UserProfile) => {
     const employeeProfile =
       (employeeProfilesData || []).find((p: any) => p.uid === staff.uid) ||
       null;
 
-    const approval = resolveApprovalTarget(employeeProfile, staff, null);
+    const masterDiv = await fetchMasterDivision(
+      (employeeProfile as any)?.brandId || (staff as any).brandId || null,
+      (employeeProfile as any)?.divisionId || (staff as any).divisionId || null,
+    );
+    const approval = resolveApprovalTarget(employeeProfile, staff, masterDiv);
 
     const directSupervisorUid =
       (employeeProfile as any)?.directSupervisorUid ||
@@ -682,7 +702,11 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
       (employeeProfilesData || []).find((p: any) => p.uid === staff.uid) ||
       null;
 
-    const approval = resolveApprovalTarget(employeeProfile, staff, null);
+    const masterDiv2 = await fetchMasterDivision(
+      (employeeProfile as any)?.brandId || (staff as any).brandId || null,
+      (employeeProfile as any)?.divisionId || (staff as any).divisionId || null,
+    );
+    const approval = resolveApprovalTarget(employeeProfile, staff, masterDiv2);
     const directSupervisorUid =
       (employeeProfile as any)?.directSupervisorUid ||
       (staff as any).directSupervisorUid ||
