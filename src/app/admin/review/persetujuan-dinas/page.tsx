@@ -5,7 +5,6 @@ import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { useAuth } from "@/providers/auth-provider";
 import { useRoleGuard } from "@/hooks/useRoleGuard";
 import { useMenuAccessGuard } from "@/hooks/useMenuAccessGuard";
-import { canUserReview } from "@/lib/auth-eligibility";
 import { MENU_CONFIG } from "@/lib/menu-config";
 import { BusinessTripApprovalClient } from "@/components/dashboard/review/BusinessTripApprovalClient";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -41,7 +40,7 @@ export default function BusinessTripApprovalPage() {
     );
   }
 
-  if (!userProfile || !canUserReview(userProfile) || !menuHasAccess) {
+  if (!userProfile || !menuHasAccess) {
     return (
       <DashboardLayout pageTitle="Akses Ditolak" menuConfig={menuConfig}>
         <p className="py-20 text-center text-muted-foreground">

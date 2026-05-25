@@ -67,6 +67,7 @@ import {
   buildEmployeeDirectory,
   type NormalizedDirectoryMember,
 } from "@/lib/employee-directory";
+import { resolveApprovalTarget } from "@/lib/approval-flow";
 import type {
   Brand,
   EmployeeMasterData,
@@ -352,7 +353,13 @@ async function syncManagerValidationDocs(
       const docId =
         summary.managerUid || `${summary.managerName}-${summary.divisionName}`;
       return setDoc(doc(validationsRef, docId), {
-        ...summary,
+        managerUid: summary.managerUid || "",
+        managerName: summary.managerName,
+        divisionName: summary.divisionName,
+        memberUids: summary.memberUids || [],
+        memberNames: summary.memberNames || [],
+        status: summary.status,
+        notes: summary.notes || null,
         decidedAt: summary.decidedAt || null,
       });
     }),
@@ -523,9 +530,10 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
     }
 
     if (mode === "staff") {
+      // For staff, query member documents so staff sees only missions they are assigned to
       return query(
-        missionCollection,
-        where("assignedStaffUids", "array-contains", userProfile.uid),
+        collectionGroup(firestore, "members"),
+        where("employeeUid", "==", userProfile.uid),
         orderBy("createdAt", "desc"),
       );
     }
@@ -584,26 +592,110 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
     }
   };
 
+  const findUserNameByUid = async (uid?: string | null) => {
+    if (!firestore || !uid) return null;
+
+    const userSnap = await getDoc(doc(firestore, "users", uid));
+    if (userSnap.exists()) {
+      const data = userSnap.data() as UserProfile;
+      return data.fullName || data.email || null;
+    }
+
+    return null;
+  };
+
+  const resolveApproverForStaff = async (staff: UserProfile) => {
+    const employeeProfile =
+      (employeeProfilesData || []).find((p: any) => p.uid === staff.uid) ||
+      null;
+
+    const approval = resolveApprovalTarget(employeeProfile, staff, null);
+
+    const directSupervisorUid =
+      (employeeProfile as any)?.directSupervisorUid ||
+      (staff as any).directSupervisorUid ||
+      (employeeProfile as any)?.managerUid ||
+      (staff as any).managerUid ||
+      null;
+    const directSupervisorName =
+      (employeeProfile as any)?.directSupervisorName ||
+      (staff as any).directSupervisorName ||
+      (employeeProfile as any)?.managerName ||
+      (staff as any).managerName ||
+      null;
+
+    const isDivisionManager =
+      (employeeProfile as any)?.isDivisionManager ||
+      (staff as any).isDivisionManager ||
+      (staff as any).structuralLevel === "division_manager" ||
+      (staff as any).structuralPosition === "division_manager";
+
+    let approvalTargetUid =
+      approval.approvalTargetUid || directSupervisorUid || null;
+    let approvalTargetName =
+      approval.approvalTargetName || directSupervisorName || null;
+    const approvalLevel =
+      approval.approvalLevel ||
+      (isDivisionManager ? "director" : "division_manager");
+    const approverRole = isDivisionManager ? "director" : "manager_division";
+
+    if (approvalTargetUid === staff.uid) {
+      const fallbackUid =
+        directSupervisorUid && directSupervisorUid !== staff.uid
+          ? directSupervisorUid
+          : (employeeProfile as any)?.managerUid &&
+              (employeeProfile as any)?.managerUid !== staff.uid
+            ? (employeeProfile as any)?.managerUid
+            : null;
+      const fallbackName =
+        directSupervisorName ||
+        (employeeProfile as any)?.managerName ||
+        (staff as any).managerName ||
+        null;
+
+      approvalTargetUid = fallbackUid;
+      approvalTargetName = fallbackName;
+    }
+
+    if (approvalTargetUid && !approvalTargetName) {
+      approvalTargetName = await findUserNameByUid(approvalTargetUid);
+    }
+
+    return {
+      approvalTargetUid,
+      approvalTargetName,
+      approvalLevel,
+      approverRole,
+      employeeProfile,
+    };
+  };
+
   const findManagerForStaff = async (staff: UserProfile) => {
-    if (!firestore) return null;
-    const managerSnapshot = await getDocs(
-      query(collection(firestore, "users"), where("role", "==", "manager")),
-    );
-    const staffDivision =
-      staff.divisionId || staff.division || staff.divisionName || "";
-    return (
-      managerSnapshot.docs
-        .map((doc) => ({ id: doc.id, ...(doc.data() as UserProfile) }))
-        .find((manager) => {
-          return [
-            manager.managedDivisionId,
-            manager.managedDivision,
-            manager.divisionId,
-            manager.division,
-            manager.divisionName,
-          ].includes(staffDivision);
-        }) || null
-    );
+    const employeeProfile =
+      (employeeProfilesData || []).find((p: any) => p.uid === staff.uid) ||
+      null;
+
+    const approval = resolveApprovalTarget(employeeProfile, staff, null);
+    const directSupervisorUid =
+      (employeeProfile as any)?.directSupervisorUid ||
+      (staff as any).directSupervisorUid ||
+      (employeeProfile as any)?.managerUid ||
+      (staff as any).managerUid ||
+      null;
+
+    const managerUid =
+      approval.approvalTargetUid && approval.approvalTargetUid !== staff.uid
+        ? approval.approvalTargetUid
+        : directSupervisorUid && directSupervisorUid !== staff.uid
+          ? directSupervisorUid
+          : null;
+
+    if (!firestore || !managerUid) return null;
+
+    const managerSnap = await getDoc(doc(firestore, "users", managerUid));
+    if (!managerSnap.exists()) return null;
+
+    return managerSnap.data() as UserProfile;
   };
 
   const loadMissionDetail = async (missionId: string) => {
@@ -766,13 +858,53 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
         managerMap.set(staff.uid, manager);
       }
 
-      const filePath = `business_trip_missions/${userProfile.uid}/${Date.now()}_${assignmentLetter.name}`;
-      const uploadResult = await uploadFile(
-        assignmentLetter,
-        filePath,
-        userProfile.uid,
-        { compress: false },
-      );
+      const approverMap = new Map<
+        string,
+        {
+          approvalTargetUid: string | null;
+          approvalTargetName: string | null;
+          approvalLevel: string | null;
+          approverRole: string;
+          employeeProfile: any;
+        }
+      >();
+
+      for (const staff of staffRecords) {
+        const approver = await resolveApproverForStaff(staff);
+
+        if (!approver.approvalTargetUid) {
+          throw new Error(
+            `Atasan/Approver untuk ${staff.fullName} belum diatur. Cek Data Karyawan atau Organisasi Perusahaan.`,
+          );
+        }
+
+        approverMap.set(staff.uid, approver);
+      }
+
+      const filePath = assignmentLetter
+        ? `business_trip_missions/${userProfile.uid}/${Date.now()}_${assignmentLetter.name}`
+        : null;
+      let uploadResult: any = null;
+      let uploadError: any = null;
+      if (assignmentLetter && filePath) {
+        try {
+          uploadResult = await uploadFile(
+            assignmentLetter,
+            filePath,
+            userProfile.uid,
+            { compress: false },
+          );
+        } catch (err: any) {
+          uploadError = err;
+          console.warn("SPD upload failed, continuing mission create:", err);
+          toast({
+            variant: "default",
+            title: "Perjalanan Dinas dibuat (dokumen gagal diupload)",
+            description:
+              "Perjalanan dinas berhasil dibuat, tetapi dokumen SPD gagal diupload. Silakan upload ulang di menu edit.",
+          });
+        }
+      }
       const missionCollection = getBusinessTripMissionCollection();
       if (!missionCollection) throw new Error("Firestore tidak siap.");
       const missionRef = doc(missionCollection);
@@ -785,14 +917,22 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
 
       const assignedStaffUids = staffRecords.map((staff) => staff.uid);
       const assignedManagerUids = Array.from(
-        new Set(Array.from(managerMap.values()).map((manager) => manager.uid)),
+        new Set(
+          Array.from(approverMap.values())
+            .map((item) => item.approvalTargetUid)
+            .filter(Boolean),
+        ),
       );
-
       await setDoc(missionRef, {
         missionName: missionForm.missionName,
         assignmentNumber,
-        assignmentLetterUrl: uploadResult.downloadUrl,
-        assignmentLetterFileName: uploadResult.fileName,
+        assignmentLetterUrl: uploadResult?.downloadUrl || null,
+        assignmentLetterFileName:
+          uploadResult?.fileName || assignmentLetter?.name || null,
+        documentStatus: uploadError ? "upload_failed" : "ok",
+        documentError: uploadError
+          ? uploadError?.message || String(uploadError)
+          : null,
         assignedByUid: userProfile.uid,
         assignedByName: userProfile.fullName,
         assignedByPosition: userProfile.positionTitle || userProfile.role,
@@ -813,43 +953,151 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
         totalMembers: assignedStaffUids.length,
         managerApprovedCount: 0,
         staffConfirmedCount: 0,
-        managerUids: assignedManagerUids,
-        status: "pending_manager_validation",
+        managerUids: Array.from(
+          new Set(
+            Array.from(managerMap.values()).map((manager) => manager.uid),
+          ),
+        ),
+        // initial member/approval counters - will be updated after subcollections are created
+        memberUids: assignedStaffUids,
+        memberCount: assignedStaffUids.length,
+        pendingConfirmationCount: assignedStaffUids.length,
+        approvalTargetUids: [],
+        approvalRequestCount: 0,
+        pendingApprovalCount: 0,
+        status: "pending_approval",
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
 
+      const approvalGroups = new Map<
+        string,
+        {
+          approverName: string | null;
+          approverRole: string;
+          approvalLevel: string | null;
+          memberUids: string[];
+          memberNames: string[];
+        }
+      >();
+
       await Promise.all(
         staffRecords.map(async (staff) => {
+          const approver = approverMap.get(staff.uid)!;
           const manager = managerMap.get(staff.uid)!;
           const membersCollection = getMissionMembersCollection(missionRef.id);
           if (!membersCollection) throw new Error("Firestore tidak siap.");
-          const memberRef = doc(membersCollection);
-          await setDoc(memberRef, {
+
+          const employeeProfile = approver.employeeProfile;
+          const approvalTargetUid = approver.approvalTargetUid;
+          const approvalTargetName = approver.approvalTargetName;
+          const directSupervisorUid =
+            (employeeProfile as any)?.directSupervisorUid ||
+            (staff as any).directSupervisorUid ||
+            (employeeProfile as any)?.managerUid ||
+            (staff as any).managerUid ||
+            null;
+          const directSupervisorName =
+            (employeeProfile as any)?.directSupervisorName ||
+            (staff as any).directSupervisorName ||
+            (employeeProfile as any)?.managerName ||
+            (staff as any).managerName ||
+            null;
+
+          const validatedByAssigner =
+            approvalTargetUid && approvalTargetUid === userProfile.uid;
+
+          // write member document with employee UID as doc ID
+          const memberDocRef = getMissionMemberDoc(missionRef.id, staff.uid);
+          if (!memberDocRef) throw new Error("Firestore tidak siap.");
+
+          await setDoc(memberDocRef, {
             missionId: missionRef.id,
             missionName: missionForm.missionName,
             assignmentNumber,
             employeeUid: staff.uid,
             employeeName: staff.fullName,
             employeePosition: staff.jobTitle || staff.positionTitle || "-",
+            employeeType: (staff as any).employmentType || null,
             brandId: staff.brandId || "",
             brandName: staff.brandName || "-",
             divisionId: staff.divisionId || "",
             divisionName: staff.divisionName || staff.division || "-",
-            managerUid: manager.uid,
-            managerName: manager.fullName,
+            directSupervisorUid: directSupervisorUid || null,
+            directSupervisorName: directSupervisorName || null,
+            approvalTargetUid: approvalTargetUid || null,
+            approvalTargetName: approvalTargetName || null,
+            approvalLevel: approver.approvalLevel || null,
+            requiresApproval: !!approvalTargetUid && !validatedByAssigner,
+            approvalStatus: validatedByAssigner
+              ? "validated_by_assigner"
+              : "pending",
+            staffConfirmationStatus: "waiting",
+            memberStatus: "waiting_approval",
             startDate: Timestamp.fromDate(new Date(missionForm.startDate)),
             endDate: Timestamp.fromDate(new Date(missionForm.endDate)),
             durationDays,
-            memberStatus: "waiting_manager_validation",
-            managerValidationStatus: "waiting_manager_validation",
-            staffConfirmationStatus: "waiting_staff_confirmation",
-            missionStatus: "pending_manager_validation",
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
+
+          if (validatedByAssigner) return;
+
+          if (approvalTargetUid) {
+            const existing = approvalGroups.get(approvalTargetUid);
+            if (!existing) {
+              approvalGroups.set(approvalTargetUid, {
+                approverName: approvalTargetName || null,
+                approverRole: approver.approverRole,
+                approvalLevel: approver.approvalLevel,
+                memberUids: [staff.uid],
+                memberNames: [staff.fullName],
+              });
+            } else {
+              existing.memberUids.push(staff.uid);
+              existing.memberNames.push(staff.fullName);
+            }
+          }
         }),
       );
+
+      const approvalsCollection = collection(
+        firestore,
+        "business_trip_missions",
+        missionRef.id,
+        "approval_requests",
+      );
+
+      for (const [approverUid, entry] of Array.from(approvalGroups.entries())) {
+        const approvalRef = doc(approvalsCollection, approverUid);
+        await setDoc(approvalRef, {
+          missionId: missionRef.id,
+          missionName: missionForm.missionName,
+          approverUid,
+          approverName: entry.approverName || "",
+          approverRole: entry.approverRole || "",
+          approvalLevel: entry.approvalLevel || "",
+          memberUids: Array.from(new Set(entry.memberUids)),
+          memberNames: Array.from(new Set(entry.memberNames)),
+          status: "pending",
+          notes: "",
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      const approvalTargetUids = Array.from(approvalGroups.keys());
+      await updateDoc(missionRef, {
+        approvalTargetUids,
+        approvalRequestCount: approvalGroups.size,
+        pendingApprovalCount: approvalGroups.size,
+        memberUids: assignedStaffUids,
+        memberCount: assignedStaffUids.length,
+        pendingConfirmationCount: assignedStaffUids.length,
+        status: "pending_approval",
+        updatedAt: serverTimestamp(),
+      });
+
       await appendTimelineEntry(
         missionRef.id,
         "Misi Dinas dibuat dan dikirim ke manager divisi masing-masing staff.",
@@ -928,7 +1176,7 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
       };
       await updateDoc(memberRef, {
         managerValidationStatus: statusMap[decision],
-        managerValidationNote: actionNote,
+        managerValidationNote: actionNote || null,
         managerReplacementSuggestion: replacementSuggestion || null,
         updatedAt: serverTimestamp(),
       });
@@ -1728,7 +1976,7 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
                     <TableRow>
                       <TableHead>Nama</TableHead>
                       <TableHead>Divisi</TableHead>
-                      <TableHead>Manager</TableHead>
+                      <TableHead>Atasan / Approver</TableHead>
                       <TableHead>Status Manager</TableHead>
                       <TableHead>Status Staff</TableHead>
                     </TableRow>

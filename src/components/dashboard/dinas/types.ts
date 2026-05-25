@@ -121,6 +121,7 @@ export type BusinessTripMissionMember = {
   employeeUid: string;
   employeeName: string;
   employeePosition?: string;
+  employeeType?: string | null;
   brandId?: string;
   brandName?: string;
   divisionId?: string;
@@ -130,8 +131,8 @@ export type BusinessTripMissionMember = {
   memberStatus?: MemberStatus;
   directSupervisorUid?: string;
   directSupervisorName?: string;
-  approvalTargetUid?: string;
-  approvalTargetName?: string;
+  approvalTargetUid?: string | null;
+  approvalTargetName?: string | null;
   approvalLevel?: "division_manager" | "director";
   requiresApproval?: boolean;
   approvalStatus?:
@@ -143,10 +144,10 @@ export type BusinessTripMissionMember = {
   endDate?: any;
   durationDays?: number;
   managerValidationStatus?: MemberStatus;
-  managerValidationNote?: string;
-  managerReplacementSuggestion?: string;
+  managerValidationNote?: string | null;
+  managerReplacementSuggestion?: string | null;
   staffConfirmationStatus?: MemberStatus;
-  staffConfirmationNote?: string;
+  staffConfirmationNote?: string | null;
   transportationPlan?: string;
   departurePoint?: string;
   contactDuringTrip?: string;

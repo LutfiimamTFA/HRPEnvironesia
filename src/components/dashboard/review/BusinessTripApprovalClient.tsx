@@ -98,6 +98,16 @@ export function BusinessTripApprovalClient() {
   );
 
   useEffect(() => {
+    if (!userProfile?.uid || !approvalRequests) return;
+    console.debug("BusinessTripApprovalClient debug", {
+      currentUserUid: userProfile.uid,
+      approvalRequestsLength: approvalRequests.length,
+      approvalRequests,
+      approverUids: approvalRequests.map((request) => request.approverUid),
+    });
+  }, [approvalRequests, userProfile?.uid]);
+
+  useEffect(() => {
     if (!firestore || approvalRows.length === 0) {
       setMissionNamesById({});
       return;
@@ -352,9 +362,27 @@ export function BusinessTripApprovalClient() {
         </CardHeader>
         <CardContent>
           {requestRowsWithMissionName.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Tidak ada permintaan persetujuan saat ini.
-            </p>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Tidak ada permintaan persetujuan saat ini.
+              </p>
+              <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-900">
+                <p className="font-semibold">Debug Persetujuan</p>
+                <p>UID saat ini: {userProfile?.uid || "-"}</p>
+                <p>
+                  Jumlah approval_requests mentah:{" "}
+                  {approvalRequests?.length ?? 0}
+                </p>
+                <p>
+                  Approver UIDs:{" "}
+                  {approvalRequests
+                    ?.map((request) => request.approverUid)
+                    .filter(Boolean)
+                    .join(", ") || "-"}
+                </p>
+                <p>Status query: {isLoadingRequests ? "memuat" : "selesai"}</p>
+              </div>
+            </div>
           ) : (
             <div className="space-y-4">
               <div className="overflow-x-auto rounded-lg border">

@@ -168,37 +168,67 @@ export async function uploadFileToGoogleDrive(
   if (options.offeringId) formData.append("offeringId", options.offeringId);
   if (options.brandId) formData.append("brandId", options.brandId);
 
-  const response = await fetch("/api/storage/google-drive-upload", {
-    method: "POST",
-    body: formData,
-  });
+  try {
+    const response = await fetch("/api/storage/google-drive-upload", {
+      method: "POST",
+      body: formData,
+    });
 
-  const data = await response.json().catch(() => null);
+    // attempt to parse JSON body, but fall back to text when JSON parse fails
+    let data: any = null;
+    try {
+      data = await response.json();
+    } catch (err) {
+      // ignore JSON parse error
+      data = null;
+    }
 
-  if (!response.ok || !data?.success) {
-    let message =
-      data?.message || data?.error || "Gagal upload file ke Google Drive.";
+    if (!response.ok || !data?.success) {
+      // try to read raw body text for more details
+      let bodyText: string | null = null;
+      try {
+        bodyText = await response.text();
+      } catch (e) {
+        bodyText = null;
+      }
+
+      let message =
+        data?.message ||
+        data?.error ||
+        data?.details ||
+        `Gagal upload file ke Google Drive. ${bodyText ? `Response: ${bodyText}` : ""}`;
+
+      if (data?.missingEnv && Array.isArray(data.missingEnv)) {
+        message += ` (Missing ENV: ${data.missingEnv.join(", ")})`;
+      }
+
+      throw new Error(message);
+    }
+
+    return {
+      storageProvider: data.storageProvider || "googleDrive",
+      fileId: data.fileId,
+      fileName: data.fileName,
+      fileSize: data.fileSize,
+      fileType: data.fileType,
+      driveFolderId: data.driveFolderId,
+      driveFolderPath: data.driveFolderPath,
+      downloadUrl: data.downloadUrl,
+      viewUrl: data.viewUrl,
+      webViewLink: data.webViewLink,
+      googleDriveWebViewLink: data.googleDriveWebViewLink,
+      directViewUrl: data.directViewUrl,
+      thumbnailUrl: data.thumbnailUrl,
+      accessMode: data.accessMode,
+      uploadedAt: data.uploadedAt,
+      uploadedBy: data.uploadedBy,
+    };
+  } catch (err: any) {
+    // Network or unexpected error
+    const message =
+      err?.message || "Network error saat mengupload ke Google Drive";
     throw new Error(message);
   }
-
-  return {
-    storageProvider: data.storageProvider || "googleDrive",
-    fileId: data.fileId,
-    fileName: data.fileName,
-    fileSize: data.fileSize,
-    fileType: data.fileType,
-    driveFolderId: data.driveFolderId,
-    driveFolderPath: data.driveFolderPath,
-    downloadUrl: data.downloadUrl,
-    viewUrl: data.viewUrl,
-    webViewLink: data.webViewLink,
-    googleDriveWebViewLink: data.googleDriveWebViewLink,
-    directViewUrl: data.directViewUrl,
-    thumbnailUrl: data.thumbnailUrl,
-    accessMode: data.accessMode,
-    uploadedAt: data.uploadedAt,
-    uploadedBy: data.uploadedBy,
-  };
 }
 
 /**
@@ -246,38 +276,55 @@ async function uploadToGoogleDrive(
   if (options.offeringId) formData.append("offeringId", options.offeringId);
   if (options.brandId) formData.append("brandId", options.brandId);
 
-  const response = await fetch("/api/storage/google-drive-upload", {
-    method: "POST",
-    body: formData,
-  });
+  try {
+    const response = await fetch("/api/storage/google-drive-upload", {
+      method: "POST",
+      body: formData,
+    });
 
-  const data = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    let errorMessage =
-      data?.message ||
-      data?.error ||
-      data?.details ||
-      "Gagal upload ke Google Drive";
-
-    // Add missing ENV details if provided
-    if (data?.missingEnv && Array.isArray(data.missingEnv)) {
-      errorMessage += ` (Missing ENV: ${data.missingEnv.join(", ")})`;
+    let data: any = null;
+    try {
+      data = await response.json();
+    } catch (e) {
+      data = null;
     }
 
-    throw new Error(errorMessage);
-  }
+    if (!response.ok) {
+      let bodyText: string | null = null;
+      try {
+        bodyText = await response.text();
+      } catch (e) {
+        bodyText = null;
+      }
 
-  return {
-    storageProvider: data.storageProvider || STORAGE_PROVIDER,
-    fileId: data.fileId,
-    fileName: data.fileName,
-    fileSize: data.fileSize,
-    fileType: data.fileType,
-    driveFolderId: data.driveFolderId,
-    driveFolderPath: data.driveFolderPath,
-    webViewLink: data.webViewLink,
-    uploadedAt: data.uploadedAt || new Date().toISOString(),
-    uploadedBy: data.uploadedBy,
-  };
+      let errorMessage =
+        data?.message ||
+        data?.error ||
+        data?.details ||
+        `Gagal upload ke Google Drive. ${bodyText ? `Response: ${bodyText}` : ""}`;
+
+      if (data?.missingEnv && Array.isArray(data.missingEnv)) {
+        errorMessage += ` (Missing ENV: ${data.missingEnv.join(", ")})`;
+      }
+
+      throw new Error(errorMessage);
+    }
+
+    return {
+      storageProvider: data.storageProvider || STORAGE_PROVIDER,
+      fileId: data.fileId,
+      fileName: data.fileName,
+      fileSize: data.fileSize,
+      fileType: data.fileType,
+      driveFolderId: data.driveFolderId,
+      driveFolderPath: data.driveFolderPath,
+      webViewLink: data.webViewLink,
+      uploadedAt: data.uploadedAt || new Date().toISOString(),
+      uploadedBy: data.uploadedBy,
+    };
+  } catch (err: any) {
+    const message =
+      err?.message || "Network error saat mengupload ke Google Drive";
+    throw new Error(message);
+  }
 }

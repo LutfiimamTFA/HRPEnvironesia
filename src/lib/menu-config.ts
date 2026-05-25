@@ -214,12 +214,6 @@ const REVIEW_ITEMS: MenuGroup = {
       icon: createElement(CalendarOff),
     },
     {
-      key: "review.dinas.validation",
-      href: "/admin/manager/validasi-dinas",
-      label: "Validasi Perjalanan Dinas Tim",
-      icon: createElement(MapPin),
-    },
-    {
       key: "review.business_trip_approval",
       href: "/admin/review/persetujuan-dinas",
       label: "Persetujuan Perjalanan Dinas",

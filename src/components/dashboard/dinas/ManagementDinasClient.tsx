@@ -170,7 +170,7 @@ function buildManagerValidationSummaries(members: BusinessTripMissionMember[]) {
       divisionName: string;
       memberUids: string[];
       status: "approved" | "rejected" | "pending";
-      notes?: string;
+      notes?: string | null;
       decidedAt?: any;
     }
   >();
@@ -193,13 +193,15 @@ function buildManagerValidationSummaries(members: BusinessTripMissionMember[]) {
             : "pending";
 
       if (!existing) {
+        const noteVal: string | null =
+          member.managerValidationNote ?? member.staffConfirmationNote ?? null;
         managerMap.set(key, {
           managerUid: member.managerUid || "",
           managerName,
           divisionName,
           memberUids: [member.employeeUid],
           status: derivedStatus,
-          notes: member.managerValidationNote || member.staffConfirmationNote,
+          notes: noteVal,
           decidedAt: member.updatedAt,
         });
         return;
@@ -1885,7 +1887,7 @@ export function ManagementDinasClient() {
               : "waiting_manager_validation",
             managerValidationNote: isManagerAsStaff
               ? "Disetujui oleh pemberi tugas"
-              : undefined,
+              : null,
             staffConfirmationStatus: "waiting_staff_confirmation",
             missionStatus: activeMission.status || "pending_manager_validation",
             createdAt: serverTimestamp(),
@@ -2893,6 +2895,7 @@ export function ManagementDinasClient() {
                     <TableRow>
                       <TableHead>Nama</TableHead>
                       <TableHead>Posisi</TableHead>
+                      <TableHead>Atasan/Approver</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Aksi</TableHead>
                     </TableRow>
@@ -2902,6 +2905,12 @@ export function ManagementDinasClient() {
                       <TableRow key={member.id}>
                         <TableCell>{member.employeeName}</TableCell>
                         <TableCell>{member.employeePosition || "-"}</TableCell>
+                        <TableCell>
+                          {member.approvalTargetName ||
+                            member.directSupervisorName ||
+                            member.managerName ||
+                            "-"}
+                        </TableCell>
                         <TableCell>
                           <Badge className="capitalize">
                             {member.memberStatus?.replace(/_/g, " ")}
@@ -3055,14 +3064,16 @@ export function ManagementDinasClient() {
       );
 
       // Upload assignment letter if provided
-      let assignmentLetterUrl = missionForm.googleDriveLink;
+      let assignmentLetterUrl: string | null =
+        missionForm.googleDriveLink || null;
       let assignmentLetterDriveUrl = "";
       let assignmentLetterDriveFileId = "";
       let assignmentLetterFileName = "";
       let documentSource:
         | "firebase_storage"
         | "google_drive_link"
-        | "google_drive" = "google_drive_link";
+        | "google_drive"
+        | null = "google_drive_link";
       let assignmentLetterSource:
         | "local_upload"
         | "system_drive_upload"
@@ -3109,23 +3120,30 @@ export function ManagementDinasClient() {
           assignmentLetterUploadedBy = userProfile.uid;
         } catch (uploadError: any) {
           console.warn("Upload file gagal:", uploadError);
-          if (missionForm.googleDriveLink) {
-            toast({
-              title: "Upload file gagal",
-              description:
-                "Menggunakan link Google Drive sebagai sumber dokumen.",
-            });
-            assignmentLetterUrl = missionForm.googleDriveLink;
-            assignmentLetterDriveUrl = missionForm.googleDriveLink;
-            assignmentLetterDriveFileId = "";
-            assignmentLetterFileName = "";
-            documentSource = "google_drive_link";
-            assignmentLetterSource = "google_drive_link";
-            assignmentLetterUploadedAt = null;
-            assignmentLetterUploadedBy = "";
-          } else {
-            throw uploadError;
-          }
+          // Do not fail the whole create flow; record upload failure and proceed.
+          const errMsg =
+            uploadError?.message || String(uploadError || "Upload error");
+          assignmentLetterUrl = null;
+          assignmentLetterDriveUrl = "";
+          assignmentLetterDriveFileId = "";
+          assignmentLetterFileName = assignmentLetterFile?.name || "";
+          documentSource = null;
+          assignmentLetterSource = "local_upload";
+          assignmentLetterAccessMode = null;
+          assignmentLetterUploadedAt = null;
+          assignmentLetterUploadedBy = "";
+          // Custom fields to record failure
+          // documentStatus and documentError will be saved on mission doc
+          // Notify user with a warning
+          toast({
+            title: "Perjalanan Dinas dibuat (dokumen gagal diupload)",
+            description:
+              "Perjalanan dinas berhasil dibuat, tetapi dokumen SPD gagal diupload. Silakan upload ulang di menu edit.",
+          });
+          // Also log locally
+          console.warn("SPD upload failed, continuing mission create:", errMsg);
+          // store error to attach later
+          (assignmentLetterFile as any)._uploadError = errMsg;
         }
       } else if (missionForm.googleDriveLink) {
         assignmentLetterUrl = missionForm.googleDriveLink;
@@ -3173,7 +3191,7 @@ export function ManagementDinasClient() {
             : "waiting_manager_validation",
           managerValidationNote: staff.isDivisionManager
             ? "Disetujui oleh pemberi tugas"
-            : undefined,
+            : null,
           staffConfirmationStatus: "waiting_staff_confirmation",
         })) as BusinessTripMissionMember[],
       );
@@ -3193,6 +3211,12 @@ export function ManagementDinasClient() {
         assignmentLetterDriveFileId,
         assignmentLetterFileName,
         documentSource,
+        // Document upload status: 'ok' | 'upload_failed'
+        documentStatus:
+          assignmentLetterFile && (assignmentLetterFile as any)?._uploadError
+            ? "upload_failed"
+            : "ok",
+        documentError: (assignmentLetterFile as any)?._uploadError || null,
         assignmentLetterSource,
         assignmentLetterAccessMode,
         assignmentLetterUploadedAt,
@@ -3237,7 +3261,7 @@ export function ManagementDinasClient() {
             missionRef.id,
             "members",
           );
-          const memberRef = doc(membersCollection);
+          const memberRef = doc(membersCollection, staff.uid);
           const memberManagerUid =
             staff.managerUid || (staff.isDivisionManager ? staff.uid : "");
           const isManagerAsStaff = staff.isDivisionManager;
@@ -3260,19 +3284,18 @@ export function ManagementDinasClient() {
             employeeUid: staff.uid,
             employeeName: staff.fullName,
             employeePosition: staff.jobTitle || "-",
+            employeeType: (staff as any).employeeType || "",
             brandId: staff.brandId || "",
             brandName: staff.brandName || "-",
             divisionId: staff.divisionId || "",
             divisionName: staff.divisionName || "-",
             managerUid: memberManagerUid,
             managerName: staff.managerName || staff.fullName,
-            approvalTargetUid: approvalTarget.approverUid || undefined,
-            approvalTargetName: approvalTarget.approverName || undefined,
+            approvalTargetUid: approvalTarget.approverUid || null,
+            approvalTargetName: approvalTarget.approverName || null,
             approvalLevel: approvalTarget.level,
             requiresApproval: approvalNeeded,
-            approvalStatus: approverIsCreator
-              ? "validated_by_assigner"
-              : "pending",
+            approvalStatus: "pending",
             startDate: Timestamp.fromDate(new Date(missionForm.startDate)),
             endDate: Timestamp.fromDate(new Date(missionForm.endDate)),
             durationDays,
@@ -3281,12 +3304,10 @@ export function ManagementDinasClient() {
               : "waiting_staff_confirmation",
             managerValidationStatus: isManagerAsStaff
               ? "validated_by_assigner"
-              : approvalNeeded
-                ? "waiting_manager_validation"
-                : "waiting_manager_validation",
+              : "waiting_manager_validation",
             managerValidationNote: isManagerAsStaff
               ? "Disetujui oleh pemberi tugas"
-              : undefined,
+              : null,
             staffConfirmationStatus: "waiting_staff_confirmation",
             missionStatus: "pending_manager_validation",
             createdAt: serverTimestamp(),
@@ -3330,6 +3351,7 @@ export function ManagementDinasClient() {
         }
       }
 
+      // Create approval_requests documents keyed by approver UID
       await Promise.all(
         Array.from(approvalGroups.entries()).map(([approverUid, group]) => {
           const approvalCollection = collection(
@@ -3338,7 +3360,7 @@ export function ManagementDinasClient() {
             missionRef.id,
             "approval_requests",
           );
-          const approvalRef = doc(approvalCollection);
+          const approvalRef = doc(approvalCollection, approverUid);
           return setDoc(approvalRef, {
             missionId: missionRef.id,
             missionName: missionForm.missionName,
@@ -3359,6 +3381,36 @@ export function ManagementDinasClient() {
           });
         }),
       );
+
+      // Update mission doc with member and approval info
+      const allMemberUids = memberDocs.map((m) => m.employeeUid);
+      const approvalTargetUids = Array.from(approvalGroups.keys());
+      const pendingApprovalCount = memberDocs.filter(
+        (m) => m.approvalStatus === "pending",
+      ).length;
+      const pendingConfirmationCount = memberDocs.filter(
+        (m) => m.staffConfirmationStatus === "waiting_staff_confirmation",
+      ).length;
+
+      await updateDoc(missionRef, {
+        assignedStaffUids: allMemberUids,
+        memberUids: allMemberUids,
+        approvalTargetUids,
+        memberCount: allMemberUids.length,
+        approvalRequestCount: approvalTargetUids.length,
+        pendingApprovalCount,
+        pendingConfirmationCount,
+        status: "pending_manager_validation",
+        updatedAt: serverTimestamp(),
+      });
+
+      console.log("Created mission", {
+        tripId: missionRef.id,
+        selectedStaffUids: selectedStaff.map((s) => s.uid),
+        createdMemberCount: allMemberUids.length,
+        createdApprovalRequestCount: approvalTargetUids.length,
+        approvalTargetUids,
+      });
 
       const timelineCollection = collection(
         firestore,
