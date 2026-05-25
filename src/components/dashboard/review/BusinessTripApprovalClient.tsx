@@ -4,8 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/providers/auth-provider";
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase";
 import {
+  collection,
   collectionGroup,
   doc,
+  getDocs,
   getDoc,
   orderBy,
   query,
@@ -34,7 +36,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { Check, ChevronDown, RefreshCcw, XCircle } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Check, RefreshCcw, XCircle } from "lucide-react";
 import { Timestamp } from "firebase/firestore";
 import { format } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
@@ -49,7 +58,14 @@ function formatDate(value: any) {
   }
 }
 
-function getStatusVariant(status?: BusinessTripApprovalRequest["status"]) {
+function stripHtml(value: string) {
+  return value
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getStatusVariant(status?: string) {
   switch (status) {
     case "approved":
       return "success";
@@ -63,22 +79,46 @@ function getStatusVariant(status?: BusinessTripApprovalRequest["status"]) {
   }
 }
 
+function normalizeApprovalRequestStatus(status?: string) {
+  if (!status) return "Menunggu persetujuan atasan";
+  const normalized = String(status).toLowerCase();
+  const labelMap: Record<string, string> = {
+    pending: "Menunggu persetujuan atasan",
+    waiting: "Menunggu persetujuan atasan",
+    waiting_manager_validation: "Menunggu persetujuan atasan",
+    pending_manager_validation: "Menunggu persetujuan atasan",
+    approved: "Disetujui",
+    rejected: "Ditolak",
+    partial_approved: "Disetujui sebagian",
+    replacement_requested: "Diminta ganti staff",
+  };
+  return labelMap[normalized] || status;
+}
+
 export function BusinessTripApprovalClient() {
   const { userProfile } = useAuth();
   const firestore = useFirestore();
   const { toast } = useToast();
   const [isSaving, setIsSaving] = useState(false);
-  const [expandedRequestId, setExpandedRequestId] = useState<string | null>(
-    null,
-  );
+  const [selectedRequestForModal, setSelectedRequestForModal] = useState<
+    | (BusinessTripApprovalRequest & {
+        id: string;
+        missionDetails?: any;
+        memberDetails?: any[];
+        timeline?: any[];
+        staffChanges?: any[];
+      })
+    | null
+  >(null);
   const [selectedMemberUidsByRequest, setSelectedMemberUidsByRequest] =
     useState<Record<string, string[]>>({});
   const [decisionNotesByRequest, setDecisionNotesByRequest] = useState<
     Record<string, string>
   >({});
-  const [missionNamesById, setMissionNamesById] = useState<
-    Record<string, string>
+  const [missionDetailsById, setMissionDetailsById] = useState<
+    Record<string, any | null>
   >({});
+  const [isLoadingModalDetails, setIsLoadingModalDetails] = useState(false);
 
   const approvalQuery = useMemoFirebase(() => {
     if (!firestore || !userProfile?.uid) return null;
@@ -94,58 +134,98 @@ export function BusinessTripApprovalClient() {
     data: approvalRequests,
     isLoading: isLoadingRequests,
     error: approvalQueryError,
-  } = useCollection<BusinessTripApprovalRequest>(approvalQuery);
+  } = useCollection<BusinessTripApprovalRequest>(approvalQuery || null);
 
-  const approvalRows = useMemo(
-    () => approvalRequests || [],
-    [approvalRequests],
-  );
+  // Local approvals state populated from the approvalQuery snapshots
+  const [approvals, setApprovals] = useState<
+    Array<BusinessTripApprovalRequest & { id: string; _ref?: any }>
+  >([]);
+  const [isFetchingApprovals, setIsFetchingApprovals] = useState(false);
+  const [approvalFetchError, setApprovalFetchError] = useState<any>(null);
+
+  useEffect(() => {
+    if (!firestore || !approvalQuery) {
+      setApprovals([]);
+      return;
+    }
+
+    let active = true;
+    setIsFetchingApprovals(true);
+    setApprovalFetchError(null);
+
+    (async () => {
+      try {
+        const snap = await getDocs(approvalQuery);
+        const items = snap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as any),
+          _ref: d.ref,
+        }));
+        if (!active) return;
+        setApprovals(items);
+      } catch (err) {
+        console.error("Gagal memuat approvals:", err);
+        if (!active) return;
+        setApprovalFetchError(err);
+      } finally {
+        if (!active) return;
+        setIsFetchingApprovals(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [firestore, approvalQuery]);
 
   useEffect(() => {
     if (!userProfile?.uid || !approvalRequests) return;
-    console.debug("BusinessTripApprovalClient debug", {
+    console.log("Approval page debug:", {
       currentUserUid: userProfile.uid,
-      approvalRequestsLength: approvalRequests.length,
-      approvalRequests,
-      approverUids: approvalRequests.map((request) => request.approverUid),
+      approvalRequestsFound: approvalRequests,
     });
   }, [approvalRequests, userProfile?.uid]);
 
   useEffect(() => {
-    if (!firestore || approvalRows.length === 0) {
-      setMissionNamesById({});
+    if (!firestore || approvals.length === 0) {
+      setMissionDetailsById({});
       return;
     }
 
     let active = true;
     const missionIds = Array.from(
-      new Set(approvalRows.map((request) => request.missionId).filter(Boolean)),
+      new Set(approvals.map((request) => request.missionId).filter(Boolean)),
     );
 
     Promise.all(
       missionIds.map(async (missionId) => {
-        const missionRef = doc(firestore, "business_trip_missions", missionId);
-        const missionSnap = await getDoc(missionRef);
-        return [
-          missionId,
-          missionSnap.exists()
-            ? ((missionSnap.data() as any).missionName as string) || ""
-            : "",
-        ] as const;
+        try {
+          const missionRef = doc(
+            firestore,
+            "business_trip_missions",
+            missionId,
+          );
+          const missionSnap = await getDoc(missionRef);
+          if (!missionSnap.exists()) return [missionId, null] as const;
+          return [missionId, missionSnap.data() as any] as const;
+        } catch (error) {
+          console.warn("Gagal memuat detail misi", missionId, error);
+          return [missionId, null] as const;
+        }
       }),
     )
       .then((entries) => {
         if (!active) return;
-        setMissionNamesById(Object.fromEntries(entries));
+        setMissionDetailsById(Object.fromEntries(entries));
       })
       .catch((error) => {
-        console.warn("Gagal memuat nama misi", error);
+        console.warn("Gagal memuat detail misi", error);
       });
 
     return () => {
       active = false;
     };
-  }, [approvalRows, firestore]);
+  }, [approvals, firestore]);
 
   const updateApprovalRequest = useCallback(
     async (
@@ -202,20 +282,55 @@ export function BusinessTripApprovalClient() {
 
   const handleApproveAll = useCallback(
     async (request: BusinessTripApprovalRequest & { id: string }) => {
-      if (!request.id) return;
-      await updateApprovalRequest(request, {
-        status: "approved",
-        decidedAt: serverTimestamp(),
-        notes: "Disetujui semua.",
-        approvedMemberUids: request.memberUids,
-        rejectedMemberUids: [],
-      });
-      toast({
-        title: "Persetujuan berhasil",
-        description: "Semua anggota disetujui.",
-      });
+      if (!request.id || !firestore) return;
+
+      setIsSaving(true);
+      try {
+        // Update approval_requests
+        await updateApprovalRequest(request, {
+          status: "approved",
+          decidedAt: serverTimestamp(),
+          notes: "Disetujui semua.",
+          approvedMemberUids: request.memberUids,
+          rejectedMemberUids: [],
+        });
+
+        // Update all members with approval status
+        for (const memberUid of request.memberUids) {
+          const memberRef = doc(
+            firestore,
+            "business_trip_missions",
+            request.missionId,
+            "members",
+            memberUid,
+          );
+          await updateDoc(memberRef, {
+            approvalStatus: "approved",
+            memberStatus: "waiting_staff_confirmation",
+            updatedAt: serverTimestamp(),
+          });
+        }
+
+        toast({
+          title: "Persetujuan berhasil",
+          description:
+            "Semua anggota disetujui dan siap untuk konfirmasi staff.",
+        });
+
+        // Close modal - user can click Detail again to see updated data
+        setSelectedRequestForModal(null);
+      } catch (error: any) {
+        console.error("Gagal approve:", error);
+        toast({
+          variant: "destructive",
+          title: "Gagal menyetujui",
+          description: error?.message || "Silakan coba lagi.",
+        });
+      } finally {
+        setIsSaving(false);
+      }
     },
-    [toast, updateApprovalRequest],
+    [firestore, toast, updateApprovalRequest],
   );
 
   const handleApproveSelected = useCallback(
@@ -268,27 +383,72 @@ export function BusinessTripApprovalClient() {
         return;
       }
 
-      const replacementSuggestions = {
-        ...(request.replacementSuggestions || {}),
-      } as Record<string, string>;
-      selected.forEach((memberUid) => {
-        replacementSuggestions[memberUid] = note;
-      });
+      if (!firestore) return;
 
-      await updateApprovalRequest(request, {
-        status: "replacement_requested",
-        decidedAt: serverTimestamp(),
-        notes: note,
-        replacementSuggestions,
-      });
-      toast({
-        title: "Permintaan ganti staff terkirim",
-        description: "Permintaan pengganti telah dicatat.",
-      });
+      setIsSaving(true);
+      try {
+        const replacementSuggestions = {
+          ...(request.replacementSuggestions || {}),
+        } as Record<string, string>;
+        selected.forEach((memberUid) => {
+          replacementSuggestions[memberUid] = note;
+        });
+
+        // Update approval_requests
+        await updateApprovalRequest(request, {
+          status: "replacement_requested",
+          decidedAt: serverTimestamp(),
+          notes: note,
+          replacementSuggestions,
+        });
+
+        // Update selected members with replacement_requested status
+        for (const memberUid of selected) {
+          const memberRef = doc(
+            firestore,
+            "business_trip_missions",
+            request.missionId,
+            "members",
+            memberUid,
+          );
+          await updateDoc(memberRef, {
+            approvalStatus: "replacement_requested",
+            memberStatus: "replacement_requested",
+            replacementReason: note,
+            updatedAt: serverTimestamp(),
+          });
+        }
+
+        toast({
+          title: "Permintaan ganti staff terkirim",
+          description: `Permintaan pengganti untuk ${selected.length} anggota telah dicatat.`,
+        });
+
+        // Clear selection and close modal
+        setSelectedMemberUidsByRequest((prev) => ({
+          ...prev,
+          [request.id]: [],
+        }));
+        setDecisionNotesByRequest((prev) => ({
+          ...prev,
+          [request.id]: "",
+        }));
+        setSelectedRequestForModal(null);
+      } catch (error: any) {
+        console.error("Gagal request replacement:", error);
+        toast({
+          variant: "destructive",
+          title: "Gagal meminta ganti staff",
+          description: error?.message || "Silakan coba lagi.",
+        });
+      } finally {
+        setIsSaving(false);
+      }
     },
     [
-      decisionNotesByRequest,
+      firestore,
       selectedMemberUidsByRequest,
+      decisionNotesByRequest,
       toast,
       updateApprovalRequest,
     ],
@@ -306,34 +466,143 @@ export function BusinessTripApprovalClient() {
         return;
       }
 
-      await updateApprovalRequest(request, {
-        status: "rejected",
-        decidedAt: serverTimestamp(),
-        notes: note,
-        rejectionReason: note,
-      });
-      toast({
-        title: "Permintaan ditolak",
-        description: "Permintaan persetujuan telah ditolak.",
-      });
+      if (!firestore) return;
+
+      setIsSaving(true);
+      try {
+        // Update approval_requests
+        await updateApprovalRequest(request, {
+          status: "rejected",
+          decidedAt: serverTimestamp(),
+          notes: note,
+          rejectionReason: note,
+          rejectedMemberUids: request.memberUids,
+        });
+
+        // Update all members with rejection status
+        for (const memberUid of request.memberUids) {
+          const memberRef = doc(
+            firestore,
+            "business_trip_missions",
+            request.missionId,
+            "members",
+            memberUid,
+          );
+          await updateDoc(memberRef, {
+            approvalStatus: "rejected",
+            memberStatus: "rejected",
+            rejectionReason: note,
+            updatedAt: serverTimestamp(),
+          });
+        }
+
+        toast({
+          title: "Permintaan ditolak",
+          description:
+            "Permintaan persetujuan dan semua anggota telah ditolak.",
+        });
+
+        // Close modal - user can click Detail again to see updated data
+        setSelectedRequestForModal(null);
+      } catch (error: any) {
+        console.error("Gagal reject:", error);
+        toast({
+          variant: "destructive",
+          title: "Gagal menolak",
+          description: error?.message || "Silakan coba lagi.",
+        });
+      } finally {
+        setIsSaving(false);
+      }
     },
-    [decisionNotesByRequest, toast, updateApprovalRequest],
+    [decisionNotesByRequest, firestore, toast, updateApprovalRequest],
   );
 
-  const handleToggleDetails = useCallback((requestId: string) => {
-    setExpandedRequestId((current) =>
-      current === requestId ? null : requestId,
-    );
-  }, []);
+  const handleToggleDetails = useCallback(
+    async (
+      request: BusinessTripApprovalRequest & {
+        id: string;
+        missionDetails?: any;
+      },
+    ) => {
+      if (!firestore) return;
+
+      setIsLoadingModalDetails(true);
+      try {
+        // Fetch member details from members subcollection
+        const membersCollection = collection(
+          firestore,
+          "business_trip_missions",
+          request.missionId,
+          "members",
+        );
+        const memberDocs = await getDocs(membersCollection);
+        const memberDetails = memberDocs.docs
+          .map((doc) => ({ id: doc.id, ...doc.data() }))
+          .filter(
+            (member: any) =>
+              request.memberUids.includes(member.employeeUid) ||
+              request.memberUids.includes(member.id),
+          );
+
+        // Fetch timeline
+        const timelineCollection = collection(
+          firestore,
+          "business_trip_missions",
+          request.missionId,
+          "timeline",
+        );
+        const timelineDocs = await getDocs(
+          query(timelineCollection, orderBy("createdAt", "desc")),
+        );
+        const timeline = timelineDocs.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+
+        // Fetch staff changes
+        const staffChangesCollection = collection(
+          firestore,
+          "business_trip_missions",
+          request.missionId,
+          "staff_changes",
+        );
+        const staffChangesDocs = await getDocs(
+          query(staffChangesCollection, orderBy("createdAt", "desc")),
+        );
+        const staffChanges = staffChangesDocs.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+
+        setSelectedRequestForModal({
+          ...request,
+          memberDetails,
+          timeline,
+          staffChanges,
+        });
+      } catch (error) {
+        console.error("Gagal memuat detail modal:", error);
+        // Still open modal even if detail fetch fails
+        setSelectedRequestForModal(request);
+      } finally {
+        setIsLoadingModalDetails(false);
+      }
+    },
+    [firestore],
+  );
 
   const requestRowsWithMissionName = useMemo(
     () =>
-      approvalRows.map((request) => ({
+      approvals.map((request) => ({
         ...request,
+        missionDetails: missionDetailsById[request.missionId],
         missionName:
-          request.missionName || missionNamesById[request.missionId] || "-",
+          request.missionName ||
+          missionDetailsById[request.missionId]?.missionName ||
+          "-",
       })),
-    [approvalRows, missionNamesById],
+    [approvals, missionDetailsById],
   );
 
   if (isLoadingRequests) {
@@ -365,19 +634,22 @@ export function BusinessTripApprovalClient() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {requestRowsWithMissionName.length === 0 ? (
+          {!isLoadingRequests &&
+          !approvalQueryError &&
+          approvals.length === 0 ? (
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
                 Tidak ada permintaan persetujuan saat ini.
               </p>
-              {approvalQueryError ? (
-                <div className="p-4 rounded bg-amber-500/10 border border-amber-500/20 mb-4">
+              {approvalQueryError || approvalFetchError ? (
+                <div className="p-4 rounded bg-amber-500/10 border border-amber-500/20 mt-4">
                   <p className="text-sm font-bold text-amber-400">
                     Terjadi error saat memuat persetujuan:
                   </p>
                   <pre className="text-xs text-amber-200 mt-2 break-words">
                     {String(
                       (approvalQueryError as any)?.message ||
+                        String(approvalFetchError) ||
                         approvalQueryError,
                     )}
                   </pre>
@@ -390,238 +662,362 @@ export function BusinessTripApprovalClient() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Mission</TableHead>
-                      <TableHead>Level Approver</TableHead>
-                      <TableHead>Anggota</TableHead>
+                      <TableHead>Nama Perjalanan</TableHead>
+                      <TableHead>Tujuan</TableHead>
+                      <TableHead>Periode</TableHead>
+                      <TableHead>Anggota yang perlu disetujui</TableHead>
+                      <TableHead>Dibuat oleh</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead>Dibuat</TableHead>
                       <TableHead>Aksi</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {requestRowsWithMissionName.map((request) => (
-                      <TableRow key={request.id}>
-                        <TableCell>{request.missionName}</TableCell>
-                        <TableCell>
-                          {request.approverName} ({request.approvalLevel || "-"}
-                          )
-                        </TableCell>
-                        <TableCell>{request.memberUids.length}</TableCell>
-                        <TableCell>
-                          <Badge variant={getStatusVariant(request.status)}>
-                            {request.status || "pending"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{formatDate(request.createdAt)}</TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap gap-2">
-                            <Button
-                              size="sm"
-                              onClick={() => handleApproveAll(request)}
-                              disabled={
-                                isSaving ||
-                                request.status === "approved" ||
-                                request.status === "rejected"
-                              }
+                    {requestRowsWithMissionName.map((request) => {
+                      const missionDetails = request.missionDetails;
+                      const anggotaText =
+                        request.memberNames.length > 0
+                          ? request.memberNames.join(", ")
+                          : `${request.memberUids.length} anggota`;
+                      const createdBy =
+                        missionDetails?.assignedByName ||
+                        missionDetails?.assignedByPosition ||
+                        "-";
+
+                      return (
+                        <TableRow key={request.id}>
+                          <TableCell>{request.missionName}</TableCell>
+                          <TableCell>
+                            {missionDetails?.destinationCity || "-"}
+                          </TableCell>
+                          <TableCell>
+                            {formatDate(missionDetails?.startDate)} -{" "}
+                            {formatDate(missionDetails?.endDate)}
+                          </TableCell>
+                          <TableCell>{anggotaText}</TableCell>
+                          <TableCell>{createdBy}</TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={getStatusVariant(
+                                normalizeApprovalRequestStatus(request.status),
+                              )}
                             >
-                              <Check className="mr-2 h-4 w-4" />
-                              Setujui Semua
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              onClick={() => handleToggleDetails(request.id!)}
-                            >
-                              <ChevronDown className="mr-2 h-4 w-4" />
-                              Lihat Detail
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                              {normalizeApprovalRequestStatus(request.status)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleToggleDetails(request)}
+                              >
+                                Detail
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => handleApproveAll(request)}
+                                disabled={
+                                  isSaving ||
+                                  request.status === "approved" ||
+                                  request.status === "rejected"
+                                }
+                              >
+                                Setujui
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => handleRejectRequest(request)}
+                                disabled={
+                                  isSaving ||
+                                  request.status === "approved" ||
+                                  request.status === "rejected"
+                                }
+                              >
+                                Tolak
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
-
-              {requestRowsWithMissionName.map((request) => {
-                const isExpanded = request.id === expandedRequestId;
-                const selectedMemberUids =
-                  selectedMemberUidsByRequest[request.id!] || [];
-                const note = decisionNotesByRequest[request.id!] || "";
-                return (
-                  <div
-                    key={request.id}
-                    className={`rounded-lg border p-4 ${isExpanded ? "bg-slate-50" : "bg-white"}`}
-                  >
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <p className="text-sm text-muted-foreground">
-                          {request.missionName}
-                        </p>
-                        <p className="text-base font-semibold">
-                          {request.approverName}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={getStatusVariant(request.status)}>
-                          {request.status || "pending"}
-                        </Badge>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleToggleDetails(request.id!)}
-                        >
-                          {isExpanded ? "Sembunyikan" : "Detail"}
-                        </Button>
-                      </div>
-                    </div>
-
-                    {isExpanded ? (
-                      <div className="mt-4 space-y-4">
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div>
-                            <p className="text-sm font-medium">Misi</p>
-                            <p className="text-sm text-muted-foreground">
-                              {request.missionName}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium">
-                              Jumlah anggota
-                            </p>
-                            <p className="text-sm text-muted-foreground">
-                              {request.memberUids.length}
-                            </p>
-                          </div>
-                        </div>
-
-                        <Separator />
-
-                        <div className="space-y-2">
-                          <p className="text-sm font-medium">Pilih anggota</p>
-                          <div className="grid gap-2">
-                            {request.memberUids.map((memberUid, index) => {
-                              const memberName =
-                                request.memberNames[index] || memberUid;
-                              const selected =
-                                selectedMemberUids.includes(memberUid);
-                              return (
-                                <label
-                                  key={memberUid}
-                                  className="flex cursor-pointer items-center justify-between rounded-lg border px-3 py-2"
-                                >
-                                  <span>
-                                    <span className="font-medium">
-                                      {memberName}
-                                    </span>
-                                    <span className="ml-2 text-xs text-muted-foreground">
-                                      {memberUid}
-                                    </span>
-                                  </span>
-                                  <input
-                                    type="checkbox"
-                                    checked={selected}
-                                    onChange={() =>
-                                      toggleMemberSelection(
-                                        request.id!,
-                                        memberUid,
-                                      )
-                                    }
-                                    className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                                  />
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <p className="text-sm font-medium">
-                            Catatan keputusan
-                          </p>
-                          <Textarea
-                            value={note}
-                            onChange={(event) =>
-                              setDecisionNotesByRequest((prev) => ({
-                                ...prev,
-                                [request.id!]: event.target.value,
-                              }))
-                            }
-                            placeholder="Tuliskan alasan, instruksi, atau saran pengganti..."
-                            rows={4}
-                          />
-                        </div>
-
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            onClick={() => handleApproveSelected(request)}
-                            disabled={
-                              isSaving ||
-                              request.status === "approved" ||
-                              request.status === "rejected"
-                            }
-                          >
-                            <Check className="mr-2 h-4 w-4" />
-                            Setujui Sebagian
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            onClick={() => handleRequestReplacement(request)}
-                            disabled={
-                              isSaving ||
-                              request.status === "approved" ||
-                              request.status === "rejected"
-                            }
-                          >
-                            <RefreshCcw className="mr-2 h-4 w-4" />
-                            Minta Ganti Staff
-                          </Button>
-                          <Button
-                            variant="destructive"
-                            onClick={() => handleRejectRequest(request)}
-                            disabled={
-                              isSaving ||
-                              request.status === "approved" ||
-                              request.status === "rejected"
-                            }
-                          >
-                            <XCircle className="mr-2 h-4 w-4" />
-                            Tolak
-                          </Button>
-                        </div>
-
-                        {request.replacementSuggestions &&
-                        Object.keys(request.replacementSuggestions).length >
-                          0 ? (
-                          <div className="rounded border bg-slate-50 p-3">
-                            <p className="text-sm font-medium">
-                              Saran pengganti
-                            </p>
-                            <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-                              {Object.entries(
-                                request.replacementSuggestions,
-                              ).map(([uid, suggestion]) => {
-                                const index = request.memberUids.indexOf(uid);
-                                const name = request.memberNames[index] || uid;
-                                return (
-                                  <li key={uid}>
-                                    <span className="font-medium">{name}:</span>{" "}
-                                    {suggestion}
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
             </div>
           )}
         </CardContent>
       </Card>
+
+      {/* Detail Modal */}
+      <Dialog
+        open={!!selectedRequestForModal}
+        onOpenChange={(open) => {
+          if (!open) setSelectedRequestForModal(null);
+        }}
+      >
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-slate-950 text-slate-100 border border-slate-700">
+          <DialogHeader>
+            <DialogTitle>{selectedRequestForModal?.missionName}</DialogTitle>
+            <DialogDescription>
+              Detail lengkap permintaan persetujuan perjalanan dinas
+            </DialogDescription>
+          </DialogHeader>
+
+          {isLoadingModalDetails ? (
+            <div className="space-y-3">
+              <div className="h-4 w-3/4 animate-pulse rounded bg-slate-700" />
+              <div className="h-4 w-1/2 animate-pulse rounded bg-slate-700" />
+              <div className="h-4 w-full animate-pulse rounded bg-slate-700" />
+            </div>
+          ) : selectedRequestForModal ? (
+            <div className="space-y-6">
+              {/* Mission Summary */}
+              <div className="space-y-4">
+                <h3 className="font-semibold text-lg">Ringkasan Perjalanan</h3>
+                <div className="grid gap-4 md:grid-cols-2 p-4 rounded-2xl border border-slate-700 bg-slate-950/80">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Nama Perjalanan
+                    </p>
+                    <p className="text-sm font-medium">
+                      {selectedRequestForModal.missionName || "-"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Nomor SPD
+                    </p>
+                    <p className="text-sm font-medium">
+                      {selectedRequestForModal.missionDetails
+                        ?.assignmentNumber || "-"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Tujuan
+                    </p>
+                    <p className="text-sm font-medium">
+                      {selectedRequestForModal.missionDetails
+                        ?.destinationCity || "-"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Periode
+                    </p>
+                    <p className="text-sm font-medium">
+                      {formatDate(
+                        selectedRequestForModal.missionDetails?.startDate,
+                      )}{" "}
+                      s/d{" "}
+                      {formatDate(
+                        selectedRequestForModal.missionDetails?.endDate,
+                      )}
+                    </p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Alamat Tujuan
+                    </p>
+                    <p className="text-sm">
+                      {selectedRequestForModal.missionDetails
+                        ?.destinationAddress || "-"}
+                    </p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Instruksi
+                    </p>
+                    <p className="text-sm">
+                      {stripHtml(
+                        selectedRequestForModal.missionDetails
+                          ?.instructionNote ||
+                          selectedRequestForModal.missionDetails
+                            ?.instructionHtml ||
+                          "-",
+                      )}
+                    </p>
+                  </div>
+                  {selectedRequestForModal.missionDetails
+                    ?.assignmentLetterUrl ? (
+                    <div className="md:col-span-2">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        Dokumen SPD
+                      </p>
+                      <a
+                        href={
+                          selectedRequestForModal.missionDetails
+                            .assignmentLetterUrl
+                        }
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sm font-medium text-primary underline"
+                      >
+                        Buka lampiran SPD
+                      </a>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Members List with Details */}
+              <div className="space-y-4">
+                <h3 className="font-semibold text-lg">
+                  Daftar Anggota ({selectedRequestForModal.memberUids.length})
+                </h3>
+                <div className="overflow-x-auto rounded-2xl border border-slate-700 bg-slate-950/80">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Nama</TableHead>
+                        <TableHead>Posisi</TableHead>
+                        <TableHead>Brand</TableHead>
+                        <TableHead>Divisi</TableHead>
+                        <TableHead>Approver</TableHead>
+                        <TableHead>Status Approval</TableHead>
+                        <TableHead>Status Konfirmasi</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {selectedRequestForModal.memberDetails &&
+                      selectedRequestForModal.memberDetails.length > 0 ? (
+                        selectedRequestForModal.memberDetails.map(
+                          (member: any) => {
+                            const memberApprovalStatus =
+                              member.approvalStatus ||
+                              selectedRequestForModal.status;
+                            const memberConfirmationStatus =
+                              member.staffConfirmationStatus ||
+                              member.memberStatus ||
+                              "-";
+                            const memberIndex =
+                              selectedRequestForModal.memberUids.indexOf(
+                                member.employeeUid || member.id,
+                              );
+                            const memberName =
+                              member.employeeName ||
+                              selectedRequestForModal.memberNames[
+                                memberIndex
+                              ] ||
+                              member.id ||
+                              "Tidak diketahui";
+
+                            return (
+                              <TableRow key={member.id || member.employeeUid}>
+                                <TableCell>{memberName}</TableCell>
+                                <TableCell>
+                                  {member.employeePosition || "-"}
+                                </TableCell>
+                                <TableCell>{member.brandName || "-"}</TableCell>
+                                <TableCell>
+                                  {member.divisionName || "-"}
+                                </TableCell>
+                                <TableCell>
+                                  {member.managerName || "-"}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge
+                                    variant={getStatusVariant(
+                                      memberApprovalStatus,
+                                    )}
+                                  >
+                                    {normalizeApprovalRequestStatus(
+                                      memberApprovalStatus,
+                                    )}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge
+                                    variant={getStatusVariant(
+                                      memberConfirmationStatus,
+                                    )}
+                                  >
+                                    {normalizeApprovalRequestStatus(
+                                      memberConfirmationStatus,
+                                    )}
+                                  </Badge>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          },
+                        )
+                      ) : (
+                        <TableRow>
+                          <TableCell
+                            colSpan={7}
+                            className="text-center py-6 text-muted-foreground"
+                          >
+                            Memuat detail anggota...
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Timeline */}
+              {selectedRequestForModal.timeline &&
+                selectedRequestForModal.timeline.length > 0 && (
+                  <div className="space-y-4">
+                    <h3 className="font-semibold text-lg">Timeline</h3>
+                    <div className="space-y-2">
+                      {selectedRequestForModal.timeline.map((entry: any) => (
+                        <div
+                          key={entry.id}
+                          className="text-xs p-3 rounded-2xl border border-slate-700 bg-slate-950/80 flex justify-between"
+                        >
+                          <span>{entry.message}</span>
+                          <span className="text-muted-foreground">
+                            {formatDate(entry.createdAt)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+              {selectedRequestForModal.staffChanges &&
+                selectedRequestForModal.staffChanges.length > 0 && (
+                  <>
+                    <Separator />
+                    <div className="space-y-4">
+                      <h3 className="font-semibold text-lg">
+                        Riwayat Perubahan Staff
+                      </h3>
+                      <div className="space-y-2">
+                        {selectedRequestForModal.staffChanges.map(
+                          (change: any) => (
+                            <div
+                              key={change.id}
+                              className="text-xs p-3 rounded-2xl border border-slate-700 bg-slate-950/80"
+                            >
+                              <p className="font-medium">
+                                {change.originalStaffName} →{" "}
+                                {change.newStaffName}
+                              </p>
+                              <p className="text-muted-foreground">
+                                {change.reason}
+                              </p>
+                              <p className="text-muted-foreground text-[11px] mt-1">
+                                {formatDate(change.createdAt)}
+                              </p>
+                            </div>
+                          ),
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -34,81 +34,80 @@ export async function determineApprovalTarget(
     brandId?: string;
     divisionId?: string;
     employeeUid?: string;
+    fullName?: string;
   },
   fallbackDirectorUid: string,
   fallbackDirectorName: string,
 ): Promise<{
-  approverUid: string | null;
-  approverName: string | null;
+  approverUid: string;
+  approverName: string;
   level: "division_manager" | "director";
 }> {
-  // Prefer authoritative source: master division document under brands/{brandId}/divisions/{divisionId}
-  const brandId = (staff as any).brandId;
-  const divisionId = (staff as any).divisionId;
+  const brandId = staff.brandId;
+  const divisionId = staff.divisionId;
+  const employeeUid = staff.employeeUid;
+  const staffName = staff.fullName || employeeUid || "Unknown Staff";
 
-  if (brandId && divisionId) {
-    try {
-      const divRef = doc(firestore, "brands", brandId, "divisions", divisionId);
-      const divSnap = await getDoc(divRef);
-      if (divSnap.exists()) {
-        const masterDiv = divSnap.data() as any;
-        // Regular staff: approver is division manager (masterDiv.managerId)
-        if (!staff.isDivisionManager) {
-          if (
-            masterDiv.managerId &&
-            masterDiv.managerId !== staff.employeeUid
-          ) {
-            return {
-              approverUid: masterDiv.managerId,
-              approverName: masterDiv.managerName || null,
-              level: "division_manager",
-            };
-          }
-          // If no manager in master data, fail early per new policy
-          throw new Error(
-            `Struktur organisasi belum lengkap untuk divisi ${divisionId} (brand ${brandId}).`,
-          );
-        }
-
-        // Division manager: approver is the manager's direct supervisor / director
-        if (staff.isDivisionManager) {
-          if (
-            masterDiv.managerDirectSupervisorId &&
-            masterDiv.managerDirectSupervisorId !== staff.employeeUid
-          ) {
-            return {
-              approverUid: masterDiv.managerDirectSupervisorId,
-              approverName: masterDiv.managerDirectSupervisorName || null,
-              level: "director",
-            };
-          }
-          // fallback to explicit fallback director only when master data has no direct supervisor
-          if (fallbackDirectorUid) {
-            return {
-              approverUid: fallbackDirectorUid,
-              approverName: fallbackDirectorName || null,
-              level: "director",
-            };
-          }
-          throw new Error(
-            `Struktur organisasi belum lengkap untuk Manager Divisi ${divisionId} (brand ${brandId}).`,
-          );
-        }
-      }
-      // If master division document not found, fail instead of using stale fields
-      throw new Error(
-        `Divisi master tidak ditemukan untuk ${divisionId} in brand ${brandId}`,
-      );
-    } catch (err) {
-      // Bubble up for caller to handle and present clear error
-      throw err;
-    }
+  if (!brandId || !divisionId) {
+    throw new Error(
+      `Tidak dapat menentukan approver untuk ${staffName}: brandId atau divisionId tidak ditemukan pada data karyawan.`,
+    );
   }
 
-  // If no brand/division metadata is available, do not fallback to stale manager fields.
-  throw new Error(
-    "Tidak dapat menentukan approver: brand/division tidak tersedia pada data karyawan.",
-  );
+  const divRef = doc(firestore, "brands", brandId, "divisions", divisionId);
+  const divSnap = await getDoc(divRef);
+  if (!divSnap.exists()) {
+    throw new Error(
+      `Struktur organisasi tidak ditemukan untuk divisi ${divisionId} (brand ${brandId}) pada karyawan ${staffName}.`,
+    );
+  }
+
+  const division = divSnap.data() as any;
+
+  if (staff.isDivisionManager) {
+    // Division Manager -> needs director/manager's supervisor
+    const approverUid =
+      division.managerDirectSupervisorId || division.managerDirectSupervisorUid;
+    const approverName = division.managerDirectSupervisorName;
+
+    if (!approverUid || !approverName) {
+      throw new Error(
+        `Struktur organisasi belum lengkap untuk Manager Divisi ${staffName} di divisi ${divisionId} (brand ${brandId}). Atasan langsung Manager Divisi belum diatur.`,
+      );
+    }
+    if (approverUid === employeeUid) {
+      throw new Error(
+        `Peserta dinas (${staffName}) tidak boleh menjadi approver untuk dirinya sendiri.`,
+      );
+    }
+
+    return {
+      approverUid,
+      approverName,
+      level: "director",
+    };
+  } else {
+    // Regular staff -> needs division manager
+    const approverUid = division.managerId || division.managerUid;
+    const approverName = division.managerName;
+
+    if (!approverUid || !approverName) {
+      throw new Error(
+        `Struktur organisasi belum lengkap untuk staff ${staffName} di divisi ${divisionId} (brand ${brandId}). Manager Divisi belum diatur.`,
+      );
+    }
+    if (approverUid === employeeUid) {
+      throw new Error(
+        `Peserta dinas (${staffName}) tidak boleh menjadi approver untuk dirinya sendiri.`,
+      );
+    }
+
+    return {
+      approverUid,
+      approverName,
+      level: "division_manager",
+    };
+  }
 }
 
 /**

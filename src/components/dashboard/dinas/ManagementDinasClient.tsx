@@ -80,6 +80,7 @@ import {
 } from "./types";
 import { determineApprovalTarget } from "@/lib/travel-utils";
 import { normalizeEmployeeRow } from "@/lib/employee-row-normalizer";
+import { repairBusinessTripMissions } from "@/lib/travel-mission-repair";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import type {
   Brand,
@@ -1704,6 +1705,55 @@ export function ManagementDinasClient() {
     await loadActiveMissionData(mission);
   };
 
+  const handleRepairApprovalData = async () => {
+    if (!firestore) {
+      toast({
+        variant: "destructive",
+        title: "Firestore tidak siap",
+        description: "Coba refresh halaman.",
+      });
+      return;
+    }
+
+    const confirmRepair = window.confirm(
+      "⚠️ Repair akan:\n" +
+        "1. Memproses semua mission dengan status pending/waiting\n" +
+        "2. Re-resolve approver dari master organisasi\n" +
+        "3. Update approval_requests\n\n" +
+        "Lanjutkan?",
+    );
+
+    if (!confirmRepair) return;
+
+    setIsSaving(true);
+    try {
+      const stats = await repairBusinessTripMissions(firestore);
+
+      console.log("✅ Repair completed:", stats);
+
+      toast({
+        title: "Repair selesai",
+        description:
+          `${stats.missionsProcessed} mission diproses, ` +
+          `${stats.membersRepaired} member diperbaiki, ` +
+          `${stats.approvalRequestsCreated} approval_requests dibuat. ` +
+          `${stats.errors.length > 0 ? stats.errors.length + " error terjadi." : ""}`,
+      });
+
+      // Refresh mission list
+      setMissionRefreshId(Date.now());
+    } catch (error: any) {
+      console.error("Repair failed:", error);
+      toast({
+        variant: "destructive",
+        title: "Repair gagal",
+        description: error?.message || "Coba lagi.",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const selectMissionForEdit = async (mission: BusinessTripMission) => {
     setActiveMission(mission);
     setMissionForm({
@@ -2458,9 +2508,7 @@ export function ManagementDinasClient() {
                                 {member.divisionName || "-"}
                               </TableCell>
                               <TableCell>
-                                {member.approvalTargetName ||
-                                  member.managerName ||
-                                  "-"}
+                                {member.approvalTargetName || "-"}
                               </TableCell>
                               <TableCell>
                                 <Badge className="capitalize">
@@ -3042,10 +3090,7 @@ export function ManagementDinasClient() {
                         <TableCell>{member.employeeName}</TableCell>
                         <TableCell>{member.employeePosition || "-"}</TableCell>
                         <TableCell>
-                          {member.approvalTargetName ||
-                            member.directSupervisorName ||
-                            member.managerName ||
-                            "-"}
+                          {member.approvalTargetName || "-"}
                         </TableCell>
                         <TableCell>
                           <Badge className="capitalize">
@@ -3426,11 +3471,12 @@ export function ManagementDinasClient() {
             brandName: staff.brandName || "-",
             divisionId: staff.divisionId || "",
             divisionName: staff.divisionName || "-",
-            managerUid: memberManagerUid,
-            managerName: staff.managerName || staff.fullName,
-            approvalTargetUid: approvalTarget.approverUid || null,
-            approvalTargetName: approvalTarget.approverName || null,
+            managerUid: approvalTarget.approverUid || undefined,
+            managerName: approvalTarget.approverName || undefined,
+            approvalTargetUid: approvalTarget.approverUid || undefined,
+            approvalTargetName: approvalTarget.approverName || undefined,
             approvalLevel: approvalTarget.level,
+            isDivisionManager: approvalTarget.level === "director",
             requiresApproval: approvalNeeded,
             approvalStatus: "pending",
             startDate: Timestamp.fromDate(new Date(missionForm.startDate)),
@@ -3599,13 +3645,74 @@ export function ManagementDinasClient() {
         updatedAt: serverTimestamp(),
       });
 
-      console.log("Created mission", {
-        tripId: missionRef.id,
-        selectedStaffUids: selectedStaff.map((s) => s.uid),
-        createdMemberCount: allMemberUids.length,
-        createdApprovalRequestCount: approvalTargetUids.length,
-        approvalTargetUids,
+      // ===== VERIFICATION AFTER MISSION CREATION =====
+      console.log("🔍 Verifying mission creation...", {
+        missionId: missionRef.id,
+        expectedMemberCount: memberDocs.length,
+        expectedApproverCount: approvalGroups.size,
       });
+
+      // Verify members were created
+      const verifyMembersSnap = await getDocs(
+        collection(
+          firestore,
+          "business_trip_missions",
+          missionRef.id,
+          "members",
+        ),
+      );
+      console.log(
+        `✅ Members verified: ${verifyMembersSnap.docs.length} / ${memberDocs.length} created`,
+      );
+
+      // Verify approval_requests were created
+      const verifyApprovalsSnap = await getDocs(
+        collection(
+          firestore,
+          "business_trip_missions",
+          missionRef.id,
+          "approval_requests",
+        ),
+      );
+      console.log(
+        `✅ Approval requests verified: ${verifyApprovalsSnap.docs.length} / ${approvalGroups.size} created`,
+      );
+
+      if (verifyMembersSnap.docs.length === 0 && memberDocs.length > 0) {
+        console.error(
+          "❌ CRITICAL: Members not saved! Mission created but no member subcollections.",
+        );
+        throw new Error(
+          "Mission created but no members subcollection. Check Firestore permissions.",
+        );
+      }
+
+      // ===== DEBUG CONSOLE TABLES =====
+      console.table(
+        memberDocs.map((m) => ({
+          missionId: missionRef.id.substring(0, 8) + "...",
+          memberName: m.employeeName,
+          memberUid: m.employeeUid.substring(0, 8) + "...",
+          approvalTargetUid:
+            m.approvalTargetUid?.substring(0, 8) + "..." || "MISSING",
+          approvalTargetName: m.approvalTargetName || "MISSING",
+          approvalRequestDocId: m.approvalTargetUid || "MISSING",
+          approvalRequestApproverUid:
+            m.approvalTargetUid?.substring(0, 8) + "..." || "MISSING",
+          status: "pending",
+        })),
+      );
+
+      console.table(
+        Array.from(approvalGroups.entries()).map(([approverUid, group]) => ({
+          approverUid: approverUid.substring(0, 8) + "...",
+          approverName: group.approverName,
+          approvalLevel: group.approvalLevel,
+          memberCount: group.memberUids.length,
+          memberNames: group.memberNames.join(", ").substring(0, 80),
+          status: "pending",
+        })),
+      );
 
       const timelineCollection = collection(
         firestore,
@@ -3689,6 +3796,15 @@ export function ManagementDinasClient() {
                   Atasi Duplikat Perjalanan Dinas
                 </Button>
               )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRepairApprovalData}
+                disabled={isSaving || isLoading}
+                title="Perbaiki data approver lama untuk semua mission pending"
+              >
+                🔧 Repair Approval Data
+              </Button>
               <Button onClick={() => handleOpenCreate()}>
                 <Plus className="mr-2 h-4 w-4" /> Buat Perjalanan Dinas Baru
               </Button>

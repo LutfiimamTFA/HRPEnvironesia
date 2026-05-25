@@ -134,6 +134,7 @@ export type BusinessTripMissionMember = {
   approvalTargetUid?: string | null;
   approvalTargetName?: string | null;
   approvalLevel?: "division_manager" | "director";
+  isDivisionManager?: boolean;
   requiresApproval?: boolean;
   approvalStatus?:
     | "pending"

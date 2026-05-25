@@ -1,6 +1,6 @@
-﻿"use client";
+"use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useAuth } from "@/providers/auth-provider";
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase";
 import {
@@ -68,6 +68,7 @@ import {
   type NormalizedDirectoryMember,
 } from "@/lib/employee-directory";
 import { resolveApprovalTarget } from "@/lib/approval-flow";
+import { determineApprovalTarget } from "@/lib/travel-utils";
 import type {
   Brand,
   EmployeeMasterData,
@@ -181,12 +182,25 @@ export type BusinessTripMissionMember = {
   employeeUid: string;
   employeeName: string;
   employeePosition?: string;
+  employeeType?: string;
   brandId?: string;
   brandName?: string;
   divisionId?: string;
   divisionName?: string;
   managerUid?: string;
   managerName?: string;
+  directSupervisorUid?: string;
+  directSupervisorName?: string;
+  approvalTargetUid?: string;
+  approvalTargetName?: string;
+  approvalLevel?: "division_manager" | "director";
+  isDivisionManager?: boolean;
+  requiresApproval?: boolean;
+  approvalStatus?:
+    | "pending"
+    | "approved"
+    | "rejected"
+    | "validated_by_assigner";
   memberStatus?: MemberStatus;
   managerValidationStatus?: MemberStatus;
   managerValidationNote?: string;
@@ -206,6 +220,15 @@ export type BusinessTripMissionMember = {
   reportIssues?: string;
   reportRecommendations?: string;
   reportAttachmentUrl?: string;
+  startDate?: any;
+  endDate?: any;
+  durationDays?: number;
+  requiresManagerValidation?: boolean;
+  samplingPointsCount?: number;
+  sampleTypes?: string;
+  locationPic?: string;
+  baNumber?: string;
+  fieldConditionNote?: string;
   missionStatus?: MissionStatus;
   createdAt?: any;
   updatedAt?: any;
@@ -257,11 +280,31 @@ function renderStatusLabel(status?: MissionStatus | MemberStatus) {
     returned: "success",
   };
 
-  const label =
-    status === "validated_by_assigner"
-      ? "tervalidasi oleh pemberi"
-      : status.replace(/_/g, " ");
+  const labelMap: Record<string, string> = {
+    draft_mission: "Draft misi",
+    pending_manager_validation: "Menunggu persetujuan atasan",
+    waiting_staff_confirmation: "Menunggu konfirmasi staff",
+    pending_hrd_finalization: "Menunggu finalisasi HRD",
+    approved_ready_to_depart: "Sudah siap berangkat",
+    on_duty: "Sedang dinas",
+    returned_pending_report: "Kembali, menunggu laporan",
+    report_submitted: "Laporan sudah dikirim",
+    expense_submitted: "Pengeluaran dikirim",
+    settlement_review: "Review settlement",
+    completed: "Selesai",
+    rejected: "Ditolak",
+    cancelled: "Dibatalkan",
+    approved_by_manager: "Disetujui oleh atasan",
+    validated_by_assigner: "Tervalidasi oleh pemberi tugas",
+    replacement_requested: "Diminta ganti staff",
+    rejected_by_manager: "Ditolak oleh atasan",
+    confirmed_by_staff: "Dikonfirmasi staff",
+    declined_by_staff: "Ditolak staff",
+    ready_to_depart: "Siap berangkat",
+    returned: "Sudah kembali",
+  };
 
+  const label = labelMap[status] || String(status).replace(/_/g, " ");
   return <Badge variant={styleMap[status] || "secondary"}>{label}</Badge>;
 }
 
@@ -283,10 +326,13 @@ function buildManagerValidationSummaries(members: BusinessTripMissionMember[]) {
   members
     .filter((member) => String(member.memberStatus) !== "archived")
     .forEach((member) => {
-      const managerUid = member.managerUid || "unassigned";
-      const key = `${managerUid}::${member.divisionName || ""}`;
+      const approverUid = member.approvalTargetUid || "unassigned";
+      const key = `${approverUid}::${member.divisionName || ""}`;
       const existing = managerMap.get(key);
-      const managerName = member.managerName || "Manager belum ditentukan";
+      const approverName =
+        member.approvalTargetName ||
+        member.managerName ||
+        "Approver belum terset - struktur organisasi perlu diperbaiki";
       const divisionName = member.divisionName || "Divisi belum diatur";
       const status = member.managerValidationStatus;
       const mappedStatus =
@@ -298,8 +344,8 @@ function buildManagerValidationSummaries(members: BusinessTripMissionMember[]) {
 
       if (!existing) {
         managerMap.set(key, {
-          managerUid: managerUid === "unassigned" ? "" : managerUid,
-          managerName,
+          managerUid: approverUid === "unassigned" ? "" : approverUid,
+          managerName: approverName,
           divisionName,
           memberUids: [member.employeeUid],
           memberNames: [member.employeeName],
@@ -636,20 +682,13 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
       (employeeProfile as any)?.brandId || (staff as any).brandId || null,
       (employeeProfile as any)?.divisionId || (staff as any).divisionId || null,
     );
-    const approval = resolveApprovalTarget(employeeProfile, staff, masterDiv);
 
-    const directSupervisorUid =
-      (employeeProfile as any)?.directSupervisorUid ||
-      (staff as any).directSupervisorUid ||
-      (employeeProfile as any)?.managerUid ||
-      (staff as any).managerUid ||
-      null;
-    const directSupervisorName =
-      (employeeProfile as any)?.directSupervisorName ||
-      (staff as any).directSupervisorName ||
-      (employeeProfile as any)?.managerName ||
-      (staff as any).managerName ||
-      null;
+    // NO FALLBACK to old field values - only use master org resolution
+    if (!masterDiv) {
+      throw new Error(
+        `Struktur organisasi tidak ditemukan untuk ${staff.fullName}. Periksa divisi dan brand.`,
+      );
+    }
 
     const isDivisionManager =
       (employeeProfile as any)?.isDivisionManager ||
@@ -657,36 +696,39 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
       (staff as any).structuralLevel === "division_manager" ||
       (staff as any).structuralPosition === "division_manager";
 
-    let approvalTargetUid =
-      approval.approvalTargetUid || directSupervisorUid || null;
-    let approvalTargetName =
-      approval.approvalTargetName || directSupervisorName || null;
-    const approvalLevel =
-      approval.approvalLevel ||
-      (isDivisionManager ? "director" : "division_manager");
-    const approverRole = isDivisionManager ? "director" : "manager_division";
+    let approvalTargetUid: string | null = null;
+    let approvalTargetName: string | null = null;
+    let approvalLevel: "director" | "division_manager" = "division_manager";
+
+    if (isDivisionManager) {
+      // Division Manager -> their supervisor
+      approvalTargetUid =
+        masterDiv.managerDirectSupervisorId ||
+        masterDiv.managerDirectSupervisorUid ||
+        null;
+      approvalTargetName = masterDiv.managerDirectSupervisorName || null;
+      approvalLevel = "director";
+    } else {
+      // Regular staff -> division manager
+      approvalTargetUid = masterDiv.managerId || masterDiv.managerUid || null;
+      approvalTargetName = masterDiv.managerName || null;
+      approvalLevel = "division_manager";
+    }
+
+    if (!approvalTargetUid || !approvalTargetName) {
+      throw new Error(
+        `Struktur organisasi belum lengkap untuk ${staff.fullName}. Manager atau atasan tidak diatur di master organisasi.`,
+      );
+    }
 
     if (approvalTargetUid === staff.uid) {
-      const fallbackUid =
-        directSupervisorUid && directSupervisorUid !== staff.uid
-          ? directSupervisorUid
-          : (employeeProfile as any)?.managerUid &&
-              (employeeProfile as any)?.managerUid !== staff.uid
-            ? (employeeProfile as any)?.managerUid
-            : null;
-      const fallbackName =
-        directSupervisorName ||
-        (employeeProfile as any)?.managerName ||
-        (staff as any).managerName ||
-        null;
-
-      approvalTargetUid = fallbackUid;
-      approvalTargetName = fallbackName;
+      throw new Error(
+        `${staff.fullName} tidak boleh menjadi approver untuk dirinya sendiri.`,
+      );
     }
 
-    if (approvalTargetUid && !approvalTargetName) {
-      approvalTargetName = await findUserNameByUid(approvalTargetUid);
-    }
+    const approverRole =
+      approvalLevel === "director" ? "director" : "manager_division";
 
     return {
       approvalTargetUid,
@@ -886,47 +928,33 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
 
     setIsSaving(true);
     try {
-      const staffRecords = await Promise.all(
-        selectedStaffUids.map(async (uid) => {
-          const staffSnap = await getDoc(doc(firestore, "users", uid));
-          if (!staffSnap.exists())
-            throw new Error("Data staff tidak ditemukan.");
-          return staffSnap.data() as UserProfile;
-        }),
+      const staffRecords = allStaff.filter((staff) =>
+        selectedStaffUids.includes(staff.uid),
       );
-
-      const managerMap = new Map<string, UserProfile>();
-      for (const staff of staffRecords) {
-        const manager = await findManagerForStaff(staff);
-        if (!manager) {
-          throw new Error(
-            `Tidak dapat menemukan Manager Divisi untuk ${staff.fullName}.`,
-          );
-        }
-        managerMap.set(staff.uid, manager);
-      }
 
       const approverMap = new Map<
         string,
         {
-          approvalTargetUid: string | null;
-          approvalTargetName: string | null;
-          approvalLevel: string | null;
-          approverRole: string;
-          employeeProfile: any;
+          approverUid: string;
+          approverName: string;
+          level: "division_manager" | "director";
         }
       >();
 
       for (const staff of staffRecords) {
-        const approver = await resolveApproverForStaff(staff);
-
-        if (!approver.approvalTargetUid) {
-          throw new Error(
-            `Atasan/Approver untuk ${staff.fullName} belum diatur. Cek Data Karyawan atau Organisasi Perusahaan.`,
-          );
-        }
-
-        approverMap.set(staff.uid, approver);
+        const approvalTarget = await determineApprovalTarget(
+          firestore,
+          {
+            isDivisionManager: staff.isDivisionManager,
+            brandId: staff.brandId,
+            divisionId: staff.divisionId,
+            employeeUid: staff.uid,
+            fullName: staff.fullName,
+          },
+          userProfile.uid,
+          userProfile.fullName || "",
+        );
+        approverMap.set(staff.uid, approvalTarget);
       }
 
       const filePath = assignmentLetter
@@ -967,7 +995,7 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
       const assignedManagerUids = Array.from(
         new Set(
           Array.from(approverMap.values())
-            .map((item) => item.approvalTargetUid)
+            .map((item) => item.approverUid)
             .filter(Boolean),
         ),
       );
@@ -1001,11 +1029,7 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
         totalMembers: assignedStaffUids.length,
         managerApprovedCount: 0,
         staffConfirmedCount: 0,
-        managerUids: Array.from(
-          new Set(
-            Array.from(managerMap.values()).map((manager) => manager.uid),
-          ),
-        ),
+        managerUids: assignedManagerUids,
         // initial member/approval counters - will be updated after subcollections are created
         memberUids: assignedStaffUids,
         memberCount: assignedStaffUids.length,
@@ -1021,36 +1045,24 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
       const approvalGroups = new Map<
         string,
         {
-          approverName: string | null;
+          approverName: string;
           approverRole: string;
-          approvalLevel: string | null;
+          approvalLevel: string;
           memberUids: string[];
           memberNames: string[];
         }
       >();
 
+      const memberDocs: BusinessTripMissionMember[] = [];
+
       await Promise.all(
         staffRecords.map(async (staff) => {
           const approver = approverMap.get(staff.uid)!;
-          const manager = managerMap.get(staff.uid)!;
           const membersCollection = getMissionMembersCollection(missionRef.id);
           if (!membersCollection) throw new Error("Firestore tidak siap.");
 
-          const employeeProfile = approver.employeeProfile;
-          const approvalTargetUid = approver.approvalTargetUid;
-          const approvalTargetName = approver.approvalTargetName;
-          const directSupervisorUid =
-            (employeeProfile as any)?.directSupervisorUid ||
-            (staff as any).directSupervisorUid ||
-            (employeeProfile as any)?.managerUid ||
-            (staff as any).managerUid ||
-            null;
-          const directSupervisorName =
-            (employeeProfile as any)?.directSupervisorName ||
-            (staff as any).directSupervisorName ||
-            (employeeProfile as any)?.managerName ||
-            (staff as any).managerName ||
-            null;
+          const approvalTargetUid = approver.approverUid;
+          const approvalTargetName = approver.approverName;
 
           const validatedByAssigner =
             approvalTargetUid && approvalTargetUid === userProfile.uid;
@@ -1059,23 +1071,24 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
           const memberDocRef = getMissionMemberDoc(missionRef.id, staff.uid);
           if (!memberDocRef) throw new Error("Firestore tidak siap.");
 
-          await setDoc(memberDocRef, {
+          const memberData: BusinessTripMissionMember = {
             missionId: missionRef.id,
             missionName: missionForm.missionName,
             assignmentNumber,
             employeeUid: staff.uid,
             employeeName: staff.fullName,
-            employeePosition: staff.jobTitle || staff.positionTitle || "-",
-            employeeType: (staff as any).employmentType || null,
+            employeePosition: staff.jobTitle || "-",
+            employeeType: staff.employeeType || "",
             brandId: staff.brandId || "",
             brandName: staff.brandName || "-",
             divisionId: staff.divisionId || "",
-            divisionName: staff.divisionName || staff.division || "-",
-            directSupervisorUid: directSupervisorUid || null,
-            directSupervisorName: directSupervisorName || null,
-            approvalTargetUid: approvalTargetUid || null,
-            approvalTargetName: approvalTargetName || null,
-            approvalLevel: approver.approvalLevel || null,
+            divisionName: staff.divisionName || "-",
+            managerUid: approvalTargetUid || undefined,
+            managerName: approvalTargetName || undefined,
+            approvalTargetUid: approvalTargetUid || undefined,
+            approvalTargetName: approvalTargetName || undefined,
+            approvalLevel: approver.level,
+            isDivisionManager: approver.level === "director",
             requiresApproval: !!approvalTargetUid && !validatedByAssigner,
             approvalStatus: validatedByAssigner
               ? "validated_by_assigner"
@@ -1089,7 +1102,10 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
             durationDays,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
-          });
+          };
+
+          memberDocs.push(memberData);
+          await setDoc(memberDocRef, memberData);
 
           // Notify staff about assignment
           try {
@@ -1115,9 +1131,12 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
             const existing = approvalGroups.get(approvalTargetUid);
             if (!existing) {
               approvalGroups.set(approvalTargetUid, {
-                approverName: approvalTargetName || null,
-                approverRole: approver.approverRole,
-                approvalLevel: approver.approvalLevel,
+                approverName: approvalTargetName,
+                approverRole:
+                  approver.level === "division_manager"
+                    ? "manager_division"
+                    : "director",
+                approvalLevel: approver.level,
                 memberUids: [staff.uid],
                 memberNames: [staff.fullName],
               });
@@ -1142,9 +1161,9 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
           missionId: missionRef.id,
           missionName: missionForm.missionName,
           approverUid,
-          approverName: entry.approverName || "",
-          approverRole: entry.approverRole || "",
-          approvalLevel: entry.approvalLevel || "",
+          approverName: entry.approverName,
+          approverRole: entry.approverRole,
+          approvalLevel: entry.approvalLevel,
           memberUids: Array.from(new Set(entry.memberUids)),
           memberNames: Array.from(new Set(entry.memberNames)),
           status: "pending",
@@ -1152,6 +1171,22 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
+
+        // Verify approval_request was created
+        const verifyRef = doc(
+          firestore,
+          "business_trip_missions",
+          missionRef.id,
+          "approval_requests",
+          approverUid,
+        );
+        const verifySnap = await getDoc(verifyRef);
+        if (!verifySnap.exists()) {
+          throw new Error(
+            `CRITICAL: Approval request untuk approver ${approverUid} (${entry.approverName}) tidak tersimpan di Firestore. Operasi batch mungkin gagal.`,
+          );
+        }
+
         // Notify approver
         try {
           const notifRef = doc(
@@ -1189,6 +1224,75 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
         status: initialStatus,
         updatedAt: serverTimestamp(),
       });
+
+      // ===== VERIFICATION AFTER MISSION CREATION =====
+      console.log("🔍 Verifying mission creation...", {
+        missionId: missionRef.id,
+        expectedMemberCount: memberDocs.length,
+        expectedApproverCount: approvalGroups.size,
+      });
+
+      // Verify members were created
+      const verifyMembersSnap = await getDocs(
+        collection(
+          firestore,
+          "business_trip_missions",
+          missionRef.id,
+          "members",
+        ),
+      );
+      console.log(
+        `✅ Members verified: ${verifyMembersSnap.docs.length} / ${memberDocs.length} created`,
+      );
+
+      // Verify approval_requests were created
+      const verifyApprovalsSnap = await getDocs(
+        collection(
+          firestore,
+          "business_trip_missions",
+          missionRef.id,
+          "approval_requests",
+        ),
+      );
+      console.log(
+        `✅ Approval requests verified: ${verifyApprovalsSnap.docs.length} / ${approvalGroups.size} created`,
+      );
+
+      if (verifyMembersSnap.docs.length === 0 && memberDocs.length > 0) {
+        console.error(
+          "❌ CRITICAL: Members not saved! Mission created but no member subcollections.",
+        );
+        throw new Error(
+          "Mission created but no members subcollection. Check Firestore permissions.",
+        );
+      }
+
+      // ===== DEBUG CONSOLE TABLES =====
+      console.table(
+        memberDocs.map((m) => ({
+          missionId: missionRef.id.substring(0, 8) + "...",
+          memberName: m.employeeName,
+          memberUid: m.employeeUid.substring(0, 8) + "...",
+          approvalTargetUid:
+            m.approvalTargetUid?.substring(0, 8) + "..." || "MISSING",
+          approvalTargetName: m.approvalTargetName || "MISSING",
+          approvalRequestDocId: m.approvalTargetUid || "MISSING",
+          approvalRequestApproverUid:
+            m.approvalTargetUid?.substring(0, 8) + "..." || "MISSING",
+          status: "pending",
+        })),
+      );
+
+      console.table(
+        Array.from(approvalGroups.entries()).map(([approverUid, entry]) => ({
+          approverUid: approverUid.substring(0, 8) + "...",
+          approverName: entry.approverName,
+          approvalLevel: entry.approvalLevel,
+          memberCount: entry.memberUids.length,
+          memberNames: entry.memberNames.join(", ").substring(0, 80),
+          status: "pending",
+        })),
+      );
 
       await appendTimelineEntry(
         missionRef.id,
@@ -1784,9 +1888,12 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
                                       warnings.push("Brand belum diatur");
                                     if (!member.divisionId)
                                       warnings.push("Divisi belum diatur");
-                                    if (!member.managerName)
+                                    if (
+                                      !member.managerUid ||
+                                      !member.managerName
+                                    )
                                       warnings.push(
-                                        "Manager Divisi belum ditentukan",
+                                        "Approver belum ditentukan",
                                       );
                                     return (
                                       <label
@@ -1904,21 +2011,21 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
                   <TableHead>Tujuan</TableHead>
                   <TableHead>Periode</TableHead>
                   <TableHead>Jumlah Anggota</TableHead>
-                  <TableHead>Progress Validasi</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Status Approval</TableHead>
+                  <TableHead>Status Konfirmasi</TableHead>
                   <TableHead>Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8">
+                    <TableCell colSpan={7} className="text-center py-8">
                       Memuat...
                     </TableCell>
                   </TableRow>
                 ) : missionQueryError ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-6">
+                    <TableCell colSpan={7} className="text-center py-6">
                       <div className="p-3 rounded bg-amber-500/10 border border-amber-500/20">
                         <p className="text-sm font-bold text-amber-400">
                           Terjadi error saat memuat data Perjalanan Dinas:
@@ -1931,54 +2038,78 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
                   </TableRow>
                 ) : missions.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8">
-                      Tidak ada data.
+                    <TableCell colSpan={7} className="text-center py-8">
+                      <p className="text-muted-foreground">
+                        Anda belum ditugaskan dalam perjalanan dinas apapun.
+                      </p>
                     </TableCell>
                   </TableRow>
                 ) : (
                   missions.map((item: any) => {
-                    const title = item.missionName;
-                    const status =
-                      item.status ||
-                      item.missionStatus ||
+                    const title = item.missionName || "-";
+                    const approvalStatus =
                       item.managerValidationStatus ||
+                      item.approvalStatus ||
+                      item.memberStatus ||
+                      item.status;
+                    const confirmationStatus =
                       item.staffConfirmationStatus ||
-                      item.memberStatus;
+                      item.memberStatus ||
+                      item.status;
+                    const memberCount =
+                      item.memberCount ??
+                      item.totalMembers ??
+                      item.assignedStaffCount ??
+                      1;
+                    const canConfirm =
+                      approvalStatus &&
+                      approvalStatus !== "waiting_manager_validation" &&
+                      confirmationStatus !== "confirmed_by_staff" &&
+                      confirmationStatus !== "declined_by_staff";
+
                     return (
                       <TableRow
                         key={item.id || item.missionId}
                         className="hover:bg-muted cursor-pointer"
                         onClick={() => handleSelectItem(item)}
                       >
-                        <TableCell>{title}</TableCell>
+                        <TableCell>{title || "-"}</TableCell>
                         <TableCell>{item.destinationCity || "-"}</TableCell>
                         <TableCell>
                           {formatDate(item.startDate)} -{" "}
                           {formatDate(item.endDate)}
                         </TableCell>
+                        <TableCell>{memberCount}</TableCell>
                         <TableCell>
-                          {item.assignedStaffCount ?? item.totalMembers ?? 0}
+                          {renderStatusLabel(approvalStatus)}
                         </TableCell>
                         <TableCell>
-                          {`${item.managerApprovedCount ?? 0}/${
-                            item.managerValidationCount ??
-                            item.assignedStaffCount ??
-                            item.totalMembers ??
-                            0
-                          }`}
+                          {renderStatusLabel(confirmationStatus)}
                         </TableCell>
-                        <TableCell>{renderStatusLabel(status)}</TableCell>
                         <TableCell>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleSelectItem(item);
-                            }}
-                          >
-                            Detail
-                          </Button>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleSelectItem(item);
+                              }}
+                            >
+                              Detail
+                            </Button>
+                            <Button
+                              variant={canConfirm ? "secondary" : "outline"}
+                              size="sm"
+                              disabled={!canConfirm}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleSelectItem(item);
+                              }}
+                            >
+                              Konfirmasi Siap Dinas
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -2114,7 +2245,9 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
                       >
                         <TableCell>{member.employeeName}</TableCell>
                         <TableCell>{member.divisionName || "-"}</TableCell>
-                        <TableCell>{member.managerName || "-"}</TableCell>
+                        <TableCell>
+                          {member.approvalTargetName || "-"}
+                        </TableCell>
                         <TableCell>
                           {renderStatusLabel(member.managerValidationStatus)}
                         </TableCell>
@@ -2306,7 +2439,11 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
                     onClick={() =>
                       handleStaffConfirmation(selectedMember, true)
                     }
-                    disabled={isSaving}
+                    disabled={
+                      isSaving ||
+                      selectedMember.managerValidationStatus ===
+                        "waiting_manager_validation"
+                    }
                   >
                     <CheckCircle2 className="mr-2 h-4 w-4" /> Konfirmasi Siap
                   </Button>
@@ -2315,11 +2452,22 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
                     onClick={() =>
                       handleStaffConfirmation(selectedMember, false)
                     }
-                    disabled={isSaving}
+                    disabled={
+                      isSaving ||
+                      selectedMember.managerValidationStatus ===
+                        "waiting_manager_validation"
+                    }
                   >
                     <XCircle className="mr-2 h-4 w-4" /> Tidak Bisa Ikut
                   </Button>
                 </div>
+                {selectedMember.managerValidationStatus ===
+                  "waiting_manager_validation" && (
+                  <p className="text-xs text-amber-500 font-medium mt-1">
+                    Menunggu persetujuan atasan/manager sebelum Anda dapat
+                    melakukan konfirmasi.
+                  </p>
+                )}
               </div>
             ) : null}
 
