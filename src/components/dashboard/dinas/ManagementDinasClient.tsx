@@ -71,6 +71,7 @@ import {
   Calendar,
   FileText,
   Wallet,
+  Activity,
 } from "lucide-react";
 import {
   BusinessTripMission,
@@ -80,7 +81,6 @@ import {
 } from "./types";
 import { determineApprovalTarget } from "@/lib/travel-utils";
 import { normalizeEmployeeRow } from "@/lib/employee-row-normalizer";
-import { repairBusinessTripMissions } from "@/lib/travel-mission-repair";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import type {
   Brand,
@@ -141,25 +141,96 @@ function formatDate(value: any) {
 
 function renderStatusLabel(status?: string) {
   if (!status) return <Badge variant="secondary">Belum diisi</Badge>;
-  const normalized = status.replace(/_/g, " ");
+  switch (status) {
+    case "pending_manager_validation":
+      return <Badge variant="warning">Menunggu validasi</Badge>;
+    case "waiting_staff_confirmation":
+      return <Badge variant="warning">Menunggu konfirmasi staff</Badge>;
+    case "pending_hrd_finalization":
+      return <Badge variant="warning">Menunggu finalisasi HRD</Badge>;
+    case "ready_to_depart":
+    case "approved_ready_to_depart":
+      return <Badge variant="success">Siap Berangkat</Badge>;
+    case "on_duty":
+      return <Badge variant="success">Sedang Bertugas</Badge>;
+    case "returned_pending_report":
+      return <Badge variant="warning">Menunggu Laporan</Badge>;
+    case "report_submitted":
+    case "completed":
+      return <Badge variant="success">Selesai</Badge>;
+    case "rejected":
+    case "cancelled":
+      return <Badge variant="destructive">Dibatalkan</Badge>;
+    // Computed UI statuses (phase-1 tracking)
+    case "in_progress":
+      return <Badge variant="success">Sedang Berjalan</Badge>;
+    case "needs_attention":
+      return <Badge variant="destructive">Butuh Perhatian</Badge>;
+    case "waiting_final_report":
+      return <Badge variant="warning">Menunggu Laporan Akhir</Badge>;
+    default:
+      return <Badge variant="secondary">{status.replace(/_/g, " ")}</Badge>;
+  }
+}
 
-  if (status.includes("pending") || status.includes("waiting"))
-    return <Badge variant="warning">{normalized}</Badge>;
-  if (
-    status.includes("rejected") ||
-    status.includes("cancelled") ||
-    status.includes("declined")
-  )
-    return <Badge variant="destructive">{normalized}</Badge>;
-  if (
-    status.includes("approved") ||
-    status.includes("completed") ||
-    status.includes("ready") ||
-    status.includes("on_duty")
-  )
-    return <Badge variant="success">{normalized}</Badge>;
+function formatMemberApprovalStatus(
+  status: string | undefined,
+  managerName?: string,
+): string {
+  switch (status) {
+    case "approved_by_manager":
+    case "approved":
+      return managerName ? `Disetujui oleh ${managerName}` : "Disetujui";
+    case "rejected_by_manager":
+    case "rejected":
+      return managerName ? `Ditolak oleh ${managerName}` : "Ditolak";
+    case "replacement_requested":
+      return "Penggantian diminta";
+    case "validated_by_assigner":
+      return "Disetujui otomatis";
+    default:
+      return "";
+  }
+}
 
-  return <Badge variant="secondary">{normalized}</Badge>;
+function formatStaffConfirmationStatus(status: string | undefined): string {
+  switch (status) {
+    case "confirmed_by_staff":
+      return "Sudah konfirmasi";
+    case "declined_by_staff":
+      return "Menolak dinas";
+    case "waiting_staff_confirmation":
+      return "Menunggu konfirmasi";
+    default:
+      return status ? status.replace(/_/g, " ") : "-";
+  }
+}
+
+function formatMemberStatusLabel(status: string | undefined): string {
+  switch (status) {
+    case "waiting_manager_validation":
+      return "Menunggu validasi";
+    case "approved_by_manager":
+      return "Disetujui atasan";
+    case "rejected_by_manager":
+      return "Ditolak atasan";
+    case "replacement_requested":
+      return "Penggantian diminta";
+    case "ready_to_depart":
+      return "Siap berangkat";
+    case "on_duty":
+      return "Sedang bertugas";
+    case "completed":
+      return "Selesai";
+    case "rejected":
+      return "Ditolak";
+    case "cancelled":
+      return "Dibatalkan";
+    case "archived":
+      return "Diarsipkan";
+    default:
+      return status ? status.replace(/_/g, " ") : "-";
+  }
 }
 
 function buildManagerValidationSummaries(members: BusinessTripMissionMember[]) {
@@ -170,6 +241,14 @@ function buildManagerValidationSummaries(members: BusinessTripMissionMember[]) {
       managerName: string;
       divisionName: string;
       memberUids: string[];
+      memberNames: string[];
+      approverRole: "director" | "division_manager";
+      memberDetails: Array<{
+        uid: string;
+        name: string;
+        status: "approved" | "rejected" | "pending";
+        isDivisionManager: boolean;
+      }>;
       status: "approved" | "rejected" | "pending";
       notes?: string | null;
       decidedAt?: any;
@@ -186,12 +265,22 @@ function buildManagerValidationSummaries(members: BusinessTripMissionMember[]) {
       const managerName = member.managerName || "Manager belum ditentukan";
       const divisionName = member.divisionName || "Divisi belum diatur";
       const status = member.managerValidationStatus;
-      const derivedStatus =
+      const derivedStatus: "approved" | "rejected" | "pending" =
         status === "approved_by_manager"
           ? "approved"
           : status === "rejected_by_manager"
             ? "rejected"
             : "pending";
+      const isMemberDivMgr = !!(member.isDivisionManager || member.approvalLevel === "director");
+      const approverRole: "director" | "division_manager" = isMemberDivMgr
+        ? "director"
+        : "division_manager";
+      const memberDetail = {
+        uid: member.employeeUid,
+        name: member.employeeName || "Anggota",
+        status: derivedStatus,
+        isDivisionManager: isMemberDivMgr,
+      };
 
       if (!existing) {
         const noteVal: string | null =
@@ -201,6 +290,9 @@ function buildManagerValidationSummaries(members: BusinessTripMissionMember[]) {
           managerName,
           divisionName,
           memberUids: [member.employeeUid],
+          memberNames: [member.employeeName || "Anggota"],
+          approverRole,
+          memberDetails: [memberDetail],
           status: derivedStatus,
           notes: noteVal,
           decidedAt: member.updatedAt,
@@ -211,6 +303,12 @@ function buildManagerValidationSummaries(members: BusinessTripMissionMember[]) {
       existing.memberUids = Array.from(
         new Set([...existing.memberUids, member.employeeUid]),
       );
+      if (!existing.memberNames.includes(member.employeeName || "Anggota")) {
+        existing.memberNames.push(member.employeeName || "Anggota");
+      }
+      if (!existing.memberDetails.find((d) => d.uid === member.employeeUid)) {
+        existing.memberDetails.push(memberDetail);
+      }
 
       if (existing.status !== "approved" && derivedStatus === "approved") {
         existing.status = "approved";
@@ -1593,12 +1691,55 @@ export function ManagementDinasClient() {
       const [membersResult, timelineResult, staffChangesResult] = results;
 
       if (membersResult.status === "fulfilled") {
-        setActiveMissionMembers(
-          membersResult.value.docs.map((memberDoc) => ({
-            id: memberDoc.id,
-            ...(memberDoc.data() as BusinessTripMissionMember),
-          })),
-        );
+        const loadedMembers = membersResult.value.docs.map((memberDoc) => ({
+          id: memberDoc.id,
+          ...(memberDoc.data() as BusinessTripMissionMember),
+        }));
+        setActiveMissionMembers(loadedMembers);
+
+        // Auto-sync parent mission summary from live member data (fixes stale counts)
+        const TERMINAL = ["on_duty", "returned_pending_report", "report_submitted", "completed", "approved_ready_to_depart"];
+        if (mission.id && !TERMINAL.includes(mission.status ?? "")) {
+          const activeM = loadedMembers.filter(
+            (m) =>
+              (m.memberStatus as string) !== "archived" &&
+              (m.memberStatus as string) !== "cancelled" &&
+              (m.memberStatus as string) !== "rejected",
+          );
+          const totalM = activeM.length;
+          const approvedM = activeM.filter(
+            (m) =>
+              (m.managerValidationStatus as string) === "approved_by_manager" ||
+              (m.approvalStatus as string) === "approved" ||
+              (m.approvalStatus as string) === "validated_by_assigner",
+          ).length;
+          const confirmedM = activeM.filter(
+            (m) => m.staffConfirmationStatus === "confirmed_by_staff",
+          ).length;
+          let syncStatus: string;
+          if (totalM > 0 && approvedM === totalM && confirmedM === totalM) {
+            syncStatus = "ready_to_depart";
+          } else if (totalM > 0 && approvedM === totalM) {
+            syncStatus = "waiting_staff_confirmation";
+          } else {
+            syncStatus = "pending_manager_validation";
+          }
+          const needsSync =
+            (mission.managerApprovedCount ?? -1) !== approvedM ||
+            (mission.staffConfirmedCount ?? -1) !== confirmedM ||
+            (mission.memberCount ?? -1) !== totalM ||
+            mission.status !== syncStatus;
+          if (needsSync) {
+            updateDoc(doc(firestore, "business_trip_missions", mission.id), {
+              managerApprovedCount: approvedM,
+              staffConfirmedCount: confirmedM,
+              memberCount: totalM,
+              totalMembers: totalM,
+              status: syncStatus,
+              updatedAt: serverTimestamp(),
+            }).catch(() => {});
+          }
+        }
       } else {
         const membersErr = formatErrorDetails(membersResult.reason);
         console.error("[BusinessTripDetail] Failed to load members", {
@@ -1705,54 +1846,6 @@ export function ManagementDinasClient() {
     await loadActiveMissionData(mission);
   };
 
-  const handleRepairApprovalData = async () => {
-    if (!firestore) {
-      toast({
-        variant: "destructive",
-        title: "Firestore tidak siap",
-        description: "Coba refresh halaman.",
-      });
-      return;
-    }
-
-    const confirmRepair = window.confirm(
-      "⚠️ Repair akan:\n" +
-        "1. Memproses semua mission dengan status pending/waiting\n" +
-        "2. Re-resolve approver dari master organisasi\n" +
-        "3. Update approval_requests\n\n" +
-        "Lanjutkan?",
-    );
-
-    if (!confirmRepair) return;
-
-    setIsSaving(true);
-    try {
-      const stats = await repairBusinessTripMissions(firestore);
-
-      console.log("✅ Repair completed:", stats);
-
-      toast({
-        title: "Repair selesai",
-        description:
-          `${stats.missionsProcessed} mission diproses, ` +
-          `${stats.membersRepaired} member diperbaiki, ` +
-          `${stats.approvalRequestsCreated} approval_requests dibuat. ` +
-          `${stats.errors.length > 0 ? stats.errors.length + " error terjadi." : ""}`,
-      });
-
-      // Refresh mission list
-      setMissionRefreshId(Date.now());
-    } catch (error: any) {
-      console.error("Repair failed:", error);
-      toast({
-        variant: "destructive",
-        title: "Repair gagal",
-        description: error?.message || "Coba lagi.",
-      });
-    } finally {
-      setIsSaving(false);
-    }
-  };
 
   const selectMissionForEdit = async (mission: BusinessTripMission) => {
     setActiveMission(mission);
@@ -2052,7 +2145,6 @@ export function ManagementDinasClient() {
           const memberRef = doc(membersRef);
           const memberManagerUid =
             staff.managerUid || (staff.isDivisionManager ? staff.uid : "");
-          const isManagerAsStaff = staff.isDivisionManager;
           const memberData: BusinessTripMissionMember = {
             missionId: activeMission.id || "",
             missionName: activeMission.missionName || "",
@@ -2066,14 +2158,10 @@ export function ManagementDinasClient() {
             divisionName: staff.divisionName || "-",
             managerUid: memberManagerUid,
             managerName: staff.managerName || staff.fullName,
-            requiresManagerValidation: !isManagerAsStaff,
-            memberStatus: "waiting_staff_confirmation",
-            managerValidationStatus: isManagerAsStaff
-              ? "validated_by_assigner"
-              : "waiting_manager_validation",
-            managerValidationNote: isManagerAsStaff
-              ? "Disetujui oleh pemberi tugas"
-              : null,
+            requiresManagerValidation: true,
+            memberStatus: "waiting_manager_validation",
+            managerValidationStatus: "waiting_manager_validation",
+            managerValidationNote: null,
             staffConfirmationStatus: "waiting_staff_confirmation",
             missionStatus: activeMission.status || "pending_manager_validation",
             createdAt: serverTimestamp(),
@@ -2512,26 +2600,27 @@ export function ManagementDinasClient() {
                               </TableCell>
                               <TableCell>
                                 <Badge className="capitalize">
-                                  {(
-                                    member.approvalStatus ||
+                                  {formatMemberApprovalStatus(
                                     member.managerValidationStatus ||
-                                    "-"
-                                  ).replace(/_/g, " ")}
+                                      member.approvalStatus,
+                                    member.managerName,
+                                  ) ||
+                                    formatMemberStatusLabel(
+                                      member.managerValidationStatus ||
+                                        member.approvalStatus,
+                                    )}
                                 </Badge>
                               </TableCell>
                               <TableCell>
                                 <Badge className="capitalize">
-                                  {(
-                                    member.staffConfirmationStatus || "-"
-                                  ).replace(/_/g, " ")}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <Badge className="capitalize">
-                                  {(member.memberStatus || "-").replace(
-                                    /_/g,
-                                    " ",
+                                  {formatStaffConfirmationStatus(
+                                    member.staffConfirmationStatus,
                                   )}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Badge className="capitalize">
+                                  {formatMemberStatusLabel(member.memberStatus)}
                                 </Badge>
                               </TableCell>
                             </TableRow>
@@ -2574,25 +2663,74 @@ export function ManagementDinasClient() {
                     </div>
                   </div>
                   {managerProgress.managerValidations.length > 0 && (
-                    <div className="rounded-lg border border-border p-4">
+                    <div className="rounded-lg border border-border p-4 space-y-4">
                       {managerProgress.managerValidations.map((item) => (
                         <div
                           key={`${item.managerUid}-${item.divisionName}`}
-                          className="mb-3 last:mb-0"
+                          className="pb-4 last:pb-0 border-b border-border last:border-b-0"
                         >
-                          <p className="font-medium">{item.managerName}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {item.divisionName}
-                          </p>
-                          <p className="text-sm">
-                            Status:{" "}
-                            <span className="font-semibold capitalize">
-                              {item.status}
-                            </span>
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {item.memberUids.length} anggota
-                          </p>
+                          <div className="flex items-start justify-between gap-2 mb-2">
+                            <div>
+                              <p className="font-semibold text-sm">
+                                {item.managerName}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {item.approverRole === "director"
+                                  ? "Direktur"
+                                  : "Manager Divisi"}{" "}
+                                · {item.divisionName}
+                              </p>
+                            </div>
+                            <Badge
+                              variant={
+                                item.status === "approved"
+                                  ? "success"
+                                  : item.status === "rejected"
+                                    ? "destructive"
+                                    : "secondary"
+                              }
+                              className="text-xs shrink-0"
+                            >
+                              {item.status === "approved"
+                                ? "Sudah disetujui"
+                                : item.status === "rejected"
+                                  ? "Ditolak"
+                                  : "Menunggu"}
+                            </Badge>
+                          </div>
+                          <div className="space-y-1 pl-2 border-l-2 border-border">
+                            {item.memberDetails.map((detail) => {
+                              const memberStatusLabel =
+                                detail.status === "approved"
+                                  ? `Disetujui oleh ${item.managerName}`
+                                  : detail.status === "rejected"
+                                    ? `Ditolak oleh ${item.managerName}`
+                                    : detail.isDivisionManager
+                                      ? "Menunggu persetujuan direktur"
+                                      : "Menunggu persetujuan atasan";
+                              return (
+                                <div
+                                  key={detail.uid}
+                                  className="flex items-center justify-between gap-2 text-sm"
+                                >
+                                  <span className="text-foreground">
+                                    {detail.name}
+                                  </span>
+                                  <span
+                                    className={
+                                      detail.status === "approved"
+                                        ? "text-green-600 text-xs font-medium"
+                                        : detail.status === "rejected"
+                                          ? "text-red-600 text-xs font-medium"
+                                          : "text-muted-foreground text-xs"
+                                    }
+                                  >
+                                    {memberStatusLabel}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -2614,6 +2752,72 @@ export function ManagementDinasClient() {
                     </p>
                   </div>
                 </section>
+
+                {(() => {
+                  const tripMembers = activeMembers.filter(
+                    (m) => m.staffConfirmationStatus === "confirmed_by_staff",
+                  );
+                  if (tripMembers.length === 0) return null;
+                  const departedCount = tripMembers.filter((m) =>
+                    ["departed", "arrived", "activity_done", "returned"].includes(
+                      m.memberTripStatus ?? "",
+                    ),
+                  ).length;
+                  const arrivedCount = tripMembers.filter((m) =>
+                    ["arrived", "activity_done", "returned"].includes(
+                      m.memberTripStatus ?? "",
+                    ),
+                  ).length;
+                  const returnedCount = tripMembers.filter(
+                    (m) => m.memberTripStatus === "returned",
+                  ).length;
+                  const issueCount = tripMembers.filter(
+                    (m) => m.memberTripStatus === "issue_reported",
+                  ).length;
+                  const hasAnyUpdate = tripMembers.some((m) => m.memberTripStatus);
+                  if (!hasAnyUpdate) return null;
+                  return (
+                    <section className="space-y-4">
+                      <SectionHeader
+                        icon={Activity}
+                        title="Tracking Perjalanan"
+                        description="Progress perjalanan peserta yang sudah konfirmasi."
+                      />
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div className="rounded-lg border border-border p-3 text-center">
+                          <p className="text-2xl font-bold text-primary">{departedCount}/{tripMembers.length}</p>
+                          <p className="text-xs text-muted-foreground mt-1">Sudah berangkat</p>
+                        </div>
+                        <div className="rounded-lg border border-border p-3 text-center">
+                          <p className="text-2xl font-bold text-primary">{arrivedCount}/{tripMembers.length}</p>
+                          <p className="text-xs text-muted-foreground mt-1">Sampai lokasi</p>
+                        </div>
+                        <div className="rounded-lg border border-border p-3 text-center">
+                          <p className="text-2xl font-bold text-primary">{returnedCount}/{tripMembers.length}</p>
+                          <p className="text-xs text-muted-foreground mt-1">Sudah kembali</p>
+                        </div>
+                        <div className={`rounded-lg border p-3 text-center ${issueCount > 0 ? "border-amber-500/40 bg-amber-500/5" : "border-border"}`}>
+                          <p className={`text-2xl font-bold ${issueCount > 0 ? "text-amber-600" : "text-muted-foreground"}`}>{issueCount}</p>
+                          <p className="text-xs text-muted-foreground mt-1">Kendala</p>
+                        </div>
+                      </div>
+                      {issueCount > 0 && (
+                        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-1">
+                          {tripMembers
+                            .filter((m) => m.memberTripStatus === "issue_reported")
+                            .map((m) => (
+                              <div key={m.id} className="text-sm">
+                                <span className="font-medium">{m.employeeName}</span>
+                                {(m as any).issueNote && (
+                                  <span className="text-muted-foreground">: {(m as any).issueNote}</span>
+                                )}
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                    </section>
+                  );
+                })()}
 
                 <section className="space-y-4">
                   <SectionHeader
@@ -3367,12 +3571,8 @@ export function ManagementDinasClient() {
           managerUid:
             staff.managerUid || (staff.isDivisionManager ? staff.uid : ""),
           managerName: staff.managerName || staff.fullName,
-          managerValidationStatus: staff.isDivisionManager
-            ? "validated_by_assigner"
-            : "waiting_manager_validation",
-          managerValidationNote: staff.isDivisionManager
-            ? "Disetujui oleh pemberi tugas"
-            : null,
+          managerValidationStatus: "waiting_manager_validation",
+          managerValidationNote: null,
           staffConfirmationStatus: "waiting_staff_confirmation",
         })) as BusinessTripMissionMember[],
       );
@@ -3445,7 +3645,6 @@ export function ManagementDinasClient() {
           const memberRef = doc(membersCollection, staff.uid);
           const memberManagerUid =
             staff.managerUid || (staff.isDivisionManager ? staff.uid : "");
-          const isManagerAsStaff = staff.isDivisionManager;
           const approvalTarget = await determineApprovalTarget(
             firestore,
             { ...(staff as any), employeeUid: staff.uid },
@@ -3453,11 +3652,7 @@ export function ManagementDinasClient() {
             userProfile.fullName,
           );
 
-          const approverIsCreator =
-            !!approvalTarget.approverUid &&
-            approvalTarget.approverUid === userProfile.uid;
-          const approvalNeeded =
-            !!approvalTarget.approverUid && !approverIsCreator;
+          const approvalNeeded = !!approvalTarget.approverUid;
 
           const memberData: BusinessTripMissionMember = {
             missionId: missionRef.id,
@@ -3485,12 +3680,8 @@ export function ManagementDinasClient() {
             memberStatus: approvalNeeded
               ? "waiting_manager_validation"
               : "waiting_staff_confirmation",
-            managerValidationStatus: isManagerAsStaff
-              ? "validated_by_assigner"
-              : "waiting_manager_validation",
-            managerValidationNote: isManagerAsStaff
-              ? "Disetujui oleh pemberi tugas"
-              : null,
+            managerValidationStatus: "waiting_manager_validation",
+            managerValidationNote: null,
             staffConfirmationStatus: "waiting_staff_confirmation",
             missionStatus: "pending_manager_validation",
             createdAt: serverTimestamp(),
@@ -3796,15 +3987,6 @@ export function ManagementDinasClient() {
                   Atasi Duplikat Perjalanan Dinas
                 </Button>
               )}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleRepairApprovalData}
-                disabled={isSaving || isLoading}
-                title="Perbaiki data approver lama untuk semua mission pending"
-              >
-                🔧 Repair Approval Data
-              </Button>
               <Button onClick={() => handleOpenCreate()}>
                 <Plus className="mr-2 h-4 w-4" /> Buat Perjalanan Dinas Baru
               </Button>

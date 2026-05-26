@@ -153,6 +153,14 @@ export type BusinessTripMissionMember = {
   departurePoint?: string;
   contactDuringTrip?: string;
 
+  // Trip tracking milestones (phase 1 lightweight tracking)
+  memberTripStatus?: "ready" | "departed" | "arrived" | "activity_done" | "returned" | "issue_reported";
+  lastTripUpdateAt?: any;
+  lastTripUpdateByUid?: string;
+  lastTripUpdateByName?: string;
+  issueNote?: string;
+  issueAt?: any;
+
   actualDepartureAt?: any;
   actualReturnAt?: any;
   reportStatus?: string;

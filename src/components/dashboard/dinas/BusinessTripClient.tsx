@@ -11,6 +11,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   orderBy,
   query,
   serverTimestamp,
@@ -61,6 +62,11 @@ import {
   Upload,
   XCircle,
   FileCheck,
+  AlertTriangle,
+  Navigation,
+  Home,
+  Activity,
+  CheckSquare,
 } from "lucide-react";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import {
@@ -239,6 +245,13 @@ export type BusinessTripMissionMember = {
   baNumber?: string;
   fieldConditionNote?: string;
   missionStatus?: MissionStatus;
+  // Trip tracking milestones (phase 1 lightweight tracking)
+  memberTripStatus?: "ready" | "departed" | "arrived" | "activity_done" | "returned" | "issue_reported";
+  lastTripUpdateAt?: any;
+  lastTripUpdateByUid?: string;
+  lastTripUpdateByName?: string;
+  issueNote?: string;
+  issueAt?: any;
   createdAt?: any;
   updatedAt?: any;
 };
@@ -266,7 +279,47 @@ function getDestinationLabel(mission: any): string {
   return formatDestination(mission);
 }
 
-function renderStatusLabel(status?: MissionStatus | MemberStatus) {
+function getMemberApprovalStatusBadge(member: BusinessTripMissionMember) {
+  // Fully approved by whoever is the approver
+  if (
+    member.approvalStatus === "approved" ||
+    member.managerValidationStatus === "approved_by_manager"
+  ) {
+    return <Badge variant="success">Disetujui atasan</Badge>;
+  }
+  // Rejected
+  if (
+    member.managerValidationStatus === "rejected_by_manager" ||
+    member.approvalStatus === "rejected"
+  ) {
+    return <Badge variant="destructive">Ditolak atasan</Badge>;
+  }
+  // Replacement requested
+  if (member.managerValidationStatus === "replacement_requested") {
+    return <Badge variant="destructive">Diminta ganti staff</Badge>;
+  }
+  // Division manager pending director approval
+  if (
+    (member.isDivisionManager || member.approvalLevel === "director") &&
+    (member.approvalStatus as string) !== "approved" &&
+    (member.managerValidationStatus as string) !== "approved_by_manager"
+  ) {
+    return <Badge variant="warning">Menunggu persetujuan direktur</Badge>;
+  }
+  // Regular staff pending manager approval
+  if (
+    !member.managerValidationStatus ||
+    member.managerValidationStatus === "waiting_manager_validation" ||
+    member.memberStatus === "waiting_manager_validation"
+  ) {
+    return <Badge variant="warning">Menunggu persetujuan atasan</Badge>;
+  }
+  return renderStatusLabel(
+    (member.managerValidationStatus || member.memberStatus) as MemberStatus,
+  );
+}
+
+function renderStatusLabel(status?: string) {
   if (!status) return <Badge variant="secondary">Belum diisi</Badge>;
   const styleMap: Record<string, BadgeProps["variant"]> = {
     draft_mission: "secondary",
@@ -291,6 +344,10 @@ function renderStatusLabel(status?: MissionStatus | MemberStatus) {
     declined_by_staff: "destructive",
     ready_to_depart: "success",
     returned: "success",
+    // Computed UI statuses (phase-1 tracking)
+    in_progress: "success",
+    needs_attention: "destructive",
+    waiting_final_report: "warning",
   };
 
   const labelMap: Record<string, string> = {
@@ -298,9 +355,9 @@ function renderStatusLabel(status?: MissionStatus | MemberStatus) {
     pending_manager_validation: "Menunggu persetujuan atasan",
     waiting_staff_confirmation: "Menunggu konfirmasi staff",
     pending_hrd_finalization: "Menunggu finalisasi HRD",
-    approved_ready_to_depart: "Sudah siap berangkat",
+    approved_ready_to_depart: "Siap Berangkat",
     on_duty: "Sedang dinas",
-    returned_pending_report: "Kembali, menunggu laporan",
+    returned_pending_report: "Menunggu Laporan Akhir",
     report_submitted: "Laporan sudah dikirim",
     expense_submitted: "Pengeluaran dikirim",
     settlement_review: "Review settlement",
@@ -313,12 +370,40 @@ function renderStatusLabel(status?: MissionStatus | MemberStatus) {
     rejected_by_manager: "Ditolak oleh atasan",
     confirmed_by_staff: "Dikonfirmasi staff",
     declined_by_staff: "Ditolak staff",
-    ready_to_depart: "Siap berangkat",
+    ready_to_depart: "Siap Berangkat",
     returned: "Sudah kembali",
+    // Computed UI statuses (phase-1 tracking)
+    in_progress: "Sedang Berjalan",
+    needs_attention: "Butuh Perhatian",
+    waiting_final_report: "Menunggu Laporan Akhir",
   };
 
   const label = labelMap[status] || String(status).replace(/_/g, " ");
   return <Badge variant={styleMap[status] || "secondary"}>{label}</Badge>;
+}
+
+function computeMissionDisplayStatus(
+  status: string | undefined,
+  startDate: any,
+  members: BusinessTripMissionMember[],
+): string {
+  if (!status) return "";
+  // Issue overrides everything
+  if (members.some((m) => m.memberTripStatus === "issue_reported")) {
+    return "needs_attention";
+  }
+  // Computed in_progress: ready/approved + today >= startDate
+  if (status === "ready_to_depart" || status === "approved_ready_to_depart") {
+    const ts = (startDate as any)?.seconds
+      ? (startDate as any).seconds * 1000
+      : startDate
+        ? new Date(startDate).getTime()
+        : null;
+    if (ts && Date.now() >= ts) return "in_progress";
+  }
+  // returned_pending_report maps to waiting_final_report label
+  if (status === "returned_pending_report") return "waiting_final_report";
+  return status;
 }
 
 function buildManagerValidationSummaries(members: BusinessTripMissionMember[]) {
@@ -349,7 +434,7 @@ function buildManagerValidationSummaries(members: BusinessTripMissionMember[]) {
       const divisionName = member.divisionName || "Divisi belum diatur";
       const status = member.managerValidationStatus;
       const mappedStatus =
-        status === "approved_by_manager" || status === "validated_by_assigner"
+        status === "approved_by_manager" || member.approvalStatus === "approved"
           ? "approved"
           : status === "rejected_by_manager"
             ? "rejected"
@@ -465,6 +550,51 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
   const [selectedStaffUids, setSelectedStaffUids] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Real-time subscription for mission members when a mission is selected
+  useEffect(() => {
+    if (!firestore || !selectedMission?.id) return;
+    const membersRef = collection(
+      firestore,
+      "business_trip_missions",
+      selectedMission.id,
+      "members",
+    );
+    const unsubscribe = onSnapshot(
+      membersRef,
+      (snap) => {
+        setMissionMembers(
+          snap.docs.map((d) => ({
+            id: d.id,
+            ...(d.data() as BusinessTripMissionMember),
+          })),
+        );
+      },
+      (err) => console.error("Members snapshot error:", err),
+    );
+    return () => unsubscribe();
+  }, [firestore, selectedMission?.id]);
+
+  // Real-time subscription for mission timeline when a mission is selected
+  useEffect(() => {
+    if (!firestore || !selectedMission?.id) return;
+    const timelineRef = collection(
+      firestore,
+      "business_trip_missions",
+      selectedMission.id,
+      "timeline",
+    );
+    const unsubscribe = onSnapshot(
+      query(timelineRef, orderBy("createdAt", "desc")),
+      (snap) => {
+        setMissionTimeline(
+          snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })),
+        );
+      },
+      (err) => console.error("Timeline snapshot error:", err),
+    );
+    return () => unsubscribe();
+  }, [firestore, selectedMission?.id]);
+
   const getBusinessTripMissionCollection = () =>
     firestore ? collection(firestore, "business_trip_missions") : null;
 
@@ -490,6 +620,8 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
 
   const [actionNote, setActionNote] = useState("");
   const [replacementSuggestion, setReplacementSuggestion] = useState("");
+  const [issueNote, setIssueNote] = useState("");
+  const [showIssueInput, setShowIssueInput] = useState(false);
   const [technicalForm, setTechnicalForm] = useState({
     contactDuringTrip: "",
     staffConfirmationNote: "",
@@ -605,6 +737,11 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
   const [staffMemberDocs, setStaffMemberDocs] = useState<any[] | null>(null);
   const [staffMemberLoading, setStaffMemberLoading] = useState(false);
   const [staffError, setStaffError] = useState<any>(null);
+  const [staffTasksRefreshKey, setStaffTasksRefreshKey] = useState(0);
+  const refreshStaffTasks = () => setStaffTasksRefreshKey((k) => k + 1);
+  const [staffMissionDataById, setStaffMissionDataById] = useState<
+    Record<string, any>
+  >({});
 
   useEffect(() => {
     if (mode !== "staff" || !firestore || !userProfile?.uid) {
@@ -614,84 +751,78 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
       return;
     }
 
-    let active = true;
     setStaffMemberLoading(true);
     setStaffError(null);
 
-    (async () => {
-      try {
-        const uid = userProfile.uid;
-        const candidateFields = ["employeeUid", "uid", "userId", "memberUid"];
-        const docMap = new Map<string, any>();
+    // Real-time subscription on primary field; covers all current member docs
+    const q = query(
+      collectionGroup(firestore, "members"),
+      where("employeeUid", "==", userProfile.uid),
+      orderBy("createdAt", "desc"),
+    );
 
-        // Query with fallback fields - NO status filtering, get ALL assigned tasks
-        for (const field of candidateFields) {
-          try {
-            const q = query(
-              collectionGroup(firestore, "members"),
-              where(field, "==", uid),
-              orderBy("createdAt", "desc"),
-            );
-            const snap = await getDocs(q);
-            snap.forEach((d) => {
-              const key = d.ref.path;
-              if (!docMap.has(key)) {
-                const data = d.data() as any;
-                // normalize employeeUid to match currentUser.uid
-                data.employeeUid =
-                  data.employeeUid ||
-                  data.uid ||
-                  data.userId ||
-                  data.memberUid ||
-                  null;
-                docMap.set(key, { id: d.id, ...data });
-              }
-            });
-          } catch (err) {
-            // ignore individual field errors, continue
-            console.warn("member field query failed", field, err);
-          }
-        }
-
-        if (!active) return;
-        // Sort by createdAt descending
-        const items = Array.from(docMap.values()).sort((a: any, b: any) => {
-          const aTime =
-            a.createdAt && a.createdAt.toDate
-              ? a.createdAt.toDate().getTime()
-              : a.createdAt
-                ? new Date(a.createdAt).getTime()
-                : 0;
-          const bTime =
-            b.createdAt && b.createdAt.toDate
-              ? b.createdAt.toDate().getTime()
-              : b.createdAt
-                ? new Date(b.createdAt).getTime()
-                : 0;
-          return bTime - aTime;
+    const unsubscribe = onSnapshot(
+      q,
+      (snap) => {
+        const items = snap.docs.map((d) => {
+          const data = d.data() as any;
+          data.employeeUid =
+            data.employeeUid ||
+            data.uid ||
+            data.userId ||
+            data.memberUid ||
+            null;
+          return { id: d.id, ...data };
         });
         setStaffMemberDocs(items);
-        console.log(
-          `[Staff Mode] Loaded ${items.length} tugas untuk ${userProfile.fullName}:`,
-          items.map((m) => ({
-            missionName: m.missionName,
-            status: m.memberStatus,
-          })),
-        );
-      } catch (error) {
-        console.error("Gagal memuat tugas staff:", error);
-        if (!active) return;
-        setStaffError(error);
-      } finally {
-        if (!active) return;
         setStaffMemberLoading(false);
-      }
-    })();
+      },
+      (err) => {
+        console.error("Staff member docs snapshot error:", err);
+        setStaffError(err);
+        setStaffMemberLoading(false);
+      },
+    );
 
-    return () => {
-      active = false;
-    };
-  }, [mode, firestore, userProfile?.uid, userProfile?.fullName]);
+    return () => unsubscribe();
+  }, [mode, firestore, userProfile?.uid]);
+
+  // Fetch parent mission docs for staff member list to resolve destination fields
+  useEffect(() => {
+    if (mode !== "staff" || !firestore || !staffMemberDocs?.length) {
+      setStaffMissionDataById({});
+      return;
+    }
+    const missionIds = Array.from(
+      new Set(staffMemberDocs.map((m) => m.missionId).filter(Boolean)),
+    );
+    if (!missionIds.length) return;
+    Promise.all(
+      missionIds.map(async (missionId) => {
+        try {
+          const snap = await getDoc(
+            doc(firestore, "business_trip_missions", missionId),
+          );
+          return [missionId, snap.exists() ? snap.data() : null] as const;
+        } catch {
+          return [missionId, null] as const;
+        }
+      }),
+    ).then((entries) =>
+      setStaffMissionDataById(
+        Object.fromEntries(entries.filter(([, v]) => v !== null)),
+      ),
+    );
+  }, [mode, firestore, staffMemberDocs]);
+
+  // Keep selectedMember in sync with live staffMemberDocs (e.g. after tracking update)
+  useEffect(() => {
+    if (!selectedMember?.id || !staffMemberDocs) return;
+    const updated = staffMemberDocs.find((m) => m.id === selectedMember.id);
+    if (updated && updated !== selectedMember) {
+      setSelectedMember(updated as BusinessTripMissionMember);
+    }
+  }, [staffMemberDocs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const missions = useMemo(() => {
     if (mode === "staff") return staffMemberDocs || [];
@@ -888,33 +1019,8 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
         id: missionId,
         ...(missionSnap.data() as BusinessTripMission),
       });
-      const membersCollection = getMissionMembersCollection(missionId);
-      if (!membersCollection) return;
-      const membersSnap = await getDocs(membersCollection);
-      setMissionMembers(
-        membersSnap.docs.map((memberDoc) => ({
-          id: memberDoc.id,
-          ...(memberDoc.data() as BusinessTripMissionMember),
-        })),
-      );
-
-      const timelineCollection = getMissionTimelineCollection(missionId);
-      if (timelineCollection) {
-        const timelineSnap = await getDocs(
-          query(timelineCollection, orderBy("createdAt", "desc")),
-        );
-        setMissionTimeline(
-          timelineSnap.docs.map((entryDoc) => ({
-            id: entryDoc.id,
-            ...(entryDoc.data() as {
-              message: string;
-              createdAt: any;
-              byUid?: string | null;
-              byName?: string | null;
-            }),
-          })),
-        );
-      }
+      // Members and timeline are kept real-time via onSnapshot subscriptions
+      // that depend on selectedMission?.id — no extra getDocs needed here.
     } catch (error: any) {
       console.error("Gagal memuat detail misi", {
         missionId,
@@ -941,37 +1047,45 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
     const members = membersSnap.docs.map(
       (m) => m.data() as BusinessTripMissionMember,
     );
-    const managerValidations = buildManagerValidationSummaries(members);
-    const managerApprovedCount = managerValidations.filter(
-      (item) => item.status === "approved",
+    const activeMembers = members.filter(
+      (m) =>
+        (m.memberStatus as string) !== "archived" &&
+        (m.memberStatus as string) !== "cancelled" &&
+        (m.memberStatus as string) !== "rejected",
+    );
+    const totalMembers = activeMembers.length;
+
+    // Count per-member (not per-manager-group)
+    const managerApprovedCount = activeMembers.filter(
+      (m) =>
+        (m.managerValidationStatus as string) === "approved_by_manager" ||
+        (m.approvalStatus as string) === "approved" ||
+        (m.approvalStatus as string) === "validated_by_assigner",
     ).length;
-    const managerValidationCount = managerValidations.length;
-    const staffConfirmedCount = members.filter(
-      (member) => member.staffConfirmationStatus === "confirmed_by_staff",
+
+    const staffConfirmedCount = activeMembers.filter(
+      (m) => m.staffConfirmationStatus === "confirmed_by_staff",
     ).length;
-    const totalMembers = members.length;
-    const allApproved =
-      managerValidationCount === 0 ||
-      managerValidations.every((item) => item.status === "approved");
-    const allConfirmed = members.every(
-      (member) => member.staffConfirmationStatus === "confirmed_by_staff",
-    );
-    const anyOnDuty = members.some(
-      (member) => member.memberStatus === "on_duty",
-    );
-    const allReturned = members.every(
-      (member) => member.memberStatus === "returned",
-    );
-    const allReported = members.every(
-      (member) => member.reportStatus === "submitted",
-    );
+
+    const allApproved = totalMembers === 0 || managerApprovedCount === totalMembers;
+    const allConfirmed = totalMembers === 0 || staffConfirmedCount === totalMembers;
+    const anyOnDuty = activeMembers.some((m) => m.memberStatus === "on_duty");
+    const allReturned =
+      activeMembers.length > 0 &&
+      activeMembers.every((m) => m.memberStatus === "returned");
+    const allReported =
+      activeMembers.length > 0 &&
+      activeMembers.every((m) => m.reportStatus === "submitted");
 
     const missionRef = getBusinessTripMissionDoc(missionId);
     if (!missionRef) return;
     const missionSnap = await getDoc(missionRef);
     if (!missionSnap.exists()) return;
     const currentStatus = missionSnap.data()?.status as MissionStatus;
-    let nextStatus = currentStatus;
+
+    // Don't downgrade terminal statuses
+    const TERMINAL: string[] = ["on_duty", "returned_pending_report", "report_submitted", "completed"];
+    let nextStatus: string = currentStatus;
 
     if (allReported) {
       nextStatus = "report_submitted";
@@ -979,25 +1093,24 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
       nextStatus = "returned_pending_report";
     } else if (anyOnDuty) {
       nextStatus = "on_duty";
-    } else if (allConfirmed && currentStatus === "waiting_staff_confirmation") {
-      nextStatus = "pending_hrd_finalization";
-    } else if (allApproved && currentStatus === "pending_manager_validation") {
-      nextStatus = "waiting_staff_confirmation";
+    } else if (!TERMINAL.includes(currentStatus)) {
+      if (allApproved && allConfirmed) {
+        nextStatus = "ready_to_depart";
+      } else if (allApproved) {
+        nextStatus = "waiting_staff_confirmation";
+      } else {
+        nextStatus = "pending_manager_validation";
+      }
     }
 
-    const updatePayload: Record<string, any> = {
+    await updateDoc(missionRef, {
       managerApprovedCount,
-      managerValidationCount,
       staffConfirmedCount,
+      memberCount: totalMembers,
       totalMembers,
+      status: nextStatus,
       updatedAt: serverTimestamp(),
-    };
-
-    if (nextStatus !== currentStatus) {
-      updatePayload.status = nextStatus;
-    }
-
-    await updateDoc(missionRef, updatePayload);
+    });
   };
 
   const handleCreateMission = async () => {
@@ -1166,8 +1279,8 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
           const approvalTargetUid = approver.approverUid;
           const approvalTargetName = approver.approverName;
 
-          const validatedByAssigner =
-            approvalTargetUid && approvalTargetUid === userProfile.uid;
+          // Never auto-validate: always require explicit approval through approval_requests
+          const validatedByAssigner = false;
 
           // write member document with employee UID as doc ID
           const memberDocRef = getMissionMemberDoc(missionRef.id, staff.uid);
@@ -1508,18 +1621,22 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
     try {
       const memberRef = getMissionMemberDoc(member.missionId, member.id);
       if (!memberRef) return;
+      const confirmResult = approved ? "confirmed_by_staff" : "declined_by_staff";
       await updateDoc(memberRef, {
-        staffConfirmationStatus: approved
-          ? "confirmed_by_staff"
-          : "declined_by_staff",
+        staffConfirmationStatus: confirmResult,
+        confirmationStatus: confirmResult,
         memberStatus: approved ? "ready_to_depart" : "declined_by_staff",
         staffConfirmationNote: technicalForm.staffConfirmationNote,
         contactDuringTrip: technicalForm.contactDuringTrip,
+        confirmedAt: serverTimestamp(),
+        confirmedByUid: userProfile.uid,
         updatedAt: serverTimestamp(),
       });
       await appendTimelineEntry(
         member.missionId,
-        `${member.employeeName} ${approved ? "mengonfirmasi kesiapan" : "menolak ikut"} misi.`,
+        approved
+          ? `${member.employeeName} mengkonfirmasi kesiapan misi.`
+          : `${member.employeeName} menyatakan tidak bisa ikut misi.`,
       );
       await syncMissionStatus(member.missionId);
       toast({ title: "Konfirmasi staff tersimpan." });
@@ -1527,6 +1644,7 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
         contactDuringTrip: "",
         staffConfirmationNote: "",
       });
+      refreshStaffTasks();
       await loadMissionDetail(member.missionId);
     } catch (error: any) {
       console.error(error);
@@ -1642,6 +1760,65 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
     }
   };
 
+  const handleTripMilestone = async (
+    member: BusinessTripMissionMember,
+    milestone: "departed" | "arrived" | "activity_done" | "returned" | "issue_reported",
+    note?: string,
+  ) => {
+    if (!firestore || !userProfile || !member.missionId || !member.id) return;
+    setIsSaving(true);
+    try {
+      const memberRef = getMissionMemberDoc(member.missionId, member.id);
+      if (!memberRef) return;
+
+      const updateData: Record<string, any> = {
+        memberTripStatus: milestone,
+        lastTripUpdateAt: serverTimestamp(),
+        lastTripUpdateByUid: userProfile.uid,
+        lastTripUpdateByName: userProfile.fullName || userProfile.email || "",
+        updatedAt: serverTimestamp(),
+      };
+
+      if (milestone === "departed") {
+        updateData.actualDepartureAt = serverTimestamp();
+        updateData.memberStatus = "on_duty";
+      } else if (milestone === "returned") {
+        updateData.actualReturnAt = serverTimestamp();
+        updateData.memberStatus = "returned";
+      } else if (milestone === "issue_reported" && note) {
+        updateData.issueNote = note;
+        updateData.issueAt = serverTimestamp();
+      }
+
+      await updateDoc(memberRef, updateData);
+
+      const timelineMessages: Record<string, string> = {
+        departed: `${member.employeeName} sudah berangkat.`,
+        arrived: `${member.employeeName} sudah sampai lokasi.`,
+        activity_done: `${member.employeeName} menyelesaikan kegiatan.`,
+        returned: `${member.employeeName} sudah kembali.`,
+        issue_reported: `${member.employeeName} melaporkan kendala: ${note || "(tidak ada catatan)"}.`,
+      };
+      await appendTimelineEntry(member.missionId, timelineMessages[milestone]);
+      await syncMissionStatus(member.missionId);
+
+      toast({ title: "Status perjalanan diperbarui." });
+      setShowIssueInput(false);
+      setIssueNote("");
+      refreshStaffTasks();
+      await loadMissionDetail(member.missionId);
+    } catch (error: any) {
+      console.error(error);
+      toast({
+        variant: "destructive",
+        title: "Gagal memperbarui status",
+        description: error?.message || "Coba lagi.",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleSubmitReport = async (member: BusinessTripMissionMember) => {
     if (
       !firestore ||
@@ -1708,8 +1885,40 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
   };
 
   const summaryCounts = useMemo(() => {
-    const items = missionItems || [];
+    const items = missions;
     const all = items.length;
+
+    if (mode === "staff") {
+      const rejected = items.filter(
+        (item: any) =>
+          item.staffConfirmationStatus === "declined_by_staff" ||
+          (item.managerValidationStatus as string) === "rejected_by_manager" ||
+          (item.managerValidationStatus as string) === "replacement_requested" ||
+          item.memberStatus === "rejected" ||
+          item.memberStatus === "cancelled",
+      ).length;
+      const completed = items.filter(
+        (item: any) =>
+          item.staffConfirmationStatus === "confirmed_by_staff" ||
+          item.memberStatus === "completed",
+      ).length;
+      // Perlu Tindak Lanjut = belum konfirmasi & belum ditolak/dibatalkan
+      const pending = items.filter((item: any) => {
+        const sc = item.staffConfirmationStatus as string;
+        if (sc === "confirmed_by_staff" || sc === "declined_by_staff")
+          return false;
+        if (
+          (item.managerValidationStatus as string) === "rejected_by_manager" ||
+          (item.managerValidationStatus as string) === "replacement_requested"
+        )
+          return false;
+        if (item.memberStatus === "rejected" || item.memberStatus === "cancelled")
+          return false;
+        return true;
+      }).length;
+      return { all, pending, completed, rejected };
+    }
+
     const pending = items.filter((item: any) =>
       [
         "pending_manager_validation",
@@ -1724,7 +1933,7 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
       (item: any) => item.status === "rejected" || item.status === "cancelled",
     ).length;
     return { all, pending, completed, rejected };
-  }, [missionItems]);
+  }, [missions, mode]);
 
   const modeTitle = useMemo(() => {
     if (mode === "management") return "Misi Dinas";
@@ -2105,8 +2314,12 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
                   <TableHead>Tujuan</TableHead>
                   <TableHead>Periode</TableHead>
                   <TableHead>Jumlah Anggota</TableHead>
-                  <TableHead>Status Approval</TableHead>
-                  <TableHead>Status Konfirmasi</TableHead>
+                  <TableHead>
+                    {mode === "staff" ? "Status Approval Saya" : "Status Approval"}
+                  </TableHead>
+                  <TableHead>
+                    {mode === "staff" ? "Status Konfirmasi Saya" : "Status Konfirmasi"}
+                  </TableHead>
                   <TableHead>Aksi</TableHead>
                 </TableRow>
               </TableHeader>
@@ -2142,28 +2355,84 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
                 ) : (
                   missions.map((item: any) => {
                     const title = item.missionName || "-";
-                    const approvalStatus =
-                      item.managerValidationStatus ||
-                      item.approvalStatus ||
-                      item.memberStatus ||
-                      item.status;
-                    const confirmationStatus =
-                      item.staffConfirmationStatus ||
-                      item.memberStatus ||
-                      item.status;
+                    const approvalStatus = (() => {
+                      if (mode === "staff") {
+                        // Use member-level fields only — don't mix with mission global status
+                        const mv = item.managerValidationStatus as string;
+                        const ap = item.approvalStatus as string;
+                        if (ap === "approved" || mv === "approved_by_manager")
+                          return "approved_by_manager";
+                        if (mv === "rejected_by_manager" || ap === "rejected")
+                          return "rejected_by_manager";
+                        if (mv === "replacement_requested")
+                          return "replacement_requested";
+                        return "waiting_manager_validation";
+                      }
+                      if (item.managerValidationStatus)
+                        return item.managerValidationStatus;
+                      if (item.approvalStatus) return item.approvalStatus;
+                      if (
+                        item.status &&
+                        [
+                          "waiting_staff_confirmation",
+                          "pending_hrd_finalization",
+                          "approved_ready_to_depart",
+                          "on_duty",
+                          "returned_pending_report",
+                          "report_submitted",
+                          "expense_submitted",
+                          "settlement_review",
+                          "completed",
+                        ].includes(item.status)
+                      ) {
+                        return "approved_by_manager";
+                      }
+                      return item.memberStatus || item.status;
+                    })();
+                    const confirmationStatus = (() => {
+                      if (mode === "staff") {
+                        // Direct from member doc
+                        return (
+                          item.staffConfirmationStatus ||
+                          item.confirmationStatus ||
+                          "waiting_staff_confirmation"
+                        );
+                      }
+                      if (item.staffConfirmationStatus)
+                        return item.staffConfirmationStatus;
+                      if (item.status === "waiting_staff_confirmation")
+                        return "waiting_staff_confirmation";
+                      if (
+                        item.status &&
+                        [
+                          "pending_hrd_finalization",
+                          "approved_ready_to_depart",
+                          "on_duty",
+                          "returned_pending_report",
+                          "report_submitted",
+                          "expense_submitted",
+                          "settlement_review",
+                          "completed",
+                        ].includes(item.status)
+                      ) {
+                        return "confirmed_by_staff";
+                      }
+                      return item.memberStatus || item.status;
+                    })();
                     const memberCount =
                       item.memberCount ??
                       item.totalMembers ??
                       item.assignedStaffCount ??
                       1;
-                    // For staff mode: can confirm if manager validated
-                    // For other modes: original logic
+                    // Staff can confirm at any time unless already finalized
                     const canConfirm =
                       mode === "staff"
-                        ? approvalStatus &&
-                          approvalStatus !== "waiting_manager_validation" &&
-                          confirmationStatus !== "confirmed_by_staff" &&
-                          confirmationStatus !== "declined_by_staff"
+                        ? confirmationStatus !== "confirmed_by_staff" &&
+                          confirmationStatus !== "declined_by_staff" &&
+                          (item.managerValidationStatus as string) !==
+                            "rejected_by_manager" &&
+                          (item.managerValidationStatus as string) !==
+                            "replacement_requested"
                         : approvalStatus &&
                           approvalStatus !== "waiting_manager_validation" &&
                           confirmationStatus !== "confirmed_by_staff" &&
@@ -2176,9 +2445,31 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
                         onClick={() => handleSelectItem(item)}
                       >
                         <TableCell className="font-medium">
-                          {title || "-"}
+                          <div>{title || "-"}</div>
+                          {mode === "staff" &&
+                            approvalStatus !== "approved_by_manager" &&
+                            approvalStatus !== "rejected_by_manager" &&
+                            approvalStatus !== "replacement_requested" &&
+                            staffMissionDataById[item.missionId]?.status &&
+                            staffMissionDataById[item.missionId].status !==
+                              "completed" && (
+                              <div className="mt-1 text-xs text-muted-foreground">
+                                Status misi:{" "}
+                                <span className="font-medium">
+                                  {renderStatusLabel(
+                                    staffMissionDataById[item.missionId].status,
+                                  )}
+                                </span>
+                              </div>
+                            )}
                         </TableCell>
-                        <TableCell>{getDestinationLabel(item)}</TableCell>
+                        <TableCell>
+                          {getDestinationLabel(
+                            mode === "staff"
+                              ? (staffMissionDataById[item.missionId] ?? item)
+                              : item,
+                          )}
+                        </TableCell>
                         <TableCell className="text-sm">
                           {formatDate(item.startDate)} -{" "}
                           {formatDate(item.endDate)}
@@ -2187,14 +2478,7 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
                           {memberCount}
                         </TableCell>
                         <TableCell>
-                          {mode === "staff" &&
-                          approvalStatus === "waiting_manager_validation" ? (
-                            <Badge variant="warning">
-                              Menunggu persetujuan atasan
-                            </Badge>
-                          ) : (
-                            renderStatusLabel(approvalStatus)
-                          )}
+                          {renderStatusLabel(approvalStatus)}
                         </TableCell>
                         <TableCell>
                           {renderStatusLabel(confirmationStatus)}
@@ -2275,7 +2559,13 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
               >
                 Tutup Detail
               </Button>
-              {renderStatusLabel(selectedMission.status)}
+              {renderStatusLabel(
+                computeMissionDisplayStatus(
+                  selectedMission.status,
+                  selectedMission.startDate,
+                  missionMembers,
+                ),
+              )}
             </div>
           </div>
 
@@ -2283,7 +2573,9 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
           <div className="mb-6 grid gap-4 md:grid-cols-2 lg:grid-cols-5">
             {(() => {
               const approvedCount = missionMembers.filter(
-                (m) => m.managerValidationStatus === "approved_by_manager",
+                (m) =>
+                  m.approvalStatus === "approved" ||
+                  m.managerValidationStatus === "approved_by_manager",
               ).length;
               const confirmedCount = missionMembers.filter(
                 (m) => m.staffConfirmationStatus === "confirmed_by_staff",
@@ -2569,7 +2861,7 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
                             {member.approvalTargetName || "-"}
                           </TableCell>
                           <TableCell className="text-center">
-                            {renderStatusLabel(member.managerValidationStatus)}
+                            {getMemberApprovalStatusBadge(member)}
                           </TableCell>
                           <TableCell className="text-center">
                             {renderStatusLabel(member.staffConfirmationStatus)}
@@ -2703,8 +2995,12 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
 
             {mode === "staff" &&
             selectedMember &&
-            selectedMember.staffConfirmationStatus ===
-              "waiting_staff_confirmation" ? (
+            selectedMember.staffConfirmationStatus !== "confirmed_by_staff" &&
+            selectedMember.staffConfirmationStatus !== "declined_by_staff" &&
+            (selectedMember.managerValidationStatus as string) !==
+              "rejected_by_manager" &&
+            (selectedMember.managerValidationStatus as string) !==
+              "replacement_requested" ? (
               <Card>
                 <CardHeader>
                   <CardTitle className="text-lg">
@@ -2755,11 +3051,7 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
                       onClick={() =>
                         handleStaffConfirmation(selectedMember!, true)
                       }
-                      disabled={
-                        isSaving ||
-                        selectedMember!.managerValidationStatus ===
-                          "waiting_manager_validation"
-                      }
+                      disabled={isSaving}
                     >
                       <CheckCircle2 className="mr-2 h-4 w-4" /> Konfirmasi Siap
                       Dinas
@@ -2769,61 +3061,242 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
                       onClick={() =>
                         handleStaffConfirmation(selectedMember!, false)
                       }
-                      disabled={
-                        isSaving ||
-                        selectedMember!.managerValidationStatus ===
-                          "waiting_manager_validation"
-                      }
+                      disabled={isSaving}
                     >
                       <XCircle className="mr-2 h-4 w-4" /> Tidak Bisa Ikut
                     </Button>
                   </div>
-                  {selectedMember!.managerValidationStatus ===
-                    "waiting_manager_validation" && (
-                    <div className="space-y-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
-                      <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide">
-                        Menunggu Persetujuan Atasan
-                      </p>
-                      <p className="text-sm text-amber-700/80">
-                        Anda dapat mengkonfirmasi kesiapan setelah manager
-                        atasan menyetujui penugasan ini.
-                      </p>
-                    </div>
-                  )}
                 </CardContent>
               </Card>
             ) : null}
 
             {mode === "staff" &&
             selectedMember &&
-            selectedMember.memberStatus === "ready_to_depart" &&
-            selectedMission?.status === "approved_ready_to_depart" ? (
-              <div className="space-y-3">
-                <Button
-                  onClick={() => handleDepart(selectedMember!)}
-                  disabled={isSaving}
-                >
-                  <MapPin className="mr-2 h-4 w-4" /> Check-in Berangkat
-                </Button>
-              </div>
-            ) : null}
+            selectedMember.staffConfirmationStatus === "confirmed_by_staff" &&
+            selectedMember.memberTripStatus !== "returned" ? (() => {
+              const tripStatus = selectedMember.memberTripStatus ?? "ready";
+
+              type TripStep = {
+                key: string;
+                shortLabel: string;
+                heroLabel: string;
+                heroIcon: React.ElementType;
+                actionLabel: string;
+                actionMilestone: "departed" | "arrived" | "activity_done" | "returned";
+                actionIcon: React.ElementType;
+              };
+
+              const STEPS: TripStep[] = [
+                {
+                  key: "departed",
+                  shortLabel: "Berangkat",
+                  heroLabel: "Sudah Berangkat",
+                  heroIcon: Navigation,
+                  actionLabel: "Saya sudah sampai lokasi",
+                  actionMilestone: "arrived",
+                  actionIcon: MapPin,
+                },
+                {
+                  key: "arrived",
+                  shortLabel: "Sampai",
+                  heroLabel: "Sudah Sampai Lokasi",
+                  heroIcon: MapPin,
+                  actionLabel: "Kegiatan selesai",
+                  actionMilestone: "activity_done",
+                  actionIcon: CheckSquare,
+                },
+                {
+                  key: "activity_done",
+                  shortLabel: "Selesai",
+                  heroLabel: "Kegiatan Selesai",
+                  heroIcon: CheckSquare,
+                  actionLabel: "Saya sudah kembali",
+                  actionMilestone: "returned",
+                  actionIcon: Home,
+                },
+              ];
+
+              const ORDER = ["ready", "departed", "arrived", "activity_done", "returned", "issue_reported"];
+              const currentIdx = ORDER.indexOf(tripStatus);
+
+              // Current hero state
+              const isReady = tripStatus === "ready";
+              const isIssue = tripStatus === "issue_reported";
+              const currentStep = STEPS.find((s) => s.key === tripStatus);
+              const nextStep = isReady
+                ? null
+                : STEPS.find((s) => ORDER.indexOf(s.key) === currentIdx + 1) ?? null;
+              // First action when ready
+              const firstAction = isReady;
+
+              return (
+                <Card className="overflow-hidden border-2 border-primary/20">
+                  {/* Card header */}
+                  <div className="flex items-center gap-3 px-5 pt-5 pb-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10">
+                      <Activity className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="font-semibold leading-tight">Tracking Perjalanan Saya</p>
+                      <p className="text-xs text-muted-foreground">
+                        Update status perjalanan Anda langsung dari HP.
+                      </p>
+                    </div>
+                  </div>
+
+                  <CardContent className="px-5 pb-5 space-y-5">
+                    {/* Hero status bubble */}
+                    <div className={`rounded-2xl p-5 text-center ${
+                      isIssue
+                        ? "bg-amber-500/10 border border-amber-500/30"
+                        : isReady
+                          ? "bg-muted/50 border border-border"
+                          : "bg-primary/5 border border-primary/20"
+                    }`}>
+                      <div className={`mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full ${
+                        isIssue ? "bg-amber-100" : isReady ? "bg-muted" : "bg-primary/10"
+                      }`}>
+                        {isIssue ? (
+                          <AlertTriangle className="h-8 w-8 text-amber-600" />
+                        ) : isReady ? (
+                          <Navigation className="h-8 w-8 text-muted-foreground" />
+                        ) : (
+                          currentStep && <currentStep.heroIcon className="h-8 w-8 text-primary" />
+                        )}
+                      </div>
+                      <p className={`text-lg font-bold ${isIssue ? "text-amber-800" : isReady ? "text-muted-foreground" : "text-foreground"}`}>
+                        {isIssue
+                          ? "Kendala Dilaporkan"
+                          : isReady
+                            ? "Siap Berangkat"
+                            : currentStep?.heroLabel ?? ""}
+                      </p>
+                      {isIssue && selectedMember.issueNote && (
+                        <p className="mt-2 text-sm text-amber-700">{selectedMember.issueNote}</p>
+                      )}
+                      {selectedMember.lastTripUpdateAt && !isReady && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Diupdate: {formatDate(selectedMember.lastTripUpdateAt)}
+                        </p>
+                      )}
+                      {isReady && (
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Konfirmasi diterima. Tekan tombol di bawah saat mulai berangkat.
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Progress stepper */}
+                    <div className="flex items-center justify-between px-1">
+                      {STEPS.map((step, idx) => {
+                        const sIdx = ORDER.indexOf(step.key);
+                        const done = currentIdx > sIdx;
+                        const active = currentIdx === sIdx;
+                        return (
+                          <div key={step.key} className="flex flex-1 items-center">
+                            <div className="flex flex-col items-center gap-1.5">
+                              <div className={`flex h-9 w-9 items-center justify-center rounded-full border-2 transition-colors ${
+                                done
+                                  ? "border-green-500 bg-green-500 text-white"
+                                  : active
+                                    ? "border-primary bg-primary text-white"
+                                    : "border-border bg-background text-muted-foreground"
+                              }`}>
+                                {done ? (
+                                  <CheckCircle2 className="h-4 w-4" />
+                                ) : (
+                                  <span className="text-xs font-semibold">{idx + 1}</span>
+                                )}
+                              </div>
+                              <span className={`text-center text-xs leading-tight ${
+                                done || active ? "font-medium text-foreground" : "text-muted-foreground"
+                              }`}>
+                                {step.shortLabel}
+                              </span>
+                            </div>
+                            {idx < STEPS.length - 1 && (
+                              <div className={`mx-1 h-0.5 flex-1 rounded-full transition-colors ${
+                                ORDER.indexOf(STEPS[idx + 1].key) <= currentIdx ? "bg-green-500" : "bg-border"
+                              }`} />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Primary action button — full width, tall */}
+                    {firstAction && (
+                      <Button
+                        className="w-full h-14 text-base font-semibold"
+                        onClick={() => handleTripMilestone(selectedMember!, "departed")}
+                        disabled={isSaving}
+                      >
+                        <Navigation className="mr-3 h-5 w-5" />
+                        Saya sudah berangkat
+                      </Button>
+                    )}
+                    {!firstAction && !isIssue && nextStep && (
+                      <Button
+                        className="w-full h-14 text-base font-semibold"
+                        onClick={() => handleTripMilestone(selectedMember!, nextStep.actionMilestone)}
+                        disabled={isSaving}
+                      >
+                        <nextStep.actionIcon className="mr-3 h-5 w-5" />
+                        {nextStep.actionLabel}
+                      </Button>
+                    )}
+
+                    {/* Report issue — always available while active */}
+                    {!isIssue && (
+                      <div className="space-y-3">
+                        {!showIssueInput ? (
+                          <Button
+                            variant="outline"
+                            className="w-full h-12 border-amber-300 text-amber-700 hover:bg-amber-50 hover:border-amber-400"
+                            onClick={() => setShowIssueInput(true)}
+                          >
+                            <AlertTriangle className="mr-2 h-4 w-4" />
+                            Laporkan Kendala
+                          </Button>
+                        ) : (
+                          <div className="space-y-3 rounded-xl border border-amber-300 bg-amber-50/50 p-4">
+                            <p className="text-sm font-medium text-amber-800">Catatan Kendala</p>
+                            <Textarea
+                              value={issueNote}
+                              onChange={(e) => setIssueNote(e.target.value)}
+                              rows={3}
+                              className="resize-none"
+                              placeholder="Tuliskan kendala yang dihadapi..."
+                            />
+                            <div className="flex gap-2">
+                              <Button
+                                variant="destructive"
+                                className="flex-1 h-11"
+                                onClick={() => handleTripMilestone(selectedMember!, "issue_reported", issueNote)}
+                                disabled={isSaving || !issueNote.trim()}
+                              >
+                                Kirim Laporan Kendala
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                className="h-11 px-4"
+                                onClick={() => { setShowIssueInput(false); setIssueNote(""); }}
+                              >
+                                Batal
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })() : null}
 
             {mode === "staff" &&
             selectedMember &&
-            selectedMember.memberStatus === "on_duty" ? (
-              <div className="space-y-3">
-                <Button
-                  onClick={() => handleReturn(selectedMember!)}
-                  disabled={isSaving}
-                >
-                  <ClipboardCheck className="mr-2 h-4 w-4" /> Check-out Pulang
-                </Button>
-              </div>
-            ) : null}
-
-            {mode === "staff" &&
-            selectedMember &&
-            selectedMember.memberStatus === "returned" ? (
+            (selectedMember.memberTripStatus === "returned" || selectedMember.memberStatus === "returned") ? (
               <div className="space-y-4">
                 <p className="font-semibold">Laporan Dinas Global</p>
                 <div className="grid gap-4 md:grid-cols-2">

@@ -10,6 +10,7 @@ import {
   doc,
   getDocs,
   getDoc,
+  onSnapshot,
   orderBy,
   query,
   serverTimestamp,
@@ -166,6 +167,27 @@ export function BusinessTripApprovalClient() {
     string | null
   >(null);
   const [replacementReason, setReplacementReason] = useState("");
+  const [modalTimeline, setModalTimeline] = useState<any[]>([]);
+
+  // Real-time timeline subscription for the open approval modal
+  useEffect(() => {
+    if (!firestore || !selectedRequestForModal?.missionId) {
+      setModalTimeline([]);
+      return;
+    }
+    const timelineRef = collection(
+      firestore,
+      "business_trip_missions",
+      selectedRequestForModal.missionId,
+      "timeline",
+    );
+    const unsubscribe = onSnapshot(
+      query(timelineRef, orderBy("createdAt", "desc")),
+      (snap) => setModalTimeline(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      (err) => console.error("Modal timeline snapshot error:", err),
+    );
+    return () => unsubscribe();
+  }, [firestore, selectedRequestForModal?.missionId]);
 
   // Query for approval requests needing action (pending)
   const pendingQuery = useMemoFirebase(() => {
@@ -365,6 +387,62 @@ export function BusinessTripApprovalClient() {
     }
   }, [firestore, pendingQuery, historyQuery]);
 
+  const syncMissionSummaryFromMembers = useCallback(
+    async (missionId: string) => {
+      if (!firestore || !missionId) return;
+      try {
+        const membersSnap = await getDocs(
+          collection(firestore, "business_trip_missions", missionId, "members"),
+        );
+        const allDocs = membersSnap.docs.map((d) => d.data() as any);
+        const active = allDocs.filter(
+          (m: any) =>
+            m.memberStatus !== "archived" &&
+            m.memberStatus !== "cancelled" &&
+            m.memberStatus !== "rejected",
+        );
+        const totalM = active.length;
+        const approvedM = active.filter(
+          (m: any) =>
+            m.managerValidationStatus === "approved_by_manager" ||
+            m.approvalStatus === "approved" ||
+            m.approvalStatus === "validated_by_assigner",
+        ).length;
+        const confirmedM = active.filter(
+          (m: any) => m.staffConfirmationStatus === "confirmed_by_staff",
+        ).length;
+
+        let newStatus: string;
+        if (totalM > 0 && approvedM === totalM && confirmedM === totalM) {
+          newStatus = "ready_to_depart";
+        } else if (totalM > 0 && approvedM === totalM) {
+          newStatus = "waiting_staff_confirmation";
+        } else {
+          newStatus = "pending_manager_validation";
+        }
+
+        const missionRef = doc(firestore, "business_trip_missions", missionId);
+        const missionSnap = await getDoc(missionRef);
+        if (!missionSnap.exists()) return;
+        const currentStatus: string = missionSnap.data()?.status ?? "";
+        const TERMINAL = ["on_duty", "returned_pending_report", "report_submitted", "completed", "approved_ready_to_depart"];
+        if (TERMINAL.includes(currentStatus)) return;
+
+        await updateDoc(missionRef, {
+          managerApprovedCount: approvedM,
+          staffConfirmedCount: confirmedM,
+          memberCount: totalM,
+          totalMembers: totalM,
+          status: newStatus,
+          updatedAt: serverTimestamp(),
+        });
+      } catch (err) {
+        console.warn("syncMissionSummaryFromMembers error:", err);
+      }
+    },
+    [firestore],
+  );
+
   const updateApprovalRequest = useCallback(
     async (
       request: BusinessTripApprovalRequest & { id: string },
@@ -481,13 +559,16 @@ export function BusinessTripApprovalClient() {
           actionType: "approval_approved",
         });
 
+        // 4. Sync parent mission summary from live member data
+        await syncMissionSummaryFromMembers(request.missionId);
+
         toast({
           title: "Persetujuan berhasil",
           description:
             "Semua anggota disetujui dan siap untuk konfirmasi staff.",
         });
 
-        // 4. Close modal and refresh both sections
+        // 5. Close modal and refresh both sections
         setSelectedRequestForModal(null);
         await refetchApprovals();
       } catch (error: any) {
@@ -501,7 +582,7 @@ export function BusinessTripApprovalClient() {
         setIsSaving(false);
       }
     },
-    [firestore, userProfile, toast, refetchApprovals],
+    [firestore, userProfile, toast, refetchApprovals, syncMissionSummaryFromMembers],
   );
 
   const handleApproveSelected = useCallback(
@@ -825,6 +906,24 @@ export function BusinessTripApprovalClient() {
           });
         }
 
+        // Write timeline entry for rejection
+        const rejectTimelineRef = collection(
+          firestore,
+          "business_trip_missions",
+          request.missionId,
+          "timeline",
+        );
+        await addDoc(rejectTimelineRef, {
+          message: `${userProfile?.fullName || "Approver"} menolak perjalanan dinas untuk ${request.memberNames?.join(", ") || request.memberUids.length + " anggota"}.`,
+          createdAt: serverTimestamp(),
+          byUid: userProfile?.uid,
+          byName: userProfile?.fullName,
+          actionType: "approval_rejected",
+        });
+
+        // Sync parent mission summary
+        await syncMissionSummaryFromMembers(request.missionId);
+
         toast({
           title: "Permintaan ditolak",
           description:
@@ -851,6 +950,7 @@ export function BusinessTripApprovalClient() {
       toast,
       updateApprovalRequest,
       refetchApprovals,
+      syncMissionSummaryFromMembers,
     ],
   );
 
@@ -1284,18 +1384,27 @@ export function BusinessTripApprovalClient() {
                             </div>
                           </TableCell>
                           <TableCell className="py-5 px-4 align-top">
-                            <Badge
-                              variant={getStatusVariant(request.status)}
-                              className="text-xs font-semibold"
-                            >
-                              {request.status === "approved"
-                                ? "Disetujui"
-                                : request.status === "rejected"
-                                  ? "Ditolak"
-                                  : request.status === "replacement_requested"
-                                    ? "Minta Ganti Staff"
-                                    : formatBusinessTripStatus(request.status)}
-                            </Badge>
+                            <div className="flex flex-col gap-1.5">
+                              <Badge
+                                variant={getStatusVariant(request.status)}
+                                className="text-xs font-semibold"
+                              >
+                                {request.status === "approved"
+                                  ? "Disetujui atasan"
+                                  : request.status === "rejected"
+                                    ? "Ditolak"
+                                    : request.status === "replacement_requested"
+                                      ? "Minta Ganti Staff"
+                                      : formatBusinessTripStatus(request.status)}
+                              </Badge>
+                              {request.status === "approved" &&
+                                request.missionDetails?.status ===
+                                  "waiting_staff_confirmation" && (
+                                  <Badge variant="warning" className="text-xs">
+                                    Menunggu konfirmasi staff
+                                  </Badge>
+                                )}
+                            </div>
                           </TableCell>
                           <TableCell className="py-5 px-4 align-top">
                             <div className="text-sm text-slate-300">
@@ -1311,11 +1420,15 @@ export function BusinessTripApprovalClient() {
                           </TableCell>
                           <TableCell className="py-5 px-4 align-top">
                             <div className="text-sm text-slate-300 max-w-xs">
-                              {request.status === "rejected"
-                                ? request.notes ||
-                                  request.rejectionReason ||
-                                  "-"
-                                : request.notes || "-"}
+                              {request.status === "approved" &&
+                              request.missionDetails?.status ===
+                                "waiting_staff_confirmation"
+                                ? "Approval atasan selesai, menunggu konfirmasi staff."
+                                : request.status === "rejected"
+                                  ? request.notes ||
+                                    request.rejectionReason ||
+                                    "-"
+                                  : request.notes || "-"}
                             </div>
                           </TableCell>
                           <TableCell className="py-5 px-4 align-top">
@@ -1763,8 +1876,7 @@ export function BusinessTripApprovalClient() {
               </div>
 
               {/* Timeline Section */}
-              {selectedRequestForModal.timeline &&
-                selectedRequestForModal.timeline.length > 0 && (
+              {modalTimeline.length > 0 && (
                   <>
                     <Separator className="bg-slate-800/60" />
                     <div className="space-y-5">
@@ -1772,17 +1884,14 @@ export function BusinessTripApprovalClient() {
                         Timeline Aktivitas
                       </h2>
                       <div className="space-y-3">
-                        {selectedRequestForModal.timeline.map(
+                        {modalTimeline.map(
                           (entry: any, idx: number) => (
                             <div
                               key={entry.id}
                               className="relative flex gap-4 pb-3 last:pb-0"
                             >
                               {/* Timeline connector line */}
-                              {idx <
-                                (selectedRequestForModal.timeline?.length ??
-                                  0) -
-                                  1 && (
+                              {idx < modalTimeline.length - 1 && (
                                 <div className="absolute left-[15px] top-10 h-6 w-px bg-gradient-to-b from-cyan-500/30 to-transparent" />
                               )}
 
