@@ -685,7 +685,21 @@ service cloud.firestore {
       allow create: if isSignedIn() && request.resource.data.assignedByUid == request.auth.uid;
 
       // Update allowed for creator, HRD, or Super Admin
-      allow update: if isSuperAdmin() || isHrd() || (isSignedIn() && resource.data.assignedByUid == request.auth.uid);
+      allow update: if isSuperAdmin() || isHrd() || (isSignedIn() && resource.data.assignedByUid == request.auth.uid)
+        // Mission members may submit final report (limited fields)
+        || (isSignedIn() &&
+            (resource.data.memberUids is list && request.auth.uid in resource.data.memberUids ||
+             resource.data.assignedStaffUids is list && request.auth.uid in resource.data.assignedStaffUids) &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status', 'reportMode', 'finalReportSubmittedAt', 'finalReportSubmittedBy', 'updatedAt'
+            ]) &&
+            request.resource.data.status == 'final_report_submitted')
+        // HRD/management may archive mission (limited fields)
+        || (isSignedIn() && isManagement() &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status', 'archivedAt', 'archivedByUid', 'archivedByName', 'updatedAt'
+            ]) &&
+            request.resource.data.status == 'completed');
 
       // Deletion reserved for Super Admin or HRD
       allow delete: if isSuperAdmin() || isHrd();
@@ -705,17 +719,42 @@ service cloud.firestore {
         allow create: if isSuperAdmin() || isHrd() || (isSignedIn() && get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid);
 
         // Update rules:
-        // - staff can only update their confirmation fields
+        // - staff can update their own confirmation fields
+        // - any confirmed mission member can update tracking fields of fellow members (group milestone)
         // - approver can only update managerValidation related fields
-        // - HRD/Super Admin can update any
-        allow update: if isSuperAdmin() || isHrd() || (
+        // - HRD/Super Admin/Management can update any
+        allow update: if isSuperAdmin() || isHrd() || isManagement() || (
           isSignedIn() && (
-            // Staff confirmation update
+            // Staff confirmation update (own doc only)
             ((request.auth.uid == resource.data.employeeUid) &&
-              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['staffConfirmationStatus','staffConfirmationNote','updatedAt']))
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'staffConfirmationStatus', 'staffConfirmationNote', 'updatedAt'
+              ]))
+            // Trip tracking milestone update — any member of the same mission can update
+            // tracking fields on any other member (group departure/arrival/return/issue)
+            || (
+              (
+                (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids is list &&
+                 request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids) ||
+                (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids is list &&
+                 request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids)
+              ) &&
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'memberTripStatus', 'memberStatus',
+                'departedAt', 'actualDepartureAt',
+                'arrivedAt',
+                'activityDoneAt',
+                'returnedAt', 'actualReturnAt',
+                'issueNote', 'issueCategory', 'issueUrgency', 'issueAt',
+                'lastTripUpdateAt', 'lastTripUpdateByUid', 'lastTripUpdateByName',
+                'updatedAt'
+              ])
+            )
             // Approver manager validation update
             || ((request.auth.uid == resource.data.approvalTargetUid) &&
-              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['managerValidationStatus','managerValidationNote','managerReplacementSuggestion','updatedAt']))
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'managerValidationStatus', 'managerValidationNote', 'managerReplacementSuggestion', 'updatedAt'
+              ]))
           )
         );
 
@@ -738,10 +777,16 @@ service cloud.firestore {
         allow get: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && (
           resource.data.byUid == request.auth.uid ||
           get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid ||
-          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids)
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids) ||
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids)
         ));
         allow list: if isSignedIn() || isManagement();
-        allow create: if isSuperAdmin() || isHrd() || (isSignedIn() && get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid);
+        // Mission members (staff) may create tracking timeline entries
+        allow create: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && (
+          get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid ||
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids) ||
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids)
+        ));
         allow update, delete: if isSuperAdmin() || isHrd();
       }
 
@@ -766,6 +811,54 @@ service cloud.firestore {
           (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.managerUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.managerUids)
         ));
         allow delete: if isSuperAdmin() || isHrd() || isManagement();
+      }
+
+      // Final report (team or mixed mode main report)
+      match /final_report/{reportId} {
+        allow get: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && (
+          get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid ||
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids) ||
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids)
+        ));
+        allow list: if isSuperAdmin() || isHrd() || isSignedIn();
+        allow create: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && (
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids) ||
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids) ||
+          get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid
+        ));
+        // Staff may update their own team report while draft OR when revision was requested
+        allow update: if isSuperAdmin() || isHrd() || isManagement() ||
+          (isSignedIn() && resource.data.dilaporkanOlehUid == request.auth.uid &&
+            (resource.data.submittedAt == null || resource.data.reportReviewStatus == "revision_requested"));
+        allow delete: if isSuperAdmin() || isHrd();
+      }
+
+      // Per-member individual reports (individual_report mode)
+      match /member_final_reports/{memberUid} {
+        allow get: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && (
+          request.auth.uid == memberUid ||
+          get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid ||
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids)
+        ));
+        allow list: if isSuperAdmin() || isHrd() || isSignedIn();
+        allow create: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && request.auth.uid == memberUid);
+        // Staff may update their own report while draft OR when revision was requested
+        allow update: if isSuperAdmin() || isHrd() || isManagement() ||
+          (isSignedIn() && request.auth.uid == memberUid &&
+            (resource.data.submittedAt == null || resource.data.reportReviewStatus == "revision_requested"));
+        allow delete: if isSuperAdmin() || isHrd();
+      }
+
+      // Per-member notes (mixed_report mode optional personal notes)
+      match /member_notes/{memberUid} {
+        allow get: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && (
+          request.auth.uid == memberUid ||
+          get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid ||
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids)
+        ));
+        allow list: if isSuperAdmin() || isHrd() || isSignedIn();
+        allow create, update: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && request.auth.uid == memberUid);
+        allow delete: if isSuperAdmin() || isHrd();
       }
 
       // Manager validations cache

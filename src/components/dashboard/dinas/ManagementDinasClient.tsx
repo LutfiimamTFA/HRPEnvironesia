@@ -1,15 +1,17 @@
 "use client";
 
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useAuth } from "@/providers/auth-provider";
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase";
 import {
   addDoc,
   collection,
+  collectionGroup,
   deleteDoc,
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   orderBy,
   query,
   serverTimestamp,
@@ -67,17 +69,27 @@ import {
   ChevronDown,
   ChevronRight,
   Check,
+  CheckCircle2,
   MapPin,
   Calendar,
   FileText,
   Wallet,
   Activity,
+  ArrowUpDown,
+  Filter,
+  Navigation,
+  Home,
+  TrendingUp,
 } from "lucide-react";
 import {
   BusinessTripMission,
   BusinessTripMissionMember,
   BusinessTripType,
   TRIP_TYPES,
+  type FinalReport,
+  type MemberFinalReport,
+  type MemberNote,
+  type ReportReviewStatus,
 } from "./types";
 import { determineApprovalTarget } from "@/lib/travel-utils";
 import { normalizeEmployeeRow } from "@/lib/employee-row-normalizer";
@@ -139,6 +151,16 @@ function formatDate(value: any) {
   }
 }
 
+function formatDateTime(value: any) {
+  try {
+    if (!value) return "-";
+    const date = value instanceof Timestamp ? value.toDate() : new Date(value);
+    return format(date, "dd MMM yyyy, HH:mm", { locale: idLocale });
+  } catch {
+    return "-";
+  }
+}
+
 function renderStatusLabel(status?: string) {
   if (!status) return <Badge variant="secondary">Belum diisi</Badge>;
   switch (status) {
@@ -154,16 +176,24 @@ function renderStatusLabel(status?: string) {
     case "on_duty":
       return <Badge variant="success">Sedang Bertugas</Badge>;
     case "returned_pending_report":
-      return <Badge variant="warning">Menunggu Laporan</Badge>;
+      return <Badge variant="warning">Menunggu Laporan Akhir</Badge>;
+    case "final_report_submitted":
+      return <Badge variant="info">Laporan Akhir Terkirim</Badge>;
     case "report_submitted":
     case "completed":
       return <Badge variant="success">Selesai</Badge>;
     case "rejected":
     case "cancelled":
       return <Badge variant="destructive">Dibatalkan</Badge>;
-    // Computed UI statuses (phase-1 tracking)
+    // Computed UI statuses (tracking)
     case "in_progress":
       return <Badge variant="success">Sedang Berjalan</Badge>;
+    case "at_location":
+      return <Badge variant="success">Sudah Sampai Lokasi</Badge>;
+    case "activity_in_progress":
+      return <Badge variant="success">Kegiatan Berjalan</Badge>;
+    case "activity_done":
+      return <Badge variant="success">Kegiatan Selesai</Badge>;
     case "needs_attention":
       return <Badge variant="destructive">Butuh Perhatian</Badge>;
     case "waiting_final_report":
@@ -171,6 +201,213 @@ function renderStatusLabel(status?: string) {
     default:
       return <Badge variant="secondary">{status.replace(/_/g, " ")}</Badge>;
   }
+}
+
+type TrackingStats = {
+  total: number;
+  departed: number;
+  arrived: number;
+  activityDone: number;
+  returned: number;
+  issues: number;
+  lastUpdateAt: any;
+  lastUpdateByName: string;
+  memberNames: string[];
+};
+
+function computeTrackingDisplayStatus(
+  mission: BusinessTripMission,
+  tracking?: TrackingStats,
+): string {
+  const stored = mission.status ?? "draft_mission";
+  if (
+    ["pending_manager_validation", "waiting_staff_confirmation",
+     "pending_hrd_finalization", "draft_mission",
+     "rejected", "cancelled", "archived_duplicate"].includes(stored)
+  ) return stored;
+  if (["completed", "final_report_submitted", "report_submitted", "expense_submitted", "settlement_review"].includes(stored))
+    return stored;
+
+  if (!tracking || tracking.total === 0) return stored;
+  if (tracking.issues > 0) return "needs_attention";
+  if (tracking.returned >= tracking.total && tracking.total > 0) return "returned_pending_report";
+  if (tracking.activityDone >= tracking.total && tracking.total > 0) return "activity_done";
+  if (tracking.activityDone > 0) return "activity_in_progress";
+  if (tracking.arrived >= tracking.total && tracking.total > 0) return "at_location";
+  if (tracking.departed > 0) return "in_progress";
+  return stored;
+}
+
+const STATUS_PRIORITY: Record<string, number> = {
+  on_duty: 0,
+  needs_attention: 1,
+  activity_done: 2,
+  activity_in_progress: 3,
+  at_location: 4,
+  in_progress: 5,
+  approved_ready_to_depart: 6,
+  returned_pending_report: 7,
+  final_report_submitted: 8,
+  report_submitted: 9,
+  expense_submitted: 10,
+  settlement_review: 10,
+  pending_hrd_finalization: 11,
+  waiting_staff_confirmation: 12,
+  pending_manager_validation: 13,
+  draft_mission: 14,
+  completed: 15,
+  rejected: 16,
+  cancelled: 17,
+  archived_duplicate: 18,
+};
+
+// ── Timeline category inference ───────────────────────────────────────────────
+type TimelineCategory = "tracking" | "approval" | "changes" | "issues" | "system";
+
+function inferTimelineCategory(entry: { message?: string; category?: string }): TimelineCategory {
+  if (entry.category === "tracking") return "tracking";
+  if (entry.category === "approval") return "approval";
+  if (entry.category === "changes") return "changes";
+  if (entry.category === "issues") return "issues";
+
+  const msg = (entry.message ?? "").toLowerCase();
+
+  // Issue keywords first (more specific)
+  if (msg.includes("kendala") || msg.includes("melaporkan kendala")) return "issues";
+
+  // Tracking journey keywords
+  if (
+    msg.includes("berangkat") || msg.includes("sampai lokasi") || msg.includes("tiba") ||
+    msg.includes("kegiatan selesai") || msg.includes("sudah kembali") ||
+    msg.includes("mengonfirmasi keberangkatan") || msg.includes("mengonfirmasi tiba") ||
+    msg.includes("mengonfirmasi kembali") || msg.includes("mengonfirmasi kegiatan") ||
+    msg.includes("status perjalanan")
+  ) return "tracking";
+
+  // Approval keywords
+  if (
+    msg.includes("disetujui") || msg.includes("ditolak") || msg.includes("validasi") ||
+    msg.includes("konfirmasi") || msg.includes("finalisasi") || msg.includes("menunggu") ||
+    msg.includes("manager") || msg.includes("hrd") || msg.includes("direktur")
+  ) return "approval";
+
+  // Change keywords
+  if (
+    msg.includes("diubah") || msg.includes("diperbarui") || msg.includes("diupdate") ||
+    msg.includes("tanggal") || msg.includes("tujuan") || msg.includes("anggota") ||
+    msg.includes("dokumen") || msg.includes("instruksi") || msg.includes("spd") ||
+    msg.includes("ditambahkan") || msg.includes("dihapus") || msg.includes("diganti")
+  ) return "changes";
+
+  return "system";
+}
+
+// ── Date overlap helper ───────────────────────────────────────────────────────
+function toTimestampSecs(ts: any): number {
+  if (!ts) return 0;
+  if (ts?.seconds) return ts.seconds;
+  if (ts instanceof Date) return ts.getTime() / 1000;
+  try { return new Date(ts).getTime() / 1000; } catch { return 0; }
+}
+
+function datesOverlap(
+  aStart: any, aEnd: any,
+  bStart: any, bEnd: any,
+): boolean {
+  const aS = toTimestampSecs(aStart);
+  const aE = toTimestampSecs(aEnd);
+  const bS = toTimestampSecs(bStart);
+  const bE = toTimestampSecs(bEnd);
+  if (!aS || !aE || !bS || !bE) return false;
+  return aS <= bE && bS <= aE;
+}
+
+// ── Date-only helper (strips time, returns midnight Date) ─────────────────────
+function toDateOnly(ts: any): Date | null {
+  if (!ts) return null;
+  let d: Date;
+  if (ts?.seconds != null) d = new Date(ts.seconds * 1000);
+  else if (ts instanceof Date) d = new Date(ts);
+  else { try { d = new Date(ts); } catch { return null; } }
+  if (isNaN(d.getTime())) return null;
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+// Converts any Timestamp / Date / string to YYYY-MM-DD string
+function toDateString(ts: any): string | undefined {
+  const d = toDateOnly(ts);
+  return d ? d.toISOString().slice(0, 10) : undefined;
+}
+
+// ── Staff availability computation ────────────────────────────────────────────
+function computeStaffAvailabilityInfo(
+  entries: StaffBusyEntry[],
+  newMissionStart?: string,  // YYYY-MM-DD
+  newMissionEnd?: string,    // YYYY-MM-DD
+  excludeMissionId?: string,
+): StaffAvailabilityDetail {
+  const todayMs = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); })();
+  const filtered = entries.filter(m => !excludeMissionId || m.missionId !== excludeMissionId);
+
+  if (filtered.length === 0) return { status: "available", missions: [] };
+
+  const newStart = newMissionStart ? toDateOnly(newMissionStart) : null;
+  const newEnd   = newMissionEnd   ? toDateOnly(newMissionEnd)   : null;
+  const ONE_DAY  = 24 * 60 * 60 * 1000;
+
+  const processed: StaffMissionOverlap[] = filtered.map(m => {
+    const oldStart = toDateOnly(m.startDate);
+    const oldEnd   = toDateOnly(m.endDate);
+    let overlapType: StaffMissionOverlap["overlapType"] = "no_overlap";
+
+    if (newStart && newEnd && oldStart && oldEnd) {
+      const nS = newStart.getTime(), nE = newEnd.getTime();
+      const oS = oldStart.getTime(), oE = oldEnd.getTime();
+
+      // Strict date conflict: new starts BEFORE old ends AND old starts BEFORE new ends
+      const isConflict = nS < oE && oS < nE;
+
+      if (isConflict) {
+        // Same calendar day (newStart == oldEnd) counts as continuation, not conflict
+        if (nS === oE) {
+          overlapType = "continuation";
+        } else {
+          overlapType = "conflict";
+        }
+      } else if (nS >= oE) {
+        // New mission starts on or after old ends
+        const daysDiff = (nS - oE) / ONE_DAY;
+        if (daysDiff <= 2) overlapType = "continuation";
+        // else: no_overlap (available after enough gap)
+      }
+    }
+
+    return { ...m, overlapType };
+  });
+
+  // Determine worst-case badge status
+  const hasConflict     = processed.some(m => m.overlapType === "conflict");
+  const hasContinuation = processed.some(m => m.overlapType === "continuation");
+
+  // For non-overlap missions: is the staff currently on duty or future?
+  const hasActiveNow = processed.some(m => {
+    const oS = toDateOnly(m.startDate)?.getTime() ?? 0;
+    const oE = toDateOnly(m.endDate)?.getTime()   ?? 0;
+    return oS <= todayMs && todayMs <= oE;
+  });
+
+  let status: StaffAvailabilityStatus;
+  if (hasConflict)       status = "conflict";
+  else if (hasContinuation) status = "continuation";
+  else if (hasActiveNow) status = "on_duty";
+  else                   status = "will_be_on_duty";
+
+  const latestEndDate = processed.reduce<any>((latest, m) => {
+    return toTimestampSecs(m.endDate) > toTimestampSecs(latest) ? m.endDate : latest;
+  }, processed[0].endDate);
+
+  return { status, missions: processed, latestEndDate };
 }
 
 function formatMemberApprovalStatus(
@@ -413,18 +650,63 @@ function SectionHeader({
 }
 
 // ===== Staff Picker Component =====
+type StaffBusyEntry = {
+  missionId: string;
+  missionName: string;
+  startDate: any;
+  endDate: any;
+  destinationCity?: string;
+  memberTripStatus?: string;
+};
+
+// ── Continuation & availability types ────────────────────────────────────────
+type ContinuationData = {
+  missionId: string;
+  missionName: string;
+  destination: string;
+  endDate: any;
+  transitionNote: string;
+};
+
+type StaffAvailabilityStatus =
+  | "available"       // no active missions at all in busyMap
+  | "on_duty"         // currently on duty in another mission, new dates don't overlap
+  | "will_be_on_duty" // future approved mission, new dates don't overlap
+  | "continuation"    // new mission can start right after old one ends (≤2 days gap)
+  | "conflict";       // actual date overlap → needs override + reason
+
+type StaffMissionOverlap = StaffBusyEntry & {
+  overlapType: "conflict" | "continuation" | "no_overlap";
+};
+
+type StaffAvailabilityDetail = {
+  status: StaffAvailabilityStatus;
+  missions: StaffMissionOverlap[];
+  latestEndDate?: any;
+};
+
 function StaffPicker({
   allStaff,
   selectedUids,
   onToggle,
   isLoading,
   error,
+  missionStartDate,
+  missionEndDate,
+  busyMap,
+  excludeMissionId,
+  continuationSelections,
 }: {
   allStaff: NormalizedStaff[];
   selectedUids: string[];
-  onToggle: (uid: string) => void;
+  onToggle: (uid: string, meta?: { continuation?: ContinuationData; overrideReason?: string }) => void;
   isLoading: boolean;
   error: any;
+  missionStartDate?: string; // YYYY-MM-DD
+  missionEndDate?: string;   // YYYY-MM-DD
+  busyMap?: Record<string, StaffBusyEntry[]>;
+  excludeMissionId?: string;
+  continuationSelections?: Record<string, ContinuationData>;
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [brandFilter, setBrandFilter] = useState("__all__");
@@ -435,6 +717,23 @@ function StaffPicker({
   const [collapsedBrands, setCollapsedBrands] = useState<Set<string>>(
     new Set(),
   );
+
+  // ── Dialog state ──────────────────────────────────────────────────────────
+  const [continuationPending, setContinuationPending] = useState<{
+    uid: string;
+    name: string;
+    missions: StaffMissionOverlap[];
+  } | null>(null);
+  const [continuationChoice, setContinuationChoice] = useState<"normal" | "continuation">("normal");
+  const [continuationFromMission, setContinuationFromMission] = useState<StaffMissionOverlap | null>(null);
+  const [continuationNote, setContinuationNote] = useState("");
+
+  const [overridePending, setOverridePending] = useState<{
+    uid: string;
+    name: string;
+    missions: StaffMissionOverlap[];
+  } | null>(null);
+  const [overrideReason, setOverrideReason] = useState("");
 
   // ── Extract filter options ────────────────────────────────────────────────
   const { brands, divisions, employeeTypes, structuralPositions } =
@@ -550,6 +849,71 @@ function StaffPicker({
     structuralPositionFilter,
   ]);
 
+  // ── Per-staff availability details ────────────────────────────────────────
+  const staffAvailabilityMap = useMemo<Record<string, StaffAvailabilityDetail>>(() => {
+    if (!busyMap) return {};
+    const result: Record<string, StaffAvailabilityDetail> = {};
+    Object.entries(busyMap).forEach(([uid, missions]) => {
+      const detail = computeStaffAvailabilityInfo(missions, missionStartDate, missionEndDate, excludeMissionId);
+      // Only store if there are active missions (available staff don't need an entry)
+      if (detail.status !== "available") result[uid] = detail;
+    });
+    return result;
+  }, [busyMap, missionStartDate, missionEndDate, excludeMissionId]);
+
+  // ── Dialog handlers ───────────────────────────────────────────────────────
+  const handleStaffClick = (staff: NormalizedStaff) => {
+    const isSelected = selectedUids.includes(staff.uid);
+    if (isSelected) {
+      // Deselecting always works immediately
+      onToggle(staff.uid);
+      return;
+    }
+    const avail = staffAvailabilityMap[staff.uid];
+    if (!avail) {
+      onToggle(staff.uid);
+      return;
+    }
+    if (avail.status === "conflict") {
+      setOverridePending({ uid: staff.uid, name: staff.fullName, missions: avail.missions });
+      setOverrideReason("");
+    } else if (avail.status === "continuation") {
+      const continuationMissions = avail.missions.filter(m => m.overlapType === "continuation");
+      setContinuationPending({ uid: staff.uid, name: staff.fullName, missions: avail.missions });
+      setContinuationChoice("normal");
+      setContinuationFromMission(continuationMissions[0] ?? null);
+      setContinuationNote("");
+    } else {
+      // on_duty / will_be_on_duty with no real conflict → normal toggle
+      onToggle(staff.uid);
+    }
+  };
+
+  const handleConfirmContinuation = () => {
+    if (!continuationPending) return;
+    if (continuationChoice === "continuation" && continuationFromMission) {
+      onToggle(continuationPending.uid, {
+        continuation: {
+          missionId: continuationFromMission.missionId,
+          missionName: continuationFromMission.missionName,
+          destination: continuationFromMission.destinationCity ?? "",
+          endDate: continuationFromMission.endDate,
+          transitionNote: continuationNote.trim(),
+        },
+      });
+    } else {
+      onToggle(continuationPending.uid);
+    }
+    setContinuationPending(null);
+  };
+
+  const handleConfirmOverride = () => {
+    if (!overridePending || !overrideReason.trim()) return;
+    onToggle(overridePending.uid, { overrideReason: overrideReason.trim() });
+    setOverridePending(null);
+    setOverrideReason("");
+  };
+
   // ── Group Brand → Division → Staff ────────────────────────────────────────
   const grouped = useMemo(() => {
     const map = new Map<string, Map<string, NormalizedStaff[]>>();
@@ -651,8 +1015,167 @@ function StaffPicker({
     );
   }
 
+  // ── Availability badge helper ─────────────────────────────────────────────
+  const renderAvailabilityBadge = (avail: StaffAvailabilityDetail | undefined) => {
+    if (!avail) return null;
+    switch (avail.status) {
+      case "conflict":
+        return (
+          <span className="inline-flex items-center gap-1 rounded-full bg-red-100 border border-red-300/60 px-2 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-900/30 dark:border-red-700/40 dark:text-red-400">
+            <AlertTriangle className="h-2.5 w-2.5" />
+            Bentrok Dinas
+          </span>
+        );
+      case "continuation":
+        return (
+          <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 border border-blue-300/60 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/30 dark:border-blue-700/40 dark:text-blue-400">
+            <TrendingUp className="h-2.5 w-2.5" />
+            Lanjutan Dinas
+          </span>
+        );
+      case "on_duty":
+        return (
+          <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 border border-orange-300/60 px-2 py-0.5 text-[10px] font-semibold text-orange-700 dark:bg-orange-900/30 dark:border-orange-700/40 dark:text-orange-400">
+            <Navigation className="h-2.5 w-2.5" />
+            Sedang Dinas
+          </span>
+        );
+      case "will_be_on_duty":
+        return (
+          <span className="inline-flex items-center gap-1 rounded-full bg-yellow-100 border border-yellow-300/60 px-2 py-0.5 text-[10px] font-semibold text-yellow-700 dark:bg-yellow-900/30 dark:border-yellow-700/40 dark:text-yellow-400">
+            <Calendar className="h-2.5 w-2.5" />
+            Akan Dinas
+          </span>
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="space-y-4">
+      {/* Continuation Dialog */}
+      {continuationPending && (
+        <AppModal
+          open={true}
+          onOpenChange={(open) => { if (!open) setContinuationPending(null); }}
+        >
+          <div className="space-y-4 p-6">
+            <div>
+              <DialogTitle className="text-base font-semibold">Pilih Jenis Penugasan — {continuationPending.name}</DialogTitle>
+              <p className="text-sm text-muted-foreground mt-1">Staff ini memiliki dinas aktif yang bisa dilanjutkan. Pilih jenis penugasan.</p>
+            </div>
+            {/* Mission info */}
+            {continuationPending.missions
+              .filter(m => m.overlapType === "continuation" || m.overlapType === "conflict")
+              .map(m => (
+                <div key={m.missionId} className="rounded-lg bg-muted/50 border border-border p-3 text-sm space-y-0.5">
+                  <p className="font-semibold text-foreground">{m.missionName || "(tanpa nama)"}</p>
+                  {m.destinationCity && <p className="text-muted-foreground flex items-center gap-1"><MapPin className="h-3 w-3" />{m.destinationCity}</p>}
+                  <p className="text-muted-foreground">{formatDate(m.startDate)} – {formatDate(m.endDate)}</p>
+                </div>
+              ))}
+
+            {/* Choice buttons */}
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => setContinuationChoice("normal")}
+                className={`w-full text-left rounded-lg border-2 p-3 transition-colors ${continuationChoice === "normal" ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}
+              >
+                <p className="font-medium text-sm">Penugasan Normal</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Ditugaskan secara terpisah, tidak ada kaitan dengan dinas sebelumnya.</p>
+              </button>
+              {continuationPending.missions.filter(m => m.overlapType === "continuation").length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setContinuationChoice("continuation");
+                    setContinuationFromMission(continuationPending.missions.find(m => m.overlapType === "continuation") ?? null);
+                  }}
+                  className={`w-full text-left rounded-lg border-2 p-3 transition-colors ${continuationChoice === "continuation" ? "border-blue-500 bg-blue-50 dark:bg-blue-950/20" : "border-border hover:border-blue-400/50"}`}
+                >
+                  <p className="font-medium text-sm">Lanjutan dari Dinas Sebelumnya</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Ditugaskan sebagai kelanjutan langsung dari{" "}
+                    <span className="font-medium">{continuationPending.missions.find(m => m.overlapType === "continuation")?.missionName}</span>.
+                  </p>
+                </button>
+              )}
+            </div>
+
+            {/* Transition note */}
+            {continuationChoice === "continuation" && (
+              <div className="space-y-1">
+                <Label className="text-sm">Catatan Transisi (opsional)</Label>
+                <Textarea
+                  value={continuationNote}
+                  onChange={e => setContinuationNote(e.target.value)}
+                  placeholder="Contoh: Langsung dari lokasi Kota A ke Kota B tanpa kembali ke kantor."
+                  className="min-h-[72px] text-sm"
+                />
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <Button variant="outline" size="sm" onClick={() => setContinuationPending(null)}>Batal</Button>
+              <Button size="sm" onClick={handleConfirmContinuation}>Konfirmasi</Button>
+            </div>
+          </div>
+        </AppModal>
+      )}
+
+      {/* Override Dialog */}
+      {overridePending && (
+        <AppModal
+          open={true}
+          onOpenChange={(open) => { if (!open) setOverridePending(null); }}
+        >
+          <div className="space-y-4 p-6">
+            <div>
+              <DialogTitle className="text-base font-semibold">Override Konflik — {overridePending.name}</DialogTitle>
+              <p className="text-sm text-muted-foreground mt-1">Staff ini memiliki jadwal dinas yang bentrok. Isi alasan override untuk melanjutkan.</p>
+            </div>
+            <div className="rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 p-3 space-y-1">
+              <p className="text-sm font-medium text-red-700 dark:text-red-400 flex items-center gap-1.5">
+                <AlertTriangle className="h-4 w-4" /> Bentrok tanggal dengan:
+              </p>
+              {overridePending.missions.filter(m => m.overlapType === "conflict").map(m => (
+                <p key={m.missionId} className="text-xs text-red-600 dark:text-red-300 pl-5">
+                  {m.missionName} ({formatDate(m.startDate)} – {formatDate(m.endDate)})
+                  {m.destinationCity ? ` · ${m.destinationCity}` : ""}
+                </p>
+              ))}
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-sm font-medium">Alasan Override <span className="text-destructive">*</span></Label>
+              <Textarea
+                value={overrideReason}
+                onChange={e => setOverrideReason(e.target.value)}
+                placeholder="Jelaskan alasan penugasan meskipun ada konflik jadwal..."
+                className="min-h-[88px] text-sm"
+              />
+              {!overrideReason.trim() && (
+                <p className="text-xs text-destructive">Alasan wajib diisi.</p>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <Button variant="outline" size="sm" onClick={() => setOverridePending(null)}>Batal</Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={!overrideReason.trim()}
+                onClick={handleConfirmOverride}
+              >
+                Override & Pilih
+              </Button>
+            </div>
+          </div>
+        </AppModal>
+      )}
+
       {/* Selected Staff Chips */}
       {selectedStaff.length > 0 && (
         <div className="space-y-2">
@@ -660,41 +1183,45 @@ function StaffPicker({
             Tim Terpilih ({selectedStaff.length} orang)
           </Label>
           <div className="flex flex-wrap gap-2">
-            {selectedStaff.map((s) => (
-              <div
-                key={s.uid}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/30 text-sm"
-              >
-                <div className="h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
-                  <span className="text-[10px] font-bold text-primary">
-                    {s.fullName.charAt(0).toUpperCase()}
-                  </span>
-                </div>
-                <span className="font-medium text-foreground">
-                  {s.fullName}
-                </span>
-                {s.isDivisionManager && (
-                  <Badge variant="secondary" className="text-[10px] h-4 px-1">
-                    MGR
-                  </Badge>
-                )}
-                {!s.managerUid && !s.managerName && (
-                  <span title="Manager belum ditentukan">
-                    <AlertTriangle
-                      className="h-3 w-3 text-amber-500"
-                      aria-label="Manager belum ditentukan"
-                    />
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => onToggle(s.uid)}
-                  className="ml-0.5 hover:bg-destructive/20 rounded-full p-0.5 transition-colors"
+            {selectedStaff.map((s) => {
+              const contData = continuationSelections?.[s.uid];
+              return (
+                <div
+                  key={s.uid}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/30 text-sm"
                 >
-                  <X className="h-3 w-3 text-muted-foreground" />
-                </button>
-              </div>
-            ))}
+                  <div className="h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+                    <span className="text-[10px] font-bold text-primary">
+                      {s.fullName.charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                  <span className="font-medium text-foreground">
+                    {s.fullName}
+                  </span>
+                  {s.isDivisionManager && (
+                    <Badge variant="secondary" className="text-[10px] h-4 px-1">MGR</Badge>
+                  )}
+                  {contData && (
+                    <span className="inline-flex items-center gap-0.5 rounded-full bg-blue-500/15 border border-blue-400/30 px-1.5 py-0.5 text-[9px] font-semibold text-blue-600 dark:text-blue-400">
+                      <TrendingUp className="h-2 w-2" />
+                      Lanjutan
+                    </span>
+                  )}
+                  {!s.managerUid && !s.managerName && (
+                    <span title="Manager belum ditentukan">
+                      <AlertTriangle className="h-3 w-3 text-amber-500" />
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onToggle(s.uid)}
+                    className="ml-0.5 hover:bg-destructive/20 rounded-full p-0.5 transition-colors"
+                  >
+                    <X className="h-3 w-3 text-muted-foreground" />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -845,24 +1372,28 @@ function StaffPicker({
                           {/* Staff Items */}
                           {divGroup.staff.map((staff) => {
                             const isSelected = selectedUids.includes(staff.uid);
-                            const noBrand =
-                              !staff.brandId &&
-                              staff.brandName === "Brand belum diatur";
-                            const noDivision =
-                              staff.divisionName === "Divisi belum diatur";
-                            const noManager =
-                              !staff.managerUid && !staff.managerName;
-                            const hasWarning =
-                              noBrand || noDivision || noManager;
-                            const noTitle =
-                              staff.jobTitle === "Jabatan belum diatur";
+                            const avail = staffAvailabilityMap[staff.uid];
+                            const availStatus = avail?.status ?? "available";
+                            const isConflict = availStatus === "conflict";
+                            const noBrand = !staff.brandId && staff.brandName === "Brand belum diatur";
+                            const noDivision = staff.divisionName === "Divisi belum diatur";
+                            const noManager = !staff.managerUid && !staff.managerName;
+                            const hasWarning = noBrand || noDivision || noManager;
+                            const noTitle = staff.jobTitle === "Jabatan belum diatur";
+
+                            // For multi-mission info lines
+                            const noOverlapMissions = avail?.missions.filter(m => m.overlapType === "no_overlap") ?? [];
+                            const conflictMissions  = avail?.missions.filter(m => m.overlapType === "conflict")    ?? [];
+                            const contMissions      = avail?.missions.filter(m => m.overlapType === "continuation") ?? [];
 
                             return (
                               <div
                                 key={staff.uid}
-                                onClick={() => onToggle(staff.uid)}
-                                className={`flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors border-t border-border/40 ${
-                                  isSelected
+                                onClick={() => handleStaffClick(staff)}
+                                className={`flex items-start gap-3 px-4 py-3 border-t border-border/40 transition-colors cursor-pointer ${
+                                  isConflict && !isSelected
+                                    ? "bg-red-50/40 dark:bg-red-950/10 hover:bg-red-50/70 dark:hover:bg-red-950/20"
+                                    : isSelected
                                     ? "bg-primary/5 hover:bg-primary/10"
                                     : "hover:bg-muted/40"
                                 }`}
@@ -870,12 +1401,15 @@ function StaffPicker({
                                 {/* Checkbox */}
                                 <div
                                   className={`flex-shrink-0 mt-0.5 h-5 w-5 rounded border-2 flex items-center justify-center transition-colors ${
-                                    isSelected
+                                    isConflict && !isSelected
+                                      ? "border-red-300/60 bg-red-100/50 dark:border-red-700/40 dark:bg-red-900/20"
+                                      : isSelected
                                       ? "bg-primary border-primary text-primary-foreground"
                                       : "border-border bg-background"
                                   }`}
                                 >
                                   {isSelected && <Check className="h-3 w-3" />}
+                                  {isConflict && !isSelected && <AlertTriangle className="h-2.5 w-2.5 text-red-400" />}
                                 </div>
 
                                 {/* Staff Info */}
@@ -885,11 +1419,9 @@ function StaffPicker({
                                     <span className="font-semibold text-sm text-foreground">
                                       {staff.fullName}
                                     </span>
+                                    {renderAvailabilityBadge(avail)}
                                     {staff.isDivisionManager && (
-                                      <Badge
-                                        variant="outline"
-                                        className="text-[10px] h-4 px-1.5 border-blue-400/50 text-blue-600 dark:text-blue-400 bg-blue-500/10"
-                                      >
+                                      <Badge variant="outline" className="text-[10px] h-4 px-1.5 border-blue-400/50 text-blue-600 dark:text-blue-400 bg-blue-500/10">
                                         Manager Divisi
                                       </Badge>
                                     )}
@@ -902,51 +1434,61 @@ function StaffPicker({
 
                                   {/* Details row */}
                                   <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-0.5">
-                                    {/* Jabatan */}
                                     {noTitle ? (
-                                      <span className="text-xs text-amber-600 dark:text-amber-400">
-                                        Jabatan belum diatur
-                                      </span>
+                                      <span className="text-xs text-amber-600 dark:text-amber-400">Jabatan belum diatur</span>
                                     ) : (
-                                      <span className="text-xs text-muted-foreground">
-                                        {staff.jobTitle}
-                                      </span>
+                                      <span className="text-xs text-muted-foreground">{staff.jobTitle}</span>
                                     )}
-
-                                    {staff.employeeType &&
-                                      staff.employeeType !== "Staf" && (
-                                        <>
-                                          <span className="text-muted-foreground/40 text-xs">
-                                            •
-                                          </span>
-                                          <span className="text-xs text-muted-foreground">
-                                            {staff.employeeType}
-                                          </span>
-                                        </>
-                                      )}
-
-                                    {/* Manager */}
-                                    <span className="text-muted-foreground/40 text-xs">
-                                      •
-                                    </span>
+                                    {staff.employeeType && staff.employeeType !== "Staf" && (
+                                      <>
+                                        <span className="text-muted-foreground/40 text-xs">•</span>
+                                        <span className="text-xs text-muted-foreground">{staff.employeeType}</span>
+                                      </>
+                                    )}
+                                    <span className="text-muted-foreground/40 text-xs">•</span>
                                     {noManager ? (
-                                      <span className="text-xs text-amber-600 dark:text-amber-400">
-                                        Manager belum ditentukan
-                                      </span>
+                                      <span className="text-xs text-amber-600 dark:text-amber-400">Manager belum ditentukan</span>
                                     ) : (
-                                      <span className="text-xs text-muted-foreground">
-                                        Mgr: {staff.managerName}
-                                      </span>
+                                      <span className="text-xs text-muted-foreground">Mgr: {staff.managerName}</span>
                                     )}
                                   </div>
+
+                                  {/* Mission info lines */}
+                                  {conflictMissions.map(m => (
+                                    <p key={m.missionId} className="mt-1 text-xs text-red-600 dark:text-red-400">
+                                      Bentrok dengan: {m.missionName}{m.destinationCity ? ` · ${m.destinationCity}` : ""}
+                                      {" "}({formatDate(m.startDate)} – {formatDate(m.endDate)})
+                                    </p>
+                                  ))}
+                                  {contMissions.map(m => (
+                                    <p key={m.missionId} className="mt-1 text-xs text-blue-600 dark:text-blue-400">
+                                      Dapat lanjut dari: {m.missionName} (selesai {formatDate(m.endDate)})
+                                    </p>
+                                  ))}
+                                  {noOverlapMissions.map(m => {
+                                    const isNowActive = (() => {
+                                      const s = toDateOnly(m.startDate)?.getTime() ?? 0;
+                                      const e = toDateOnly(m.endDate)?.getTime() ?? 0;
+                                      const now = Date.now();
+                                      return s <= now && now <= e;
+                                    })();
+                                    return (
+                                      <p key={m.missionId} className="mt-1 text-xs text-orange-600 dark:text-orange-400">
+                                        {isNowActive
+                                          ? `Sedang dinas: ${m.missionName}${m.destinationCity ? ` · ${m.destinationCity}` : ""} (s/d ${formatDate(m.endDate)})`
+                                          : `Akan dinas: ${m.missionName} (${formatDate(m.startDate)})`
+                                        }
+                                        {missionStartDate && missionEndDate && (
+                                          <span className="text-green-600 dark:text-green-400"> · Tersedia setelah {formatDate(m.endDate)}</span>
+                                        )}
+                                      </p>
+                                    );
+                                  })}
                                 </div>
 
                                 {/* Warning indicator */}
-                                {hasWarning && (
-                                  <div
-                                    className="flex-shrink-0 mt-0.5"
-                                    title="Data belum lengkap"
-                                  >
+                                {hasWarning && !avail && (
+                                  <div className="flex-shrink-0 mt-0.5" title="Data belum lengkap">
                                     <AlertTriangle className="h-4 w-4 text-amber-500" />
                                   </div>
                                 )}
@@ -1031,6 +1573,14 @@ export function ManagementDinasClient() {
   const [activeMissionStaffChanges, setActiveMissionStaffChanges] = useState<
     any[]
   >([]);
+  const [activeMissionFinalReport, setActiveMissionFinalReport] = useState<FinalReport | null>(null);
+  const [activeMissionMemberReports, setActiveMissionMemberReports] = useState<Record<string, MemberFinalReport>>({});
+  const [activeMissionMemberNotes, setActiveMissionMemberNotes] = useState<Record<string, MemberNote>>({});
+  const [isArchivingMission, setIsArchivingMission] = useState(false);
+  const [isReviewingReport, setIsReviewingReport] = useState(false);
+  const [showRevisionForm, setShowRevisionForm] = useState(false);
+  const [revisionNote, setRevisionNote] = useState("");
+  const [detailTimelineTab, setDetailTimelineTab] = useState<"all" | "approval" | "tracking" | "changes" | "issues">("all");
   const [detailLoading, setDetailLoading] = useState(false);
   const [missionRefreshId, setMissionRefreshId] = useState(0);
   const [manageSelectedStaffUids, setManageSelectedStaffUids] = useState<
@@ -1044,6 +1594,21 @@ export function ManagementDinasClient() {
   );
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const editFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Management list filters & tracking
+  const [missionSearch, setMissionSearch] = useState("");
+  const [missionStatusFilter, setMissionStatusFilter] = useState("all");
+  const [missionSort, setMissionSort] = useState<"nearest" | "newest" | "az" | "status">("newest");
+  const [memberTrackingMap, setMemberTrackingMap] = useState<Record<string, TrackingStats>>({});
+
+  // staffBusyMap: uid → list of active missions the staff is in (for overlap checking)
+  type StaffActiveMission = { missionId: string; missionName: string; startDate: any; endDate: any; destinationCity?: string; memberTripStatus?: string };
+  const [staffBusyMap, setStaffBusyMap] = useState<Record<string, StaffActiveMission[]>>({});
+
+  // Continuation/override metadata for create form
+  const [staffContinuationSelections, setStaffContinuationSelections] = useState<Record<string, ContinuationData>>({});
+  // Continuation/override metadata for manage (add member) form
+  const [manageContinuationSelections, setManageContinuationSelections] = useState<Record<string, ContinuationData>>({});
 
   const activeMissionMemberUids = useMemo(
     () =>
@@ -1491,6 +2056,171 @@ export function ManagementDinasClient() {
     return Array.from(groups.values()).filter((group) => group.length > 1);
   }, [missionItems]);
 
+  // ── Real-time tracking stats per mission + staff busy map ────────────────
+  useEffect(() => {
+    if (!firestore) return;
+    const q = collectionGroup(firestore, "members");
+    const unsub = onSnapshot(q, (snap) => {
+      const map: Record<string, TrackingStats> = {};
+      // uid → active missions (for busy check)
+      const busyMap: Record<string, StaffActiveMission[]> = {};
+
+      snap.docs.forEach((d) => {
+        const data = d.data() as BusinessTripMissionMember;
+        const mId = data.missionId;
+        if (!mId) return;
+
+        if (!map[mId]) {
+          map[mId] = { total: 0, departed: 0, arrived: 0, activityDone: 0, returned: 0, issues: 0, lastUpdateAt: null, lastUpdateByName: "", memberNames: [] };
+        }
+        const s = map[mId];
+        const ms = data.memberStatus as string;
+        if (["archived", "cancelled", "rejected_by_manager", "declined_by_staff"].includes(ms)) return;
+        s.total++;
+        s.memberNames.push(data.employeeName);
+        const ts = data.memberTripStatus;
+        if (ts === "departed" || ts === "arrived" || ts === "activity_done" || ts === "return_started" || ts === "returned") s.departed++;
+        if (ts === "arrived" || ts === "activity_done" || ts === "return_started" || ts === "returned") s.arrived++;
+        if (ts === "activity_done" || ts === "return_started" || ts === "returned") s.activityDone++;
+        if (ts === "returned") s.returned++;
+        if (ts === "issue_reported") s.issues++;
+        const upd = data.lastTripUpdateAt;
+        if (upd && (!s.lastUpdateAt || (upd?.seconds ?? 0) > (s.lastUpdateAt?.seconds ?? 0))) {
+          s.lastUpdateAt = upd;
+          s.lastUpdateByName = data.lastTripUpdateByName ?? "";
+        }
+
+        // Build busy map — only include if member is in an active (non-terminal) status and NOT yet returned
+        const terminalMemberStatuses = ["archived", "cancelled", "rejected_by_manager", "declined_by_staff", "completed"];
+        const terminalTripStatuses = ["returned"];
+        const isTerminalMember = terminalMemberStatuses.includes(ms);
+        const isReturned = ts === "returned";
+        if (!isTerminalMember && !isReturned) {
+          const uid = data.employeeUid;
+          if (uid) {
+            if (!busyMap[uid]) busyMap[uid] = [];
+            busyMap[uid].push({
+              missionId: mId,
+              missionName: data.missionName,
+              startDate: data.startDate,
+              endDate: data.endDate,
+              destinationCity: (data as any).destinationCity || undefined,
+              memberTripStatus: ts,
+            });
+          }
+        }
+      });
+
+      setMemberTrackingMap(map);
+      setStaffBusyMap(busyMap);
+    });
+    return unsub;
+  }, [firestore]);
+
+  // Sync activeMission with latest data when missionItems updates (real-time fix)
+  useEffect(() => {
+    if (!activeMission?.id || !missionItems?.length) return;
+    const updated = missionItems.find((m) => m.id === activeMission.id);
+    if (updated) setActiveMission(updated);
+  }, [missionItems]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Subscribe to final report subcollections when activeMission changes
+  useEffect(() => {
+    if (!firestore || !activeMission?.id) {
+      setActiveMissionFinalReport(null);
+      setActiveMissionMemberReports({});
+      setActiveMissionMemberNotes({});
+      return;
+    }
+    const mId = activeMission.id;
+    const unsubFinal = onSnapshot(
+      collection(firestore, "business_trip_missions", mId, "final_report"),
+      (snap) => {
+        const first = snap.docs[0];
+        setActiveMissionFinalReport(first ? ({ id: first.id, ...first.data() } as FinalReport) : null);
+      },
+      (err) => console.error("final_report snapshot error:", err),
+    );
+    const unsubMemberReports = onSnapshot(
+      collection(firestore, "business_trip_missions", mId, "member_final_reports"),
+      (snap) => {
+        const map: Record<string, MemberFinalReport> = {};
+        snap.docs.forEach((d) => { map[d.id] = { id: d.id, ...d.data() } as MemberFinalReport; });
+        setActiveMissionMemberReports(map);
+      },
+      (err) => console.error("member_final_reports snapshot error:", err),
+    );
+    const unsubMemberNotes = onSnapshot(
+      collection(firestore, "business_trip_missions", mId, "member_notes"),
+      (snap) => {
+        const map: Record<string, MemberNote> = {};
+        snap.docs.forEach((d) => { map[d.id] = { id: d.id, ...d.data() } as MemberNote; });
+        setActiveMissionMemberNotes(map);
+      },
+      (err) => console.error("member_notes snapshot error:", err),
+    );
+    return () => { unsubFinal(); unsubMemberReports(); unsubMemberNotes(); };
+  }, [firestore, activeMission?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Filtered + sorted mission list ────────────────────────────────────────
+  const filteredAndSortedMissions = useMemo(() => {
+    const search = missionSearch.toLowerCase().trim();
+    let list = mergedMissionItems.filter((m) => {
+      if (missionStatusFilter !== "all") {
+        const ds = computeTrackingDisplayStatus(m, memberTrackingMap[m.id ?? ""]);
+        if (ds !== missionStatusFilter) return false;
+      }
+      if (search) {
+        const tracking = memberTrackingMap[m.id ?? ""];
+        const nameMatch = (m.missionName ?? "").toLowerCase().includes(search);
+        const destMatch = (m.destinationCity ?? m.destinationRegency ?? m.destinationProvince ?? "").toLowerCase().includes(search);
+        const memberMatch = tracking?.memberNames.some((n) => n.toLowerCase().includes(search));
+        if (!nameMatch && !destMatch && !memberMatch) return false;
+      }
+      return true;
+    });
+
+    list = list.slice().sort((a, b) => {
+      if (missionSort === "nearest") {
+        const aStart = (a.startDate as any)?.seconds ?? 0;
+        const bStart = (b.startDate as any)?.seconds ?? 0;
+        const now = Date.now() / 1000;
+        return Math.abs(aStart - now) - Math.abs(bStart - now);
+      }
+      if (missionSort === "az") {
+        return (a.missionName ?? "").localeCompare(b.missionName ?? "");
+      }
+      if (missionSort === "status") {
+        const aDs = computeTrackingDisplayStatus(a, memberTrackingMap[a.id ?? ""]);
+        const bDs = computeTrackingDisplayStatus(b, memberTrackingMap[b.id ?? ""]);
+        return (STATUS_PRIORITY[aDs] ?? 99) - (STATUS_PRIORITY[bDs] ?? 99);
+      }
+      // newest (default)
+      return ((b.createdAt as any)?.seconds ?? 0) - ((a.createdAt as any)?.seconds ?? 0);
+    });
+
+    return list;
+  }, [mergedMissionItems, missionSearch, missionStatusFilter, missionSort, memberTrackingMap]);
+
+  // ── Enrich staffBusyMap with destination from missionItems ───────────────
+  const enrichedStaffBusyMap = useMemo<Record<string, StaffBusyEntry[]>>(() => {
+    const destMap: Record<string, string> = {};
+    mergedMissionItems.forEach(m => {
+      if (m.id) {
+        destMap[m.id] = [m.destinationRegency, m.destinationProvince]
+          .filter(Boolean).join(", ");
+      }
+    });
+    const result: Record<string, StaffBusyEntry[]> = {};
+    Object.entries(staffBusyMap).forEach(([uid, missions]) => {
+      result[uid] = missions.map(m => ({
+        ...m,
+        destinationCity: m.destinationCity || destMap[m.missionId] || undefined,
+      }));
+    });
+    return result;
+  }, [staffBusyMap, mergedMissionItems]);
+
   const deleteCollectionDocs = async (collectionRef: any) => {
     const snap = await getDocs(collectionRef);
     await Promise.all(
@@ -1884,6 +2614,35 @@ export function ManagementDinasClient() {
     await loadActiveMissionData(mission);
   };
 
+  const notifyMissionMembers = async (
+    missionId: string,
+    type: string,
+    missionName: string,
+    message: string,
+    memberUids: string[],
+  ) => {
+    if (!firestore) return;
+    await Promise.all(
+      memberUids.map(async (uid) => {
+        try {
+          const notifRef = doc(collection(firestore, "users", uid, "notifications"));
+          await setDoc(notifRef, {
+            type,
+            missionId,
+            missionName,
+            message,
+            createdAt: serverTimestamp(),
+            read: false,
+            byUid: userProfile?.uid || null,
+            byName: userProfile?.fullName || null,
+          });
+        } catch (e) {
+          console.warn("notifyMissionMembers failed for", uid, e);
+        }
+      }),
+    );
+  };
+
   const handleUpdateMission = async () => {
     if (!firestore || !activeMission?.id) return;
     if (
@@ -1914,6 +2673,33 @@ export function ManagementDinasClient() {
           description: "Data perjalanan sudah tidak tersedia.",
         });
         return;
+      }
+
+      // Detect changed fields to generate targeted notifications
+      const old = activeMission;
+      const oldStartDate = old.startDate instanceof Timestamp
+        ? old.startDate.toDate().toISOString().slice(0, 10)
+        : old.startDate || "";
+      const oldEndDate = old.endDate instanceof Timestamp
+        ? old.endDate.toDate().toISOString().slice(0, 10)
+        : old.endDate || "";
+      const oldDestination = [old.destinationProvince, old.destinationRegency, old.destinationAddress]
+        .filter(Boolean).join(", ");
+      const newDestination = [missionForm.destinationProvince, missionForm.destinationRegency, missionForm.destinationAddress]
+        .filter(Boolean).join(", ");
+
+      const changeLog: string[] = [];
+
+      if (missionForm.startDate !== oldStartDate || missionForm.endDate !== oldEndDate) {
+        changeLog.push(`Tanggal perjalanan diubah dari ${oldStartDate}–${oldEndDate} menjadi ${missionForm.startDate}–${missionForm.endDate} oleh ${userProfile?.fullName || "management"}.`);
+      }
+      if (oldDestination !== newDestination && newDestination) {
+        changeLog.push(`Tujuan perjalanan diubah dari "${oldDestination || "-"}" menjadi "${newDestination}" oleh ${userProfile?.fullName || "management"}.`);
+      }
+      const oldInstruction = stripHtml(old.instructionNote || "");
+      const newInstruction = stripHtml(missionForm.instructionNote || "");
+      if (oldInstruction !== newInstruction) {
+        changeLog.push(`Instruksi perjalanan diperbarui oleh ${userProfile?.fullName || "management"}.`);
       }
 
       let assignmentLetterUrl = activeMission.assignmentLetterUrl || "";
@@ -2025,23 +2811,91 @@ export function ManagementDinasClient() {
       });
 
       if (documentUpdated) {
-        const timelineCollection = collection(
+        changeLog.push(`Dokumen Surat Tugas/SPD diperbarui oleh ${userProfile?.fullName || "management"}.`);
+      }
+
+      // Check if date changed and any active member is now in conflict
+      const dateChanged = missionForm.startDate !== oldStartDate || missionForm.endDate !== oldEndDate;
+      if (dateChanged && missionForm.startDate && missionForm.endDate) {
+        const newStart = new Date(missionForm.startDate);
+        const newEnd = new Date(missionForm.endDate);
+        newStart.setHours(0, 0, 0, 0);
+        newEnd.setHours(23, 59, 59, 999);
+        const newStartSec = newStart.getTime() / 1000;
+        const newEndSec = newEnd.getTime() / 1000;
+
+        // Check current mission members against busy map for other missions
+        const conflictedNames: string[] = [];
+        activeMissionMembers.forEach((member) => {
+          const ms = member.memberStatus as string;
+          if (["archived", "cancelled", "rejected_by_manager", "declined_by_staff"].includes(ms)) return;
+          const busyEntries = staffBusyMap[member.employeeUid] ?? [];
+          for (const entry of busyEntries) {
+            if (entry.missionId === activeMission.id) continue; // same mission
+            if (datesOverlap(newStartSec, newEndSec, entry.startDate, entry.endDate)) {
+              conflictedNames.push(`${member.employeeName} (${entry.missionName})`);
+              break;
+            }
+          }
+        });
+
+        if (conflictedNames.length > 0) {
+          changeLog.push(
+            `Perhatian: Tanggal baru bentrok untuk ${conflictedNames.length} anggota: ${conflictedNames.join("; ")}. Pertimbangkan untuk mengganti anggota yang bentrok.`
+          );
+        }
+      }
+
+      // Write all timeline entries for changes
+      if (changeLog.length > 0) {
+        const timelineRef = collection(
           firestore,
           "business_trip_missions",
           activeMission.id,
           "timeline",
         );
-        await addDoc(timelineCollection, {
-          message: "Dokumen Surat Tugas/SPD diperbarui.",
-          createdAt: serverTimestamp(),
-          byUid: userProfile?.uid,
-          byName: userProfile?.fullName,
-        });
+        await Promise.all(
+          changeLog.map((msg) =>
+            addDoc(timelineRef, {
+              message: msg,
+              category: "changes",
+              createdAt: serverTimestamp(),
+              byUid: userProfile?.uid || null,
+              byName: userProfile?.fullName || null,
+            }),
+          ),
+        );
+
+        // Notify all active members about changes
+        const membersSnap = await getDocs(
+          collection(firestore, "business_trip_missions", activeMission.id, "members"),
+        );
+        const activeUids = membersSnap.docs
+          .map((d) => d.data())
+          .filter((m) => m.memberStatus !== "archived" && m.memberStatus !== "cancelled")
+          .map((m) => m.employeeUid as string)
+          .filter(Boolean);
+
+        const changeTypes = [];
+        if (changeLog.some((l) => l.startsWith("Tanggal"))) changeTypes.push("mission_date_changed");
+        if (changeLog.some((l) => l.startsWith("Tujuan"))) changeTypes.push("mission_destination_changed");
+        if (changeLog.some((l) => l.startsWith("Instruksi"))) changeTypes.push("mission_instruction_changed");
+        if (changeLog.some((l) => l.startsWith("Dokumen"))) changeTypes.push("mission_document_changed");
+
+        await notifyMissionMembers(
+          activeMission.id,
+          changeTypes[0] || "mission_updated",
+          activeMission.missionName || "",
+          changeLog.join(" "),
+          activeUids,
+        );
       }
 
       toast({
         title: "Perubahan perjalanan dinas tersimpan",
-        description: "Informasi perjalanan telah diperbarui.",
+        description: changeLog.length > 0
+          ? `${changeLog.length} perubahan dicatat dan anggota telah dinotifikasi.`
+          : "Informasi perjalanan telah diperbarui.",
       });
       refreshMissionList();
       setActiveMode("list");
@@ -2145,6 +2999,8 @@ export function ManagementDinasClient() {
           const memberRef = doc(membersRef);
           const memberManagerUid =
             staff.managerUid || (staff.isDivisionManager ? staff.uid : "");
+          const contData = manageContinuationSelections[staff.uid];
+
           const memberData: BusinessTripMissionMember = {
             missionId: activeMission.id || "",
             missionName: activeMission.missionName || "",
@@ -2164,10 +3020,39 @@ export function ManagementDinasClient() {
             managerValidationNote: null,
             staffConfirmationStatus: "waiting_staff_confirmation",
             missionStatus: activeMission.status || "pending_manager_validation",
+            // Continuation fields
+            ...(contData ? {
+              isContinuationAssignment: true,
+              continuedFromMissionId: contData.missionId,
+              continuedFromMissionName: contData.missionName,
+              continuedFromDestination: contData.destination,
+              continuedFromEndDate: contData.endDate,
+              transitionType: "direct_transfer" as const,
+              transitionNote: contData.transitionNote || undefined,
+            } : {}),
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           };
           await setDoc(memberRef, memberData);
+
+          // Write timeline to OLD mission when continuation
+          if (contData) {
+            try {
+              await addDoc(
+                collection(firestore, "business_trip_missions", contData.missionId, "timeline"),
+                {
+                  message: `${staff.fullName} dijadwalkan lanjut ke misi "${activeMission.missionName || ""}".`,
+                  category: "changes",
+                  createdAt: serverTimestamp(),
+                  byUid: userProfile?.uid || null,
+                  byName: userProfile?.fullName || null,
+                },
+              );
+            } catch (e) {
+              console.warn("Continuation old-mission timeline write failed", e);
+            }
+          }
+
           return memberData;
         }),
       );
@@ -2194,6 +3079,61 @@ export function ManagementDinasClient() {
         },
       );
 
+      // Timeline entry for new staff (including continuation notes)
+      const newNames = selectedStaff.map((s) => s.fullName).join(", ");
+      await addDoc(
+        collection(firestore, "business_trip_missions", activeMission.id, "timeline"),
+        {
+          message: `Anggota baru ditambahkan: ${newNames}.`,
+          category: "changes",
+          createdAt: serverTimestamp(),
+          byUid: userProfile?.uid || null,
+          byName: userProfile?.fullName || null,
+        },
+      );
+
+      // Write continuation entries to new mission's timeline
+      for (const staff of selectedStaff) {
+        const contData = manageContinuationSelections[staff.uid];
+        if (contData) {
+          try {
+            await addDoc(
+              collection(firestore, "business_trip_missions", activeMission.id, "timeline"),
+              {
+                message: `${staff.fullName} bergabung sebagai lanjutan dari misi "${contData.missionName}".`,
+                category: "changes",
+                createdAt: serverTimestamp(),
+                byUid: userProfile?.uid || null,
+                byName: userProfile?.fullName || null,
+              },
+            );
+          } catch (e) {
+            console.warn("Continuation new-mission timeline write failed", e);
+          }
+        }
+      }
+
+      // Notify new members about assignment
+      await Promise.all(
+        selectedStaff.map(async (staff) => {
+          try {
+            const notifRef = doc(collection(firestore, "users", staff.uid, "notifications"));
+            await setDoc(notifRef, {
+              type: "business_trip_assigned",
+              missionId: activeMission.id,
+              missionName: activeMission.missionName || "",
+              message: `Anda ditambahkan ke perjalanan dinas ${activeMission.missionName || ""}.`,
+              createdAt: serverTimestamp(),
+              read: false,
+              byUid: userProfile?.uid || null,
+              byName: userProfile?.fullName || null,
+            });
+          } catch (e) {
+            console.warn("Notify new member failed", e);
+          }
+        }),
+      );
+
       const activeMembers = activeMissionMembers.filter(
         (member) => member.memberStatus !== "archived",
       );
@@ -2209,6 +3149,14 @@ export function ManagementDinasClient() {
         (item) => item.status === "approved",
       );
 
+      // Don't downgrade terminal statuses when adding members mid-mission
+      const TERMINAL_STATUSES = ["on_duty", "returned_pending_report", "report_submitted", "completed", "ready_to_depart", "approved_ready_to_depart"];
+      const newStatus = TERMINAL_STATUSES.includes(activeMission.status ?? "")
+        ? activeMission.status
+        : allApproved
+          ? "waiting_staff_confirmation"
+          : activeMission.status || "pending_manager_validation";
+
       await updateDoc(missionDocRef, {
         memberCount: (activeMission.memberCount ?? 0) + selectedStaff.length,
         managerValidationCount: managerValidations.length,
@@ -2217,19 +3165,18 @@ export function ManagementDinasClient() {
         ).length,
         managerUids: assignedManagerUids,
         managerValidations,
-        status: allApproved
-          ? "waiting_staff_confirmation"
-          : activeMission.status || "pending_manager_validation",
+        status: newStatus,
         updatedAt: serverTimestamp(),
       });
 
       toast({
         title: "Anggota berhasil ditambahkan",
-        description: `Berhasil menambah ${selectedStaff.length} anggota baru.`,
+        description: `Berhasil menambah ${selectedStaff.length} anggota baru. Timeline diperbarui.`,
       });
       await loadActiveMissionData(activeMission);
       refreshMissionList();
       setManageSelectedStaffUids([]);
+      setManageContinuationSelections({});
     } catch (error: any) {
       console.error(error);
       toast({
@@ -2328,6 +3275,100 @@ export function ManagementDinasClient() {
       });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleApproveReport = async () => {
+    if (!firestore || !activeMission?.id || !activeMissionFinalReport || !userProfile) return;
+    setIsReviewingReport(true);
+    try {
+      const reportRef = doc(firestore, "business_trip_missions", activeMission.id, "final_report", "main");
+      await updateDoc(reportRef, {
+        reportReviewStatus: "approved",
+        reviewedByUid: userProfile.uid,
+        reviewedByName: userProfile.fullName || userProfile.email || "",
+        reviewedAt: serverTimestamp(),
+        revisionNote: null,
+        updatedAt: serverTimestamp(),
+      });
+      await addDoc(collection(firestore, "business_trip_missions", activeMission.id, "timeline"), {
+        message: `${userProfile.fullName || userProfile.email} menyetujui laporan akhir dinas.`,
+        category: "approval",
+        byName: userProfile.fullName || userProfile.email || null,
+        byUid: userProfile.uid,
+        createdAt: serverTimestamp(),
+      });
+      toast({ title: "Laporan disetujui." });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Gagal menyetujui laporan", description: error?.message });
+    } finally {
+      setIsReviewingReport(false);
+    }
+  };
+
+  const handleRequestRevision = async () => {
+    if (!firestore || !activeMission?.id || !activeMissionFinalReport || !userProfile) return;
+    if (!revisionNote.trim()) {
+      toast({ variant: "destructive", title: "Catatan revisi wajib diisi." });
+      return;
+    }
+    setIsReviewingReport(true);
+    try {
+      const reportRef = doc(firestore, "business_trip_missions", activeMission.id, "final_report", "main");
+      await updateDoc(reportRef, {
+        reportReviewStatus: "revision_requested",
+        reviewedByUid: userProfile.uid,
+        reviewedByName: userProfile.fullName || userProfile.email || "",
+        reviewedAt: serverTimestamp(),
+        revisionNote: revisionNote.trim(),
+        updatedAt: serverTimestamp(),
+      });
+      // Revert mission status so staff can re-submit
+      await updateDoc(doc(firestore, "business_trip_missions", activeMission.id), {
+        status: "returned_pending_report",
+        updatedAt: serverTimestamp(),
+      });
+      await addDoc(collection(firestore, "business_trip_missions", activeMission.id, "timeline"), {
+        message: `${userProfile.fullName || userProfile.email} meminta revisi laporan akhir. Catatan: ${revisionNote.trim()}`,
+        category: "approval",
+        byName: userProfile.fullName || userProfile.email || null,
+        byUid: userProfile.uid,
+        createdAt: serverTimestamp(),
+      });
+      toast({ title: "Permintaan revisi dikirim ke pelapor." });
+      setRevisionNote("");
+      setShowRevisionForm(false);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Gagal meminta revisi", description: error?.message });
+    } finally {
+      setIsReviewingReport(false);
+    }
+  };
+
+  const handleFinalizeMissionComplete = async () => {
+    if (!firestore || !activeMission?.id || !userProfile) return;
+    setIsArchivingMission(true);
+    try {
+      await updateDoc(doc(firestore, "business_trip_missions", activeMission.id), {
+        status: "completed",
+        archivedAt: serverTimestamp(),
+        archivedByUid: userProfile.uid,
+        archivedByName: userProfile.fullName || userProfile.email || "",
+        updatedAt: serverTimestamp(),
+      });
+      await addDoc(collection(firestore, "business_trip_missions", activeMission.id, "timeline"), {
+        message: `${userProfile.fullName || userProfile.email} menutup dan mengarsipkan perjalanan dinas. Status: Selesai.`,
+        category: "system",
+        byName: userProfile.fullName || userProfile.email || null,
+        byUid: userProfile.uid,
+        createdAt: serverTimestamp(),
+      });
+      toast({ title: "Perjalanan dinas berhasil diarsipkan." });
+      refreshMissionList();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Gagal mengarsipkan", description: error?.message });
+    } finally {
+      setIsArchivingMission(false);
     }
   };
 
@@ -2430,13 +3471,82 @@ export function ManagementDinasClient() {
                       </p>
                     </div>
                     <div className="rounded-lg border border-border p-4">
-                      <p className="text-sm text-muted-foreground">Status</p>
+                      <p className="text-sm text-muted-foreground">Status Aktual</p>
                       <div className="mt-2">
-                        {renderStatusLabel(activeMission.status)}
+                        {renderStatusLabel(computeTrackingDisplayStatus(activeMission, memberTrackingMap[activeMission.id ?? ""]))}
                       </div>
                     </div>
                   </div>
                 </section>
+
+                {/* Progress Perjalanan — real-time tracking status */}
+                {(() => {
+                  const tracking = memberTrackingMap[activeMission.id ?? ""];
+                  if (!tracking || tracking.total === 0) return null;
+                  const steps = [
+                    { label: "Berangkat", icon: Navigation, count: tracking.departed, color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-50 dark:bg-blue-900/20", border: "border-blue-200 dark:border-blue-800/40" },
+                    { label: "Sampai Lokasi", icon: MapPin, count: tracking.arrived, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/20", border: "border-indigo-200 dark:border-indigo-800/40" },
+                    { label: "Kegiatan Selesai", icon: Activity, count: tracking.activityDone, color: "text-purple-600 dark:text-purple-400", bg: "bg-purple-50 dark:bg-purple-900/20", border: "border-purple-200 dark:border-purple-800/40" },
+                    { label: "Kembali", icon: Home, count: tracking.returned, color: "text-green-600 dark:text-green-400", bg: "bg-green-50 dark:bg-green-900/20", border: "border-green-200 dark:border-green-800/40" },
+                  ];
+                  // Per-step member names from activeMissionMembers
+                  const membersByStep = {
+                    departed: activeMissionMembers.filter(m => ["departed","arrived","activity_done","return_started","returned"].includes(m.memberTripStatus ?? "")).map(m => m.employeeName),
+                    arrived: activeMissionMembers.filter(m => ["arrived","activity_done","return_started","returned"].includes(m.memberTripStatus ?? "")).map(m => m.employeeName),
+                    activityDone: activeMissionMembers.filter(m => ["activity_done","return_started","returned"].includes(m.memberTripStatus ?? "")).map(m => m.employeeName),
+                    returned: activeMissionMembers.filter(m => m.memberTripStatus === "returned").map(m => m.employeeName),
+                  };
+                  const namesByStep = [membersByStep.departed, membersByStep.arrived, membersByStep.activityDone, membersByStep.returned];
+                  return (
+                    <section className="space-y-4">
+                      <SectionHeader
+                        icon={Navigation}
+                        title="Progress Perjalanan"
+                        description="Status tracking anggota secara real-time."
+                      />
+                      <div className="rounded-lg border border-border p-4 space-y-4">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          {steps.map((step, idx) => {
+                            const Icon = step.icon;
+                            const names = namesByStep[idx] ?? [];
+                            return (
+                              <div
+                                key={step.label}
+                                className={`rounded-xl border p-3 text-center space-y-1 transition-all ${
+                                  step.count > 0
+                                    ? `${step.bg} ${step.border}`
+                                    : "border-border/40 bg-muted/5 opacity-50"
+                                }`}
+                              >
+                                <Icon className={`h-5 w-5 mx-auto ${step.count > 0 ? step.color : "text-muted-foreground"}`} />
+                                <p className="text-xs font-medium text-muted-foreground">{step.label}</p>
+                                <p className={`text-xl font-bold tabular-nums ${step.count > 0 ? step.color : "text-muted-foreground"}`}>
+                                  {step.count}<span className="text-xs font-normal text-muted-foreground">/{tracking.total}</span>
+                                </p>
+                                {names.length > 0 && (
+                                  <p className="text-[10px] text-muted-foreground leading-tight" title={names.join(", ")}>
+                                    {names.slice(0, 2).join(", ")}{names.length > 2 ? ` +${names.length - 2}` : ""}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {tracking.lastUpdateAt && (
+                          <p className="text-xs text-muted-foreground">
+                            Update terakhir:{tracking.lastUpdateByName ? ` ${tracking.lastUpdateByName} ·` : ""} {formatDateTime(tracking.lastUpdateAt)}
+                          </p>
+                        )}
+                        {tracking.issues > 0 && (
+                          <div className="flex items-center gap-2 rounded-lg border border-red-200 dark:border-red-800/30 bg-red-50 dark:bg-red-900/20 px-3 py-2 text-sm text-red-700 dark:text-red-400">
+                            <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                            <span>{tracking.issues} anggota melaporkan kendala.</span>
+                          </div>
+                        )}
+                      </div>
+                    </section>
+                  );
+                })()}
 
                 <section className="space-y-4">
                   <SectionHeader
@@ -2820,75 +3930,306 @@ export function ManagementDinasClient() {
                 })()}
 
                 <section className="space-y-4">
-                  <SectionHeader
-                    icon={Calendar}
-                    title="Timeline"
-                    description="Rekam jejak aktivitas perjalanan dinas."
-                  />
-                  {detailLoading ? (
-                    <p className="text-sm text-muted-foreground">
-                      Memuat timeline...
-                    </p>
-                  ) : activeMissionTimeline.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      Belum ada aktivitas timeline.
-                    </p>
-                  ) : (
-                    <div className="space-y-3">
-                      {activeMissionTimeline.map((event) => (
-                        <div
-                          key={event.id}
-                          className="rounded-lg border border-border p-3"
-                        >
-                          <div className="flex items-center justify-between gap-4">
-                            <p className="font-medium">{event.message}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {formatDate(
-                                (event.createdAt as any)?.toDate?.() ??
-                                  event.createdAt,
-                              )}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <SectionHeader
+                      icon={Calendar}
+                      title="Timeline Aktivitas"
+                      description="Rekam jejak perjalanan, approval, perubahan, dan kendala."
+                    />
+                    <div className="flex flex-wrap gap-1 rounded-lg border border-border overflow-hidden text-xs">
+                      {(["all", "tracking", "approval", "changes", "issues"] as const).map((tab) => {
+                        const labels: Record<string, string> = {
+                          all: "Semua",
+                          tracking: "Perjalanan",
+                          approval: "Approval",
+                          changes: "Perubahan",
+                          issues: "Kendala",
+                        };
+                        return (
+                          <button
+                            key={tab}
+                            type="button"
+                            onClick={() => setDetailTimelineTab(tab)}
+                            className={`px-3 py-1.5 transition-colors ${
+                              detailTimelineTab === tab
+                                ? "bg-primary text-primary-foreground font-semibold"
+                                : "text-muted-foreground hover:bg-muted/60"
+                            }`}
+                          >
+                            {labels[tab]}
+                          </button>
+                        );
+                      })}
                     </div>
-                  )}
+                  </div>
+
+                  {detailLoading ? (
+                    <p className="text-sm text-muted-foreground">Memuat timeline...</p>
+                  ) : (() => {
+                    // Merge timeline + staff changes into one sorted list
+                    const staffChangeEntries = activeMissionStaffChanges.map((c) => ({
+                      id: `sc_${c.id}`,
+                      message: [
+                        c.action ? `Perubahan anggota: ${c.action}` : null,
+                        c.reason ? c.reason : null,
+                      ].filter(Boolean).join(" — "),
+                      category: "changes" as TimelineCategory,
+                      byName: c.requestedByName ?? null,
+                      createdAt: c.requestedAt,
+                    }));
+
+                    const allEntries = [
+                      ...activeMissionTimeline.map((e) => ({
+                        id: e.id,
+                        message: e.message ?? "",
+                        category: inferTimelineCategory(e),
+                        byName: e.byName ?? null,
+                        createdAt: e.createdAt,
+                      })),
+                      ...staffChangeEntries,
+                    ].sort((a, b) => {
+                      const aTs = (a.createdAt as any)?.seconds ?? 0;
+                      const bTs = (b.createdAt as any)?.seconds ?? 0;
+                      return bTs - aTs;
+                    });
+
+                    const filtered = allEntries.filter((e) => {
+                      if (detailTimelineTab === "all") return true;
+                      return e.category === detailTimelineTab;
+                    });
+
+                    if (allEntries.length === 0) {
+                      return <p className="text-sm text-muted-foreground">Belum ada aktivitas timeline.</p>;
+                    }
+                    if (filtered.length === 0) {
+                      return <p className="text-sm text-muted-foreground">Tidak ada entri untuk kategori ini.</p>;
+                    }
+
+                    const borderColors: Record<string, string> = {
+                      tracking: "border-l-blue-500",
+                      approval: "border-l-green-500",
+                      changes: "border-l-purple-500",
+                      issues: "border-l-amber-500",
+                      system: "border-l-border",
+                    };
+                    const catLabels: Record<string, string> = {
+                      tracking: "Perjalanan",
+                      approval: "Approval",
+                      changes: "Perubahan",
+                      issues: "Kendala",
+                      system: "Sistem",
+                    };
+                    const catColors: Record<string, string> = {
+                      tracking: "text-blue-500",
+                      approval: "text-green-600",
+                      changes: "text-purple-500",
+                      issues: "text-amber-600",
+                      system: "text-muted-foreground",
+                    };
+
+                    return (
+                      <div className="space-y-2">
+                        {filtered.map((entry) => (
+                          <div
+                            key={entry.id}
+                            className={`rounded-lg border-l-4 border border-border/50 bg-card px-3 py-2.5 ${borderColors[entry.category] ?? "border-l-border"}`}
+                          >
+                            <p className="text-sm leading-relaxed">{entry.message}</p>
+                            <div className="mt-1 flex items-center justify-between gap-2 flex-wrap">
+                              <span className="text-xs text-muted-foreground">
+                                {entry.byName ? `${entry.byName} · ` : ""}
+                                {formatDate((entry.createdAt as any)?.toDate?.() ?? entry.createdAt)}
+                              </span>
+                              {detailTimelineTab === "all" && (
+                                <span className={`text-[10px] font-semibold uppercase tracking-wide ${catColors[entry.category] ?? "text-muted-foreground"}`}>
+                                  {catLabels[entry.category] ?? "Sistem"}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </section>
 
-                <section className="space-y-4">
-                  <SectionHeader
-                    icon={Users}
-                    title="Riwayat Perubahan Staff"
-                    description="Catatan perubahan anggota dinas."
-                  />
-                  {activeMissionStaffChanges.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      Belum ada perubahan staff.
-                    </p>
-                  ) : (
-                    <div className="space-y-3">
-                      {activeMissionStaffChanges.map((change) => (
-                        <div
-                          key={change.id}
-                          className="rounded-lg border border-border p-3"
-                        >
-                          <p className="font-medium capitalize">
-                            {change.action}
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            {change.reason}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {formatDate(
-                              (change.requestedAt as any)?.toDate?.() ??
-                                change.requestedAt,
-                            )}
-                          </p>
+                {/* Final Report Section — always shown after mission starts */}
+                {(activeMission.status === "returned_pending_report" || activeMission.status === "final_report_submitted" || activeMission.status === "completed" || activeMissionFinalReport || Object.keys(activeMissionMemberReports).length > 0) && (() => {
+                  const rpt = activeMissionFinalReport;
+                  const reviewStatus = rpt?.reportReviewStatus;
+                  const canReview = !!rpt?.submittedAt && reviewStatus !== "approved" && (userProfile?.role === "super-admin" || userProfile?.role === "manager" || userProfile?.structuralLevel === "management");
+
+                  const reviewBadge = () => {
+                    if (!rpt?.submittedAt) return null;
+                    if (reviewStatus === "approved") return <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">Laporan Disetujui</span>;
+                    if (reviewStatus === "revision_requested") return <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Perlu Revisi</span>;
+                    if (reviewStatus === "resubmitted") return <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">Dikirim Ulang</span>;
+                    return <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Menunggu Review</span>;
+                  };
+
+                  return (
+                    <section className="space-y-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <SectionHeader
+                          icon={FileText}
+                          title="Laporan Akhir Dinas"
+                          description="Laporan akhir yang dikirimkan oleh tim."
+                        />
+                        {rpt?.submittedAt && reviewBadge()}
+                      </div>
+
+                      {!rpt && Object.keys(activeMissionMemberReports).length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-border bg-muted/10 py-8 px-4 text-center space-y-1.5">
+                          <FileText className="mx-auto h-8 w-8 text-muted-foreground/40" />
+                          <p className="text-sm font-medium text-muted-foreground">Belum ada laporan akhir</p>
+                          <p className="text-xs text-muted-foreground/70">Laporan akan tampil setelah peserta mengirim laporan.</p>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </section>
+                      ) : (
+                        <div className="space-y-3">
+                          {/* Mode & meta */}
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            {activeMission.reportMode && (
+                              <span className="rounded-full bg-blue-100 px-2.5 py-0.5 font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                                {activeMission.reportMode === "individual_report" ? "Laporan Individu" : "Laporan Tim"}
+                              </span>
+                            )}
+                            {rpt?.dilaporkanOlehName && <span>Dilaporkan oleh: <strong className="text-foreground">{rpt.dilaporkanOlehName}</strong></span>}
+                            {rpt?.submittedAt && <span>Dikirim: {formatDateTime(rpt.submittedAt)}</span>}
+                            {rpt?.reviewedByName && reviewStatus !== "pending_review" && (
+                              <span>Direview oleh: <strong className="text-foreground">{rpt.reviewedByName}</strong> · {formatDateTime(rpt.reviewedAt)}</span>
+                            )}
+                          </div>
+
+                          {/* Revision note banner */}
+                          {reviewStatus === "revision_requested" && rpt?.revisionNote && (
+                            <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-3.5 py-3 dark:border-amber-700/30 dark:bg-amber-900/10">
+                              <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-0.5">Catatan Revisi</p>
+                              <p className="text-sm text-amber-800 dark:text-amber-300">{rpt.revisionNote}</p>
+                            </div>
+                          )}
+
+                          {/* Team report body */}
+                          {rpt && (
+                            <div className="rounded-xl border border-border/60 bg-muted/20 p-4 space-y-3">
+                              {rpt.ringkasanKegiatan && (
+                                <div><p className="text-xs font-medium text-muted-foreground">Ringkasan Kegiatan</p><p className="text-sm whitespace-pre-wrap">{rpt.ringkasanKegiatan}</p></div>
+                              )}
+                              {rpt.hasilOutput && (
+                                <div><p className="text-xs font-medium text-muted-foreground">Hasil / Output</p><p className="text-sm whitespace-pre-wrap">{rpt.hasilOutput}</p></div>
+                              )}
+                              {rpt.kendalaDanSolusi && (
+                                <div><p className="text-xs font-medium text-muted-foreground">Kendala &amp; Solusi</p><p className="text-sm whitespace-pre-wrap">{rpt.kendalaDanSolusi}</p></div>
+                              )}
+                              {rpt.tindakLanjut && (
+                                <div><p className="text-xs font-medium text-muted-foreground">Tindak Lanjut</p><p className="text-sm whitespace-pre-wrap">{rpt.tindakLanjut}</p></div>
+                              )}
+                              {rpt.catatanUntukHRD && (
+                                <div>
+                                  <p className="text-xs font-medium text-muted-foreground">Catatan untuk HRD</p>
+                                  <p className="text-sm font-medium text-amber-700 dark:text-amber-400 whitespace-pre-wrap">{rpt.catatanUntukHRD}</p>
+                                </div>
+                              )}
+                              {rpt.lampiranUrl && (
+                                <a href={rpt.lampiranUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline dark:text-blue-400">
+                                  <FileText className="h-3.5 w-3.5" /> Lihat Lampiran
+                                </a>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Per-member individual reports */}
+                          {Object.keys(activeMissionMemberReports).length > 0 && (
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <p className="text-sm font-medium">Laporan Individu Anggota</p>
+                                <span className="text-xs text-muted-foreground">
+                                  {Object.values(activeMissionMemberReports).filter((r) => !!r.submittedAt).length}/{Object.keys(activeMissionMemberReports).length} terkumpul
+                                </span>
+                              </div>
+                              {Object.values(activeMissionMemberReports).map((r) => {
+                                const rrs = r.reportReviewStatus;
+                                return (
+                                  <div key={r.memberUid} className="rounded-lg border border-border/40 bg-muted/20 p-3 space-y-1.5">
+                                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                                      <p className="text-sm font-semibold">{r.memberName}</p>
+                                      <div className="flex items-center gap-1.5">
+                                        {rrs === "approved" && <span className="text-[10px] font-semibold text-green-600 dark:text-green-400">Disetujui</span>}
+                                        {rrs === "revision_requested" && <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">Perlu Revisi</span>}
+                                        {rrs === "resubmitted" && <span className="text-[10px] font-semibold text-blue-600 dark:text-blue-400">Dikirim Ulang</span>}
+                                        {!rrs && r.submittedAt && <span className="text-[10px] font-semibold text-muted-foreground">Terkirim</span>}
+                                        {r.submittedAt && <span className="text-[10px] text-muted-foreground">{formatDateTime(r.submittedAt)}</span>}
+                                      </div>
+                                    </div>
+                                    {r.kegiatanDilakukan && <div><p className="text-xs font-medium text-muted-foreground">Kegiatan</p><p className="text-xs">{r.kegiatanDilakukan}</p></div>}
+                                    {r.hasilPribadi && <div><p className="text-xs font-medium text-muted-foreground">Hasil</p><p className="text-xs">{r.hasilPribadi}</p></div>}
+                                    {r.kendalaPribadi && <div><p className="text-xs font-medium text-muted-foreground">Kendala</p><p className="text-xs">{r.kendalaPribadi}</p></div>}
+                                    {r.solusiPribadi && <div><p className="text-xs font-medium text-muted-foreground">Solusi</p><p className="text-xs">{r.solusiPribadi}</p></div>}
+                                    {r.catatanTambahan && <div><p className="text-xs font-medium text-muted-foreground">Catatan</p><p className="text-xs">{r.catatanTambahan}</p></div>}
+                                    {r.lampiranUrl && (
+                                      <a href={r.lampiranUrl} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline dark:text-blue-400">Lihat Lampiran</a>
+                                    )}
+                                    {r.revisionNote && (
+                                      <div className="mt-1 rounded border border-amber-200 bg-amber-50/50 px-2 py-1 dark:border-amber-700/30 dark:bg-amber-900/10">
+                                        <p className="text-[11px] font-medium text-amber-700 dark:text-amber-400">Catatan revisi: {r.revisionNote}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* Management review actions */}
+                          {canReview && rpt && (
+                            <div className="border-t border-border pt-4 space-y-3">
+                              <p className="text-sm font-semibold">Review Laporan</p>
+                              {!showRevisionForm ? (
+                                <div className="flex gap-2 flex-wrap">
+                                  <Button
+                                    className="bg-green-600 text-white hover:bg-green-700"
+                                    onClick={handleApproveReport}
+                                    disabled={isReviewingReport}
+                                  >
+                                    <CheckCircle2 className="mr-2 h-4 w-4" /> Setujui Laporan
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    className="border-amber-500 text-amber-700 hover:bg-amber-50 dark:border-amber-600 dark:text-amber-400 dark:hover:bg-amber-900/20"
+                                    onClick={() => setShowRevisionForm(true)}
+                                    disabled={isReviewingReport}
+                                  >
+                                    Minta Revisi
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div className="space-y-2">
+                                  <Label htmlFor="revision-note">Catatan Revisi <span className="text-destructive">*</span></Label>
+                                  <Textarea
+                                    id="revision-note"
+                                    rows={3}
+                                    placeholder="Tuliskan bagian yang perlu diperbaiki atau dilengkapi…"
+                                    value={revisionNote}
+                                    onChange={(e) => setRevisionNote(e.target.value)}
+                                  />
+                                  <div className="flex gap-2">
+                                    <Button
+                                      className="bg-amber-600 text-white hover:bg-amber-700"
+                                      onClick={handleRequestRevision}
+                                      disabled={isReviewingReport || !revisionNote.trim()}
+                                    >
+                                      Kirim Permintaan Revisi
+                                    </Button>
+                                    <Button variant="ghost" onClick={() => { setShowRevisionForm(false); setRevisionNote(""); }}>Batal</Button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </section>
+                  );
+                })()}
               </>
             );
           })()}
@@ -3046,6 +4387,39 @@ export function ManagementDinasClient() {
                 />
               </div>
             </div>
+
+            {/* Conflict warning when dates are set */}
+            {(() => {
+              if (!missionForm.startDate || !missionForm.endDate) return null;
+              const newStart = new Date(missionForm.startDate).getTime() / 1000;
+              const newEnd = new Date(missionForm.endDate).setHours(23,59,59,999) / 1000;
+              const conflicts: string[] = [];
+              activeMissionMembers.forEach((member) => {
+                const ms = member.memberStatus as string;
+                if (["archived", "cancelled", "rejected_by_manager", "declined_by_staff"].includes(ms)) return;
+                const busyEntries = staffBusyMap[member.employeeUid] ?? [];
+                for (const entry of busyEntries) {
+                  if (entry.missionId === activeMission?.id) continue;
+                  if (datesOverlap(newStart, newEnd, entry.startDate, entry.endDate)) {
+                    conflicts.push(`${member.employeeName} – sedang dinas di "${entry.missionName}"`);
+                    break;
+                  }
+                }
+              });
+              if (conflicts.length === 0) return null;
+              return (
+                <div className="mt-3 rounded-lg border border-amber-300/60 bg-amber-50/50 dark:border-amber-700/40 dark:bg-amber-900/10 px-4 py-3 space-y-1">
+                  <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-semibold text-sm">
+                    <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                    {conflicts.length} anggota bentrok jadwal
+                  </div>
+                  <ul className="text-xs text-amber-700 dark:text-amber-500 space-y-0.5 pl-6 list-disc">
+                    {conflicts.map((c, i) => <li key={i}>{c}</li>)}
+                  </ul>
+                  <p className="text-xs text-amber-600 dark:text-amber-500 pl-1">Pertimbangkan mengganti anggota yang bentrok sebelum menyimpan.</p>
+                </div>
+              );
+            })()}
           </section>
 
           <section className="space-y-4">
@@ -3328,15 +4702,24 @@ export function ManagementDinasClient() {
               <StaffPicker
                 allStaff={availableStaffForAddition}
                 selectedUids={manageSelectedStaffUids}
-                onToggle={(uid) =>
-                  setManageSelectedStaffUids((prev) =>
-                    prev.includes(uid)
-                      ? prev.filter((id) => id !== uid)
-                      : [...prev, uid],
-                  )
-                }
+                onToggle={(uid, meta) => {
+                  setManageSelectedStaffUids((prev) => {
+                    const isRemoving = prev.includes(uid);
+                    if (isRemoving) {
+                      setManageContinuationSelections(c => { const n = { ...c }; delete n[uid]; return n; });
+                    } else if (meta?.continuation) {
+                      setManageContinuationSelections(c => ({ ...c, [uid]: meta.continuation! }));
+                    }
+                    return isRemoving ? prev.filter((id) => id !== uid) : [...prev, uid];
+                  });
+                }}
                 isLoading={staffLoading}
                 error={profilesError}
+                missionStartDate={toDateString(activeMission?.startDate)}
+                missionEndDate={toDateString(activeMission?.endDate)}
+                busyMap={enrichedStaffBusyMap}
+                excludeMissionId={activeMission?.id}
+                continuationSelections={manageContinuationSelections}
               />
               <div className="space-y-2">
                 <Label>Alasan Penambahan / Perubahan</Label>
@@ -3654,6 +5037,8 @@ export function ManagementDinasClient() {
 
           const approvalNeeded = !!approvalTarget.approverUid;
 
+          const contData = staffContinuationSelections[staff.uid];
+
           const memberData: BusinessTripMissionMember = {
             missionId: missionRef.id,
             missionName: missionForm.missionName,
@@ -3684,12 +5069,41 @@ export function ManagementDinasClient() {
             managerValidationNote: null,
             staffConfirmationStatus: "waiting_staff_confirmation",
             missionStatus: "pending_manager_validation",
+            // Continuation fields (only when selected as continuation)
+            ...(contData ? {
+              isContinuationAssignment: true,
+              continuedFromMissionId: contData.missionId,
+              continuedFromMissionName: contData.missionName,
+              continuedFromDestination: contData.destination,
+              continuedFromEndDate: contData.endDate,
+              transitionType: "direct_transfer" as const,
+              transitionNote: contData.transitionNote || undefined,
+            } : {}),
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           };
 
           memberDocs.push(memberData);
           await setDoc(memberRef, memberData);
+
+          // Write timeline to OLD mission when this is a continuation
+          if (contData) {
+            try {
+              await addDoc(
+                collection(firestore, "business_trip_missions", contData.missionId, "timeline"),
+                {
+                  message: `${staff.fullName} dijadwalkan lanjut ke misi "${missionForm.missionName}".`,
+                  category: "changes",
+                  createdAt: serverTimestamp(),
+                  byUid: userProfile.uid,
+                  byName: userProfile.fullName,
+                },
+              );
+            } catch (e) {
+              console.warn("Continuation old-mission timeline write failed", e);
+            }
+          }
+
           // Notify staff about assignment
           try {
             const staffNotifRef = doc(
@@ -3913,10 +5327,29 @@ export function ManagementDinasClient() {
       );
       await addDoc(timelineCollection, {
         message: `Perjalanan Dinas dibuat dengan ${selectedStaff.length} anggota.`,
+        category: "system",
         createdAt: serverTimestamp(),
         byUid: userProfile?.uid || "",
         byName: userProfile?.fullName || "",
       });
+
+      // Write continuation entries to new mission's timeline
+      for (const staff of selectedStaff) {
+        const contData = staffContinuationSelections[staff.uid];
+        if (contData) {
+          try {
+            await addDoc(timelineCollection, {
+              message: `${staff.fullName} bergabung sebagai lanjutan dari misi "${contData.missionName}".`,
+              category: "changes",
+              createdAt: serverTimestamp(),
+              byUid: userProfile?.uid || "",
+              byName: userProfile?.fullName || "",
+            });
+          } catch (e) {
+            console.warn("Continuation new-mission timeline write failed", e);
+          }
+        }
+      }
 
       // Reset form
       setMissionForm({
@@ -3936,6 +5369,7 @@ export function ManagementDinasClient() {
         googleDriveLink: "",
       });
       setSelectedStaffUids([]);
+      setStaffContinuationSelections({});
       setAssignmentLetterFile(null);
       setAssignmentLetterError(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -3957,10 +5391,19 @@ export function ManagementDinasClient() {
     }
   };
 
-  const toggleStaffSelection = useCallback((uid: string) => {
-    setSelectedStaffUids((prev) =>
-      prev.includes(uid) ? prev.filter((id) => id !== uid) : [...prev, uid],
-    );
+  const toggleStaffSelection = useCallback((
+    uid: string,
+    meta?: { continuation?: ContinuationData; overrideReason?: string },
+  ) => {
+    setSelectedStaffUids((prev) => {
+      const isRemoving = prev.includes(uid);
+      if (isRemoving) {
+        setStaffContinuationSelections(c => { const n = { ...c }; delete n[uid]; return n; });
+      } else if (meta?.continuation) {
+        setStaffContinuationSelections(c => ({ ...c, [uid]: meta.continuation! }));
+      }
+      return isRemoving ? prev.filter((id) => id !== uid) : [...prev, uid];
+    });
   }, []);
 
   if (!userProfile?.uid) return <div>Loading...</div>;
@@ -3993,6 +5436,53 @@ export function ManagementDinasClient() {
             </div>
           </CardHeader>
           <CardContent>
+            {/* Search / filter / sort toolbar */}
+            <div className="flex flex-wrap gap-2 mb-4">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Cari nama, tujuan, atau anggota…"
+                  value={missionSearch}
+                  onChange={(e) => setMissionSearch(e.target.value)}
+                  className="pl-8 pr-3 py-2 w-full rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+              <select
+                value={missionStatusFilter}
+                onChange={(e) => setMissionStatusFilter(e.target.value)}
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="all">Semua Status</option>
+                <option value="draft_mission">Draft</option>
+                <option value="pending_manager_validation">Menunggu Validasi Manager</option>
+                <option value="waiting_staff_confirmation">Menunggu Konfirmasi Staff</option>
+                <option value="pending_hrd_finalization">Menunggu Finalisasi HRD</option>
+                <option value="approved_ready_to_depart">Siap Berangkat</option>
+                <option value="in_progress">Sedang Berjalan</option>
+                <option value="at_location">Sudah Sampai Lokasi</option>
+                <option value="activity_in_progress">Kegiatan Berjalan</option>
+                <option value="activity_done">Kegiatan Selesai</option>
+                <option value="needs_attention">Perlu Perhatian</option>
+                <option value="on_duty">Sedang Dinas</option>
+                <option value="returned_pending_report">Kembali – Belum Laporan</option>
+                <option value="report_submitted">Laporan Dikirim</option>
+                <option value="completed">Selesai</option>
+                <option value="rejected">Ditolak</option>
+                <option value="cancelled">Dibatalkan</option>
+              </select>
+              <select
+                value={missionSort}
+                onChange={(e) => setMissionSort(e.target.value as typeof missionSort)}
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="newest">Terbaru</option>
+                <option value="nearest">Tanggal Terdekat</option>
+                <option value="az">A–Z</option>
+                <option value="status">Prioritas Status</option>
+              </select>
+            </div>
+
             {isLoading ? (
               <div className="p-8 text-center text-muted-foreground">
                 Memuat data...
@@ -4005,107 +5495,138 @@ export function ManagementDinasClient() {
                       <TableHead>Nama Perjalanan</TableHead>
                       <TableHead>Tujuan</TableHead>
                       <TableHead>Tanggal</TableHead>
-                      <TableHead>Jumlah Anggota</TableHead>
-                      <TableHead>Progress Validasi Manager</TableHead>
-                      <TableHead>Progress Konfirmasi Staff</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead>Anggota</TableHead>
+                      <TableHead>Progress Tracking</TableHead>
+                      <TableHead>Status Aktual</TableHead>
                       <TableHead>Aksi</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {mergedMissionItems.length === 0 ? (
+                    {filteredAndSortedMissions.length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={9}
+                          colSpan={7}
                           className="text-center text-muted-foreground py-8"
                         >
-                          Belum ada perjalanan dinas
+                          {missionSearch || missionStatusFilter !== "all"
+                            ? "Tidak ada perjalanan dinas yang cocok dengan filter."
+                            : "Belum ada perjalanan dinas"}
                         </TableCell>
                       </TableRow>
                     ) : (
-                      mergedMissionItems.map((mission) => (
-                        <TableRow key={mission.id}>
-                          <TableCell className="font-medium">
-                            {mission.missionName}
-                            <div className="text-xs text-muted-foreground">
-                              {mission.assignmentNumber}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              {mission.destinationProvince || "-"}
-                              {mission.destinationRegency
-                                ? ` / ${mission.destinationRegency}`
-                                : ""}
-                            </div>
-                            {mission.destinationAddress && (
-                              <div className="text-xs text-muted-foreground mt-1">
-                                {mission.destinationAddress}
+                      filteredAndSortedMissions.map((mission) => {
+                        const tracking = memberTrackingMap[mission.id ?? ""];
+                        const displayStatus = computeTrackingDisplayStatus(mission, tracking);
+                        return (
+                          <TableRow key={mission.id}>
+                            <TableCell className="font-medium">
+                              {mission.missionName}
+                              <div className="text-xs text-muted-foreground">
+                                {mission.assignmentNumber}
                               </div>
-                            )}
-                            {mission.destinationGoogleMaps && (
-                              <a
-                                href={mission.destinationGoogleMaps}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-xs text-primary underline mt-1 block"
+                            </TableCell>
+                            <TableCell>
+                              <div>
+                                {mission.destinationProvince || "-"}
+                                {mission.destinationRegency
+                                  ? ` / ${mission.destinationRegency}`
+                                  : ""}
+                              </div>
+                              {mission.destinationAddress && (
+                                <div className="text-xs text-muted-foreground mt-1">
+                                  {mission.destinationAddress}
+                                </div>
+                              )}
+                              {mission.destinationGoogleMaps && (
+                                <a
+                                  href={mission.destinationGoogleMaps}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-xs text-primary underline mt-1 block"
+                                >
+                                  Google Maps
+                                </a>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {formatDate(mission.startDate)} –{" "}
+                              {formatDate(mission.endDate)}
+                            </TableCell>
+                            <TableCell>
+                              <div>{mission.memberCount ?? 0} anggota</div>
+                              <div className="text-xs text-muted-foreground">
+                                {`${mission.managerApprovedCount ?? 0}/${mission.memberCount ?? 0} validasi`}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {`${mission.staffConfirmedCount ?? 0}/${mission.memberCount ?? 0} konfirmasi`}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {tracking && tracking.total > 0 ? (
+                                <div className="text-xs space-y-0.5 min-w-[120px]">
+                                  <div className={`flex items-center gap-1 ${tracking.departed > 0 ? "" : "text-muted-foreground/50"}`}>
+                                    <Navigation className={`h-3 w-3 flex-shrink-0 ${tracking.departed > 0 ? "text-blue-500" : "text-muted-foreground/40"}`} />
+                                    <span>{tracking.departed}/{tracking.total} berangkat</span>
+                                  </div>
+                                  <div className={`flex items-center gap-1 ${tracking.arrived > 0 ? "" : "text-muted-foreground/50"}`}>
+                                    <MapPin className={`h-3 w-3 flex-shrink-0 ${tracking.arrived > 0 ? "text-indigo-500" : "text-muted-foreground/40"}`} />
+                                    <span>{tracking.arrived}/{tracking.total} sampai lokasi</span>
+                                  </div>
+                                  <div className={`flex items-center gap-1 ${tracking.activityDone > 0 ? "" : "text-muted-foreground/50"}`}>
+                                    <Activity className={`h-3 w-3 flex-shrink-0 ${tracking.activityDone > 0 ? "text-purple-600" : "text-muted-foreground/40"}`} />
+                                    <span>{tracking.activityDone}/{tracking.total} kegiatan selesai</span>
+                                  </div>
+                                  <div className={`flex items-center gap-1 ${tracking.returned > 0 ? "" : "text-muted-foreground/50"}`}>
+                                    <Home className={`h-3 w-3 flex-shrink-0 ${tracking.returned > 0 ? "text-green-600" : "text-muted-foreground/40"}`} />
+                                    <span>{tracking.returned}/{tracking.total} kembali</span>
+                                  </div>
+                                  {tracking.issues > 0 && (
+                                    <div className="flex items-center gap-1 text-amber-600 font-medium">
+                                      <AlertTriangle className="h-3 w-3 flex-shrink-0" />
+                                      <span>{tracking.issues} kendala</span>
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">–</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {renderStatusLabel(displayStatus as any)}
+                            </TableCell>
+                            <TableCell className="flex flex-wrap gap-2">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => selectMissionForDetail(mission)}
                               >
-                                Google Maps
-                              </a>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {formatDate(mission.startDate)} –{" "}
-                            {formatDate(mission.endDate)}
-                          </TableCell>
-                          <TableCell>
-                            {mission.memberCount ?? 0} anggota
-                          </TableCell>
-                          <TableCell>
-                            {`${mission.managerApprovedCount ?? 0}/${
-                              mission.memberCount ?? 0
-                            } validasi`}
-                          </TableCell>
-                          <TableCell>
-                            {`${mission.staffConfirmedCount ?? 0}/${
-                              mission.memberCount ?? 0
-                            } konfirmasi`}
-                          </TableCell>
-                          <TableCell>
-                            {renderStatusLabel(mission.status)}
-                          </TableCell>
-                          <TableCell className="flex flex-wrap gap-2">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => selectMissionForDetail(mission)}
-                            >
-                              Detail
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => selectMissionForEdit(mission)}
-                            >
-                              Edit
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              onClick={() => selectMissionForManage(mission)}
-                            >
-                              Kelola Anggota
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => handleArchiveMission(mission)}
-                            >
-                              Batalkan
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))
+                                Detail
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => selectMissionForEdit(mission)}
+                              >
+                                Edit
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => selectMissionForManage(mission)}
+                              >
+                                Kelola Anggota
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => handleArchiveMission(mission)}
+                              >
+                                Batalkan
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>
@@ -4517,6 +6038,10 @@ export function ManagementDinasClient() {
                 onToggle={toggleStaffSelection}
                 isLoading={staffLoading}
                 error={profilesError}
+                missionStartDate={missionForm.startDate || undefined}
+                missionEndDate={missionForm.endDate || undefined}
+                busyMap={enrichedStaffBusyMap}
+                continuationSelections={staffContinuationSelections}
               />
             </section>
 

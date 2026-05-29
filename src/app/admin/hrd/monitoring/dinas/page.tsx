@@ -5,7 +5,7 @@ import { useAuth } from "@/providers/auth-provider";
 import { useRoleGuard } from "@/hooks/useRoleGuard";
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { MENU_CONFIG } from "@/lib/menu-config";
-import { BusinessTripClient } from "@/components/dashboard/dinas/BusinessTripClient";
+import { HRDMonitoringClient } from "@/components/dashboard/dinas/HRDMonitoringClient";
 
 export default function DinasPage() {
   const { userProfile } = useAuth();
@@ -20,8 +20,8 @@ export default function DinasPage() {
   if (!hasAccess) return null;
 
   return (
-    <DashboardLayout pageTitle="Tracking Dinas" menuConfig={menuConfig}>
-      <BusinessTripClient mode="hrd-monitor" />
+    <DashboardLayout pageTitle="Monitoring Dinas" menuConfig={menuConfig}>
+      <HRDMonitoringClient />
     </DashboardLayout>
   );
 }

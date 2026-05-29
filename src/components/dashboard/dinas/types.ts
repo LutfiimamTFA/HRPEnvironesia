@@ -6,6 +6,7 @@ export const MISSION_STATUSES = [
   "approved_ready_to_depart",
   "on_duty",
   "returned_pending_report",
+  "final_report_submitted",
   "report_submitted",
   "expense_submitted",
   "settlement_review",
@@ -64,6 +65,68 @@ export type BusinessTripType = (typeof TRIP_TYPES)[number];
 
 export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number];
 
+export type FinalReportMode = "team_report" | "individual_report";
+
+export type ReportReviewStatus = "pending_review" | "approved" | "revision_requested" | "resubmitted";
+
+export type FinalReport = {
+  id?: string;
+  missionId: string;
+  reportMode: FinalReportMode;
+  ringkasanKegiatan?: string;
+  hasilOutput?: string;
+  kendalaDanSolusi?: string;
+  tindakLanjut?: string;
+  catatanUntukHRD?: string;
+  lampiranUrl?: string;
+  dilaporkanOlehUid?: string;
+  dilaporkanOlehName?: string;
+  submittedAt?: any;
+  totalMembers?: number;
+  // Review fields
+  reportReviewStatus?: ReportReviewStatus;
+  reviewedByUid?: string;
+  reviewedByName?: string;
+  reviewedAt?: any;
+  revisionNote?: string;
+  createdAt?: any;
+  updatedAt?: any;
+};
+
+export type MemberFinalReport = {
+  id?: string;
+  missionId: string;
+  memberUid: string;
+  memberName: string;
+  kegiatanDilakukan?: string;
+  hasilPribadi?: string;
+  kendalaPribadi?: string;
+  solusiPribadi?: string;
+  catatanTambahan?: string;
+  lampiranUrl?: string;
+  submittedAt?: any;
+  // Review fields
+  reportReviewStatus?: ReportReviewStatus;
+  reviewedByUid?: string;
+  reviewedByName?: string;
+  reviewedAt?: any;
+  revisionNote?: string;
+  createdAt?: any;
+};
+
+export type MemberNote = {
+  id?: string;
+  missionId: string;
+  memberUid: string;
+  memberName: string;
+  kontribusiPribadi?: string;
+  catatanTambahan?: string;
+  kendalaPribadi?: string;
+  lampiranUrl?: string;
+  submittedAt?: any;
+  createdAt?: any;
+};
+
 export type BusinessTripMission = {
   id?: string;
   missionName?: string;
@@ -109,6 +172,12 @@ export type BusinessTripMission = {
   googleDriveWebViewLink?: string;
   duplicateMissionIds?: string[];
   status?: MissionStatus;
+  reportMode?: FinalReportMode;
+  finalReportSubmittedAt?: any;
+  finalReportSubmittedBy?: string;
+  archivedAt?: any;
+  archivedByUid?: string;
+  archivedByName?: string;
   createdAt?: any;
   updatedAt?: any;
 };
@@ -153,12 +222,29 @@ export type BusinessTripMissionMember = {
   departurePoint?: string;
   contactDuringTrip?: string;
 
-  // Trip tracking milestones (phase 1 lightweight tracking)
-  memberTripStatus?: "ready" | "departed" | "arrived" | "activity_done" | "returned" | "issue_reported";
+  // Trip tracking milestones (phase 2 detailed tracking)
+  memberTripStatus?: "ready" | "departed" | "arrived" | "activity_done" | "return_started" | "returned" | "issue_reported";
   lastTripUpdateAt?: any;
   lastTripUpdateByUid?: string;
   lastTripUpdateByName?: string;
+
+  // Detailed timestamps per milestone
+  departedAt?: any;
+  estimatedArrivalAt?: any;
+  arrivedAt?: any;
+  activityDoneAt?: any;
+  returnStartedAt?: any;
+  estimatedReturnAt?: any;
+  returnedAt?: any;
+
+  // Activity done note (short optional note when marking activity_done)
+  activityNote?: string;
+
+  // Issue tracking
   issueNote?: string;
+  issueCategory?: string;
+  issueUrgency?: "rendah" | "sedang" | "tinggi";
+  issueAttachmentUrl?: string;
   issueAt?: any;
 
   actualDepartureAt?: any;
@@ -170,6 +256,19 @@ export type BusinessTripMissionMember = {
   reportRecommendations?: string;
   reportAttachmentUrl?: string;
   requiresManagerValidation?: boolean;
+
+  // Continuation assignment fields (multi-trip sequential)
+  isContinuationAssignment?: boolean;
+  continuedFromMissionId?: string;
+  continuedFromMissionName?: string;
+  continuedFromDestination?: string;
+  continuedFromEndDate?: any;
+  transitionType?: "direct_transfer" | "break";
+  transitionNote?: string;
+
+  // Override fields (conflict override by management)
+  isConflictOverride?: boolean;
+  conflictOverrideReason?: string;
   // Sampling specific fields
   samplingPointsCount?: number;
   sampleTypes?: string;
