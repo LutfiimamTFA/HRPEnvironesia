@@ -2526,6 +2526,146 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
     }
   };
 
+  // Repair/upload ulang evidence yang kosong
+  const handleRepairMilestoneEvidence = async (
+    missionId: string,
+    evidenceId: string,
+    milestoneType: "departed" | "arrived" | "activity_done" | "returned",
+    confirmedByName: string,
+    targetMembers: BusinessTripMissionMember[],
+    evidenceOpts: {
+      latitude?: number;
+      longitude?: number;
+      locationAccuracy?: number;
+      locationCapturedAt?: Date;
+      locationStatus: "captured" | "unavailable" | "manual";
+      addressText?: string;
+      streetName?: string;
+      village?: string;
+      district?: string;
+      city?: string;
+      province?: string;
+      postalCode?: string;
+      country?: string;
+      geocodeStatus?: "success" | "failed";
+      locationTrustLevel?: "high" | "medium" | "low";
+      gpsPermissionStatus?: string;
+      deviceTimestamp?: string;
+      userAgent?: string;
+      manualLocationNote?: string;
+      note?: string;
+      photos?: File[];
+    },
+  ) => {
+    if (!firestore || !userProfile) return;
+    setIsSaving(true);
+    try {
+      const photosToUpload = evidenceOpts.photos ?? [];
+
+      // Validate: photo wajib ada untuk repair
+      if (photosToUpload.length === 0) {
+        return toast({
+          variant: "destructive",
+          title: "Foto bukti wajib dipilih",
+          description: "Pilih minimal 1 foto untuk upload ulang",
+        });
+      }
+
+      // Upload photos to Google Drive
+      let uploadedPhotos: Array<any> = [];
+      const expiresAt = Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+
+      for (const photoFile of photosToUpload) {
+        try {
+          const compressed = await compressMilestoneImage(photoFile);
+          const storagePath = `milestone_evidence/${missionId}/${userProfile.uid}/${milestoneType}_repair_${Date.now()}_${uploadedPhotos.length}.jpg`;
+          const result = await uploadFile(compressed, storagePath, userProfile.uid, {
+            compress: false,
+            category: "business_trip_spd",
+            ownerUid: userProfile.uid,
+          });
+
+          uploadedPhotos.push({
+            driveFileId: result.fileId ?? null,
+            url: result.webViewLink ?? result.viewUrl ?? result.downloadUrl ?? null,
+            downloadUrl: result.downloadUrl ?? null,
+            directViewUrl: result.directViewUrl ?? null,
+            thumbnailUrl: result.thumbnailUrl ?? null,
+            storageProvider: result.storageProvider ?? "firebaseStorage",
+            name: result.originalFileName ?? photoFile.name,
+            size: result.finalSize ?? compressed.size,
+            uploadedAt: result.uploadedAt ?? serverTimestamp(),
+            expiresAt: expiresAt,
+            photoUrl: result.webViewLink ?? result.viewUrl ?? result.downloadUrl ?? null,
+            photoPath: result.fileId ?? storagePath,
+          });
+        } catch (uploadErr: any) {
+          console.error("Gagal upload foto bukti repair:", uploadErr);
+          return toast({
+            variant: "destructive",
+            title: "Gagal upload foto bukti",
+            description: uploadErr?.message || "Coba lagi",
+          });
+        }
+      }
+
+      if (uploadedPhotos.length === 0) {
+        return toast({
+          variant: "destructive",
+          title: "Tidak ada foto yang berhasil diupload",
+        });
+      }
+
+      // Update existing evidence document (merge mode)
+      const evidenceRef = doc(firestore, "business_trip_missions", missionId, "milestone_evidences", evidenceId);
+      const updatePayload = {
+        latitude: evidenceOpts.latitude ?? null,
+        longitude: evidenceOpts.longitude ?? null,
+        locationAccuracy: evidenceOpts.locationAccuracy ?? null,
+        locationCapturedAt: evidenceOpts.locationCapturedAt
+          ? Timestamp.fromDate(evidenceOpts.locationCapturedAt)
+          : null,
+        locationStatus: evidenceOpts.locationStatus,
+        locationTrustLevel: evidenceOpts.locationTrustLevel ?? null,
+        addressText: evidenceOpts.addressText || null,
+        streetName: evidenceOpts.streetName || null,
+        village: evidenceOpts.village || null,
+        district: evidenceOpts.district || null,
+        city: evidenceOpts.city || null,
+        province: evidenceOpts.province || null,
+        postalCode: evidenceOpts.postalCode || null,
+        country: evidenceOpts.country || null,
+        geocodeStatus: evidenceOpts.geocodeStatus || null,
+        manualLocationNote: evidenceOpts.manualLocationNote || null,
+        note: evidenceOpts.note || null,
+        photos: uploadedPhotos,
+        updatedAt: serverTimestamp(),
+      };
+
+      console.log("repair milestone evidence payload", updatePayload);
+
+      await setDoc(evidenceRef, updatePayload, { merge: true });
+
+      console.log("✅ Milestone evidence repaired:", { evidenceId, photosCount: uploadedPhotos.length });
+
+      toast({
+        title: "Bukti milestone berhasil di-update",
+      });
+
+      // Reload mission detail
+      await loadMissionDetail(missionId);
+    } catch (error: any) {
+      console.error(error);
+      toast({
+        variant: "destructive",
+        title: "Gagal update bukti milestone",
+        description: error?.message || "Coba lagi.",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleSubmitReport = async (member: BusinessTripMissionMember) => {
     if (
       !firestore ||

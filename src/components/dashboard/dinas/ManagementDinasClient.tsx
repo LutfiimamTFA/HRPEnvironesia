@@ -82,6 +82,7 @@ import {
   Home,
   TrendingUp,
   ExternalLink,
+  Upload,
 } from "lucide-react";
 import {
   BusinessTripMission,
@@ -4325,11 +4326,29 @@ export function ManagementDinasClient() {
                           )}
                         </div>
 
-                        {/* Debug/Empty state jika tidak ada lokasi atau foto */}
+                        {/* Empty state / Repair button */}
                         {!hasPhotos && !hasLocation && (
-                          <div className="text-xs rounded-lg border border-amber-200/50 bg-amber-50/60 dark:border-amber-800/30 dark:bg-amber-900/10 p-2.5 text-amber-700 dark:text-amber-400">
-                            <p className="font-medium mb-1">⚠️ Evidence ditemukan, tapi field foto/lokasi belum termapping.</p>
-                            <p className="text-[11px] opacity-75">Hubungi admin jika ini terus terjadi.</p>
+                          <div className="rounded-lg border border-amber-200/50 bg-amber-50/60 dark:border-amber-800/30 dark:bg-amber-900/10 p-3 space-y-2.5">
+                            <div>
+                              <p className="text-xs font-medium text-amber-700 dark:text-amber-400 mb-1">⚠️ Evidence kosong atau belum lengkap</p>
+                              <p className="text-[11px] text-amber-600 dark:text-amber-400/80">
+                                Foto dan lokasi belum diupload untuk milestone ini. Upload ulang bukti untuk melengkapi data.
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => {
+                                // TODO: Open repair form modal
+                                // Evidence ID: ev.id
+                                // Evidence data: ev
+                                toast({
+                                  title: "Fitur upload ulang akan segera tersedia",
+                                  description: "Hubungi admin atau staff untuk upload bukti milestone ini",
+                                });
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-400 bg-amber-100 text-amber-700 hover:bg-amber-200 dark:border-amber-700/50 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-amber-900/40 transition-colors">
+                              <Upload className="h-3.5 w-3.5" />
+                              Upload Ulang Bukti
+                            </button>
                           </div>
                         )}
                       </div>
