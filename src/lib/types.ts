@@ -1869,6 +1869,10 @@ export type OvertimeSubmission = {
   managerUid?: string | null;
   managerNotes?: string | null;
   managerDecisionAt?: Timestamp | null;
+  managerRole?: string | null;
+  waitingForUid?: string | null;
+  waitingForName?: string | null;
+  currentApprovalStep?: string | null;
 
   hrdReviewerUid?: string | null;
   hrdNotes?: string | null;
@@ -1914,12 +1918,15 @@ export type PermissionRequestStatus =
   (typeof PERMISSION_REQUEST_STATUSES)[number];
 
 export const PERMISSION_TYPES = [
-  "cuti",
+  // Note: 'cuti' removed from permission module (handled by cuti module)
   "sakit",
-  "keluar_kantor",
   "tidak_masuk",
+  "datang_terlambat",
+  "pulang_awal",
+  "keluar_kantor",
   "duka",
   "akademik",
+  "administrasi_resmi",
   "lainnya",
 ] as const;
 export type PermissionType = (typeof PERMISSION_TYPES)[number];
@@ -1946,6 +1953,36 @@ export type PermissionRequest = {
   hrdReviewerUid?: string | null;
   hrdNotes?: string | null;
   hrdDecisionAt?: Timestamp | null;
+  // Approval flow details (derived / helpful for UI)
+  approvalFlow?: {
+    requesterUid?: string;
+    requesterName?: string;
+    directManagerUid?: string | null;
+    directManagerName?: string | null;
+    hrdUid?: string | null;
+    hrdName?: string | null;
+    managerStatus?: PermissionRequestStatus | string;
+    hrdStatus?: PermissionRequestStatus | string;
+    decisionNotes?: string | null;
+    decisionAt?: Timestamp | null;
+  } | null;
+  // New separation: bentuk izin (form) and alasan izin (reason)
+  formType?:
+    | "tidak_masuk"
+    | "datang_terlambat"
+    | "pulang_awal"
+    | "keluar_kantor"
+    | string;
+  reasonType?:
+    | "sakit"
+    | "duka"
+    | "urusan_keluarga"
+    | "administrasi_resmi"
+    | "akademik"
+    | "transportasi"
+    | "keperluan_pribadi"
+    | "lainnya"
+    | string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 
@@ -1958,6 +1995,23 @@ export type PermissionRequest = {
   // --- Realisasi Kembali (Izin Keluar Kantor) ---
   actualReturnAt?: Timestamp | null; // Jam kembali aktual
   returnSource?: "attendance_auto" | "manual_button"; // Sumber deteksi
+  // --- Additional fields for specific permission types ---
+  sicknessDescription?: string | null; // Keluhan / gejala (sakit)
+  numberOfDays?: number | null; // Derived number of days for sakit
+  familyRelation?: string | null; // duka
+  familyName?: string | null; // duka
+  location?: string | null; // duka / administrasi_resmi
+  academicActivityName?: string | null; // akademik
+  academicInstitution?: string | null; // akademik
+  scheduledWorkTime?: string | null; // datang_terlambat / pulang_awal (HH:mm)
+  estimatedArrivalTime?: string | null; // datang_terlambat (HH:mm)
+  scheduledEndTime?: string | null; // pulang_awal (HH:mm)
+  proposedLeaveTime?: string | null; // pulang_awal (HH:mm)
+  officialAffairType?: string | null; // administrasi_resmi jenis urusan
+  estimatedFinishTime?: string | null; // administrasi_resmi (HH:mm)
+  contactInfo?: string | null; // keluar_kantor contact aktif
+  otherTitle?: string | null; // lainnya title
+  detailedReason?: string | null; // lainnya full reason
   returnDetectedFromAttendance?: boolean; // Apakah deteksi via absen?
   actualDurationMinutes?: number; // Total durasi nyata
   exceededEstimatedReturn?: boolean; // Apakah terlambat dari estimasi?
@@ -1969,13 +2023,6 @@ export type PermissionRequest = {
   needsHrdNote?: boolean; // Perlu catatan HRD
   managerReviewNote?: string | null;
   hrdReviewNote?: string | null;
-
-  // --- Field Spesifik per Jenis Izin ---
-  sicknessDescription?: string;
-  familyRelation?: string;
-  academicActivityName?: string;
-  academicInstitution?: string;
-  otherLeaveTitle?: string;
 };
 
 /**

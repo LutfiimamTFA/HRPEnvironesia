@@ -64,6 +64,7 @@ import {
 import {
   resolveApprovalTarget,
   type DivisionMasterOrganization,
+  getDirectManagerForEmployee,
 } from "@/lib/approval-flow";
 import {
   PERMISSION_TYPES,
@@ -100,52 +101,125 @@ import { cn } from "@/lib/utils";
 import { compressAndResizeImage } from "@/lib/image-compression";
 
 const PERMISSION_TYPE_LABELS: Record<PermissionType, string> = {
-  keluar_kantor: "Izin Meninggalkan Kantor",
   sakit: "Izin Sakit",
   tidak_masuk: "Izin Tidak Masuk",
+  datang_terlambat: "Izin Datang Terlambat",
+  pulang_awal: "Izin Pulang Lebih Awal",
+  keluar_kantor: "Izin Meninggalkan Kantor Sementara",
   duka: "Izin Duka Cita",
   akademik: "Izin Akademik",
+  administrasi_resmi: "Izin Administrasi Resmi",
   lainnya: "Izin Lainnya",
-  cuti: "Izin Cuti Tahunan",
+};
+
+const FORM_TYPES = [
+  "tidak_masuk",
+  "datang_terlambat",
+  "pulang_awal",
+  "keluar_kantor",
+] as const;
+type FormType = (typeof FORM_TYPES)[number];
+
+const REASON_TYPES = [
+  "sakit",
+  "duka",
+  "urusan_keluarga",
+  "administrasi_resmi",
+  "akademik",
+  "transportasi",
+  "keperluan_pribadi",
+  "lainnya",
+] as const;
+type ReasonType = (typeof REASON_TYPES)[number];
+
+const REASON_LABELS: Record<ReasonType, string> = {
+  sakit: "Sakit",
+  duka: "Duka Cita",
+  urusan_keluarga: "Urusan Keluarga",
+  administrasi_resmi: "Administrasi Resmi",
+  akademik: "Akademik",
+  transportasi: "Transportasi / Kendaraan",
+  keperluan_pribadi: "Keperluan Pribadi Mendesak",
+  lainnya: "Lainnya",
 };
 
 const formSchema = z
   .object({
-    type: z.enum(PERMISSION_TYPES, {
-      required_error: "Jenis izin harus dipilih.",
+    formType: z.enum(FORM_TYPES as any, {
+      required_error: "Bentuk izin harus dipilih.",
     }),
-    reason: z
+    reasonType: z.enum(REASON_TYPES as any, {
+      required_error: "Alasan izin harus dipilih.",
+    }),
+    reasonDetail: z
       .string()
       .min(10, "Alasan/keterangan harus diisi (minimal 10 karakter)."),
     startDate: z.date({ required_error: "Tanggal mulai harus diisi." }),
     endDate: z.date({ required_error: "Tanggal selesai harus diisi." }),
+    // Time fields (HH:mm)
     startTime: z.string().optional(),
     endTime: z.string().optional(),
+    scheduledWorkTime: z.string().optional(),
+    estimatedArrivalTime: z.string().optional(),
+    scheduledEndTime: z.string().optional(),
+    proposedLeaveTime: z.string().optional(),
     attachment: z.any().optional(),
 
     // --- Field Khusus ---
     sicknessDescription: z.string().optional(),
     familyRelation: z.string().optional(),
+    familyName: z.string().optional(),
+    location: z.string().optional(),
     academicActivityName: z.string().optional(),
     academicInstitution: z.string().optional(),
     otherLeaveTitle: z.string().optional(),
+    detailedReason: z.string().optional(),
     destination: z.string().optional(),
+    officialAffairType: z.string().optional(),
+    estimatedFinishTime: z.string().optional(),
+    contactInfo: z.string().optional(),
   })
   .superRefine((data, ctx) => {
     const durationDays =
       differenceInMinutes(data.endDate, data.startDate) / 1440;
 
-    // Izin Sakit
-    if (data.type === "sakit" && durationDays > 1 && !data.attachment) {
+    // Izin Sakit: attachment/bukti pendukung wajib for all durations
+    if (data.reasonType === "sakit" && !data.attachment) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Lampiran wajib untuk izin sakit lebih dari 1 hari.",
+        message: "Izin sakit wajib menyertakan bukti pendukung.",
         path: ["attachment"],
       });
     }
 
+    <div className="text-sm text-muted-foreground mb-2">
+      Durasi: {computedDays} hari
+      {selectedForm === "keluar_kantor" &&
+        ` — ${Math.round(durationMinutes / 60)} jam`}
+    </div>;
+
+    {
+      /* Preview of manager */
+    }
+    <div className="text-sm mb-2">
+      {directManager.uid ? (
+        <div>
+          Akan diajukan ke:{" "}
+          <span className="font-medium">{directManager.name}</span>
+        </div>
+      ) : (
+        <Alert>
+          <AlertTitle>Atasan Tidak Ditemukan</AlertTitle>
+          <AlertDescription>
+            Atasan langsung belum ditemukan untuk{" "}
+            {userProfile?.fullName || "karyawan"}. Periksa Data Karyawan &gt;
+            Struktur Organisasi/Manager.
+          </AlertDescription>
+        </Alert>
+      )}
+    </div>;
     // Izin Keluar
-    if (data.type === "keluar_kantor") {
+    if (data.formType === "keluar_kantor") {
       if (!data.startTime || !data.endTime) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -167,28 +241,68 @@ const formSchema = z
           message: "Jam selesai harus setelah jam mulai.",
         });
       }
+      // Maks 4 jam
+      if (differenceInMinutes(end, start) > 240) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["endTime"],
+          message:
+            "Izin meninggalkan kantor sementara maksimal 4 jam. Untuk durasi lebih panjang gunakan Izin Pulang Lebih Awal atau Izin Tidak Masuk.",
+        });
+      }
     }
 
-    // Validasi field khusus lainnya
-    if (data.type === "duka" && !data.familyRelation)
+    // Validasi field khusus berdasarkan reasonType
+    if (data.reasonType === "duka" && !data.familyRelation)
       ctx.addIssue({
         code: "custom",
         path: ["familyRelation"],
         message: "Hubungan keluarga harus diisi.",
       });
-    if (data.type === "akademik" && !data.academicActivityName)
+    if (data.reasonType === "akademik" && !data.academicActivityName)
       ctx.addIssue({
         code: "custom",
         path: ["academicActivityName"],
         message: "Nama kegiatan harus diisi.",
       });
-    if (data.type === "lainnya" && !data.otherLeaveTitle)
-      ctx.addIssue({
-        code: "custom",
-        path: ["otherLeaveTitle"],
-        message: "Judul izin harus diisi.",
-      });
-    if (data.type === "keluar_kantor" && !data.destination)
+    if (data.reasonType === "lainnya") {
+      if (!data.otherLeaveTitle)
+        ctx.addIssue({
+          code: "custom",
+          path: ["otherLeaveTitle"],
+          message: "Judul izin harus diisi.",
+        });
+      if (!data.detailedReason || data.detailedReason.length < 20)
+        ctx.addIssue({
+          code: "custom",
+          path: ["detailedReason"],
+          message: "Alasan harus minimal 20 karakter.",
+        });
+    }
+    if (data.formType === "datang_terlambat") {
+      if (!data.scheduledWorkTime || !data.estimatedArrivalTime)
+        ctx.addIssue({
+          code: "custom",
+          path: ["estimatedArrivalTime"],
+          message: "Jam kerja seharusnya dan estimasi jam datang harus diisi.",
+        });
+      else {
+        // We validate presence of scheduled/estimated times above. Do not block
+        // automatically for lateness > 4 hours here; UI will show a warning instead.
+      }
+    }
+    if (data.formType === "pulang_awal") {
+      if (!data.scheduledEndTime || !data.proposedLeaveTime)
+        ctx.addIssue({
+          code: "custom",
+          path: ["proposedLeaveTime"],
+          message: "Jam pulang seharusnya dan jam pulang diajukan harus diisi.",
+        });
+      else {
+        // Do not block automatically for pulang_awal > 4 hours; show warning in UI instead.
+      }
+    }
+    if (data.formType === "keluar_kantor" && !data.destination)
       ctx.addIssue({
         code: "custom",
         path: ["destination"],
@@ -196,7 +310,7 @@ const formSchema = z
       });
 
     // Cek tanggal
-    if (data.type !== "keluar_kantor" && data.endDate < data.startDate) {
+    if (data.formType !== "keluar_kantor" && data.endDate < data.startDate) {
       ctx.addIssue({
         code: "custom",
         path: ["endDate"],
@@ -284,12 +398,21 @@ export function PermissionRequestForm({
   const isReadOnly = isViewing;
 
   const defaultTimes = useMemo(() => ({ start: "09:00", end: "17:00" }), []);
+  const defaultFormType: FormType = ((): FormType => {
+    if (
+      defaultType &&
+      (FORM_TYPES as readonly string[]).includes(defaultType as any)
+    )
+      return defaultType as any;
+    return "tidak_masuk";
+  })();
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      type: defaultType || "tidak_masuk",
-      reason: "",
+      formType: defaultFormType,
+      reasonType: "sakit",
+      reasonDetail: "",
       startDate: new Date(),
       endDate: new Date(),
       startTime: defaultTimes.start,
@@ -298,7 +421,8 @@ export function PermissionRequestForm({
   });
 
   const { watch, setValue } = form;
-  const selectedType = watch("type");
+  const selectedForm = watch("formType");
+  const selectedReason = watch("reasonType");
   const selectedAttachment = watch("attachment");
   const startTime = watch("startTime");
   const endTime = watch("endTime");
@@ -306,7 +430,7 @@ export function PermissionRequestForm({
   const endDate = watch("endDate");
 
   const durationMinutes = useMemo(() => {
-    if (selectedType === "keluar_kantor") {
+    if (selectedForm === "keluar_kantor") {
       if (!startTime || !endTime) return 0;
       const [startH, startM] = startTime.split(":").map(Number);
       const [endH, endM] = endTime.split(":").map(Number);
@@ -328,23 +452,133 @@ export function PermissionRequestForm({
       if (!startDate || !endDate) return 0;
       return differenceInMinutes(endOfDay(endDate), startOfDay(startDate)) + 1; // Inclusive of start day
     }
-  }, [selectedType, startTime, endTime, startDate, endDate]);
+  }, [selectedForm, startTime, endTime, startDate, endDate]);
+
+  // Additional watches for warnings and computed fields
+  const reasonDetail = watch("reasonDetail");
+  const otherLeaveTitle = watch("otherLeaveTitle");
+  const detailedReason = watch("detailedReason");
+  const scheduledWorkTime = watch("scheduledWorkTime");
+  const estimatedArrivalTime = watch("estimatedArrivalTime");
+  const scheduledEndTime = watch("scheduledEndTime");
+  const proposedLeaveTime = watch("proposedLeaveTime");
+
+  const computedDays = useMemo(() => {
+    if (!startDate || !endDate) return 0;
+    const minutes =
+      differenceInMinutes(endOfDay(endDate), startOfDay(startDate)) + 1;
+    return Math.max(1, Math.ceil(minutes / 1440));
+  }, [startDate, endDate]);
+
+  const lateMinutes = useMemo(() => {
+    if (!scheduledWorkTime || !estimatedArrivalTime) return 0;
+    const [sH, sM] = scheduledWorkTime.split(":").map(Number);
+    const [aH, aM] = estimatedArrivalTime.split(":").map(Number);
+    const start = set(new Date(), { hours: sH, minutes: sM });
+    const arrive = set(new Date(), { hours: aH, minutes: aM });
+    return differenceInMinutes(arrive, start);
+  }, [scheduledWorkTime, estimatedArrivalTime]);
+
+  const earlyMinutes = useMemo(() => {
+    if (!scheduledEndTime || !proposedLeaveTime) return 0;
+    const [sH, sM] = scheduledEndTime.split(":").map(Number);
+    const [pH, pM] = proposedLeaveTime.split(":").map(Number);
+    const scheduled = set(new Date(), { hours: sH, minutes: sM });
+    const proposed = set(new Date(), { hours: pH, minutes: pM });
+    let diff = differenceInMinutes(scheduled, proposed);
+    if (diff < 0) diff = 0;
+    return diff;
+  }, [scheduledEndTime, proposedLeaveTime]);
+
+  // Determine if any attachment is present (cover multiple states)
+  const attachmentPresent = Boolean(
+    // direct form field (File | string | FileList)
+    selectedAttachment ||
+    // file list or array
+    (Array.isArray(selectedAttachment) && selectedAttachment.length > 0) ||
+    // File-like object
+    (selectedAttachment &&
+      typeof selectedAttachment === "object" &&
+      ("name" in selectedAttachment || "size" in selectedAttachment)) ||
+    // string URL
+    (typeof selectedAttachment === "string" && selectedAttachment.length > 0) ||
+    // existing uploaded attachments on submission
+    (submission && submission.attachments && submission.attachments.length > 0),
+  );
+
+  const hasAttachment = attachmentPresent;
+
+  const warnTidakMasukMultiDayNonSakit =
+    selectedForm === "tidak_masuk" &&
+    selectedReason !== "sakit" &&
+    computedDays > 1;
+  const warnDatangTerlambatOver4 =
+    selectedForm === "datang_terlambat" && lateMinutes > 240;
+  const warnPulangAwalOver4 =
+    selectedForm === "pulang_awal" && earlyMinutes > 240;
+
+  // For sakit, block if no attachment is present (covers local file, existing URL, etc.)
+  const blockSickNoAttachment =
+    selectedReason === "sakit" && !attachmentPresent;
+  const blockKeluarOver4 =
+    selectedForm === "keluar_kantor" && durationMinutes > 240;
+
+  const missingRequired =
+    !selectedForm ||
+    !selectedReason ||
+    !startDate ||
+    !endDate ||
+    (selectedReason === "lainnya" &&
+      (!otherLeaveTitle || (detailedReason?.length || 0) < 20)) ||
+    (reasonDetail?.length || 0) < 10;
+
+  const canSubmit =
+    !isSaving &&
+    !missingRequired &&
+    !blockSickNoAttachment &&
+    !blockKeluarOver4;
+
+  // Determine direct manager for preview and validation
+  const directManager = getDirectManagerForEmployee(
+    employeeProfile,
+    divisionMaster,
+  );
+  const managerValid = !!directManager.uid;
+
+  // include manager validity in final submit enable
+  const canSubmitFinal = canSubmit && managerValid;
 
   useEffect(() => {
     if (open) {
       if (!submission) {
         form.reset({
-          type: defaultType || "tidak_masuk",
+          formType:
+            defaultType &&
+            (FORM_TYPES as readonly string[]).includes(defaultType as any)
+              ? (defaultType as any)
+              : "tidak_masuk",
           startDate: new Date(),
           endDate: new Date(),
           startTime: defaultTimes.start,
           endTime: defaultTimes.end,
-          reason: "",
+          reasonType: "sakit",
+          reasonDetail: "",
         });
       } else {
         form.reset({
-          type: submission.type,
-          reason: submission.reason,
+          formType:
+            (submission.formType as FormType) ||
+            (FORM_TYPES.includes(submission.type as any)
+              ? (submission.type as any)
+              : "tidak_masuk"),
+          reasonType:
+            (submission.reasonType as any) ||
+            (submission.type as any) ||
+            "sakit",
+          reasonDetail:
+            (submission.reason as string) ||
+            (submission.reasonDetail as string) ||
+            "",
           startDate: submission.startDate.toDate(),
           endDate: submission.endDate.toDate(),
           startTime: format(submission.startDate.toDate(), "HH:mm"),
@@ -404,7 +638,7 @@ export function PermissionRequestForm({
       let finalStartDate = startOfDay(values.startDate);
       let finalEndDate = endOfDay(values.endDate);
 
-      if (values.type === "keluar_kantor") {
+      if (values.formType === "keluar_kantor") {
         const [startH, startM] = values.startTime?.split(":").map(Number) || [
           9, 0,
         ];
@@ -421,18 +655,23 @@ export function PermissionRequestForm({
         finalStartDate,
       );
 
-      const approvalTarget = resolveApprovalTarget(
+      const resolved = resolveApprovalTarget(
         employeeProfile,
         userProfile,
         divisionMaster,
       );
-      if (!approvalTarget.approvalTargetUid) {
+
+      // prefer explicit direct manager from profile/master
+      const dm = getDirectManagerForEmployee(employeeProfile, divisionMaster);
+      const managerUid = dm.uid || resolved.approvalTargetUid;
+      const managerName = dm.name || resolved.approvalTargetName || null;
+      const managerRole = dm.role || resolved.approvalLevel || null;
+
+      if (!managerUid) {
         toast({
           variant: "destructive",
           title: "Atasan Tidak Valid",
-          description:
-            approvalTarget.reason ||
-            "Atasan langsung belum valid. Hubungi HRD untuk memperbaiki struktur organisasi.",
+          description: `Atasan langsung belum ditemukan untuk ${employeeProfile?.fullName || userProfile?.fullName || "karyawan"}. Periksa Data Karyawan > Struktur Organisasi/Manager.`,
         });
         setIsSaving(false);
         return;
@@ -444,37 +683,49 @@ export function PermissionRequestForm({
         {
           uid: userProfile.uid,
           fullName: userProfile.fullName,
+          applicantUid: userProfile.uid,
+          applicantName: userProfile.fullName,
           brandId: Array.isArray(employeeProfile.brandId)
             ? employeeProfile.brandId[0]
             : employeeProfile.brandId || "",
           division: employeeProfile.division || "N/A",
           positionTitle: employeeProfile.positionTitle || "Staf",
-          type: values.type,
-          reason: values.reason,
+          // legacy compatibility: keep `type` but set to reasonType
+          type: values.reasonType as any,
+          formType: values.formType as any,
+          reasonType: values.reasonType as any,
+          reason: values.reasonDetail,
           startDate: Timestamp.fromDate(finalStartDate),
           endDate: Timestamp.fromDate(finalEndDate),
           totalDurationMinutes: finalDurationMinutes,
+          durationDays: Math.ceil(finalDurationMinutes / 1440),
+          durationHours: Math.round(finalDurationMinutes / 60),
           attachments: attachmentUrl ? [attachmentUrl] : [],
           status:
             submission?.status === "draft" || isCreating
               ? initialStatus
               : submission.status,
-          managerId: approvalTarget.approvalTargetUid,
-          managerUid: approvalTarget.approvalTargetUid,
-          directManagerId: approvalTarget.approvalTargetUid,
-          directManagerUid: approvalTarget.approvalTargetUid,
-          managerName: approvalTarget.approvalTargetName || "",
-          approvalLevel: approvalTarget.approvalLevel,
+          managerId: managerUid,
+          managerUid: managerUid,
+          managerName: managerName || "",
+          managerRole: managerRole || null,
+          waitingForUid: managerUid,
+          waitingForName: managerName || "",
+          directManagerId: managerUid,
+          directManagerUid: managerUid,
+          approvalLevel: resolved.approvalLevel,
+          currentApprovalStep: "manager",
           requesterStructuralPosition:
             employeeProfile?.hrdEmploymentInfo?.structuralPosition ||
             userProfile?.structuralLevel ||
             "staff",
           attachmentStatus: values.attachment
             ? "provided"
-            : values.type === "sakit" && durationMinutes / 1440 <= 1
+            : values.reasonType === "sakit" && durationMinutes / 1440 <= 1
               ? "verification_needed"
               : "not_provided",
-          ...getSpecificFields(values),
+          dynamicFields: getSpecificFields(values),
+          timeline: [],
         };
 
       await setDocumentNonBlocking(
@@ -502,24 +753,47 @@ export function PermissionRequestForm({
 
   const getSpecificFields = (values: FormValues) => {
     const specificFields: Partial<PermissionRequest> = {};
-    switch (values.type) {
-      case "sakit":
-        specificFields.sicknessDescription = values.sicknessDescription;
-        break;
-      case "duka":
-        specificFields.familyRelation = values.familyRelation;
-        break;
-      case "akademik":
-        specificFields.academicActivityName = values.academicActivityName;
-        specificFields.academicInstitution = values.academicInstitution;
-        break;
-      case "lainnya":
-        specificFields.otherLeaveTitle = values.otherLeaveTitle;
-        break;
-      case "keluar_kantor":
-        specificFields.destination = values.destination;
-        break;
+    const sf = values.formType;
+    const rt = values.reasonType;
+
+    // Reason-specific fields
+    if (rt === "sakit") {
+      specificFields.sicknessDescription = values.sicknessDescription;
     }
+    if (rt === "duka") {
+      specificFields.familyRelation = values.familyRelation;
+      specificFields.familyName = values.familyName;
+      specificFields.location = values.location;
+    }
+    if (rt === "akademik") {
+      specificFields.academicActivityName = values.academicActivityName;
+      specificFields.academicInstitution = values.academicInstitution;
+    }
+    if (rt === "lainnya") {
+      specificFields.otherTitle = values.otherLeaveTitle;
+      specificFields.detailedReason = values.detailedReason;
+    }
+    if (rt === "administrasi_resmi") {
+      specificFields.officialAffairType = values.officialAffairType;
+      specificFields.location = values.location;
+      specificFields.estimatedFinishTime = values.estimatedFinishTime;
+    }
+
+    // Form-specific fields
+    if (sf === "datang_terlambat") {
+      specificFields.scheduledWorkTime = values.scheduledWorkTime;
+      specificFields.estimatedArrivalTime = values.estimatedArrivalTime;
+    }
+    if (sf === "pulang_awal") {
+      specificFields.scheduledEndTime = values.scheduledEndTime;
+      specificFields.proposedLeaveTime = values.proposedLeaveTime;
+      specificFields.detailedReason = values.detailedReason;
+    }
+    if (sf === "keluar_kantor") {
+      specificFields.destination = values.destination;
+      specificFields.contactInfo = values.contactInfo;
+    }
+
     return specificFields;
   };
 
@@ -551,10 +825,10 @@ export function PermissionRequestForm({
                 {/* General Fields */}
                 <FormField
                   control={form.control}
-                  name="type"
+                  name="formType"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Jenis Izin*</FormLabel>
+                      <FormLabel>Bentuk Izin*</FormLabel>
                       <Select
                         onValueChange={field.onChange}
                         value={field.value}
@@ -562,17 +836,17 @@ export function PermissionRequestForm({
                       >
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Pilih jenis izin" />
+                            <SelectValue placeholder="Pilih bentuk izin" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {PERMISSION_TYPES.map((t) => (
+                          {FORM_TYPES.map((t) => (
                             <SelectItem
                               key={t}
                               value={t}
                               className="capitalize"
                             >
-                              {PERMISSION_TYPE_LABELS[t]}
+                              {PERMISSION_TYPE_LABELS[t] || t}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -581,9 +855,43 @@ export function PermissionRequestForm({
                     </FormItem>
                   )}
                 />
+
                 <FormField
                   control={form.control}
-                  name="reason"
+                  name="reasonType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Alasan Izin*</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                        disabled={isReadOnly}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Pilih alasan izin" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {REASON_TYPES.map((r) => (
+                            <SelectItem
+                              key={r}
+                              value={r}
+                              className="capitalize"
+                            >
+                              {REASON_LABELS[r as ReasonType]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="reasonDetail"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Alasan/Keterangan*</FormLabel>
@@ -600,6 +908,63 @@ export function PermissionRequestForm({
                   )}
                 />
 
+                {/* Warnings */}
+                {warnTidakMasukMultiDayNonSakit && (
+                  <Alert className="my-2">
+                    <AlertTitle>Peringatan</AlertTitle>
+                    <AlertDescription>
+                      Untuk izin tidak masuk lebih dari 1 hari selain sakit,
+                      silakan gunakan cuti atau hubungi HRD.
+                    </AlertDescription>
+                  </Alert>
+                )}
+                {warnDatangTerlambatOver4 && (
+                  <Alert className="my-2">
+                    <AlertTitle>Peringatan</AlertTitle>
+                    <AlertDescription>
+                      Anda tercatat terlambat lebih dari 4 jam. HRD akan
+                      meninjau pengajuan ini; pertimbangkan menggunakan Izin
+                      Tidak Masuk jika relevan.
+                    </AlertDescription>
+                  </Alert>
+                )}
+                {warnPulangAwalOver4 && (
+                  <Alert className="my-2">
+                    <AlertTitle>Peringatan</AlertTitle>
+                    <AlertDescription>
+                      Pulang lebih awal lebih dari 4 jam akan ditandai untuk
+                      peninjauan HRD.
+                    </AlertDescription>
+                  </Alert>
+                )}
+                {blockSickNoAttachment && (
+                  <Alert className="my-2">
+                    <AlertTitle className="text-destructive">
+                      Diperlukan Lampiran
+                    </AlertTitle>
+                    <AlertDescription>
+                      Izin sakit wajib menyertakan bukti pendukung.
+                    </AlertDescription>
+                  </Alert>
+                )}
+                {blockKeluarOver4 && (
+                  <Alert className="my-2">
+                    <AlertTitle className="text-destructive">
+                      Batas Durasi Terlampaui
+                    </AlertTitle>
+                    <AlertDescription>
+                      Izin meninggalkan kantor sementara maksimal 4 jam. Silakan
+                      gunakan izin lain jika durasi lebih panjang.
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                <div className="text-sm text-muted-foreground mb-2">
+                  Durasi: {computedDays} hari
+                  {selectedForm === "keluar_kantor" &&
+                    ` — ${Math.round(durationMinutes / 60)} jam`}
+                </div>
+
                 {/* Date & Time Fields */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
@@ -608,7 +973,7 @@ export function PermissionRequestForm({
                     render={({ field }) => (
                       <FormItem className="flex flex-col">
                         <FormLabel>
-                          {selectedType === "keluar_kantor"
+                          {selectedForm === "keluar_kantor"
                             ? "Tanggal Izin*"
                             : "Tanggal Mulai*"}
                         </FormLabel>
@@ -623,7 +988,7 @@ export function PermissionRequestForm({
                       </FormItem>
                     )}
                   />
-                  {selectedType !== "keluar_kantor" && (
+                  {selectedForm !== "keluar_kantor" && (
                     <FormField
                       control={form.control}
                       name="endDate"
@@ -642,7 +1007,7 @@ export function PermissionRequestForm({
                       )}
                     />
                   )}
-                  {selectedType === "keluar_kantor" && (
+                  {selectedForm === "keluar_kantor" && (
                     <div className="grid grid-cols-2 gap-2">
                       <FormField
                         control={form.control}
@@ -683,7 +1048,7 @@ export function PermissionRequestForm({
                 </div>
 
                 {/* Specific Fields */}
-                {selectedType === "sakit" && (
+                {selectedForm === "sakit" && (
                   <FormField
                     control={form.control}
                     name="sicknessDescription"
@@ -702,7 +1067,7 @@ export function PermissionRequestForm({
                     )}
                   />
                 )}
-                {selectedType === "duka" && (
+                {selectedForm === "duka" && (
                   <FormField
                     control={form.control}
                     name="familyRelation"
@@ -721,7 +1086,45 @@ export function PermissionRequestForm({
                     )}
                   />
                 )}
-                {selectedType === "akademik" && (
+                {selectedForm === "duka" && (
+                  <>
+                    <FormField
+                      control={form.control}
+                      name="familyName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Nama Keluarga</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              placeholder="Nama almarhum"
+                              readOnly={isReadOnly}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="location"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Lokasi</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              placeholder="Kota / Lokasi"
+                              readOnly={isReadOnly}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </>
+                )}
+                {selectedForm === "akademik" && (
                   <>
                     <FormField
                       control={form.control}
@@ -759,7 +1162,176 @@ export function PermissionRequestForm({
                     />
                   </>
                 )}
-                {selectedType === "lainnya" && (
+                {selectedForm === "datang_terlambat" && (
+                  <>
+                    <FormField
+                      control={form.control}
+                      name="scheduledWorkTime"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Jam Kerja Seharusnya*</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="time"
+                              {...field}
+                              readOnly={isReadOnly}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="estimatedArrivalTime"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Estimasi Jam Datang*</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="time"
+                              {...field}
+                              readOnly={isReadOnly}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </>
+                )}
+
+                {selectedForm === "pulang_awal" && (
+                  <>
+                    <FormField
+                      control={form.control}
+                      name="scheduledEndTime"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Jam Pulang Seharusnya*</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="time"
+                              {...field}
+                              readOnly={isReadOnly}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="proposedLeaveTime"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Jam Pulang Diajukan*</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="time"
+                              {...field}
+                              readOnly={isReadOnly}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="detailedReason"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Status Pekerjaan Hari Itu</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              placeholder="Contoh: Sedang menyelesaikan report"
+                              readOnly={isReadOnly}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </>
+                )}
+
+                {selectedForm === "administrasi_resmi" && (
+                  <>
+                    <FormField
+                      control={form.control}
+                      name="officialAffairType"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Jenis Urusan*</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              placeholder="Contoh: Mengurus Dokumen"
+                              readOnly={isReadOnly}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="location"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Instansi Tujuan</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              placeholder="Nama instansi"
+                              readOnly={isReadOnly}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <FormField
+                        control={form.control}
+                        name="startTime"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Jam Mulai</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="time"
+                                {...field}
+                                readOnly={isReadOnly}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="estimatedFinishTime"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Estimasi Selesai</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="time"
+                                {...field}
+                                readOnly={isReadOnly}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </>
+                )}
+                {selectedForm === "lainnya" && (
                   <FormField
                     control={form.control}
                     name="otherLeaveTitle"
@@ -778,7 +1350,7 @@ export function PermissionRequestForm({
                     )}
                   />
                 )}
-                {selectedType === "keluar_kantor" && (
+                {selectedForm === "keluar_kantor" && (
                   <FormField
                     control={form.control}
                     name="destination"
@@ -805,7 +1377,9 @@ export function PermissionRequestForm({
                   render={({ field: { value, onChange, ...fieldProps } }) => (
                     <FormItem>
                       <FormLabel>
-                        Lampiran {selectedType === "sakit" && "Surat Dokter"}
+                        Lampiran{" "}
+                        {selectedReason === "sakit" &&
+                          "— Bukti Pendukung Sakit"}
                       </FormLabel>
                       {isViewing && !value && (
                         <p className="text-sm text-muted-foreground">
@@ -813,15 +1387,26 @@ export function PermissionRequestForm({
                         </p>
                       )}
                       {isViewing && value && (
-                        <Button variant="outline" asChild>
-                          <a
-                            href={value}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            Lihat Lampiran
-                          </a>
-                        </Button>
+                        <div className="flex items-center gap-3">
+                          {typeof value === "string" &&
+                            (value.match(/\.(jpg|jpeg|png)$/i) ? (
+                              <img
+                                src={value}
+                                alt="preview"
+                                className="h-20 rounded-md border"
+                              />
+                            ) : (
+                              <Button variant="outline" asChild>
+                                <a
+                                  href={value}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  Lihat / Unduh
+                                </a>
+                              </Button>
+                            ))}
+                        </div>
                       )}
                       {!isViewing && (
                         <>
@@ -833,12 +1418,30 @@ export function PermissionRequestForm({
                               {...fieldProps}
                             />
                           </FormControl>
+                          {value instanceof File && (
+                            <div className="mt-2">
+                              {value.type.match(/image\//) ? (
+                                <img
+                                  src={URL.createObjectURL(value)}
+                                  alt="preview"
+                                  className="h-24 rounded-md border"
+                                />
+                              ) : (
+                                <div className="text-sm text-muted-foreground">
+                                  {value.name}
+                                </div>
+                              )}
+                            </div>
+                          )}
                           <FormDescription>
-                            Maks. 2MB. Format JPG, PNG, PDF.
+                            {selectedReason === "sakit"
+                              ? "Bukti bisa berupa surat dokter, resep obat, bukti konsultasi dokter/telemedicine, hasil pemeriksaan, atau bukti lain yang relevan."
+                              : "Maks. 2MB. Format JPG, PNG, PDF. (Preview untuk gambar)"}
                           </FormDescription>
-                          {selectedType === "sakit" && (
-                            <FormDescription className="text-destructive">
-                              Wajib jika izin lebih dari 1 hari.
+                          {selectedReason === "sakit" && computedDays > 1 && (
+                            <FormDescription className="text-sm text-muted-foreground">
+                              Untuk sakit lebih dari 1 hari, disarankan
+                              melampirkan surat dokter jika tersedia.
                             </FormDescription>
                           )}
                           <FormMessage />
@@ -857,7 +1460,11 @@ export function PermissionRequestForm({
             Tutup
           </Button>
           {!isViewing && (
-            <Button type="submit" form="permission-form" disabled={isSaving}>
+            <Button
+              type="submit"
+              form="permission-form"
+              disabled={!canSubmitFinal}
+            >
               {isSaving ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (

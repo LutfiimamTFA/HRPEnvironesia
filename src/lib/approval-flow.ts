@@ -187,3 +187,82 @@ export function resolveApprovalTarget(
       "Atasan langsung belum ditentukan. Hubungi HRD untuk memperbaiki struktur organisasi.",
   };
 }
+
+export type DirectManager = {
+  uid: string | null;
+  name: string | null;
+  role?: string | null;
+  reason?: string | null;
+};
+
+/**
+ * Return the most appropriate direct manager for an employee based on
+ * prioritized fields. Does not fallback to director unless employee is division manager.
+ */
+export function getDirectManagerForEmployee(
+  employeeProfile: EmployeeProfile | null | undefined,
+  masterOrganization?: DivisionMasterOrganization | null,
+): DirectManager {
+  if (!employeeProfile)
+    return { uid: null, name: null, reason: "Employee profile missing" };
+
+  const candidates: Array<{
+    uid?: string | null;
+    name?: string | null;
+    role?: string | null;
+  }> = [
+    {
+      uid: employeeProfile.managerUid || null,
+      name: employeeProfile.managerName || null,
+      role: "manager",
+    },
+    {
+      uid: employeeProfile.directManagerUid || null,
+      name: employeeProfile.directManagerName || null,
+      role: "manager",
+    },
+    {
+      uid: employeeProfile.supervisorUid || null,
+      name: employeeProfile.supervisorName || null,
+      role: "supervisor",
+    },
+    {
+      uid: (employeeProfile as any).reportingToUid || null,
+      name: (employeeProfile as any).reportingToName || null,
+      role: "reporting_to",
+    },
+    {
+      uid: (employeeProfile as any).approverUid || null,
+      name: (employeeProfile as any).approverName || null,
+      role: "approver",
+    },
+  ];
+
+  // Prefer explicit profile fields
+  for (const c of candidates) {
+    if (c.uid)
+      return { uid: c.uid, name: c.name || null, role: c.role || null };
+  }
+
+  // Fallback to division master/manager from masterOrganization
+  if (masterOrganization?.managerId) {
+    return {
+      uid: masterOrganization.managerId || null,
+      name: masterOrganization.managerName || null,
+      role: "division_manager",
+    };
+  }
+
+  // If employee is division manager, try to return managerDirectSupervisor
+  if ((employeeProfile as any).isDivisionManager) {
+    if (masterOrganization?.managerDirectSupervisorId) {
+      return {
+        uid: masterOrganization.managerDirectSupervisorId || null,
+        name: masterOrganization.managerDirectSupervisorName || null,
+        role: "director",
+      };
+    }
+  }
+
+  return { uid: null, name: null, reason: "Direct manager not found" };
+}
