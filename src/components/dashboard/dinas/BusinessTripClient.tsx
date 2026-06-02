@@ -2732,6 +2732,10 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
         manualLocationNote: evidenceOpts.manualLocationNote || null,
         note: evidenceOpts.note || null,
         photos: uploadedPhotos,
+        repairStatus: "resolved",
+        repairedByUid: userProfile?.uid || null,
+        repairedByName: userProfile?.displayName || userProfile?.email || null,
+        repairedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       };
 
@@ -5051,12 +5055,15 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
                       Upload Ulang Bukti
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {Object.fromEntries(Object.entries({
-                        departed: "Keberangkatan",
-                        arrived: "Kedatangan",
-                        activity_done: "Penyelesaian Aktivitas",
-                        returned: "Kepulangan",
-                      }))[activeRepairRequest.milestoneType]}
+                      {(() => {
+                        const labels: Record<string, string> = {
+                          departed: "Keberangkatan",
+                          arrived: "Kedatangan",
+                          activity_done: "Penyelesaian Aktivitas",
+                          returned: "Kepulangan",
+                        };
+                        return labels[activeRepairRequest.milestoneType] || activeRepairRequest.milestoneType;
+                      })()}
                     </p>
                   </div>
                   <button
