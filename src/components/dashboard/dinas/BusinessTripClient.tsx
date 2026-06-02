@@ -2526,6 +2526,59 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
     }
   };
 
+  // Request repair dari Director/HRD
+  const handleRequestRepairEvidence = async (
+    missionId: string,
+    evidenceId: string,
+    milestoneType: "departed" | "arrived" | "activity_done" | "returned",
+    reason: string,
+  ) => {
+    if (!firestore || !userProfile) return;
+    setIsSaving(true);
+    try {
+      const evidenceRef = doc(firestore, "business_trip_missions", missionId, "milestone_evidences", evidenceId);
+
+      await setDoc(evidenceRef, {
+        repairStatus: "requested",
+        evidenceRepairRequested: true,
+        repairRequestedByUid: userProfile.uid,
+        repairRequestedByName: userProfile.displayName || userProfile.email || "Unknown",
+        repairRequestedAt: serverTimestamp(),
+        repairReason: reason || null,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+
+      const milestoneLabelMap: Record<string, string> = {
+        departed: "Keberangkatan",
+        arrived: "Kedatangan",
+        activity_done: "Penyelesaian Aktivitas",
+        returned: "Kepulangan",
+      };
+      const milestoneLabel = milestoneLabelMap[milestoneType] || milestoneType;
+
+      await appendTimelineEntry(
+        missionId,
+        `${userProfile.displayName || "HRD/Direktur"} meminta upload ulang bukti ${milestoneLabel}${reason ? `: ${reason}` : ''}`,
+        "system",
+      );
+
+      toast({
+        title: "Permintaan upload ulang bukti dikirim",
+      });
+
+      await loadMissionDetail(missionId);
+    } catch (error: any) {
+      console.error(error);
+      toast({
+        variant: "destructive",
+        title: "Gagal mengirim permintaan",
+        description: error?.message || "Coba lagi.",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   // Repair/upload ulang evidence yang kosong
   const handleRepairMilestoneEvidence = async (
     missionId: string,
@@ -2647,6 +2700,20 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
       await setDoc(evidenceRef, updatePayload, { merge: true });
 
       console.log("✅ Milestone evidence repaired:", { evidenceId, photosCount: uploadedPhotos.length });
+
+      const milestoneLabelMap: Record<string, string> = {
+        departed: "Keberangkatan",
+        arrived: "Kedatangan",
+        activity_done: "Penyelesaian Aktivitas",
+        returned: "Kepulangan",
+      };
+      const milestoneLabel = milestoneLabelMap[milestoneType] || milestoneType;
+
+      await appendTimelineEntry(
+        missionId,
+        `${userProfile?.displayName || "Staff"} mengupload ulang bukti ${milestoneLabel} (${uploadedPhotos.length} foto)`,
+        "system",
+      );
 
       toast({
         title: "Bukti milestone berhasil di-update",

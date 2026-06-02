@@ -1815,6 +1815,15 @@ export function ManagementDinasClient() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const editFileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Repair request modal
+  const [repairRequestModal, setRepairRequestModal] = useState<{
+    isOpen: boolean;
+    missionId: string | null;
+    evidenceId: string | null;
+    milestoneType: "departed" | "arrived" | "activity_done" | "returned" | null;
+  }>({ isOpen: false, missionId: null, evidenceId: null, milestoneType: null });
+  const [repairReason, setRepairReason] = useState("");
+
   // Management list filters & tracking
   const [missionSearch, setMissionSearch] = useState("");
   const [missionStatusFilter, setMissionStatusFilter] = useState("all");
@@ -4234,14 +4243,27 @@ export function ManagementDinasClient() {
                       });
                     }
 
+                    // Repair status badge
+                    const getRepairStatusBadge = () => {
+                      if (ev.repairStatus === "requested") {
+                        return <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Perlu Upload Ulang</Badge>;
+                      } else if (ev.repairStatus === "resolved") {
+                        return <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Sudah Diperbaiki</Badge>;
+                      } else if (hasPhotos && hasLocation) {
+                        return <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">Lengkap</Badge>;
+                      }
+                      return null;
+                    };
+
                     return (
                       <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-3">
-                        {/* Header: Dikonfirmasi oleh + Trust badge + Tanggal */}
+                        {/* Header: Dikonfirmasi oleh + Trust badge + Repair status badge + Tanggal */}
                         <div className="flex flex-wrap items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
                               <p className="text-sm font-semibold text-foreground">{ev.confirmedByName}</p>
                               {mkTrustBadge(ev)}
+                              {getRepairStatusBadge()}
                             </div>
                             <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
                               <div>Untuk: <span className="text-foreground font-medium">{displayMembers}</span></div>
@@ -4326,29 +4348,45 @@ export function ManagementDinasClient() {
                           )}
                         </div>
 
-                        {/* Empty state / Repair button */}
+                        {/* Empty state / Request repair button */}
                         {!hasPhotos && !hasLocation && (
                           <div className="rounded-lg border border-amber-200/50 bg-amber-50/60 dark:border-amber-800/30 dark:bg-amber-900/10 p-3 space-y-2.5">
                             <div>
                               <p className="text-xs font-medium text-amber-700 dark:text-amber-400 mb-1">⚠️ Evidence kosong atau belum lengkap</p>
                               <p className="text-[11px] text-amber-600 dark:text-amber-400/80">
-                                Foto dan lokasi belum diupload untuk milestone ini. Upload ulang bukti untuk melengkapi data.
+                                Foto dan lokasi belum diupload untuk milestone ini. Minta staff untuk upload ulang bukti.
                               </p>
                             </div>
                             <button
                               onClick={() => {
-                                // TODO: Open repair form modal
-                                // Evidence ID: ev.id
-                                // Evidence data: ev
-                                toast({
-                                  title: "Fitur upload ulang akan segera tersedia",
-                                  description: "Hubungi admin atau staff untuk upload bukti milestone ini",
-                                });
+                                if (ev.id && activeMission?.id) {
+                                  setRepairRequestModal({
+                                    isOpen: true,
+                                    missionId: activeMission.id,
+                                    evidenceId: ev.id,
+                                    milestoneType: ev.milestoneType,
+                                  });
+                                }
                               }}
                               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-400 bg-amber-100 text-amber-700 hover:bg-amber-200 dark:border-amber-700/50 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-amber-900/40 transition-colors">
                               <Upload className="h-3.5 w-3.5" />
-                              Upload Ulang Bukti
+                              Minta Upload Ulang Bukti
                             </button>
+                          </div>
+                        )}
+
+                        {/* Repair status indicator for ongoing/completed repair */}
+                        {ev.repairStatus === "requested" && (
+                          <div className="rounded-lg border border-amber-200/50 bg-amber-50/60 dark:border-amber-800/30 dark:bg-amber-900/10 p-3 space-y-2">
+                            <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                              Permintaan upload ulang bukti menunggu respon staff.
+                            </p>
+                            {ev.repairReason && (
+                              <p className="text-xs text-amber-600 dark:text-amber-400/80">Alasan: {ev.repairReason}</p>
+                            )}
+                            {ev.repairRequestedAt && (
+                              <p className="text-[10px] text-amber-500 dark:text-amber-400/70">Diminta pada: {formatDateTime(ev.repairRequestedAt)}</p>
+                            )}
                           </div>
                         )}
                       </div>
@@ -6640,6 +6678,129 @@ export function ManagementDinasClient() {
                 {documentViewerError}
               </div>
             ) : null}
+          </div>
+        </div>
+      </AppModal>
+
+      {/* Repair Request Modal */}
+      <AppModal
+        open={repairRequestModal.isOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRepairRequestModal({ isOpen: false, missionId: null, evidenceId: null, milestoneType: null });
+            setRepairReason("");
+          }
+        }}
+      >
+        <div className="space-y-4 p-6">
+          <div>
+            <DialogTitle className="text-lg font-semibold">Minta Upload Ulang Bukti</DialogTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              Minta staff untuk mengupload ulang bukti yang belum lengkap.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <Label htmlFor="repair-reason">Alasan (Opsional)</Label>
+            <Textarea
+              id="repair-reason"
+              placeholder="Contoh: Foto tidak jelas, lokasi tidak lengkap, dll"
+              value={repairReason}
+              onChange={(e) => setRepairReason(e.target.value)}
+              className="min-h-[80px]"
+            />
+          </div>
+
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setRepairRequestModal({ isOpen: false, missionId: null, evidenceId: null, milestoneType: null });
+                setRepairReason("");
+              }}
+            >
+              Batal
+            </Button>
+            <Button
+              disabled={isSaving || !repairRequestModal.missionId || !repairRequestModal.evidenceId}
+              onClick={async () => {
+                if (!repairRequestModal.missionId || !repairRequestModal.evidenceId || !repairRequestModal.milestoneType) return;
+                if (!firestore || !userProfile) return;
+
+                setIsSaving(true);
+                try {
+                  const evidenceRef = doc(
+                    firestore,
+                    "business_trip_missions",
+                    repairRequestModal.missionId,
+                    "milestone_evidences",
+                    repairRequestModal.evidenceId,
+                  );
+
+                  await setDoc(
+                    evidenceRef,
+                    {
+                      repairStatus: "requested",
+                      evidenceRepairRequested: true,
+                      repairRequestedByUid: userProfile.uid,
+                      repairRequestedByName: userProfile.displayName || userProfile.email || "Unknown",
+                      repairRequestedAt: serverTimestamp(),
+                      repairReason: repairReason || null,
+                      updatedAt: serverTimestamp(),
+                    },
+                    { merge: true },
+                  );
+
+                  const milestoneLabelMap: Record<string, string> = {
+                    departed: "Keberangkatan",
+                    arrived: "Kedatangan",
+                    activity_done: "Penyelesaian Aktivitas",
+                    returned: "Kepulangan",
+                  };
+                  const milestoneLabel = milestoneLabelMap[repairRequestModal.milestoneType] || repairRequestModal.milestoneType;
+
+                  // Add timeline entry
+                  const timelineRef = doc(
+                    firestore,
+                    "business_trip_missions",
+                    repairRequestModal.missionId,
+                    "timeline",
+                    `timeline_${Date.now()}`,
+                  );
+                  await setDoc(timelineRef, {
+                    timestamp: serverTimestamp(),
+                    type: "system",
+                    message: `${userProfile.displayName || "HRD/Direktur"} meminta upload ulang bukti ${milestoneLabel}${repairReason ? `: ${repairReason}` : ''}`,
+                    createdBy: userProfile.uid,
+                    createdAt: serverTimestamp(),
+                  });
+
+                  toast({
+                    title: "Permintaan upload ulang bukti dikirim",
+                  });
+
+                  setRepairRequestModal({ isOpen: false, missionId: null, evidenceId: null, milestoneType: null });
+                  setRepairReason("");
+
+                  // Reload mission detail
+                  if (activeMission?.id) {
+                    setMissionRefreshId((prev) => prev + 1);
+                  }
+                } catch (error: any) {
+                  console.error(error);
+                  toast({
+                    variant: "destructive",
+                    title: "Gagal mengirim permintaan",
+                    description: error?.message || "Coba lagi.",
+                  });
+                } finally {
+                  setIsSaving(false);
+                }
+              }}
+              className="flex-1"
+            >
+              {isSaving ? "Mengirim..." : "Kirim Permintaan"}
+            </Button>
           </div>
         </div>
       </AppModal>
