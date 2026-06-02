@@ -2744,7 +2744,7 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
         photos: uploadedPhotos,
         repairStatus: "resolved",
         repairedByUid: userProfile?.uid || null,
-        repairedByName: userProfile?.displayName || userProfile?.email || null,
+        repairedByName: userProfile?.fullName || userProfile?.email || null,
         repairedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       };
@@ -2765,7 +2765,7 @@ export function BusinessTripClient({ mode }: BusinessTripClientProps) {
 
       await appendTimelineEntry(
         missionId,
-        `${userProfile?.displayName || "Staff"} mengupload ulang bukti ${milestoneLabel} (${uploadedPhotos.length} foto)`,
+        `${userProfile?.fullName || "Staff"} mengupload ulang bukti ${milestoneLabel} (${uploadedPhotos.length} foto)`,
         "system",
       );
 
