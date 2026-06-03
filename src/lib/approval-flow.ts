@@ -196,6 +196,82 @@ export type DirectManager = {
 };
 
 /**
+ * Resolve permission manager using prioritized employee profile fields,
+ * falling back to division master then resolveApprovalTarget.
+ */
+export function resolvePermissionManager(
+  employeeProfile: EmployeeProfile | null | undefined,
+  userProfile: UserProfile | null | undefined,
+  masterOrganization?: DivisionMasterOrganization | null,
+): DirectManager {
+  if (!employeeProfile && !userProfile)
+    return { uid: null, name: null, reason: "Employee missing" };
+
+  // Prefer master organization structure (latest org mapping)
+  if (masterOrganization && masterOrganization.managerId) {
+    return {
+      uid: masterOrganization.managerId || null,
+      name: masterOrganization.managerName || null,
+      role: "division_manager",
+    };
+  }
+
+  // Candidate fields from profile (fallback)
+  const candidates: Array<{
+    uid?: string | null;
+    name?: string | null;
+    role?: string | null;
+  }> = [
+    {
+      uid: employeeProfile?.managerUid || null,
+      name: employeeProfile?.managerName || null,
+      role: "manager",
+    },
+    {
+      uid: employeeProfile?.directManagerUid || null,
+      name: employeeProfile?.directManagerName || null,
+      role: "manager",
+    },
+    {
+      uid: employeeProfile?.supervisorUid || null,
+      name: employeeProfile?.supervisorName || null,
+      role: "supervisor",
+    },
+    {
+      uid: (employeeProfile as any)?.reportingToUid || null,
+      name: (employeeProfile as any)?.reportingToName || null,
+      role: "reporting_to",
+    },
+    {
+      uid: (employeeProfile as any)?.approverUid || null,
+      name: (employeeProfile as any)?.approverName || null,
+      role: "approver",
+    },
+  ];
+
+  for (const c of candidates) {
+    if (c.uid)
+      return { uid: c.uid, name: c.name || null, role: c.role || null };
+  }
+
+  // As a last resort, try resolveApprovalTarget
+  const resolved = resolveApprovalTarget(
+    employeeProfile,
+    userProfile,
+    masterOrganization,
+  );
+  if (resolved.approvalTargetUid) {
+    return {
+      uid: resolved.approvalTargetUid,
+      name: resolved.approvalTargetName || null,
+      role: resolved.approvalLevel || null,
+    };
+  }
+
+  return { uid: null, name: null, reason: "Direct manager not found" };
+}
+
+/**
  * Return the most appropriate direct manager for an employee based on
  * prioritized fields. Does not fallback to director unless employee is division manager.
  */

@@ -64,7 +64,6 @@ import {
 import {
   resolveApprovalTarget,
   type DivisionMasterOrganization,
-  getDirectManagerForEmployee,
 } from "@/lib/approval-flow";
 import {
   PERMISSION_TYPES,
@@ -192,32 +191,7 @@ const formSchema = z
       });
     }
 
-    <div className="text-sm text-muted-foreground mb-2">
-      Durasi: {computedDays} hari
-      {selectedForm === "keluar_kantor" &&
-        ` — ${Math.round(durationMinutes / 60)} jam`}
-    </div>;
-
-    {
-      /* Preview of manager */
-    }
-    <div className="text-sm mb-2">
-      {directManager.uid ? (
-        <div>
-          Akan diajukan ke:{" "}
-          <span className="font-medium">{directManager.name}</span>
-        </div>
-      ) : (
-        <Alert>
-          <AlertTitle>Atasan Tidak Ditemukan</AlertTitle>
-          <AlertDescription>
-            Atasan langsung belum ditemukan untuk{" "}
-            {userProfile?.fullName || "karyawan"}. Periksa Data Karyawan &gt;
-            Struktur Organisasi/Manager.
-          </AlertDescription>
-        </Alert>
-      )}
-    </div>;
+    // no JSX should be inside superRefine — validation only
     // Izin Keluar
     if (data.formType === "keluar_kantor") {
       if (!data.startTime || !data.endTime) {
@@ -339,7 +313,7 @@ const InfoRow = ({
   value,
 }: {
   label: string;
-  value?: string | number | null;
+  value?: string | number;
 }) => (
   <div className="flex justify-between text-sm">
     <p className="text-muted-foreground">{label}</p>
@@ -371,14 +345,16 @@ export function PermissionRequestForm({
 
   const staffDivisionId = useMemo(() => {
     return (
-      employeeProfile?.division ||
       employeeProfile?.hrdEmploymentInfo?.divisionId ||
+      (employeeProfile as any)?.divisionId ||
+      employeeProfile?.division ||
       employeeProfile?.hrdEmploymentInfo?.divisionName ||
       ""
     );
   }, [
-    employeeProfile?.division,
     employeeProfile?.hrdEmploymentInfo?.divisionId,
+    (employeeProfile as any)?.divisionId,
+    employeeProfile?.division,
     employeeProfile?.hrdEmploymentInfo?.divisionName,
   ]);
 
@@ -538,11 +514,17 @@ export function PermissionRequestForm({
     !blockSickNoAttachment &&
     !blockKeluarOver4;
 
-  // Determine direct manager for preview and validation
-  const directManager = getDirectManagerForEmployee(
+  // Determine direct manager for preview and validation using centralized resolver
+  const approvalTargetPreview = resolveApprovalTarget(
     employeeProfile,
+    userProfile,
     divisionMaster,
   );
+  const directManager = {
+    uid: approvalTargetPreview.approvalTargetUid,
+    name: approvalTargetPreview.approvalTargetName || null,
+    role: approvalTargetPreview.approvalLevel || null,
+  };
   const managerValid = !!directManager.uid;
 
   // include manager validity in final submit enable
@@ -577,7 +559,7 @@ export function PermissionRequestForm({
             "sakit",
           reasonDetail:
             (submission.reason as string) ||
-            (submission.reasonDetail as string) ||
+            (submission.detailedReason as string) ||
             "",
           startDate: submission.startDate.toDate(),
           endDate: submission.endDate.toDate(),
@@ -588,7 +570,7 @@ export function PermissionRequestForm({
           familyRelation: submission.familyRelation || "",
           academicActivityName: submission.academicActivityName || "",
           academicInstitution: submission.academicInstitution || "",
-          otherLeaveTitle: submission.otherLeaveTitle || "",
+          otherLeaveTitle: submission.otherTitle || "",
           destination: submission.destination || "",
         });
       }
@@ -621,7 +603,7 @@ export function PermissionRequestForm({
           filePath,
           userProfile.uid,
           {
-            category: "permission_attachment",
+            category: "permission",
             ownerUid: userProfile.uid,
             compress: false, // Already compressed
           },
@@ -661,17 +643,16 @@ export function PermissionRequestForm({
         divisionMaster,
       );
 
-      // prefer explicit direct manager from profile/master
-      const dm = getDirectManagerForEmployee(employeeProfile, divisionMaster);
-      const managerUid = dm.uid || resolved.approvalTargetUid;
-      const managerName = dm.name || resolved.approvalTargetName || null;
-      const managerRole = dm.role || resolved.approvalLevel || null;
+      // Use centralized approval target (same as Cuti/Lembur/Dinas)
+      const managerUid = resolved.approvalTargetUid;
+      const managerName = resolved.approvalTargetName || null;
+      const managerRole = resolved.approvalLevel || null;
 
       if (!managerUid) {
         toast({
           variant: "destructive",
           title: "Atasan Tidak Valid",
-          description: `Atasan langsung belum ditemukan untuk ${employeeProfile?.fullName || userProfile?.fullName || "karyawan"}. Periksa Data Karyawan > Struktur Organisasi/Manager.`,
+          description: `Atasan belum ditemukan dari struktur organisasi terbaru. Periksa mapping divisi/brand karyawan.`,
         });
         setIsSaving(false);
         return;
@@ -683,8 +664,6 @@ export function PermissionRequestForm({
         {
           uid: userProfile.uid,
           fullName: userProfile.fullName,
-          applicantUid: userProfile.uid,
-          applicantName: userProfile.fullName,
           brandId: Array.isArray(employeeProfile.brandId)
             ? employeeProfile.brandId[0]
             : employeeProfile.brandId || "",
@@ -698,21 +677,15 @@ export function PermissionRequestForm({
           startDate: Timestamp.fromDate(finalStartDate),
           endDate: Timestamp.fromDate(finalEndDate),
           totalDurationMinutes: finalDurationMinutes,
-          durationDays: Math.ceil(finalDurationMinutes / 1440),
-          durationHours: Math.round(finalDurationMinutes / 60),
+          numberOfDays: Math.ceil(finalDurationMinutes / 1440),
           attachments: attachmentUrl ? [attachmentUrl] : [],
           status:
             submission?.status === "draft" || isCreating
               ? initialStatus
               : submission.status,
-          managerId: managerUid,
           managerUid: managerUid,
-          managerName: managerName || "",
-          managerRole: managerRole || null,
           waitingForUid: managerUid,
           waitingForName: managerName || "",
-          directManagerId: managerUid,
-          directManagerUid: managerUid,
           approvalLevel: resolved.approvalLevel,
           currentApprovalStep: "manager",
           requesterStructuralPosition:
@@ -958,6 +931,25 @@ export function PermissionRequestForm({
                     </AlertDescription>
                   </Alert>
                 )}
+
+                {/* Manager preview */}
+                <div className="text-sm mb-2">
+                  {directManager?.uid ? (
+                    <div>
+                      Akan diajukan ke:{" "}
+                      <span className="font-medium">{directManager.name}</span>
+                    </div>
+                  ) : (
+                    <Alert>
+                      <AlertTitle>Atasan Tidak Ditemukan</AlertTitle>
+                      <AlertDescription>
+                        Atasan langsung belum ditemukan untuk{" "}
+                        {userProfile?.fullName || "karyawan"}. Periksa Data
+                        Karyawan &gt; Struktur Organisasi/Manager.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                </div>
 
                 <div className="text-sm text-muted-foreground mb-2">
                   Durasi: {computedDays} hari

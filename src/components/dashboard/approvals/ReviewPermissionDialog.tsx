@@ -112,14 +112,14 @@ const buildTimeline = (submission: PermissionRequest) => {
     items.push({
       label: "Disetujui Atasan",
       date: submission.managerDecisionAt.toDate(),
-      by: submission.managerName,
+      by: submission.managerName || undefined,
       notes: submission.managerNotes || undefined,
     });
   if (submission.managerDecisionAt && submission.status === "rejected_manager")
     items.push({
       label: "Ditolak Atasan",
       date: submission.managerDecisionAt.toDate(),
-      by: submission.managerName,
+      by: submission.managerName || undefined,
       notes: submission.managerNotes || undefined,
     });
   if (submission.status === "revision_manager")
@@ -134,14 +134,14 @@ const buildTimeline = (submission: PermissionRequest) => {
     items.push({
       label: "Divalidasi HRD",
       date: submission.hrdDecisionAt.toDate(),
-      by: submission.hrdReviewerUid,
+      by: submission.hrdReviewerUid || undefined,
       notes: submission.hrdNotes || undefined,
     });
   if (submission.hrdDecisionAt && submission.status === "rejected_hrd")
     items.push({
       label: "Ditolak HRD",
       date: submission.hrdDecisionAt.toDate(),
-      by: submission.hrdReviewerUid,
+      by: submission.hrdReviewerUid || undefined,
       notes: submission.hrdNotes || undefined,
     });
   if (submission.status === "returned")

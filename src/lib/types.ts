@@ -1948,6 +1948,7 @@ export type PermissionRequest = {
   attachmentStatus?: "provided" | "not_provided" | "verification_needed";
   status: PermissionRequestStatus;
   managerUid?: string | null;
+  managerName?: string | null;
   managerNotes?: string | null;
   managerDecisionAt?: Timestamp | null;
   hrdReviewerUid?: string | null;
@@ -2023,6 +2024,25 @@ export type PermissionRequest = {
   needsHrdNote?: boolean; // Perlu catatan HRD
   managerReviewNote?: string | null;
   hrdReviewNote?: string | null;
+
+  // Approval routing helpers (who is currently waiting for approval)
+  waitingForUid?: string | null;
+  waitingForName?: string | null;
+  currentApprovalStep?: "manager" | "hrd" | "done" | null;
+  approvalLevel?: string | null;
+  requesterStructuralPosition?: string | null;
+
+  // Dynamic extra fields specific to each permission type
+  dynamicFields?: Record<string, any> | null;
+
+  // Timeline of approval events
+  timeline?: Array<{
+    event: string;
+    by?: string | null;
+    byUid?: string | null;
+    at?: Timestamp | null;
+    note?: string | null;
+  }>;
 };
 
 /**
