@@ -1679,29 +1679,49 @@ export default function HrdLeaveApprovalPage() {
 
       {/* PREMIUM DETAILS VIEW TIMELINE DIALOG */}
       <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
-        <DialogContent className="max-w-2xl p-0 overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border-none shadow-2xl max-h-[85vh] flex flex-col my-auto top-[50%] translate-y-[-50%]">
-          <DialogHeader className="p-6 pb-4 border-b bg-slate-50/50 dark:bg-slate-900/50 flex-none">
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center justify-between gap-2">
-                <DialogTitle className="text-lg font-black text-slate-900 dark:text-white">Detail Pengajuan Cuti Karyawan</DialogTitle>
+        <DialogContent className="max-w-6xl p-0 overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border-none shadow-2xl max-h-[90vh] flex flex-col my-auto top-[50%] translate-y-[-50%]">
+          <DialogHeader className="p-6 border-b bg-slate-50/70 dark:bg-slate-900/70 flex-none space-y-4">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                  <DialogTitle className="text-2xl font-black text-slate-900 dark:text-white">Detail Pengajuan Cuti</DialogTitle>
+                  <p className="text-sm font-bold text-slate-600 dark:text-slate-300 mt-1">{selectedRequest?.employeeName} • {selectedRequest?.divisionName} / {selectedRequest?.brandName}</p>
+                </div>
                 {selectedRequest && (
-                  <Badge variant="outline" className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border uppercase tracking-wider ${getStatusBadgeClass(selectedRequest.status)}`}>
+                  <Badge variant="outline" className={`px-3 py-1.5 rounded-full text-xs font-black border uppercase tracking-wider h-fit ${getStatusBadgeClass(selectedRequest.status)}`}>
                     {getStatusLabel(selectedRequest.status)}
                   </Badge>
                 )}
               </div>
+
+              {/* Quick Summary Header */}
               {selectedRequest && (
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs font-semibold text-slate-500">
-                  <span className="text-slate-900 dark:text-white font-black text-sm">{selectedRequest.employeeName}</span>
-                  <span className="text-slate-300">|</span>
-                  <span className="text-indigo-600 dark:text-indigo-400 font-bold">{selectedRequest.durationDays} Hari Kerja</span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+                  <div className="bg-white/50 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Jenis Cuti</p>
+                    <p className="text-sm font-black text-indigo-600 dark:text-indigo-400 mt-0.5">
+                      {selectedRequest.leaveType === 'tahunan' ? 'Tahunan' : selectedRequest.leaveType === 'besar' ? 'Besar' : selectedRequest.leaveType === 'menikah' ? 'Menikah' : selectedRequest.leaveType === 'melahirkan' ? 'Melahirkan' : 'Tahunan'}
+                    </p>
+                  </div>
+                  <div className="bg-white/50 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Durasi</p>
+                    <p className="text-sm font-black text-emerald-600 dark:text-emerald-400 mt-0.5">{selectedRequest.durationDays} Hari</p>
+                  </div>
+                  <div className="bg-white/50 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Mulai</p>
+                    <p className="text-xs font-bold text-slate-700 dark:text-slate-200 mt-0.5">{selectedRequest.startDate ? format(selectedRequest.startDate.toDate(), 'd MMM', { locale: idLocale }) : '-'}</p>
+                  </div>
+                  <div className="bg-white/50 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Selesai</p>
+                    <p className="text-xs font-bold text-slate-700 dark:text-slate-200 mt-0.5">{selectedRequest.endDate ? format(selectedRequest.endDate.toDate(), 'd MMM yyyy', { locale: idLocale }) : '-'}</p>
+                  </div>
                 </div>
               )}
             </div>
           </DialogHeader>
 
           {/* Internal Scroll Content Area */}
-          <div className="p-6 space-y-6 overflow-y-auto flex-1 max-h-[calc(85vh-140px)]">
+          <div className="p-6 space-y-5 overflow-y-auto flex-1 max-h-[calc(90vh-200px)]">
             
             {/* Legacy Migration Alert for HRD */}
             {selectedRequest && (() => {
@@ -1741,105 +1761,121 @@ export default function HrdLeaveApprovalPage() {
               return null;
             })()}
 
-            {/* 1. Ringkasan Cuti */}
+            {/* 1. Waktu Pengajuan & Periode Cuti */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-4 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-100 dark:border-slate-800 space-y-1">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Jenis Cuti</p>
-                <p className="text-sm font-black text-indigo-600 dark:text-indigo-400 capitalize">
-                  Cuti {selectedRequest?.leaveType === 'tahunan' ? 'Tahunan' : selectedRequest?.leaveType === 'besar' ? 'Besar' : selectedRequest?.leaveType === 'menikah' ? 'Menikah' : selectedRequest?.leaveType === 'melahirkan' ? 'Melahirkan' : 'Tahunan'}
+              <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
+                <p className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">Waktu Pengajuan</p>
+                <p className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                  {selectedRequest?.submittedAtStr || (selectedRequest?.createdAt ? format(selectedRequest.createdAt.toDate(), "EEEE, dd MMMM yyyy", { locale: idLocale }) : '-')}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {selectedRequest?.createdAt ? format(selectedRequest.createdAt.toDate(), "'pukul' HH:mm 'WIB'", { locale: idLocale }) : '-'}
                 </p>
               </div>
-              <div className="p-4 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-100 dark:border-slate-800 space-y-1">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Divisi & Brand</p>
-                <p className="text-sm font-bold text-slate-700 dark:text-slate-200">
-                  {selectedRequest?.divisionName || '-'} / {selectedRequest?.brandName || '-'}
+              <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
+                <p className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">Periode Cuti</p>
+                <p className="text-sm font-bold text-indigo-700 dark:text-indigo-300">
+                  {selectedRequest && format(selectedRequest.startDate.toDate(), 'dd MMMM yyyy', { locale: idLocale })}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  s/d {selectedRequest && format(selectedRequest.endDate.toDate(), 'dd MMMM yyyy', { locale: idLocale })}
                 </p>
               </div>
             </div>
 
-            {/* 2. Waktu Pengajuan & Periode Cuti */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-4 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-100 dark:border-slate-800 space-y-1">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Waktu Pengajuan</p>
-                <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                  {selectedRequest?.submittedAtStr || (selectedRequest?.createdAt ? format(selectedRequest.createdAt.toDate(), "EEEE, dd MMMM yyyy 'pukul' HH:mm", { locale: idLocale }) : '-')}
-                </p>
-              </div>
-              <div className="p-4 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-100 dark:border-slate-800 space-y-1">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Periode Cuti</p>
-                <p className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
-                  {selectedRequest && format(selectedRequest.startDate.toDate(), 'EEEE, dd MMMM yyyy', { locale: idLocale })} s/d {selectedRequest && format(selectedRequest.endDate.toDate(), 'EEEE, dd MMMM yyyy', { locale: idLocale })}
-                </p>
-              </div>
-            </div>
-
-            {/* Dynamic display balance before and after approval */}
+            {/* Enhanced Ringkasan Saldo Section */}
             {selectedRequest && selectedRequestBalance && (
-              <div className="p-4 bg-gradient-to-r from-indigo-500/5 to-indigo-600/0 border border-indigo-100/50 rounded-2xl grid grid-cols-2 gap-4 text-center">
-                <div className="border-r pr-2">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Sisa Saldo Saat Ini</p>
-                  <p className="text-lg font-black text-slate-800 mt-1">{selectedRequestBalance.currentBalance} Hari</p>
+              <div className="p-5 bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-950/30 dark:to-blue-950/30 border-2 border-indigo-200 dark:border-indigo-800/50 rounded-2xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">Ringkasan Saldo Cuti</h3>
+                  <Badge className="bg-indigo-600 text-white font-black text-xs">Periode Aktif</Badge>
                 </div>
-                <div>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Saldo Sesudah Approval</p>
-                  <p className="text-lg font-black text-indigo-600 mt-1">
-                    {['pending_hrd', 'pending_hrd_review'].includes(selectedRequest.status)
-                      ? `${Math.max(0, selectedRequestBalance.currentBalance - selectedRequest.durationDays)} Hari`
-                      : `${selectedRequestBalance.currentBalance} Hari`
-                    }
-                  </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Before */}
+                  <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 text-center">
+                    <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">Saldo Sebelumnya</p>
+                    <p className="text-4xl font-black text-blue-600 dark:text-blue-400">{selectedRequestBalance.currentBalance}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold mt-1">Hari Kerja</p>
+                  </div>
+
+                  {/* Used */}
+                  <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 text-center">
+                    <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">Saldo Digunakan</p>
+                    <p className="text-4xl font-black text-amber-600 dark:text-amber-400">{selectedRequest.durationDays}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold mt-1">Hari Kerja</p>
+                  </div>
+
+                  {/* After */}
+                  <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border-2 border-emerald-300 dark:border-emerald-700 text-center ring-2 ring-emerald-100 dark:ring-emerald-900/20">
+                    <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider mb-2">Saldo Setelah Approval</p>
+                    <p className="text-4xl font-black text-emerald-600 dark:text-emerald-400">
+                      {['pending_hrd', 'pending_hrd_review'].includes(selectedRequest.status)
+                        ? Math.max(0, selectedRequestBalance.currentBalance - selectedRequest.durationDays)
+                        : selectedRequestBalance.currentBalance
+                      }
+                    </p>
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400 font-bold mt-1">Hari Kerja</p>
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* 3. Alasan & Alamat Cuti */}
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Alasan Cuti</p>
-                <p className="text-sm font-medium text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-950 p-3 rounded-lg border border-slate-100 dark:border-slate-800/80">
-                  {selectedRequest?.reason || '-'}
-                </p>
+            {/* 2. Alasan & Alamat Cuti */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <p className="text-xs font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">Alasan Cuti</p>
+                <div className="text-sm font-medium text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 p-3.5 rounded-lg border border-slate-200 dark:border-slate-700 min-h-[80px]">
+                  {selectedRequest?.reason || <span className="text-slate-500 italic">Belum diisi</span>}
+                </div>
               </div>
-              <div className="space-y-1">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Alamat Selama Cuti</p>
-                <p className="text-sm font-medium text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-950 p-3 rounded-lg border border-slate-100 dark:border-slate-800/80">
-                  {selectedRequest?.leaveAddress || '-'}
-                </p>
+              <div className="space-y-2">
+                <p className="text-xs font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">Alamat Selama Cuti</p>
+                <div className="text-sm font-medium text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 p-3.5 rounded-lg border border-slate-200 dark:border-slate-700 min-h-[80px]">
+                  {selectedRequest?.leaveAddress || <span className="text-slate-500 italic">Belum diisi</span>}
+                </div>
               </div>
             </div>
 
-            {/* 4. Pengganti Sementara & Kontak Darurat */}
-            <div className="p-4 bg-indigo-50/30 dark:bg-indigo-950/10 rounded-2xl border border-indigo-100/50 dark:border-indigo-900/20 space-y-4">
-              <p className="text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">Pendelegasian Tugas & Kontak Darurat</p>
+            {/* 3. Pendelegasian Tugas & Kontak Darurat */}
+            <div className="p-5 bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-950/20 dark:to-indigo-950/20 rounded-2xl border-2 border-purple-200 dark:border-purple-800/50 space-y-4">
+              <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">Delegasi Tugas & Kontak Darurat</h3>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <p className="text-[10px] font-black text-slate-400 uppercase">Pengganti Sementara (Handover)</p>
-                  <p className="text-sm font-bold text-slate-800 dark:text-slate-100 mt-1">{selectedRequest?.handoverEmployeeName || '-'}</p>
+                <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <p className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest mb-2">Pengganti Sementara</p>
+                  <p className="text-sm font-black text-slate-900 dark:text-white">
+                    {selectedRequest?.handoverEmployeeName || <span className="text-slate-400 italic">Tidak ada pengganti</span>}
+                  </p>
                   {selectedRequest?.handoverEmployeePosition && (
-                    <p className="text-xs text-slate-400 font-semibold mt-0.5">{selectedRequest.handoverEmployeePosition}</p>
+                    <p className="text-xs text-slate-600 dark:text-slate-400 font-semibold mt-1">{selectedRequest.handoverEmployeePosition}</p>
                   )}
                 </div>
-                <div>
-                  <p className="text-[10px] font-black text-slate-400 uppercase">Kontak Darurat</p>
-                  <p className="text-sm font-bold text-slate-800 dark:text-slate-100 mt-1 font-black">
-                    {selectedRequest?.emergencyContactName || '-'}
+
+                <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <p className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest mb-2">Kontak Darurat</p>
+                  <p className="text-sm font-black text-slate-900 dark:text-white">
+                    {selectedRequest?.emergencyContactName || <span className="text-slate-400 italic">Tidak ada kontak</span>}
                   </p>
                   {selectedRequest?.emergencyContactPhone && (
-                    <p className="text-xs text-slate-400 font-semibold mt-0.5">{selectedRequest.emergencyContactPhone}</p>
+                    <p className="text-xs text-slate-600 dark:text-slate-400 font-semibold mt-1">☎ {selectedRequest.emergencyContactPhone}</p>
                   )}
                 </div>
               </div>
-              <div className="space-y-1 pt-2 border-t border-indigo-100/30 dark:border-indigo-900/10">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Catatan Serah Terima Tugas</p>
-                <p className="text-sm font-medium text-slate-600 dark:text-slate-300 bg-white/50 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-100 dark:border-slate-800/80">
-                  {selectedRequest?.handoverNotes || '-'}
-                </p>
-              </div>
+
+              {selectedRequest?.handoverNotes && (
+                <div className="pt-2 border-t border-purple-200 dark:border-purple-800/30">
+                  <p className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest mb-2">Catatan Serah Terima Tugas</p>
+                  <div className="text-sm font-medium text-slate-800 dark:text-slate-200 bg-white/60 dark:bg-slate-900/60 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
+                    {selectedRequest.handoverNotes}
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* 5. Stepper Timeline Alur Persetujuan (Asia/Jakarta Context) */}
-            <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-800/80 space-y-4">
-              <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Timeline Alur Persetujuan</p>
+            {/* 4. Timeline Alur Persetujuan (Asia/Jakarta Context) */}
+            <div className="p-5 bg-slate-100 dark:bg-slate-800/60 rounded-2xl border-2 border-slate-300 dark:border-slate-700 space-y-4">
+              <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">Timeline Alur Persetujuan</h3>
               <div className="relative pl-6 space-y-5 before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-[2px] before:bg-slate-200 dark:before:bg-slate-800">
                 
                 {/* Milestone 1: Staff Submission */}
@@ -1934,25 +1970,41 @@ export default function HrdLeaveApprovalPage() {
               </div>
             )}
 
-            {/* Sticky Action Footer inside Modal */}
+          </div>
+
+          {/* Sticky Footer with Action Buttons */}
+          <div className="border-t bg-slate-100 dark:bg-slate-800/60 p-4 flex-none space-y-3">
             {selectedRequest && ['pending_hrd', 'pending_hrd_review'].includes(selectedRequest.status) && (
-              <div className="flex justify-end gap-2 border-t pt-4 animate-in slide-in-from-bottom duration-300">
-                <Button variant="outline" onClick={() => handleOpenAction('revise', selectedRequest)} className="rounded-xl border-amber-500/20 hover:bg-amber-50 dark:hover:bg-amber-950/20 text-amber-600 font-bold">
+              <div className="grid grid-cols-3 gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => handleOpenAction('revise', selectedRequest)}
+                  className="rounded-lg border-2 border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 text-amber-700 dark:text-amber-400 font-bold h-10"
+                >
                   Minta Revisi
                 </Button>
-                <Button variant="outline" onClick={() => handleOpenAction('reject', selectedRequest)} className="rounded-xl border-red-500/20 hover:bg-red-50 dark:hover:bg-red-950/20 text-red-600 font-bold">
+                <Button
+                  variant="outline"
+                  onClick={() => handleOpenAction('reject', selectedRequest)}
+                  className="rounded-lg border-2 border-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 text-red-700 dark:text-red-400 font-bold h-10"
+                >
                   Tolak
                 </Button>
-                <Button onClick={() => handleOpenAction('approve', selectedRequest)} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-5">
-                  Setujui
+                <Button
+                  onClick={() => handleOpenAction('approve', selectedRequest)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg h-10"
+                >
+                  ✓ Setujui
                 </Button>
               </div>
             )}
+            <Button
+              onClick={() => setIsDetailOpen(false)}
+              className="w-full bg-slate-700 hover:bg-slate-600 dark:bg-slate-600 dark:hover:bg-slate-500 text-white font-bold rounded-lg h-10"
+            >
+              Tutup Detail
+            </Button>
           </div>
-          
-          <DialogFooter className="p-6 pt-4 border-t bg-slate-50/50 dark:bg-slate-900/50 flex-none">
-            <Button onClick={() => setIsDetailOpen(false)} className="bg-slate-950 text-white font-bold rounded-xl px-5">Tutup</Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 

@@ -243,6 +243,35 @@ export function AccountSettingsPage() {
       );
       await reauthenticateWithCredential(firebaseUser, credential);
       await updatePassword(firebaseUser, newPassword);
+
+      // Update Firestore to clear mustChangePassword flag and create audit log
+      try {
+        const idToken = await firebaseUser.getIdToken();
+        const res = await fetch(
+          `/api/users/${firebaseUser.uid}/password-changed`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${idToken}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+
+        if (!res.ok) {
+          const errorData = await res.json();
+          console.warn(
+            'Failed to update password status in Firestore:',
+            errorData.error
+          );
+          // Don't show error to user since password was already changed in Auth
+          // Just log it for debugging
+        }
+      } catch (firestoreError) {
+        console.warn('Error calling password-changed endpoint:', firestoreError);
+        // Don't show error to user since password was already changed in Auth
+      }
+
       setPasswordMessage("Kata sandi berhasil diperbarui.");
       setOldPassword("");
       setNewPassword("");

@@ -44,7 +44,7 @@ const formSchema = z.object({
   password: z.string().min(8, { message: 'Password must be at least 8 characters.' }),
 });
 
-export function CandidateLoginForm() {
+export function CandidateLoginForm({ onSwitchToRegister }: { onSwitchToRegister?: () => void } = {}) {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -231,6 +231,37 @@ export function CandidateLoginForm() {
             {googleLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <GoogleIcon />}
             Google
         </Button>
+
+        {/* Register Link */}
+        <p className="text-center text-sm text-muted-foreground">
+          Belum punya akun?{' '}
+          {onSwitchToRegister ? (
+            <button
+              type="button"
+              onClick={onSwitchToRegister}
+              className="font-medium text-primary hover:underline underline-offset-4"
+            >
+              Daftar di sini
+            </button>
+          ) : (
+            <Link
+              href="/careers/register"
+              className="font-medium text-primary hover:underline underline-offset-4"
+            >
+              Daftar di sini
+            </Link>
+          )}
+        </p>
+
+        {/* Back Link */}
+        <div className="pt-2 text-center">
+          <Link
+            href="/careers"
+            className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
+          >
+            ← Kembali ke Halaman Karir
+          </Link>
+        </div>
     </div>
   );
 }

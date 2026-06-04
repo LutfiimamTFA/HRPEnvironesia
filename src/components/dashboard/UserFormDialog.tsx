@@ -31,15 +31,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { UserProfile, ROLES, UserRole } from "@/lib/types";
-import { Loader2, Eye, EyeOff } from "lucide-react";
+import { Loader2, Eye, EyeOff, RefreshCw, Copy, Check } from "lucide-react";
 import { useFirestore } from "@/firebase";
 import { useAuth } from "@/providers/auth-provider";
 import { doc, serverTimestamp, writeBatch } from "firebase/firestore";
-import { Separator } from "../ui/separator";
 
-const creatableRoles: UserRole[] = ["hrd", "manager"];
+const creatableRoles: UserRole[] = ["hrd", "manager", "karyawan"];
 const allRolesForEdit: UserRole[] = [
   "super-admin",
   "hrd",
@@ -48,26 +48,52 @@ const allRolesForEdit: UserRole[] = [
   "kandidat",
 ];
 
-const createSchema = z.object({
-  fullName: z.string().min(2, { message: "Full name is required." }),
-  email: z.string().email({ message: "A valid email is required." }),
-  password: z
-    .string()
-    .min(8, { message: "Password must be at least 8 characters." }),
-  role: z.enum(ROLES),
-  isActive: z.boolean().default(true),
-});
+const roleDescriptions: Record<UserRole, string> = {
+  "super-admin": "Akses penuh sistem dan manajemen user",
+  hrd: "Pengelola data karyawan, cuti, izin, dan approval",
+  manager: "Atasan yang memberi approval untuk tim mereka",
+  karyawan: "User karyawan dengan akses terbatas",
+  magang: "Peserta magang dan program bimbingan",
+  kandidat: "Pelamar atau kandidat rekrutmen",
+};
+
+const createSchema = z
+  .object({
+    fullName: z.string().min(2, { message: "Nama lengkap minimal 2 karakter." }),
+    email: z.string().email({ message: "Email tidak valid." }),
+    password: z
+      .string()
+      .min(8, { message: "Password minimal 8 karakter." }),
+    confirmPassword: z.string(),
+    role: z.enum(ROLES),
+    isActive: z.boolean().default(true),
+    adminNotes: z.string().optional(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Password dan konfirmasi password harus sama",
+    path: ["confirmPassword"],
+  });
 
 const editSchema = z.object({
-  fullName: z.string().min(2, { message: "Full name is required." }),
-  email: z.string().email({ message: "A valid email is required." }),
+  fullName: z.string().min(2, { message: "Nama lengkap minimal 2 karakter." }),
+  email: z.string().email({ message: "Email tidak valid." }),
   role: z.enum(ROLES),
   isActive: z.boolean().default(true),
+  adminNotes: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof createSchema> | z.infer<typeof editSchema>;
 
-// --- Component Props ---
+// Utility function to generate random password
+function generateRandomPassword(length: number = 12): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
+  let password = "";
+  for (let i = 0; i < length; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return password;
+}
+
 interface UserFormDialogProps {
   user: UserProfile | null;
   open: boolean;
@@ -81,7 +107,9 @@ export function UserFormDialog({
 }: UserFormDialogProps) {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const { firebaseUser, userProfile: currentUserProfile } = useAuth();
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [copiedPassword, setCopiedPassword] = useState(false);
+  const { firebaseUser } = useAuth();
   const firestore = useFirestore();
   const { toast } = useToast();
   const mode = user ? "edit" : "create";
@@ -91,8 +119,8 @@ export function UserFormDialog({
   });
 
   const role = form.watch("role");
+  const password = form.watch("password");
 
-  // Effect to reset form state when dialog opens or user prop changes
   useEffect(() => {
     if (open) {
       const defaultValues =
@@ -102,13 +130,16 @@ export function UserFormDialog({
               email: user.email,
               role: user.role,
               isActive: user.isActive,
+              adminNotes: "",
             }
           : {
               fullName: "",
               email: "",
               password: "",
-              role: "hrd",
+              confirmPassword: "",
+              role: "karyawan",
               isActive: true,
+              adminNotes: "",
             };
       form.reset(defaultValues as any);
     }
@@ -124,11 +155,7 @@ export function UserFormDialog({
     };
 
     Object.keys(payload).forEach((key) => {
-      if (
-        payload[key] === undefined ||
-        payload[key] === null ||
-        payload[key] === ""
-      ) {
+      if (payload[key] === undefined || payload[key] === null || payload[key] === "") {
         delete payload[key];
       }
     });
@@ -137,8 +164,7 @@ export function UserFormDialog({
   };
 
   async function handleCreate(values: FormValues) {
-    if (!firebaseUser)
-      throw new Error("Authentication error. Please log in again.");
+    if (!firebaseUser) throw new Error("Authentication error. Please log in again.");
 
     const payload = cleanCreatePayload(values);
     const idToken = await firebaseUser.getIdToken();
@@ -154,8 +180,8 @@ export function UserFormDialog({
     if (!res.ok) throw new Error(data.error || "Failed to create user.");
 
     toast({
-      title: "User Created",
-      description: `An account for ${(values as any).fullName} has been created.`,
+      title: "User Berhasil Dibuat",
+      description: `Akun untuk ${(values as any).fullName} telah dibuat.`,
     });
   }
 
@@ -190,8 +216,8 @@ export function UserFormDialog({
 
     await batch.commit();
     toast({
-      title: "User Updated",
-      description: `${values.fullName}'s profile has been updated.`,
+      title: "User Berhasil Diupdate",
+      description: `Profil ${values.fullName} telah diperbarui.`,
     });
   }
 
@@ -207,7 +233,7 @@ export function UserFormDialog({
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: `Error: ${mode === "edit" ? "Updating" : "Creating"} User`,
+        title: `Error: ${mode === "edit" ? "Mengupdate" : "Membuat"} User`,
         description: error.message,
       });
     } finally {
@@ -215,121 +241,218 @@ export function UserFormDialog({
     }
   }
 
+  const handleGeneratePassword = () => {
+    const pwd = generateRandomPassword();
+    form.setValue("password", pwd);
+    form.setValue("confirmPassword", pwd);
+    setShowPassword(true);
+  };
+
+  const handleCopyPassword = () => {
+    const pwd = form.getValues("password");
+    navigator.clipboard.writeText(pwd);
+    setCopiedPassword(true);
+    setTimeout(() => setCopiedPassword(false), 2000);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col p-0">
+      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 rounded-xl">
+        {/* Header */}
         <DialogHeader className="p-6 pb-4 border-b flex-shrink-0">
-          <DialogTitle>
+          <DialogTitle className="text-2xl font-bold">
             {mode === "edit" ? "Edit Pengguna" : "Buat Pengguna Baru"}
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-base mt-2">
             {mode === "edit"
-              ? "Ubah detail pengguna di bawah ini."
-              : "Isi detail untuk akun pengguna baru."}
+              ? "Perbarui informasi dan akses pengguna."
+              : "Isi detail lengkap untuk membuat akun pengguna baru di sistem."}
           </DialogDescription>
         </DialogHeader>
+
+        {/* Form Content */}
         <div className="flex-grow overflow-y-auto">
           <Form {...form}>
             <form
               id="user-form"
-              onSubmit={form.handleSubmit(onSubmit, (errors) => {
-                if (Object.keys(errors).length > 0) {
-                  toast({
-                    variant: "destructive",
-                    title: "Validasi gagal",
-                    description:
-                      "Periksa semua kolom wajib sebelum membuat pengguna.",
-                  });
-                }
-              })}
-              className="space-y-8 px-6 py-4"
+              onSubmit={form.handleSubmit(onSubmit)}
+              className="space-y-0 px-6 py-6"
             >
-              <section className="space-y-4">
-                <h3 className="text-lg font-semibold border-b pb-2 mb-4">
-                  Informasi Akun
-                </h3>
-                <FormField
-                  control={form.control}
-                  name="fullName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Nama Lengkap</FormLabel>
-                      <FormControl>
-                        <Input placeholder="John Doe" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="email"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Email</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="email"
-                          placeholder="user@example.com"
-                          {...field}
-                          readOnly={mode === "edit"}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                {mode === "create" && (
+              {/* Section 1: Informasi Akun */}
+              <div className="space-y-4 mb-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-1 h-6 bg-primary rounded-full"></div>
+                  <h3 className="text-lg font-bold">Informasi Akun</h3>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
-                    name="password"
+                    name="fullName"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Password</FormLabel>
-                        <div className="relative">
-                          <FormControl>
-                            <Input
-                              type={showPassword ? "text" : "password"}
-                              placeholder="********"
-                              className="pr-10"
-                              autoComplete="new-password"
-                              {...field}
-                            />
-                          </FormControl>
-                          <button
-                            type="button"
-                            onClick={() => setShowPassword((p) => !p)}
-                            className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground"
-                            aria-label={
-                              showPassword ? "Hide password" : "Show password"
-                            }
-                          >
-                            {showPassword ? (
-                              <EyeOff className="h-5 w-5" />
-                            ) : (
-                              <Eye className="h-5 w-5" />
-                            )}
-                          </button>
-                        </div>
-                        <FormMessage />
+                        <FormLabel className="font-semibold">Nama Lengkap *</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="contoh: John Doe"
+                            {...field}
+                            className="h-10"
+                          />
+                        </FormControl>
+                        <FormDescription className="text-xs">
+                          Nama lengkap sesuai identitas resmi
+                        </FormDescription>
+                        <FormMessage className="text-xs" />
                       </FormItem>
                     )}
                   />
+
+                  <FormField
+                    control={form.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="font-semibold">Email *</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="email"
+                            placeholder="contoh: user@company.com"
+                            {...field}
+                            readOnly={mode === "edit"}
+                            className="h-10"
+                          />
+                        </FormControl>
+                        <FormDescription className="text-xs">
+                          {mode === "edit" ? "Email tidak bisa diubah" : "Email untuk login pengguna"}
+                        </FormDescription>
+                        <FormMessage className="text-xs" />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                {mode === "create" && (
+                  <div className="space-y-4 pt-2">
+                    <Card className="bg-muted/30 border border-dashed">
+                      <CardContent className="pt-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <label className="text-sm font-semibold">Password *</label>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleGeneratePassword}
+                            className="text-xs h-8 gap-1.5"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" />
+                            Generate Acak
+                          </Button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <FormField
+                            control={form.control}
+                            name="password"
+                            render={({ field }) => (
+                              <FormItem>
+                                <div className="relative">
+                                  <FormControl>
+                                    <Input
+                                      type={showPassword ? "text" : "password"}
+                                      placeholder="Minimal 8 karakter"
+                                      {...field}
+                                      className="h-10 pr-10"
+                                      autoComplete="new-password"
+                                    />
+                                  </FormControl>
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowPassword((p) => !p)}
+                                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground transition"
+                                  >
+                                    {showPassword ? (
+                                      <EyeOff className="h-4 w-4" />
+                                    ) : (
+                                      <Eye className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                </div>
+                                <FormMessage className="text-xs" />
+                              </FormItem>
+                            )}
+                          />
+
+                          <FormField
+                            control={form.control}
+                            name="confirmPassword"
+                            render={({ field }) => (
+                              <FormItem>
+                                <div className="relative">
+                                  <FormControl>
+                                    <Input
+                                      type={showConfirmPassword ? "text" : "password"}
+                                      placeholder="Konfirmasi password"
+                                      {...field}
+                                      className="h-10 pr-10"
+                                      autoComplete="new-password"
+                                    />
+                                  </FormControl>
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowConfirmPassword((p) => !p)}
+                                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground transition"
+                                  >
+                                    {showConfirmPassword ? (
+                                      <EyeOff className="h-4 w-4" />
+                                    ) : (
+                                      <Eye className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                </div>
+                                <FormMessage className="text-xs" />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+
+                        {password && (
+                          <button
+                            type="button"
+                            onClick={handleCopyPassword}
+                            className="mt-3 w-full h-8 bg-primary/10 hover:bg-primary/20 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition"
+                          >
+                            {copiedPassword ? (
+                              <>
+                                <Check className="h-3.5 w-3.5" />
+                                Disalin
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="h-3.5 w-3.5" />
+                                Salin Password
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
                 )}
-              </section>
+              </div>
 
-              <Separator />
+              {/* Section 2: Akses & Peran */}
+              <div className="space-y-4 mb-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-1 h-6 bg-primary rounded-full"></div>
+                  <h3 className="text-lg font-bold">Akses & Peran</h3>
+                </div>
 
-              <section className="space-y-4">
-                <h3 className="text-lg font-semibold border-b pb-2 mb-4">
-                  Hak Akses Sistem
-                </h3>
                 <FormField
                   control={form.control}
                   name="role"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Role</FormLabel>
+                      <FormLabel className="font-semibold">Role Sistem *</FormLabel>
                       <Select
                         onValueChange={field.onChange}
                         value={field.value}
@@ -338,8 +461,8 @@ export function UserFormDialog({
                         }
                       >
                         <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select a role" />
+                          <SelectTrigger className="h-10">
+                            <SelectValue placeholder="Pilih role..." />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
@@ -347,63 +470,94 @@ export function UserFormDialog({
                             ? creatableRoles
                             : allRolesForEdit
                           ).map((r) => (
-                            <SelectItem
-                              key={r}
-                              value={r}
-                              className="capitalize"
-                            >
-                              {r.replace(/[-_]/g, " ")}
+                            <SelectItem key={r} value={r} className="capitalize">
+                              {r.replace(/[-_]/g, " ").toUpperCase()}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                      <FormMessage />
+                      <FormDescription className="text-xs">
+                        {roleDescriptions[role]}
+                      </FormDescription>
+                      <FormMessage className="text-xs" />
                     </FormItem>
                   )}
                 />
-              </section>
+              </div>
 
-              <Separator />
+              {/* Section 3: Status Akun */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-1 h-6 bg-primary rounded-full"></div>
+                  <h3 className="text-lg font-bold">Status Akun</h3>
+                </div>
 
-              <section>
-                <h3 className="text-lg font-semibold border-b pb-2 mb-4">
-                  Status
-                </h3>
+                <Card className="bg-muted/30">
+                  <CardContent className="pt-4">
+                    <FormField
+                      control={form.control}
+                      name="isActive"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-center justify-between">
+                          <div className="space-y-1">
+                            <FormLabel className="font-semibold">Akun Aktif</FormLabel>
+                            <FormDescription className="text-xs">
+                              Aktifkan atau nonaktifkan akses pengguna ke sistem
+                            </FormDescription>
+                          </div>
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </CardContent>
+                </Card>
+
                 <FormField
                   control={form.control}
-                  name="isActive"
+                  name="adminNotes"
                   render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
-                      <div className="space-y-0.5">
-                        <FormLabel>Status Aktif</FormLabel>
-                        <FormDescription>
-                          Nonaktifkan untuk menonaktifkan sementara akses
-                          pengguna.
-                        </FormDescription>
-                      </div>
+                    <FormItem>
+                      <FormLabel className="font-semibold text-sm">Catatan Admin</FormLabel>
                       <FormControl>
-                        <Switch
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
+                        <Input
+                          placeholder="Catatan opsional untuk keperluan internal..."
+                          {...field}
+                          className="h-10 text-sm"
                         />
                       </FormControl>
+                      <FormDescription className="text-xs">
+                        Catatan pribadi untuk catatan pembuatan akun
+                      </FormDescription>
                     </FormItem>
                   )}
                 />
-              </section>
+              </div>
             </form>
           </Form>
         </div>
-        <DialogFooter className="p-6 pt-4 border-t flex-shrink-0">
+
+        {/* Footer */}
+        <DialogFooter className="p-6 pt-4 border-t flex-shrink-0 bg-muted/20 rounded-b-xl">
           <Button
             type="button"
-            variant="ghost"
+            variant="outline"
             onClick={() => onOpenChange(false)}
+            disabled={loading}
           >
             Batal
           </Button>
-          <Button type="submit" form="user-form" disabled={loading}>
-            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          <Button
+            type="submit"
+            form="user-form"
+            disabled={loading}
+            className="gap-2"
+          >
+            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
             {mode === "edit" ? "Simpan Perubahan" : "Buat Pengguna"}
           </Button>
         </DialogFooter>

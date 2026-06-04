@@ -60,7 +60,7 @@ export default function SafeRichText({ html, className }: SafeRichTextProps) {
   return (
     <div
       className={cn(
-        "prose prose-sm max-w-none dark:prose-invert text-gray-200 dark:text-gray-200 prose-strong:text-white prose-a:text-primary prose-a:no-underline prose-a:underline-offset-4 prose-strong:font-semibold prose-li:my-1",
+        "prose prose-sm max-w-none dark:prose-invert text-slate-700 dark:text-slate-300 prose-strong:text-slate-900 dark:prose-strong:text-slate-50 prose-strong:font-semibold prose-p:my-3 prose-ul:my-3 prose-ol:my-3 prose-li:my-1 prose-a:text-teal-600 dark:prose-a:text-teal-400 prose-a:no-underline prose-a:underline-offset-4 prose-headings:text-slate-900 dark:prose-headings:text-slate-50",
         className,
       )}
       dangerouslySetInnerHTML={{ __html: sanitizedHtml }}

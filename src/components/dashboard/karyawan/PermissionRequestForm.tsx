@@ -67,6 +67,7 @@ import {
 } from "firebase/firestore";
 import {
   resolveApprovalTarget,
+  resolveApproverSkippingSelf,
   type DivisionMasterOrganization,
 } from "@/lib/approval-flow";
 import {
@@ -567,86 +568,24 @@ export function PermissionRequestForm({
     !blockSickNoAttachment &&
     !blockKeluarOver4;
 
-  // Resolve manager using same 3-layer fallback as OvertimeSubmissionForm
+  // Resolve manager using new function that skips self-approval
   const directManager = useMemo(() => {
-    // Layer 1: from divisionMaster document
-    const divDoc = divisionMaster as any;
-    const divMgrUid =
-      divDoc?.managerId ||
-      divDoc?.managerUid ||
-      divDoc?.supervisorUid ||
-      divDoc?.directSupervisorUid ||
-      divDoc?.headUid ||
-      divDoc?.leadUid ||
-      null;
-    const divMgrName =
-      divDoc?.managerName ||
-      divDoc?.supervisorName ||
-      divDoc?.directSupervisorName ||
-      divDoc?.headName ||
-      divDoc?.leadName ||
-      null;
-
-    // Layer 2: from users collection — find isDivisionManager matching brand+division
-    let fallbackUser: any = null;
-    if (!divMgrUid && allUsers && staffDivisionId) {
-      fallbackUser = allUsers.find((u: any) => {
-        const brandMatch =
-          !staffBrandId ||
-          u.managedBrandId === staffBrandId ||
-          (Array.isArray(u.brandId)
-            ? u.brandId.includes(staffBrandId)
-            : u.brandId === staffBrandId);
-        const divisionMatch =
-          u.managedDivision === staffDivisionId ||
-          u.managedDivisionName === staffDivisionId ||
-          u.division === staffDivisionId ||
-          u.divisionId === staffDivisionId ||
-          u.managedDivisionId === staffDivisionId;
-        const isManager =
-          u.isDivisionManager === true ||
-          u.structuralLevel === "division_manager" ||
-          u.role === "manager" ||
-          (u.positionTitle || "").toLowerCase().includes("manager divisi");
-        return isManager && divisionMatch && brandMatch;
-      });
+    if (!userProfile?.uid) {
+      return { uid: null, name: null, reason: "User profile missing" };
     }
 
-    // Layer 3: from resolveApprovalTarget (uses employee profile fields)
-    const resolved = resolveApprovalTarget(
+    const manager = resolveApproverSkippingSelf(
+      userProfile.uid,
       employeeProfile,
       userProfile,
       divisionMaster,
+      allUsers,
     );
 
-    // Layer 4: raw profile fields
-    const ep = employeeProfile as any;
-    const profileUid =
-      ep?.directSupervisorUid || ep?.supervisorUid || ep?.managerUid || null;
-    const profileName =
-      ep?.directSupervisorName || ep?.supervisorName || ep?.managerName || null;
-
-    const finalUid =
-      divMgrUid ||
-      fallbackUser?.uid ||
-      resolved.approvalTargetUid ||
-      profileUid ||
-      null;
-    const finalName =
-      divMgrName ||
-      (fallbackUser
-        ? fallbackUser.fullName || fallbackUser.displayName
-        : null) ||
-      resolved.approvalTargetName ||
-      profileName ||
-      null;
-
-    return { uid: finalUid, name: finalName, role: resolved.approvalLevel };
+    return manager;
   }, [
     divisionMaster,
     allUsers,
-    staffBrandId,
-    staffDivisionId,
     employeeProfile,
     userProfile,
   ]);
@@ -774,10 +713,23 @@ export function PermissionRequestForm({
       const managerName = directManager.name || null;
 
       if (!managerUid) {
+        const errorMsg = directManager.reason ||
+          `Atasan belum ditemukan. Brand: ${staffBrandId || "—"}, Divisi: ${staffDivisionId || "belum terisi"}. Periksa mapping divisi/brand karyawan.`;
         toast({
           variant: "destructive",
           title: "Atasan Tidak Ditemukan",
-          description: `Atasan belum ditemukan. Brand: ${staffBrandId || "—"}, Divisi: ${staffDivisionId || "belum terisi"}. Periksa mapping divisi/brand karyawan.`,
+          description: errorMsg,
+        });
+        setIsSaving(false);
+        return;
+      }
+
+      // Verify approver is not the applicant (safety check)
+      if (managerUid === userProfile.uid) {
+        toast({
+          variant: "destructive",
+          title: "Persetujuan Diri Tidak Diizinkan",
+          description: "Anda tidak dapat menyetujui pengajuan izin Anda sendiri. Hubungi atasan atau HRD.",
         });
         setIsSaving(false);
         return;
@@ -1159,7 +1111,7 @@ export function PermissionRequestForm({
                             {directManager.name || "Atasan Langsung"}
                           </span>
                           <span className="text-[10px] text-muted-foreground">
-                            (Atasan)
+                            ({directManager.role === "director" ? "Direktur" : directManager.role === "hrd" ? "HRD" : "Atasan"})
                           </span>
                         </div>
                         <ArrowRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
@@ -1178,7 +1130,7 @@ export function PermissionRequestForm({
                           {userProfile?.fullName || "—"}
                         </p>
                         <p className="text-muted-foreground text-xs">
-                          Atasan langsung
+                          Tahap persetujuan
                         </p>
                         <p className="font-medium text-xs text-right">
                           {directManager.name || "—"}
@@ -1187,19 +1139,25 @@ export function PermissionRequestForm({
                           Tahap berikutnya
                         </p>
                         <p className="font-medium text-xs text-right">
-                          HRD (setelah disetujui atasan)
+                          HRD (setelah disetujui)
                         </p>
                         <p className="text-muted-foreground text-xs">
                           Status awal
                         </p>
                         <p className="font-medium text-xs text-right text-amber-600 dark:text-amber-400">
-                          Menunggu persetujuan atasan
+                          {directManager.role === "director" ? "Menunggu direktur" : directManager.role === "hrd" ? "Menunggu HRD" : "Menunggu atasan"}
                         </p>
                       </div>
 
+                      {directManager.reason && (
+                        <div className="rounded-lg bg-blue-50/60 dark:bg-blue-900/10 border border-blue-200/50 dark:border-blue-800/30 px-3 py-2 text-xs text-blue-700 dark:text-blue-300">
+                          <p className="font-medium mb-1">ℹ️ {directManager.reason}</p>
+                        </div>
+                      )}
+
                       <p className="text-xs text-muted-foreground border-t border-border/50 pt-2">
-                        Pengajuan ini akan dikirim terlebih dahulu ke atasan
-                        langsung, lalu diteruskan ke HRD setelah disetujui.
+                        Pengajuan ini akan dikirim terlebih dahulu ke approver,
+                        lalu diteruskan ke HRD setelah disetujui.
                       </p>
                       <div className="rounded-lg bg-blue-50/60 dark:bg-blue-900/10 border border-blue-200/50 dark:border-blue-800/30 px-3 py-2 text-xs text-blue-700 dark:text-blue-300">
                         Setelah dikirim, status pengajuan akan menjadi:{" "}
@@ -1211,7 +1169,7 @@ export function PermissionRequestForm({
                   ) : (
                     <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 space-y-1.5">
                       <p className="text-sm font-semibold text-destructive">
-                        Atasan belum ditemukan
+                        {directManager.reason || "Atasan belum ditemukan"}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         Periksa struktur organisasi karyawan di Data Karyawan ›

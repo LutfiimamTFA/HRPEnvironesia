@@ -67,9 +67,9 @@ function JobDetailSkeleton() {
 const OtherJobCard = ({ job }: { job: Job }) => (
   <Link
     href={`/careers/jobs/${job.slug}`}
-    className="block transition-shadow hover:shadow-md rounded-lg"
+    className="block transition-all hover:shadow-md rounded-lg"
   >
-    <Card className="flex items-center gap-4 p-3 h-full transition-colors hover:bg-muted/50">
+    <Card className="flex items-center gap-4 p-3 h-full transition-colors bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50">
       <div className="relative h-16 w-16 flex-shrink-0">
         <Image
           src={
@@ -83,11 +83,11 @@ const OtherJobCard = ({ job }: { job: Job }) => (
         />
       </div>
       <div className="flex-grow overflow-hidden">
-        <p className="font-semibold leading-tight truncate">{job.position}</p>
-        <p className="text-sm text-muted-foreground truncate">
+        <p className="font-semibold leading-tight truncate text-slate-900 dark:text-slate-100">{job.position}</p>
+        <p className="text-sm text-slate-600 dark:text-slate-400 truncate">
           {job.brandName}
         </p>
-        <div className="mt-2 flex items-center gap-x-4 gap-y-1 text-xs text-muted-foreground flex-wrap">
+        <div className="mt-2 flex items-center gap-x-4 gap-y-1 text-xs text-slate-600 dark:text-slate-400 flex-wrap">
           <span className="flex items-center gap-1.5">
             <MapPin className="h-3.5 w-3.5" /> {job.location}
           </span>
@@ -96,7 +96,7 @@ const OtherJobCard = ({ job }: { job: Job }) => (
           </span>
         </div>
       </div>
-      <ChevronRight className="h-5 w-5 flex-shrink-0 text-muted-foreground ml-auto" />
+      <ChevronRight className="h-5 w-5 flex-shrink-0 text-slate-600 dark:text-slate-400 ml-auto" />
     </Card>
   </Link>
 );
@@ -111,8 +111,8 @@ const RichTextSection = ({
   icon: React.ReactNode;
 }) => {
   return (
-    <section className="rounded-3xl border border-muted/70 bg-slate-950/5 dark:bg-slate-950/80 p-5">
-      <h2 className="mb-4 flex items-center gap-2 text-xl font-bold tracking-tight text-foreground md:text-2xl">
+    <section className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-6">
+      <h2 className="mb-4 flex items-center gap-3 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-50 md:text-2xl">
         {icon}
         {title}
       </h2>
@@ -213,9 +213,9 @@ export default function JobDetailPage() {
 
   if (!job) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center text-center">
-        <h2 className="text-2xl font-bold">Lowongan tidak ditemukan</h2>
-        <p className="text-muted-foreground mt-2">
+      <div className="flex h-screen flex-col items-center justify-center text-center bg-white dark:bg-slate-950">
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Lowongan tidak ditemukan</h2>
+        <p className="text-slate-600 dark:text-slate-400 mt-2">
           Lowongan yang Anda cari mungkin sudah ditutup atau tidak ada.
         </p>
         <Button asChild className="mt-6">
@@ -232,7 +232,7 @@ export default function JobDetailPage() {
 
   return (
     <>
-      <header className="border-b bg-background">
+      <header className="border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
         <div className="container mx-auto flex h-14 max-w-6xl items-center px-4">
           <Button
             variant="ghost"
@@ -242,17 +242,17 @@ export default function JobDetailPage() {
           >
             <ArrowLeft className="mr-2 h-4 w-4" /> Kembali
           </Button>
-          <div className="text-sm text-muted-foreground">
-            <Link href="/careers" className="hover:text-primary">
+          <div className="text-sm text-slate-600 dark:text-slate-400">
+            <Link href="/careers" className="hover:text-slate-900 dark:hover:text-slate-50 transition-colors">
               Karir
             </Link>
             <ChevronRight className="mx-1 inline-block h-4 w-4" />
-            <span className="font-medium text-foreground">{job.position}</span>
+            <span className="font-medium text-slate-900 dark:text-slate-50">{job.position}</span>
           </div>
         </div>
       </header>
 
-      <main className="bg-secondary/50">
+      <main className="bg-white dark:bg-slate-950">
         <div className="container mx-auto max-w-6xl px-4 py-8 md:py-12">
           <div className="relative mb-8 w-full overflow-hidden rounded-2xl shadow-lg aspect-video bg-muted">
             <Image
@@ -284,10 +284,10 @@ export default function JobDetailPage() {
             <div className="lg:col-span-2">
               <div className="flex flex-col-reverse justify-between gap-4 md:flex-row md:items-start">
                 <div>
-                  <h1 className="text-3xl font-bold tracking-tight text-foreground md:text-4xl">
+                  <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-50 md:text-4xl">
                     {job.position}
                   </h1>
-                  <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-muted-foreground">
+                  <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-slate-600 dark:text-slate-400">
                     <span className="flex items-center gap-1.5">
                       <Building className="h-4 w-4" /> {job.brandName}
                     </span>
@@ -319,46 +319,46 @@ export default function JobDetailPage() {
 
             {/* Sidebar */}
             <aside className="space-y-6 lg:sticky lg:top-20 lg:self-start">
-              <Card className="shadow-md">
+              <Card className="shadow-md bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
                 <CardHeader>
-                  <CardTitle className="text-xl">Lamar Posisi Ini</CardTitle>
+                  <CardTitle className="text-xl text-slate-900 dark:text-slate-50">Lamar Posisi Ini</CardTitle>
                 </CardHeader>
                 <CardContent className="grid grid-cols-[max-content_1fr] items-center gap-x-4 gap-y-2 text-sm">
-                  <span className="font-semibold text-foreground">Divisi</span>
-                  <span className="text-foreground">{job.division}</span>
+                  <span className="font-semibold text-slate-900 dark:text-slate-50">Divisi</span>
+                  <span className="text-slate-700 dark:text-slate-300">{job.division}</span>
 
-                  <span className="font-semibold text-foreground">Tipe</span>
-                  <span className="capitalize text-foreground">
+                  <span className="font-semibold text-slate-900 dark:text-slate-50">Tipe</span>
+                  <span className="capitalize text-slate-700 dark:text-slate-300">
                     {job.statusJob}
                   </span>
 
-                  <span className="font-semibold text-foreground">Lokasi</span>
-                  <span className="text-foreground">{job.location}</span>
+                  <span className="font-semibold text-slate-900 dark:text-slate-50">Lokasi</span>
+                  <span className="text-slate-700 dark:text-slate-300">{job.location}</span>
 
                   {job.workMode && (
                     <>
-                      <span className="font-semibold text-foreground">
+                      <span className="font-semibold text-slate-900 dark:text-slate-50">
                         Mode
                       </span>
-                      <span className="capitalize text-foreground">
+                      <span className="capitalize text-slate-700 dark:text-slate-300">
                         {job.workMode}
                       </span>
                     </>
                   )}
                   {job.numberOfOpenings && job.numberOfOpenings > 0 && (
                     <>
-                      <span className="font-semibold text-foreground">
+                      <span className="font-semibold text-slate-900 dark:text-slate-50">
                         Kebutuhan
                       </span>
-                      <span className="text-foreground">
+                      <span className="text-slate-700 dark:text-slate-300">
                         {job.numberOfOpenings} orang
                       </span>
                     </>
                   )}
                 </CardContent>
-                <CardFooter className="flex-col items-stretch gap-2">
+                <CardFooter className="flex-col items-stretch gap-2 border-t border-slate-200 dark:border-slate-700">
                   {job.applyDeadline && (
-                    <p className="mb-2 flex items-center justify-center gap-1.5 text-center text-xs font-medium text-destructive">
+                    <p className="mb-2 flex items-center justify-center gap-1.5 text-center text-xs font-medium text-red-600 dark:text-red-400">
                       <Calendar className="h-3 w-3" /> Lamar sebelum{" "}
                       {format(job.applyDeadline.toDate(), "dd MMM yyyy")}
                     </p>
@@ -377,9 +377,9 @@ export default function JobDetailPage() {
               </Card>
 
               {otherJobs && otherJobs.length > 0 && (
-                <Card>
+                <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
                   <CardHeader>
-                    <CardTitle className="text-xl">Lowongan Lainnya</CardTitle>
+                    <CardTitle className="text-xl text-slate-900 dark:text-slate-50">Lowongan Lainnya</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {otherJobs.map((otherJob) => (
@@ -394,20 +394,22 @@ export default function JobDetailPage() {
       </main>
 
       {/* Mobile Sticky CTA */}
-      <div className="sticky bottom-0 z-40 border-t bg-background/95 p-4 backdrop-blur md:hidden">
-        {job.applyDeadline && (
-          <p className="mb-2 text-center text-xs text-destructive">
-            Lamar sebelum {format(job.applyDeadline.toDate(), "dd MMM yyyy")}
-          </p>
-        )}
-        <Button
-          size="lg"
-          onClick={handleApplyClick}
-          className="w-full"
-          disabled={isDeadlinePassed}
-        >
-          {isDeadlinePassed ? "Pendaftaran Ditutup" : "Lamar Sekarang"}
-        </Button>
+      <div className="sticky bottom-0 z-40 border-t border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-900/95 backdrop-blur md:hidden">
+        <div className="container mx-auto max-w-6xl px-4 py-3">
+          {job.applyDeadline && (
+            <p className="mb-2 text-center text-xs text-red-600 dark:text-red-400">
+              Lamar sebelum {format(job.applyDeadline.toDate(), "dd MMM yyyy")}
+            </p>
+          )}
+          <Button
+            size="lg"
+            onClick={handleApplyClick}
+            className="w-full"
+            disabled={isDeadlinePassed}
+          >
+            {isDeadlinePassed ? "Pendaftaran Ditutup" : "Lamar Sekarang"}
+          </Button>
+        </div>
       </div>
     </>
   );

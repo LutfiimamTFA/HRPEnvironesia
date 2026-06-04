@@ -366,3 +366,122 @@ export function getDirectManagerForEmployee(
 
   return { uid: null, name: null, reason: "Direct manager not found" };
 }
+
+/**
+ * Resolve approver for permission request, skipping self-approval.
+ * If the direct manager would be the applicant themselves, escalates to next level.
+ *
+ * Flow:
+ * - Staff → Manager Divisi → HRD
+ * - Manager Divisi → Direktur/Manajemen → HRD
+ * - Direktur/Manajemen → HRD
+ */
+export function resolveApproverSkippingSelf(
+  applicantUid: string | null | undefined,
+  employeeProfile: EmployeeProfile | null | undefined,
+  userProfile: UserProfile | null | undefined,
+  masterOrganization?: DivisionMasterOrganization | null,
+  allUsers?: Array<any> | null,
+): DirectManager {
+  if (!applicantUid || (!employeeProfile && !userProfile)) {
+    return { uid: null, name: null, reason: "Applicant or profile missing" };
+  }
+
+  const structuralPosition =
+    (employeeProfile as any)?.structuralPosition ||
+    (employeeProfile as any)?.hrdEmploymentInfo?.structuralPosition ||
+    userProfile?.structuralLevel ||
+    (employeeProfile?.isDivisionManager || userProfile?.isDivisionManager
+      ? "division_manager"
+      : "staff");
+
+  // Get the initial direct manager
+  const initialManager = getDirectManagerForEmployee(employeeProfile, masterOrganization);
+
+  // If no manager found, return null
+  if (!initialManager.uid) {
+    return initialManager;
+  }
+
+  // Check for self-approval
+  if (initialManager.uid === applicantUid) {
+    // Applicant is their own manager, escalate to next level
+
+    if (structuralPosition === "division_manager") {
+      // Manager Divisi → Direktur/Manajemen
+      const nextLevelUid =
+        masterOrganization?.managerDirectSupervisorId ||
+        masterOrganization?.managerDirectSupervisorUid ||
+        masterOrganization?.directorUid ||
+        (employeeProfile as any)?.directSupervisorUid ||
+        null;
+      const nextLevelName =
+        masterOrganization?.managerDirectSupervisorName ||
+        masterOrganization?.directorName ||
+        (employeeProfile as any)?.directSupervisorName ||
+        null;
+
+      if (nextLevelUid && nextLevelUid !== applicantUid) {
+        return {
+          uid: nextLevelUid,
+          name: nextLevelName || null,
+          role: "director",
+          reason: "Escalated from division manager to director to avoid self-approval",
+        };
+      }
+
+      // No director found, return error
+      return {
+        uid: null,
+        name: null,
+        reason: "Atasan level berikutnya belum ditemukan. Periksa Struktur Organisasi untuk Direktur/Manajemen.",
+      };
+    }
+
+    if (structuralPosition === "management") {
+      // Direktur/Manajemen → HRD
+      const directSupervisorUid =
+        (employeeProfile as any)?.directSupervisorUid ||
+        (employeeProfile as any)?.supervisorUid ||
+        null;
+
+      if (directSupervisorUid && directSupervisorUid !== applicantUid) {
+        return {
+          uid: directSupervisorUid,
+          name: (employeeProfile as any)?.directSupervisorName || null,
+          role: "hrd",
+          reason: "Escalated from management to HRD to avoid self-approval",
+        };
+      }
+
+      // Try to find HRD user
+      const hrdUser = allUsers?.find(
+        (u: any) => u.role === "hrd" || u.roles?.includes("hrd"),
+      );
+      if (hrdUser && hrdUser.uid !== applicantUid) {
+        return {
+          uid: hrdUser.uid,
+          name: hrdUser.fullName || hrdUser.displayName || null,
+          role: "hrd",
+          reason: "Escalated to HRD as no direct supervisor found",
+        };
+      }
+
+      return {
+        uid: null,
+        name: null,
+        reason: "Atasan level berikutnya belum ditemukan. Periksa Struktur Organisasi atau hubungi HRD.",
+      };
+    }
+
+    // For staff, this shouldn't happen normally, but handle it
+    return {
+      uid: null,
+      name: null,
+      reason: "Atasan langsung tidak dapat ditentukan dengan jelas. Hubungi HRD.",
+    };
+  }
+
+  // Normal case: approver is different from applicant
+  return initialManager;
+}

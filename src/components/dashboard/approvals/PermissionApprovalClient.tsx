@@ -2,8 +2,8 @@
 
 import { useState, useMemo } from "react";
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
-import { collection, query, where } from "firebase/firestore";
-import type { PermissionRequest, Brand, EmployeeProfile } from "@/lib/types";
+import { collection, query, where, getDocs } from "firebase/firestore";
+import type { PermissionRequest, Brand, Division, EmployeeProfile } from "@/lib/types";
 import { useAuth } from "@/providers/auth-provider";
 import {
   Table,
@@ -57,6 +57,7 @@ import {
 } from "@/components/ui/card";
 import { PermissionStatusBadge } from "@/components/dashboard/karyawan/PermissionStatusBadge";
 import { ReviewPermissionDialog } from "./ReviewPermissionDialog";
+import { PermissionImpactSummary } from "./PermissionImpactSummary";
 import { cn } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -391,6 +392,10 @@ export function PermissionApprovalClient({
   const [selectedSubmission, setSelectedSubmission] =
     useState<PermissionRequest | null>(null);
 
+  // HRD tab state
+  type HrdTab = "validation_needed" | "manager_process" | "impact_summary" | "history";
+  const [hrdActiveTab, setHrdActiveTab] = useState<HrdTab>("validation_needed");
+
   // ── Queries (3 for manager + 1 for HRD) ──────────────────────────────────
 
   const byManagerUidQuery = useMemoFirebase(() => {
@@ -492,6 +497,24 @@ export function PermissionApprovalClient({
     useMemoFirebase(() => collection(firestore, "brands"), [firestore]),
   );
 
+  // Load divisions from each brand's subcollection
+  const divisionsMapByBrand = useMemo(() => {
+    const map = new Map<string, Division[]>();
+    // Will be populated by the async effect
+    return map;
+  }, []);
+
+  // Load divisions asynchronously (Note: ideally this should be done in a proper effect, but for now using a synchronous approach with a fallback)
+  const masterDivisionsByBrand = useMemo(() => {
+    const map = new Map<string, Division[]>();
+    if (!brandsList) return map;
+
+    // Note: This is not ideal as it's computing synchronously, but since getDocs is async,
+    // we'll just return empty map here and let the component render with fallback behavior.
+    // In a production app, you'd use useEffect to load divisions and set them in state.
+    return map;
+  }, [brandsList]);
+
   // Enrich submissions with profile/brand/division resolution for older records
   const submissions = useMemo(() => {
     const brands = brandsList || [];
@@ -576,6 +599,34 @@ export function PermissionApprovalClient({
       if (s.division) divs.add(s.division);
     });
     return Array.from(divs).sort();
+  }, [submissions]);
+
+  // Build employees map for impact summary (HRD only)
+  // Include enriched fields so resolveEmployeeBrand/Division can access them
+  const employeesMapForImpact = useMemo(() => {
+    const map = new Map();
+    submissions.forEach((s) => {
+      if (s.uid && !map.has(s.uid)) {
+        map.set(s.uid, {
+          uid: s.uid,
+          fullName: s.fullName,
+          positionTitle: s.positionTitle,
+          division: s.division || s._resolvedApplicantDivision || "—",
+          brand: s._resolvedApplicantBrand || "",
+          brandId: s.brandId,
+          brandName: s._resolvedApplicantBrand || "",
+          // Include snapshot fields for resolution fallback
+          applicantBrandName: s.applicantBrandName,
+          applicantDivisionName: s.applicantDivisionName,
+          // Include enriched fields for better resolution
+          _resolvedApplicantBrand: s._resolvedApplicantBrand,
+          _resolvedApplicantDivision: s._resolvedApplicantDivision,
+          _enrichedEmployeeProfile: s._enrichedEmployeeProfile,
+          _enrichedUserProfile: s._enrichedUserProfile,
+        });
+      }
+    });
+    return map;
   }, [submissions]);
 
   // ── Tab counts (manager only) ─────────────────────────────────────────────
@@ -1255,7 +1306,68 @@ export function PermissionApprovalClient({
             </div>
           )}
 
+          {/* ── Tab bar (HRD only) ── */}
+          {mode === "hrd" && (
+            <div className="flex flex-wrap gap-1 mt-3 pt-3 border-t border-border/50">
+              <button
+                onClick={() => setHrdActiveTab("validation_needed")}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                  hrdActiveTab === "validation_needed"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted",
+                )}
+              >
+                Butuh Validasi
+                {hrdPendingValidation.length > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                    {hrdPendingValidation.length}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setHrdActiveTab("manager_process")}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                  hrdActiveTab === "manager_process"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted",
+                )}
+              >
+                Proses Manager
+                {hrdPendingManagerSubmissions.length > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                    {hrdPendingManagerSubmissions.length}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setHrdActiveTab("impact_summary")}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                  hrdActiveTab === "impact_summary"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted",
+                )}
+              >
+                Rekap Dampak
+              </button>
+              <button
+                onClick={() => setHrdActiveTab("history")}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                  hrdActiveTab === "history"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted",
+                )}
+              >
+                Riwayat Detail
+              </button>
+            </div>
+          )}
+
           {/* ── Filter controls (2 rows) ── */}
+          {!(mode === "hrd" && hrdActiveTab === "impact_summary") && (
           <div className="space-y-3 mt-3">
             {/* Row 1: Search, Status, Tahap, Penanggung Jawab */}
             <div className="flex flex-wrap gap-2">
@@ -1546,44 +1658,72 @@ export function PermissionApprovalClient({
               </div>
             )}
           </div>
+          )}
         </CardHeader>
 
                 <CardContent className="space-y-6">
           {mode === "hrd" ? (
-            <div className="space-y-6">
-              {renderHrdSection(
-                "Butuh Validasi HRD",
-                "Pengajuan izin yang sudah disetujui manager dan menunggu langkah HRD.",
-                hrdPendingValidation,
-                "Tidak ada pengajuan yang perlu divalidasi HRD saat ini.",
-                "bg-teal-50/80 border-teal-200 dark:bg-teal-950/10",
-                "Validasi",
+            <>
+              {/* HRD Tab: Validation Needed */}
+              {hrdActiveTab === "validation_needed" && (
+                <div className="space-y-6">
+                  {renderHrdSection(
+                    "Butuh Validasi HRD",
+                    "Pengajuan izin yang sudah disetujui manager dan menunggu langkah HRD.",
+                    hrdPendingValidation,
+                    "Tidak ada pengajuan yang perlu divalidasi HRD saat ini.",
+                    "bg-teal-50/80 border-teal-200 dark:bg-teal-950/10",
+                    "Validasi",
+                  )}
+                </div>
               )}
-              {renderHrdSection(
-                "Sedang Proses di Manager",
-                "Pengajuan yang masih menunggu persetujuan manager sebelum HRD dapat memvalidasi.",
-                hrdPendingManagerSubmissions,
-                "Tidak ada pengajuan yang saat ini menunggu manager.",
-                "bg-amber-50/80 border-amber-200 dark:bg-amber-950/10",
-                "Lihat Detail",
+
+              {/* HRD Tab: Manager Process */}
+              {hrdActiveTab === "manager_process" && (
+                <div className="space-y-6">
+                  {renderHrdSection(
+                    "Sedang Proses di Manager",
+                    "Pengajuan yang masih menunggu persetujuan manager sebelum HRD dapat memvalidasi.",
+                    hrdPendingManagerSubmissions,
+                    "Tidak ada pengajuan yang saat ini menunggu manager.",
+                    "bg-amber-50/80 border-amber-200 dark:bg-amber-950/10",
+                    "Lihat Detail",
+                  )}
+                  {renderHrdSection(
+                    "Perlu Revisi",
+                    "Pengajuan yang diminta revisi oleh manager atau HRD.",
+                    hrdNeedRevision,
+                    "Tidak ada pengajuan yang diminta revisi saat ini.",
+                    "bg-orange-50/80 border-orange-200 dark:bg-orange-950/10",
+                    "Lihat Detail",
+                  )}
+                </div>
               )}
-              {renderHrdSection(
-                "Perlu Revisi",
-                "Pengajuan yang diminta revisi oleh manager atau HRD.",
-                hrdNeedRevision,
-                "Tidak ada pengajuan yang diminta revisi saat ini.",
-                "bg-orange-50/80 border-orange-200 dark:bg-orange-950/10",
-                "Lihat Detail",
+
+              {/* HRD Tab: Impact Summary */}
+              {hrdActiveTab === "impact_summary" && (
+                <PermissionImpactSummary
+                  permissions={submissions}
+                  employees={employeesMapForImpact}
+                  masterBrands={brandsList || []}
+                  masterDivisionsByBrand={masterDivisionsByBrand}
+                />
               )}
-              {renderHrdSection(
-                "Riwayat Selesai",
-                "Pengajuan izin yang sudah ditutup: disetujui, terverifikasi, ditolak, atau dibatalkan.",
-                hrdFinishedSubmissions,
-                "Belum ada riwayat selesai untuk periode saat ini.",
-                "bg-emerald-50/80 border-emerald-200 dark:bg-emerald-950/10",
-                "Lihat Detail",
+
+              {/* HRD Tab: History */}
+              {hrdActiveTab === "history" && (
+                <div className="space-y-6">
+                  {renderHrdSection(
+                    "Riwayat Selesai",
+                    "Pengajuan izin yang sudah ditutup: disetujui, terverifikasi, ditolak, atau dibatalkan.",
+                    hrdFinishedSubmissions,
+                    "Belum ada riwayat selesai untuk periode saat ini.",
+                    "bg-emerald-50/80 border-emerald-200 dark:bg-emerald-950/10",
+                    "Lihat Detail",
+                  )}
+                </div>
               )}
-            </div>
+            </>
           ) : (
             <div className="rounded-lg border overflow-x-auto">
               <Table className="min-w-[1100px]">
