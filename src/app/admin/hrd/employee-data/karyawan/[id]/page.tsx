@@ -183,6 +183,20 @@ function formatAddress(addr?: any): string | null {
   return parts.length > 0 ? parts.join(", ") : null;
 }
 
+// Helper function to extract address components from address object
+function extractAddressComponents(addr?: any) {
+  return {
+    province: addr?.provinsi?.name || null,
+    city: addr?.kabupatenKota?.name || null,
+    district: addr?.kecamatan?.name || null,
+    village: addr?.kelurahan?.name || null,
+    street: addr?.street || null,
+    rt: addr?.rt || null,
+    rw: addr?.rw || null,
+    postalCode: addr?.kodePos || null,
+  };
+}
+
 function formatCurrency(value: string | number): string {
   if (!value && value !== 0) return "";
   const numValue = typeof value === "string" ? value.replace(/\D/g, "") : String(value);
@@ -2269,6 +2283,49 @@ export default function EmployeeDetailPage({
                             "Alamat KTP belum dilengkapi."}
                         </p>
                       </div>
+                      {/* Address Breakdown - KTP */}
+                      {(() => {
+                        const ktpComponents = extractAddressComponents(al.ktp);
+                        return (
+                          <div className="mt-6 space-y-4">
+                            <h3 className="text-xs font-bold text-white uppercase tracking-widest">Detail Alamat KTP</h3>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Provinsi</p>
+                                <p className="text-sm text-slate-200">{ktpComponents.province || <span className="text-slate-500">Belum diisi</span>}</p>
+                              </div>
+                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Kabupaten/Kota</p>
+                                <p className="text-sm text-slate-200">{ktpComponents.city || <span className="text-slate-500">Belum diisi</span>}</p>
+                              </div>
+                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Kecamatan</p>
+                                <p className="text-sm text-slate-200">{ktpComponents.district || <span className="text-slate-500">Belum diisi</span>}</p>
+                              </div>
+                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Desa/Kelurahan</p>
+                                <p className="text-sm text-slate-200">{ktpComponents.village || <span className="text-slate-500">Belum diisi</span>}</p>
+                              </div>
+                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Jalan / Nama Jalan</p>
+                                <p className="text-sm text-slate-200">{ktpComponents.street || <span className="text-slate-500">Belum diisi</span>}</p>
+                              </div>
+                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">RT</p>
+                                <p className="text-sm text-slate-200">{ktpComponents.rt || <span className="text-slate-500">Belum diisi</span>}</p>
+                              </div>
+                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">RW</p>
+                                <p className="text-sm text-slate-200">{ktpComponents.rw || <span className="text-slate-500">Belum diisi</span>}</p>
+                              </div>
+                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Kode Pos</p>
+                                <p className="text-sm text-slate-200">{ktpComponents.postalCode || <span className="text-slate-500">Belum diisi</span>}</p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </CardContent>
                   </Card>
 
@@ -2286,6 +2343,49 @@ export default function EmployeeDetailPage({
                             "Alamat domisili belum dilengkapi."}
                         </p>
                       </div>
+                      {/* Address Breakdown - Domisili */}
+                      {(() => {
+                        const domicileComponents = extractAddressComponents(al.domisili);
+                        return (
+                          <div className="mt-6 space-y-4">
+                            <h3 className="text-xs font-bold text-white uppercase tracking-widest">Detail Alamat Domisili</h3>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Provinsi</p>
+                                <p className="text-sm text-slate-200">{domicileComponents.province || <span className="text-slate-500">Belum diisi</span>}</p>
+                              </div>
+                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Kabupaten/Kota</p>
+                                <p className="text-sm text-slate-200">{domicileComponents.city || <span className="text-slate-500">Belum diisi</span>}</p>
+                              </div>
+                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Kecamatan</p>
+                                <p className="text-sm text-slate-200">{domicileComponents.district || <span className="text-slate-500">Belum diisi</span>}</p>
+                              </div>
+                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Desa/Kelurahan</p>
+                                <p className="text-sm text-slate-200">{domicileComponents.village || <span className="text-slate-500">Belum diisi</span>}</p>
+                              </div>
+                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Jalan / Nama Jalan</p>
+                                <p className="text-sm text-slate-200">{domicileComponents.street || <span className="text-slate-500">Belum diisi</span>}</p>
+                              </div>
+                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">RT</p>
+                                <p className="text-sm text-slate-200">{domicileComponents.rt || <span className="text-slate-500">Belum diisi</span>}</p>
+                              </div>
+                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">RW</p>
+                                <p className="text-sm text-slate-200">{domicileComponents.rw || <span className="text-slate-500">Belum diisi</span>}</p>
+                              </div>
+                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Kode Pos</p>
+                                <p className="text-sm text-slate-200">{domicileComponents.postalCode || <span className="text-slate-500">Belum diisi</span>}</p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </CardContent>
                   </Card>
                 </div>
