@@ -938,42 +938,42 @@ export function PermissionApprovalClient({
     highlightClass: string,
     buttonLabel: string,
   ) => (
-    <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-background shadow-sm">
+    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 shadow-sm">
       <div
         className={cn(
-          "flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between p-4 border-b",
+          "flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between p-4 border-b border-slate-200 dark:border-slate-800",
           highlightClass,
         )}
       >
         <div>
-          <p className="text-sm font-semibold text-foreground">{title}</p>
-          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+          <p className="text-sm font-semibold text-slate-900 dark:text-white">{title}</p>
+          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{description}</p>
         </div>
         <div className="text-right">
-          <p className="text-3xl font-semibold text-foreground">
+          <p className="text-3xl font-semibold text-slate-900 dark:text-white">
             {items.length}
           </p>
-          <p className="text-sm text-muted-foreground">Pengajuan</p>
+          <p className="text-sm text-slate-600 dark:text-slate-400">Pengajuan</p>
         </div>
       </div>
       {items.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-2 p-10 text-center text-sm text-muted-foreground">
-          <FileText className="h-8 w-8 opacity-30" />
+        <div className="flex flex-col items-center justify-center gap-2 p-10 text-center text-sm text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50">
+          <FileText className="h-8 w-8 opacity-30 text-slate-400 dark:text-slate-600" />
           <p>{emptyMessage}</p>
         </div>
       ) : (
         <div className="overflow-x-auto">
           <Table className="min-w-[1000px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[180px]">Pengaju</TableHead>
-                <TableHead className="w-[190px]">Izin</TableHead>
-                <TableHead className="w-[130px]">Periode</TableHead>
-                <TableHead className="w-[150px]">Brand / Divisi</TableHead>
-                <TableHead className="w-[170px]">Keterangan</TableHead>
-                <TableHead className="w-[90px]">Lampiran</TableHead>
-                <TableHead className="w-[210px]">Status / Menunggu</TableHead>
-                <TableHead className="w-[100px] text-right">Aksi</TableHead>
+            <TableHeader className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
+              <TableRow className="border-b border-slate-200 dark:border-slate-800">
+                <TableHead className="w-[180px] text-slate-600 dark:text-slate-400 font-semibold">Pengaju</TableHead>
+                <TableHead className="w-[190px] text-slate-600 dark:text-slate-400 font-semibold">Izin</TableHead>
+                <TableHead className="w-[130px] text-slate-600 dark:text-slate-400 font-semibold">Periode</TableHead>
+                <TableHead className="w-[150px] text-slate-600 dark:text-slate-400 font-semibold">Brand / Divisi</TableHead>
+                <TableHead className="w-[170px] text-slate-600 dark:text-slate-400 font-semibold">Keterangan</TableHead>
+                <TableHead className="w-[90px] text-slate-600 dark:text-slate-400 font-semibold">Lampiran</TableHead>
+                <TableHead className="w-[210px] text-slate-600 dark:text-slate-400 font-semibold">Status / Menunggu</TableHead>
+                <TableHead className="w-[100px] text-right text-slate-600 dark:text-slate-400 font-semibold">Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1033,29 +1033,29 @@ export function PermissionApprovalClient({
                 return (
                   <TableRow
                     key={s.id}
-                    className="cursor-pointer transition-colors hover:bg-slate-800/40 dark:hover:bg-slate-700/30"
+                    className="cursor-pointer transition-colors bg-white dark:bg-slate-950/20 border-b border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900/20"
                     onClick={() => setSelectedSubmission(s)}
                   >
                     <TableCell>
-                      <p className="font-medium text-sm leading-snug">
+                      <p className="font-medium text-sm leading-snug text-slate-900 dark:text-white">
                         {s.fullName}
                       </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
                         {getApplicantSubtitle(s) || "Data jabatan belum diatur"}
                       </p>
                     </TableCell>
                     <TableCell>
-                      <p className="text-sm font-medium leading-snug">
+                      <p className="text-sm font-medium leading-snug text-slate-900 dark:text-white">
                         {formLabel}
                       </p>
                       {reasonLabel && (
-                        <p className="text-xs text-muted-foreground mt-0.5">
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
                           {reasonLabel}
                         </p>
                       )}
                     </TableCell>
                     <TableCell>
-                      <div className="text-sm leading-snug">
+                      <div className="text-sm leading-snug text-slate-900 dark:text-white">
                         {startDt && endDt ? (
                           isOfficeExit ? (
                             <>
@@ -1064,7 +1064,7 @@ export function PermissionApprovalClient({
                                   locale: idLocale,
                                 })}
                               </p>
-                              <p className="text-xs text-muted-foreground mt-0.5">
+                              <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
                                 {format(startDt, "HH:mm")} —{" "}
                                 {format(endDt, "HH:mm")}
                               </p>
@@ -1085,25 +1085,25 @@ export function PermissionApprovalClient({
                             </p>
                           )
                         ) : (
-                          <p className="text-muted-foreground">—</p>
+                          <p className="text-slate-600 dark:text-slate-400">—</p>
                         )}
-                        <p className="text-xs text-muted-foreground mt-0.5">
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
                           {formatDuration(s)}
                         </p>
                       </div>
                     </TableCell>
                     <TableCell>
-                      <p className="text-sm font-medium text-foreground">
+                      <p className="text-sm font-medium text-slate-900 dark:text-white">
                         {s._resolvedApplicantBrand || s.brandName || "—"}
                       </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
                         {s._resolvedApplicantDivision || s.division || "—"}
                       </p>
                     </TableCell>
                     <TableCell>
-                      <p className="text-sm text-foreground/75 line-clamp-2 leading-relaxed">
+                      <p className="text-sm text-slate-700 dark:text-slate-300 line-clamp-2 leading-relaxed">
                         {reasonText || (
-                          <span className="text-muted-foreground text-xs italic">
+                          <span className="text-slate-600 dark:text-slate-400 text-xs italic">
                             Tidak ada keterangan.
                           </span>
                         )}
@@ -1271,7 +1271,7 @@ export function PermissionApprovalClient({
 
           {/* ── Tab bar (manager only) ── */}
           {mode === "manager" && (
-            <div className="flex flex-wrap gap-1 mt-3 pt-3 border-t border-border/50">
+            <div className="flex flex-wrap gap-1 mt-3 pt-3 border-t border-slate-200 dark:border-slate-800">
               {managerTabs.map((tab) => {
                 const isActive = activeTab === tab.id;
                 return (
@@ -1282,7 +1282,7 @@ export function PermissionApprovalClient({
                       "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
                       isActive
                         ? "bg-primary text-primary-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground hover:bg-muted",
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800",
                     )}
                   >
                     {tab.label}
@@ -1308,14 +1308,14 @@ export function PermissionApprovalClient({
 
           {/* ── Tab bar (HRD only) ── */}
           {mode === "hrd" && (
-            <div className="flex flex-wrap gap-1 mt-3 pt-3 border-t border-border/50">
+            <div className="flex flex-wrap gap-1 mt-3 pt-3 border-t border-slate-200 dark:border-slate-800">
               <button
                 onClick={() => setHrdActiveTab("validation_needed")}
                 className={cn(
                   "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
                   hrdActiveTab === "validation_needed"
                     ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted",
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800",
                 )}
               >
                 Butuh Validasi
@@ -1331,7 +1331,7 @@ export function PermissionApprovalClient({
                   "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
                   hrdActiveTab === "manager_process"
                     ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted",
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800",
                 )}
               >
                 Proses Manager
@@ -1347,7 +1347,7 @@ export function PermissionApprovalClient({
                   "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
                   hrdActiveTab === "impact_summary"
                     ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted",
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800",
                 )}
               >
                 Rekap Dampak
@@ -1358,7 +1358,7 @@ export function PermissionApprovalClient({
                   "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
                   hrdActiveTab === "history"
                     ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted",
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800",
                 )}
               >
                 Riwayat Detail
@@ -1373,22 +1373,22 @@ export function PermissionApprovalClient({
             <div className="flex flex-wrap gap-2">
               {/* Search */}
               <div className="relative flex-1 min-w-[200px]">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 dark:text-slate-500 pointer-events-none" />
                 <Input
                   placeholder="Cari nama, keterangan, divisi..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-8 h-9 text-sm"
+                  className="pl-8 h-9 text-sm bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white placeholder:text-slate-500 dark:placeholder:text-slate-400"
                 />
               </div>
 
               {/* Status (HRD only) */}
               {mode === "hrd" && (
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-[150px] h-9 text-sm">
+                  <SelectTrigger className="w-[150px] h-9 text-sm bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white">
                     <SelectValue placeholder="Status" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                     <SelectItem value="all">Semua Status</SelectItem>
                     <SelectItem value="draft">Draft</SelectItem>
                     <SelectItem value="pending_manager">
@@ -1420,10 +1420,10 @@ export function PermissionApprovalClient({
               {/* Tahap (HRD only) */}
               {mode === "hrd" && (
                 <Select value={tahapFilter} onValueChange={setTahapFilter}>
-                  <SelectTrigger className="w-[150px] h-9 text-sm">
+                  <SelectTrigger className="w-[150px] h-9 text-sm bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white">
                     <SelectValue placeholder="Tahap" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                     <SelectItem value="all">Semua Tahap</SelectItem>
                     <SelectItem value="pending_manager">
                       Menunggu Manager
@@ -1439,10 +1439,10 @@ export function PermissionApprovalClient({
               {/* Penanggung Jawab Saat Ini (HRD only) */}
               {mode === "hrd" && (
                 <Select value={waitingForFilter} onValueChange={setWaitingForFilter}>
-                  <SelectTrigger className="w-[180px] h-9 text-sm">
+                  <SelectTrigger className="w-[180px] h-9 text-sm bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white">
                     <SelectValue placeholder="Penanggung Jawab" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                     <SelectItem value="all">Semua Penanggung Jawab</SelectItem>
                     <SelectItem value="pending_manager">Menunggu Manager</SelectItem>
                     <SelectItem value="pending_hrd">Menunggu HRD</SelectItem>
@@ -1457,10 +1457,10 @@ export function PermissionApprovalClient({
               <div className="flex flex-wrap gap-2">
                 {/* Bentuk izin */}
                 <Select value={filterFormType} onValueChange={setFilterFormType}>
-                  <SelectTrigger className="w-[150px] h-9 text-sm">
+                  <SelectTrigger className="w-[150px] h-9 text-sm bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white">
                     <SelectValue placeholder="Bentuk Izin" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                     {FORM_TYPE_OPTIONS.map((o) => (
                       <SelectItem key={o.value} value={o.value}>
                         {o.label}
@@ -1474,10 +1474,10 @@ export function PermissionApprovalClient({
                   value={filterReasonType}
                   onValueChange={setFilterReasonType}
                 >
-                  <SelectTrigger className="w-[150px] h-9 text-sm">
+                  <SelectTrigger className="w-[150px] h-9 text-sm bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white">
                     <SelectValue placeholder="Alasan" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                     <SelectItem value="all">Semua Alasan</SelectItem>
                     <SelectItem value="sakit">Sakit</SelectItem>
                     <SelectItem value="duka">Duka Cita</SelectItem>
@@ -1498,10 +1498,10 @@ export function PermissionApprovalClient({
 
                 {/* Brand */}
                 <Select value={brandFilter} onValueChange={setBrandFilter}>
-                  <SelectTrigger className="w-[140px] h-9 text-sm">
+                  <SelectTrigger className="w-[140px] h-9 text-sm bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white">
                     <SelectValue placeholder="Brand" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                     <SelectItem value="all">Semua Brand</SelectItem>
                     {brandsList?.map((b: Brand) => (
                       <SelectItem key={b.id} value={b.id!}>
@@ -1516,10 +1516,10 @@ export function PermissionApprovalClient({
                   value={divisionFilter}
                   onValueChange={setDivisionFilter}
                 >
-                  <SelectTrigger className="w-[140px] h-9 text-sm">
+                  <SelectTrigger className="w-[140px] h-9 text-sm bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white">
                     <SelectValue placeholder="Divisi" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                     <SelectItem value="all">Semua Divisi</SelectItem>
                     {availableDivisions.map((d) => (
                       <SelectItem key={d} value={d}>
@@ -1532,21 +1532,21 @@ export function PermissionApprovalClient({
                 {/* Periode Pengajuan */}
                 <div className="flex items-end gap-2">
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs font-medium text-muted-foreground">Dari</label>
+                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Dari</label>
                     <Input
                       type="date"
                       value={filterDateFrom}
                       onChange={(e) => setFilterDateFrom(e.target.value)}
-                      className="w-[130px] h-9 text-sm"
+                      className="w-[130px] h-9 text-sm bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
                     />
                   </div>
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs font-medium text-muted-foreground">Sampai</label>
+                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Sampai</label>
                     <Input
                       type="date"
                       value={filterDateTo}
                       onChange={(e) => setFilterDateTo(e.target.value)}
-                      className="w-[130px] h-9 text-sm"
+                      className="w-[130px] h-9 text-sm bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
                     />
                   </div>
                 </div>
@@ -1590,10 +1590,10 @@ export function PermissionApprovalClient({
               <div className="flex flex-wrap gap-2">
                 {/* Bentuk izin */}
                 <Select value={filterFormType} onValueChange={setFilterFormType}>
-                  <SelectTrigger className="w-[150px] h-9 text-sm">
+                  <SelectTrigger className="w-[150px] h-9 text-sm bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white">
                     <SelectValue placeholder="Bentuk Izin" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                     {FORM_TYPE_OPTIONS.map((o) => (
                       <SelectItem key={o.value} value={o.value}>
                         {o.label}
@@ -1605,21 +1605,21 @@ export function PermissionApprovalClient({
                 {/* Periode Pengajuan */}
                 <div className="flex items-end gap-2">
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs font-medium text-muted-foreground">Dari</label>
+                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Dari</label>
                     <Input
                       type="date"
                       value={filterDateFrom}
                       onChange={(e) => setFilterDateFrom(e.target.value)}
-                      className="w-[130px] h-9 text-sm"
+                      className="w-[130px] h-9 text-sm bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
                     />
                   </div>
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs font-medium text-muted-foreground">Sampai</label>
+                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Sampai</label>
                     <Input
                       type="date"
                       value={filterDateTo}
                       onChange={(e) => setFilterDateTo(e.target.value)}
-                      className="w-[130px] h-9 text-sm"
+                      className="w-[130px] h-9 text-sm bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
                     />
                   </div>
                 </div>
@@ -1725,24 +1725,24 @@ export function PermissionApprovalClient({
               )}
             </>
           ) : (
-            <div className="rounded-lg border overflow-x-auto">
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 overflow-x-auto">
               <Table className="min-w-[1100px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[175px]">Pengaju</TableHead>
-                    <TableHead className="w-[190px]">Izin</TableHead>
-                    <TableHead className="w-[140px]">Periode</TableHead>
+                <TableHeader className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
+                  <TableRow className="border-b border-slate-200 dark:border-slate-800">
+                    <TableHead className="w-[175px] text-slate-600 dark:text-slate-400 font-semibold">Pengaju</TableHead>
+                    <TableHead className="w-[190px] text-slate-600 dark:text-slate-400 font-semibold">Izin</TableHead>
+                    <TableHead className="w-[140px] text-slate-600 dark:text-slate-400 font-semibold">Periode</TableHead>
                     {mode === "hrd" && (
-                      <TableHead className="w-[140px]">Brand / Divisi</TableHead>
+                      <TableHead className="w-[140px] text-slate-600 dark:text-slate-400 font-semibold">Brand / Divisi</TableHead>
                     )}
-                    <TableHead className="w-[165px]">Keterangan</TableHead>
-                    <TableHead className="w-[90px]">Lampiran</TableHead>
+                    <TableHead className="w-[165px] text-slate-600 dark:text-slate-400 font-semibold">Keterangan</TableHead>
+                    <TableHead className="w-[90px] text-slate-600 dark:text-slate-400 font-semibold">Lampiran</TableHead>
                     {mode === "hrd" && (
-                      <TableHead className="w-[130px]">Tahap</TableHead>
+                      <TableHead className="w-[130px] text-slate-600 dark:text-slate-400 font-semibold">Tahap</TableHead>
                     )}
-                    <TableHead className="w-[185px]">Status</TableHead>
-                    <TableHead className="w-[155px]">Menunggu</TableHead>
-                    <TableHead className="w-[100px] text-right">Aksi</TableHead>
+                    <TableHead className="w-[185px] text-slate-600 dark:text-slate-400 font-semibold">Status</TableHead>
+                    <TableHead className="w-[155px] text-slate-600 dark:text-slate-400 font-semibold">Menunggu</TableHead>
+                    <TableHead className="w-[100px] text-right text-slate-600 dark:text-slate-400 font-semibold">Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
 
@@ -1751,7 +1751,7 @@ export function PermissionApprovalClient({
                     <TableRow>
                       <TableCell
                         colSpan={colSpan}
-                        className="h-28 text-center text-muted-foreground"
+                        className="h-28 text-center text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-950/20"
                       >
                         Memuat data...
                       </TableCell>
@@ -1777,37 +1777,37 @@ export function PermissionApprovalClient({
                       const isHrdActionable =
                         isHrdValidationPhase(s) && !isFinalStatus(s.status);
 
-                      let rowClass = "hover:bg-slate-800/40 dark:hover:bg-slate-700/30";
+                      let rowClass = "bg-white dark:bg-slate-950/20 border-b border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900/20";
                       if (mode === "hrd") {
                         if (isHrdActionable) {
                           rowClass =
-                            "bg-teal-50/20 hover:bg-teal-800/40 border-l-2 border-l-teal-500 dark:bg-teal-950/10 dark:hover:bg-slate-700/30";
+                            "bg-teal-50 dark:bg-teal-950/20 border-l-2 border-l-teal-500 border-b border-slate-200 dark:border-slate-800 hover:bg-teal-100/50 dark:hover:bg-teal-950/30";
                         } else if (s.status === "pending_manager") {
                           rowClass =
-                            "bg-amber-50/10 hover:bg-slate-800/40 border-l-2 border-l-amber-400 dark:bg-amber-950/5 dark:hover:bg-slate-700/30";
+                            "bg-amber-50 dark:bg-amber-950/10 border-l-2 border-l-amber-400 border-b border-slate-200 dark:border-slate-800 hover:bg-amber-100/50 dark:hover:bg-amber-950/20";
                         } else if (
                           s.status === "approved" ||
                           s.status === "closed"
                         ) {
                           rowClass =
-                            "bg-emerald-50/10 hover:bg-slate-800/40 dark:bg-emerald-950/5 dark:hover:bg-slate-700/30";
+                            "bg-emerald-50 dark:bg-emerald-950/10 border-b border-slate-200 dark:border-slate-800 hover:bg-emerald-100/50 dark:hover:bg-emerald-950/20";
                         } else if (
                           s.status === "rejected_manager" ||
                           s.status === "rejected_hrd"
                         ) {
                           rowClass =
-                            "bg-rose-50/10 hover:bg-slate-800/40 dark:bg-rose-950/5 dark:hover:bg-slate-700/30";
+                            "bg-rose-50 dark:bg-rose-950/10 border-b border-slate-200 dark:border-slate-800 hover:bg-rose-100/50 dark:hover:bg-rose-950/20";
                         } else if (
                           s.status === "revision_manager" ||
                           s.status === "revision_hrd"
                         ) {
                           rowClass =
-                            "bg-orange-50/10 hover:bg-slate-800/40 dark:bg-orange-950/5 dark:hover:bg-slate-700/30";
+                            "bg-orange-50 dark:bg-orange-950/10 border-b border-slate-200 dark:border-slate-800 hover:bg-orange-100/50 dark:hover:bg-orange-950/20";
                         }
                       } else {
                         if (needsMyAction) {
                           rowClass =
-                            "border-l-2 border-l-amber-400 bg-amber-50/25 dark:bg-amber-900/10 hover:bg-slate-800/40 dark:hover:bg-slate-700/30";
+                            "border-l-2 border-l-amber-400 bg-amber-50 dark:bg-amber-950/20 border-b border-slate-200 dark:border-slate-800 hover:bg-amber-100/50 dark:hover:bg-amber-950/30";
                         }
                       }
 
@@ -1822,10 +1822,10 @@ export function PermissionApprovalClient({
                         >
                           {/* Pengaju */}
                           <TableCell>
-                            <p className="font-medium text-sm leading-snug">
+                            <p className="font-medium text-sm leading-snug text-slate-900 dark:text-white">
                               {s.fullName}
                             </p>
-                            <p className="text-xs text-muted-foreground mt-0.5">
+                            <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
                               {(() => {
                                 const subtitle = getApplicantSubtitle(s);
                                 return subtitle || "Data jabatan belum diatur";
@@ -1843,16 +1843,16 @@ export function PermissionApprovalClient({
 
                           {/* Izin */}
                           <TableCell>
-                            <p className="text-sm font-medium leading-snug">
+                            <p className="text-sm font-medium leading-snug text-slate-900 dark:text-white">
                               {formLabel}
                             </p>
                             {reasonLabel && (
-                              <p className="text-xs text-muted-foreground mt-0.5">
+                              <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
                                 {reasonLabel}
                               </p>
                             )}
                             {s.otherTitle && (
-                              <p className="text-xs text-muted-foreground mt-0.5 italic truncate max-w-[160px]">
+                              <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5 italic truncate max-w-[160px]">
                                 {s.otherTitle}
                               </p>
                             )}
@@ -1860,7 +1860,7 @@ export function PermissionApprovalClient({
 
                           {/* Periode */}
                           <TableCell>
-                            <div className="text-sm leading-snug">
+                            <div className="text-sm leading-snug text-slate-900 dark:text-white">
                               {startDt && endDt ? (
                                 isOfficeExit ? (
                                   <>
@@ -1869,7 +1869,7 @@ export function PermissionApprovalClient({
                                         locale: idLocale,
                                       })}
                                     </p>
-                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
                                       {format(startDt, "HH:mm")} —{" "}
                                       {format(endDt, "HH:mm")}
                                     </p>
@@ -1892,9 +1892,9 @@ export function PermissionApprovalClient({
                                   </p>
                                 )
                               ) : (
-                                <p className="text-muted-foreground">—</p>
+                                <p className="text-slate-600 dark:text-slate-400">—</p>
                               )}
-                              <p className="text-xs text-muted-foreground mt-0.5">
+                              <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
                                 {formatDuration(s)}
                               </p>
                             </div>
@@ -1903,10 +1903,10 @@ export function PermissionApprovalClient({
                           {/* Brand / Divisi (HRD only) */}
                           {mode === "hrd" && (
                             <TableCell>
-                              <p className="text-sm font-medium text-foreground">
+                              <p className="text-sm font-medium text-slate-900 dark:text-white">
                                 {s._resolvedApplicantBrand || s.brandName || "—"}
                               </p>
-                              <p className="text-xs text-muted-foreground mt-0.5">
+                              <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
                                 {s._resolvedApplicantDivision || s.division || "—"}
                               </p>
                             </TableCell>
@@ -1914,15 +1914,15 @@ export function PermissionApprovalClient({
 
                           {/* Keterangan */}
                           <TableCell>
-                            <p className="text-sm text-foreground/75 line-clamp-2 leading-relaxed">
+                            <p className="text-sm text-slate-700 dark:text-slate-300 line-clamp-2 leading-relaxed">
                               {reasonText || (
-                                <span className="text-muted-foreground text-xs italic">
+                                <span className="text-slate-600 dark:text-slate-400 text-xs italic">
                                   Tidak ada keterangan.
                                 </span>
                               )}
                             </p>
                             {s.createdAt && resolveDate(s.createdAt) && (
-                              <p className="text-[10px] text-muted-foreground/55 mt-0.5">
+                              <p className="text-[10px] text-slate-500 dark:text-slate-500 mt-0.5">
                                 {formatDistanceToNow(resolveDate(s.createdAt)!, {
                                   addSuffix: true,
                                   locale: idLocale,
@@ -1951,17 +1951,17 @@ export function PermissionApprovalClient({
                             <TableCell>
                               {(() => {
                                 const tahap = getTahapLabel(s);
-                                let tahapClass = "bg-slate-100 text-slate-700";
+                                let tahapClass = "bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200";
                                 if (tahap === "Menunggu Manager") {
-                                  tahapClass = "bg-amber-100 text-amber-700";
+                                  tahapClass = "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
                                 } else if (tahap === "Butuh Validasi HRD") {
-                                  tahapClass = "bg-teal-100 text-teal-700";
+                                  tahapClass = "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300";
                                 } else if (tahap === "Selesai") {
-                                  tahapClass = "bg-emerald-100 text-emerald-700";
+                                  tahapClass = "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300";
                                 } else if (tahap === "Ditolak") {
-                                  tahapClass = "bg-rose-100 text-rose-700";
+                                  tahapClass = "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300";
                                 } else if (tahap === "Perlu Revisi") {
-                                  tahapClass = "bg-orange-100 text-orange-700";
+                                  tahapClass = "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300";
                                 }
                                 return (
                                   <Badge
@@ -1981,34 +1981,34 @@ export function PermissionApprovalClient({
                           <TableCell>
                             {(() => {
                               const label = getHumanStatusLabel(s);
-                              let statusClass = "bg-slate-100 text-slate-800";
+                              let statusClass = "bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-200";
                               if (s.status === "pending_manager") {
                                 statusClass =
-                                  "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/30";
+                                  "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300";
                               } else if (
                                 isHrdValidationPhase(s) &&
                                 !isFinalStatus(s.status)
                               ) {
                                 statusClass =
-                                  "bg-teal-100 text-teal-800 border-teal-200 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-900/30";
+                                  "bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300";
                               } else if (
                                 s.status === "approved" ||
                                 s.status === "closed"
                               ) {
                                 statusClass =
-                                  "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/30";
+                                  "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300";
                               } else if (
                                 s.status === "rejected_manager" ||
                                 s.status === "rejected_hrd"
                               ) {
                                 statusClass =
-                                  "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/30";
+                                  "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300";
                               } else if (
                                 s.status === "revision_manager" ||
                                 s.status === "revision_hrd"
                               ) {
                                 statusClass =
-                                  "bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-950/40 dark:text-orange-300 dark:border-orange-900/30";
+                                  "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300";
                               }
                               return (
                                 <Badge
@@ -2036,7 +2036,7 @@ export function PermissionApprovalClient({
                             {(() => {
                               if (isFinalStatus(s.status)) {
                                 return (
-                                  <span className="text-xs text-muted-foreground">
+                                  <span className="text-xs text-slate-600 dark:text-slate-400">
                                     Selesai
                                   </span>
                                 );
@@ -2105,11 +2105,11 @@ export function PermissionApprovalClient({
                       );
                     })
                   ) : (
-                    <TableRow>
-                      <TableCell colSpan={colSpan} className="h-36 text-center">
-                        <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                          <FileText className="h-8 w-8 opacity-25" />
-                          <p className="text-sm font-medium">
+                    <TableRow className="bg-white dark:bg-slate-950/20 border-b border-slate-200 dark:border-slate-800">
+                      <TableCell colSpan={colSpan} className="h-36 text-center bg-slate-50 dark:bg-slate-800/50">
+                        <div className="flex flex-col items-center gap-2 text-slate-600 dark:text-slate-400">
+                          <FileText className="h-8 w-8 opacity-25 text-slate-400 dark:text-slate-600" />
+                          <p className="text-sm font-medium text-slate-900 dark:text-white">
                             {mode === "manager" && activeTab === "action_needed"
                               ? "Tidak ada pengajuan yang perlu Anda tindaklanjuti."
                               : hasActiveFilters
