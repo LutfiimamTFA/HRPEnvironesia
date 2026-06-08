@@ -31,20 +31,23 @@ export function calculateKpisAndRecords(
   attendanceEvents: AttendanceEvent[] | null,
   sites: AttendanceSite[] | null,
   brands: Brand[] | null,
-  newApplications: JobApplication[] | null, // This is now optional
-  filters: FilterState
+  newApplications: JobApplication[] | null,
+  filters: FilterState,
+  pendingIzin?: any[] | null,
+  pendingCuti?: any[] | null,
+  pendingLembur?: any[] | null,
 ): { kpis: Kpi[]; attendanceRecords: AttendanceRecord[] } {
   const defaultKpis: Kpi[] = [
-    { title: 'Karyawan Aktif', value: 0 },
-    { title: 'Hadir', value: 0 },
-    { title: 'On-Time', value: 0 },
-    { title: 'Terlambat', value: 0 },
-    { title: 'Belum Tap In', value: 0 },
-    { title: 'Belum Tap Out', value: 0 },
-    { title: 'Offsite', value: 0 },
-    { title: 'Anomali', value: 0 },
-    { title: 'Cuti Hari Ini', value: 0, description: 'Modul belum aktif' },
-    { title: 'Izin Hari Ini', value: 0, description: 'Modul belum aktif' },
+    { title: 'Karyawan Aktif', value: 0, color: 'slate', icon: '👥' },
+    { title: 'Hadir Hari Ini', value: 0, color: 'teal', icon: '✅' },
+    { title: 'On-Time', value: 0, color: 'teal', icon: '⏰' },
+    { title: 'Terlambat', value: 0, color: 'amber', icon: '⚠️', deltaType: 'inverse' },
+    { title: 'Belum Tap In', value: 0, color: 'red', icon: '🚫', deltaType: 'inverse' },
+    { title: 'Belum Tap Out', value: 0, color: 'amber', icon: '⏳', deltaType: 'inverse' },
+    { title: 'Izin Hari Ini', value: 0, color: 'blue', icon: '📋' },
+    { title: 'Cuti Hari Ini', value: 0, color: 'blue', icon: '🏖️' },
+    { title: 'Anomali Absensi', value: 0, color: 'red', icon: '⚡', deltaType: 'inverse' },
+    { title: 'Pending Approval', value: 0, color: 'amber', icon: '🔔' },
   ];
 
   if (!users || !sites || !brands) {
@@ -60,14 +63,14 @@ export function calculateKpisAndRecords(
 
   // Filter users based on global filters
   const filteredUsers = users.filter(user => {
-    if(!user.isActive) return false;
+    if (!user.isActive) return false;
     const userBrandIds = Array.isArray(user.brandId) ? user.brandId : (user.brandId ? [user.brandId] : []);
     if (filters.brandId && !userBrandIds.includes(filters.brandId)) return false;
     if (filters.employmentType && user.employmentType !== filters.employmentType) return false;
     if (filters.searchTerm && !user.fullName.toLowerCase().includes(filters.searchTerm.toLowerCase())) return false;
     return ['karyawan', 'magang', 'training'].includes(user.role);
   });
-  
+
   const activeSite = filters.siteId ? sites.find(s => s.id === filters.siteId) : sites.find(s => s.isActive);
   let shiftStart: Date | null = null;
   let shiftEnd: Date | null = null;
@@ -78,10 +81,10 @@ export function calculateKpisAndRecords(
     const [startHour, startMinute] = activeSite.shift.startTime.split(':').map(Number);
     const [endHour, endMinute] = activeSite.shift.endTime.split(':').map(Number);
     graceMinutes = activeSite.shift.graceLateMinutes || 0;
-    
+
     shiftStart = new Date(today);
     shiftStart.setHours(startHour, startMinute + graceMinutes, 0, 0);
-    
+
     shiftEnd = new Date(today);
     shiftEnd.setHours(endHour, endMinute, 0, 0);
   }
@@ -106,7 +109,7 @@ export function calculateKpisAndRecords(
     const lateMinutes = (shiftStart && tapInTimestamp && tapInTimestamp.toDate() > shiftStart)
       ? differenceInMinutes(tapInTimestamp.toDate(), shiftStart)
       : null;
-      
+
     const earlyLeaveMinutes = (shiftEnd && tapOutTimestamp && tapOutTimestamp.toDate() < shiftEnd)
       ? differenceInMinutes(shiftEnd, tapOutTimestamp.toDate())
       : null;
@@ -138,35 +141,107 @@ export function calculateKpisAndRecords(
       flags,
     };
   });
-  
+
   const totalActive = filteredUsers.length;
   const hadir = attendanceRecords.filter(r => r.status !== 'Belum Tap In' && r.status !== 'Cuti/Izin').length;
   const onTime = attendanceRecords.filter(r => r.status !== 'Belum Tap In' && (r.lateMinutes === null || r.lateMinutes <= 0)).length;
   const late = attendanceRecords.filter(r => r.lateMinutes !== null && r.lateMinutes > 0).length;
   const belumTapIn = totalActive - hadir;
   const belumTapOut = attendanceRecords.filter(r => r.status === 'Belum Tap Out').length;
-  const offsite = attendanceRecords.filter(r => r.mode === 'offsite').length;
   const anomali = attendanceRecords.filter(r => r.flags.length > 0).length;
 
+  // Pending approval counts
+  const totalPendingIzin = pendingIzin?.length || 0;
+  const totalPendingCuti = pendingCuti?.length || 0;
+  const totalPendingLembur = pendingLembur?.length || 0;
+  const totalPending = totalPendingIzin + totalPendingCuti + totalPendingLembur;
+
+  const pct = (val: number, total: number) =>
+    total > 0 ? Math.round((val / total) * 100) : 0;
 
   const kpis: Kpi[] = [
-    { title: 'Karyawan Aktif', value: totalActive },
-    { title: 'Hadir', value: hadir },
-    { title: 'On-Time', value: onTime },
-    { title: 'Terlambat', value: late, deltaType: 'inverse' },
-    { title: 'Belum Tap In', value: belumTapIn, deltaType: 'inverse' },
-    { title: 'Belum Tap Out', value: belumTapOut, deltaType: 'inverse' },
-    { title: 'Offsite', value: offsite },
-    { title: 'Anomali', value: anomali, deltaType: 'inverse' },
-    { title: 'Cuti Hari Ini', value: 0, description: 'Modul belum aktif' },
-    { title: 'Izin Hari Ini', value: 0, description: 'Modul belum aktif' },
+    {
+      title: 'Karyawan Aktif',
+      value: totalActive,
+      color: 'slate',
+      icon: '👥',
+      description: 'Total karyawan aktif',
+    },
+    {
+      title: 'Hadir Hari Ini',
+      value: hadir,
+      color: 'teal',
+      icon: '✅',
+      percentage: pct(hadir, totalActive),
+      description: `dari ${totalActive} aktif`,
+    },
+    {
+      title: 'On-Time',
+      value: onTime,
+      color: 'teal',
+      icon: '⏰',
+      percentage: pct(onTime, hadir),
+      description: 'dari yang hadir',
+    },
+    {
+      title: 'Terlambat',
+      value: late,
+      color: late > 0 ? 'amber' : 'teal',
+      icon: '⚠️',
+      deltaType: 'inverse',
+      percentage: pct(late, hadir),
+      description: 'dari yang hadir',
+    },
+    {
+      title: 'Belum Tap In',
+      value: belumTapIn,
+      color: belumTapIn > 0 ? 'red' : 'teal',
+      icon: '🚫',
+      deltaType: 'inverse',
+      percentage: pct(belumTapIn, totalActive),
+      description: 'dari total aktif',
+    },
+    {
+      title: 'Belum Tap Out',
+      value: belumTapOut,
+      color: belumTapOut > 0 ? 'amber' : 'teal',
+      icon: '⏳',
+      deltaType: 'inverse',
+      percentage: pct(belumTapOut, hadir),
+      description: 'dari yang hadir',
+    },
+    {
+      title: 'Izin Pending',
+      value: totalPendingIzin,
+      color: totalPendingIzin > 0 ? 'blue' : 'slate',
+      icon: '📋',
+      href: '/admin/hrd/persetujuan-izin',
+      description: 'menunggu persetujuan',
+    },
+    {
+      title: 'Cuti Pending',
+      value: totalPendingCuti,
+      color: totalPendingCuti > 0 ? 'blue' : 'slate',
+      icon: '🏖️',
+      href: '/admin/hrd/persetujuan-cuti',
+      description: 'menunggu persetujuan',
+    },
+    {
+      title: 'Anomali Absensi',
+      value: anomali,
+      color: anomali > 0 ? 'red' : 'teal',
+      icon: '⚡',
+      deltaType: 'inverse',
+      description: 'perlu diperiksa',
+    },
+    {
+      title: 'Pending Approval',
+      value: totalPending,
+      color: totalPending > 0 ? 'amber' : 'slate',
+      icon: '🔔',
+      description: `izin+cuti+lembur`,
+    },
   ];
-  
-   // Add recruitment KPIs if data is available
-  if (newApplications) {
-    kpis.push({ title: 'Lamaran Baru', value: newApplications.length });
-    kpis.push({ title: 'Interview Hari Ini', value: 0, description: 'Modul belum aktif' });
-  }
 
   return { kpis, attendanceRecords };
 }
@@ -183,12 +258,11 @@ export function generateChartData(
     const dayStart = startOfDay(day);
     const dayEnd = endOfDay(day);
     const dayEvents = allEvents?.filter(e => {
-        const eventDate = getTimestamp(e)?.toDate();
-        return eventDate && eventDate >= dayStart && eventDate <= dayEnd;
+      const eventDate = getTimestamp(e)?.toDate();
+      return eventDate && eventDate >= dayStart && eventDate <= dayEnd;
     }) || [];
 
     const hadirCount = new Set(dayEvents.filter(e => e.type === 'tap_in' || e.type === 'IN').map(e => e.uid || e.userId)).size;
-    // This is a simplified late count for the trend chart
     const lateCount = dayEvents.filter(e => e.flags?.includes('late')).length;
     const offsiteCount = dayEvents.filter(e => (e.mode as string)?.toLowerCase() === 'offsite').length;
 
@@ -203,7 +277,7 @@ export function generateChartData(
   // Status Distribution
   const hadir = records.filter(r => ['Sedang Bekerja', 'Selesai'].includes(r.status)).length;
   const belumTapIn = records.filter(r => r.status === 'Belum Tap In').length;
-  const cuti = 0; // Placeholder
+  const cuti = 0;
   const statusDistribution = [
     { name: 'Hadir', value: hadir, color: 'hsl(var(--chart-1))' },
     { name: 'Belum Tap In', value: belumTapIn, color: 'hsl(var(--chart-2))' },

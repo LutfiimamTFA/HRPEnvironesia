@@ -10,11 +10,15 @@ export interface FilterState {
 }
 
 export interface Kpi {
-    title: string;
-    value: string | number;
-    delta?: string;
-    deltaType?: 'default' | 'inverse';
-    description?: string;
+  title: string;
+  value: string | number;
+  delta?: string;
+  deltaType?: 'default' | 'inverse';
+  description?: string;
+  percentage?: number;
+  color?: 'teal' | 'amber' | 'red' | 'slate' | 'blue';
+  href?: string;
+  icon?: string;
 }
 
 export interface AttendanceRecord {
@@ -40,7 +44,7 @@ export interface AttendanceRecord {
 }
 
 export interface ChartData {
-    trend: { date: string; hadir: number; terlambat: number; offsite: number }[];
-    statusDistribution: { name: string; value: number; color: string }[];
-    topLate: { name: string; totalLateMinutes: number }[];
+  trend: { date: string; hadir: number; terlambat: number; offsite: number }[];
+  statusDistribution: { name: string; value: number; color: string }[];
+  topLate: { name: string; totalLateMinutes: number }[];
 }

@@ -31,8 +31,16 @@ import type {
   HrdEmploymentInfo,
   VerificationStatusGroup,
   OvertimeSubmission,
+  AttendanceSite,
 } from "@/lib/types";
+import {
+  ATTENDANCE_METHODS,
+  ATTENDANCE_METHOD_LABELS,
+  ATTENDANCE_LOCATION_MODE_LABELS,
+  type AttendanceSettings,
+} from "@/lib/attendance-methods";
 import { OvertimeStatusBadge } from "@/components/dashboard/karyawan/OvertimeStatusBadge";
+import { AttendanceMethodEditDialog } from "@/components/dashboard/hrd/AttendanceMethodEditDialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -92,6 +100,9 @@ import {
   Calendar,
   DollarSign,
   BarChart3,
+  Clock,
+  Fingerprint,
+  Monitor,
 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { useToast } from "@/hooks/use-toast";
@@ -223,7 +234,7 @@ const DataRow = ({
       {label}
     </p>
     <p
-      className={`text-sm font-medium text-slate-200 truncate ${className || ""}`}
+      className={`text-sm font-medium text-slate-800 dark:text-slate-200 truncate ${className || ""}`}
       title={String(value || "Belum diisi")}
     >
       {value !== undefined && value !== null && value !== ""
@@ -275,12 +286,12 @@ const DocumentPreviewCard = ({
   };
 
   return (
-    <Card className="group border-slate-800 bg-slate-950/40 backdrop-blur-xl hover:border-slate-700 transition-all duration-300">
-      <CardHeader className="pb-4 border-b border-slate-800/50">
+    <Card className="group border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl hover:border-slate-300 dark:hover:border-slate-700 transition-all duration-300">
+      <CardHeader className="pb-4 border-b border-slate-200 dark:border-slate-800/50">
         <div className="flex justify-between items-start">
           <Badge
             variant="outline"
-            className="text-[9px] uppercase tracking-tighter border-slate-800 text-slate-500"
+            className="text-[9px] uppercase tracking-tighter border-slate-300 dark:border-slate-800 text-slate-500"
           >
             {type}
           </Badge>
@@ -290,14 +301,14 @@ const DocumentPreviewCard = ({
               status === "Valid" || status === "Sudah Upload"
                 ? "border-emerald-500/20 text-emerald-500 bg-emerald-500/5"
                 : status === "Tidak Punya"
-                  ? "border-slate-700 text-slate-500 bg-slate-800/50"
+                  ? "border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-500 bg-slate-100 dark:bg-slate-800/50"
                   : "border-red-500/20 text-red-500 bg-red-500/5"
             }`}
           >
             {status}
           </Badge>
         </div>
-        <CardTitle className="text-sm font-bold text-slate-200 mt-2">
+        <CardTitle className="text-sm font-bold text-slate-800 dark:text-slate-200 mt-2">
           {label}
         </CardTitle>
         {value && (
@@ -308,7 +319,7 @@ const DocumentPreviewCard = ({
         {fileId ? (
           <div className="space-y-4">
             <div
-              className="aspect-video rounded-xl border border-slate-800 bg-slate-900/50 flex flex-col items-center justify-center text-slate-500 cursor-pointer hover:bg-slate-800/50 transition-colors text-center p-4 group"
+              className="aspect-video rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex flex-col items-center justify-center text-slate-500 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors text-center p-4 group"
               onClick={handleOpenSecure}
             >
               <FileText className="h-8 w-8 mb-2 opacity-40 group-hover:scale-110 transition-transform duration-500" />
@@ -320,7 +331,7 @@ const DocumentPreviewCard = ({
               <Button
                 variant="outline"
                 size="sm"
-                className="w-full rounded-xl border-slate-800 bg-slate-900/30 text-[10px] text-slate-400 hover:text-white hover:bg-slate-800 h-9"
+                className="w-full rounded-xl border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/30 text-[10px] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 h-9"
                 onClick={handleOpenSecure}
               >
                 <Eye className="h-3.5 w-3.5 mr-2" />
@@ -329,7 +340,7 @@ const DocumentPreviewCard = ({
             </div>
           </div>
         ) : (
-          <div className="aspect-video rounded-xl border border-dashed border-slate-800 bg-slate-900/20 flex flex-col items-center justify-center text-slate-500 p-4 text-center">
+          <div className="aspect-video rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/20 flex flex-col items-center justify-center text-slate-500 p-4 text-center">
             <FileX className="h-8 w-8 mb-2 opacity-20" />
             <span className="text-[10px] uppercase tracking-widest font-bold">
               File belum tersedia
@@ -438,7 +449,7 @@ const VerificationActionCard = ({
             placeholder="Masukkan catatan jika data perlu direvisi atau ditolak..."
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            className="bg-slate-900/50 border-slate-800 h-20"
+            className="bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 h-20"
           />
         </div>
         <div className="flex flex-wrap gap-3">
@@ -516,6 +527,8 @@ export default function EmployeeDetailPage({
   const [warningNoManager, setWarningNoManager] = useState(false);
   const [isOverrideActive, setIsOverrideActive] = useState(false);
   const [allPossibleSupervisors, setAllPossibleSupervisors] = useState<any[]>([]);
+  const [attendanceDialogOpen, setAttendanceDialogOpen] = useState(false);
+  const [sites, setSites] = useState<AttendanceSite[]>([]);
 
   const resolvedParams = React.use(params);
   const employeeId = resolvedParams.id;
@@ -560,6 +573,21 @@ export default function EmployeeDetailPage({
   const { data: brands, isLoading: brandsLoading } = useCollection<Brand>(
     useMemoFirebase(() => collection(firestore, "brands"), [firestore]),
   );
+
+  // Fetch attendance sites
+  const { data: sitesData, isLoading: sitesLoading } =
+    useCollection<AttendanceSite>(
+      useMemoFirebase(
+        () => collection(firestore, "attendance_sites"),
+        [firestore]
+      )
+    );
+
+  useEffect(() => {
+    if (sitesData) {
+      setSites(sitesData);
+    }
+  }, [sitesData]);
 
   // History query
   const historyQuery = useMemoFirebase(() => {
@@ -1506,6 +1534,37 @@ export default function EmployeeDetailPage({
     }
   };
 
+  const handleSaveAttendanceSettings = async (
+    settings: AttendanceSettings,
+  ) => {
+    if (!firebaseUser || !userProfile || !employeeId) return;
+    try {
+      const profileRef = doc(firestore, "employee_profiles", employeeId);
+      await setDoc(
+        profileRef,
+        {
+          attendanceMethod: settings.method,
+          attendanceRequired: settings.required,
+          attendanceLocationMode: settings.locationMode,
+          attendanceSiteIds: settings.siteIds,
+          attendancePolicyNote: settings.policyNote || "",
+          attendanceUpdatedAt: serverTimestamp(),
+          attendanceUpdatedBy: firebaseUser.uid,
+          attendanceUpdatedByName: userProfile.fullName,
+        },
+        { merge: true }
+      );
+
+      // Trigger re-fetch
+      mutateProfile?.();
+
+      setAttendanceDialogOpen(false);
+    } catch (error) {
+      console.error("Error saving attendance settings:", error);
+      throw error;
+    }
+  };
+
   const handleAddCareerHistory = async (data: {
     type: string;
     title: string;
@@ -1722,6 +1781,7 @@ export default function EmployeeDetailPage({
     { id: "ringkasan", label: "Ringkasan", icon: Briefcase },
     { id: "pribadi", label: "Profil Pribadi", icon: User },
     { id: "alamat", label: "Alamat & Kontak", icon: MapPin },
+    { id: "kehadiran", label: "Kehadiran & Absensi", icon: Clock },
     { id: "rekening", label: "Rekening & Payroll", icon: CreditCard },
     { id: "pendidikan", label: "Pendidikan", icon: GraduationCap },
     { id: "dokumen", label: "Dokumen", icon: FileText },
@@ -1733,7 +1793,7 @@ export default function EmployeeDetailPage({
   return (
     <div className="max-w-[1600px] mx-auto space-y-8 px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
       {/* Premium Header */}
-      <div className="relative overflow-hidden rounded-[2.5rem] border border-slate-800 bg-slate-950/40 p-8 shadow-2xl backdrop-blur-xl">
+      <div className="relative overflow-hidden rounded-[2.5rem] border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 p-8 shadow-2xl backdrop-blur-xl">
         <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-emerald-500/5 blur-[100px]"></div>
         <div className="absolute -left-20 -bottom-20 h-64 w-64 rounded-full bg-blue-500/5 blur-[100px]"></div>
 
@@ -1751,10 +1811,10 @@ export default function EmployeeDetailPage({
                   {employeeTypeBadgeLabel}
                 </Badge>
               </div>
-              <h1 className="text-4xl font-bold tracking-tight text-white mb-1">
+              <h1 className="text-4xl font-bold tracking-tight text-slate-900 dark:text-white mb-1">
                 {fullName}
               </h1>
-              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-4 text-slate-400">
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-4 text-slate-600 dark:text-slate-400">
                 <div className="flex items-center gap-1.5 text-sm">
                   <Mail className="h-4 w-4 text-slate-500" />
                   {email || "-"}
@@ -1770,7 +1830,7 @@ export default function EmployeeDetailPage({
           <div className="flex flex-wrap items-center justify-center gap-3">
             <Button
               variant="outline"
-              className="rounded-2xl border-slate-800 bg-slate-900/50 px-6 text-slate-300 hover:bg-slate-800 hover:text-white"
+              className="rounded-2xl border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 px-6 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
               onClick={() => router.push("/admin/hrd/employee-data/karyawan")}
             >
               <ArrowLeft className="h-4 w-4 mr-2" />
@@ -1786,11 +1846,11 @@ export default function EmployeeDetailPage({
               <Pencil className="h-4 w-4 mr-2" />
               Quick Action
             </Button>
-            <div className="h-10 w-[1px] bg-slate-800 mx-2 hidden sm:block"></div>
+            <div className="h-10 w-[1px] bg-slate-200 dark:bg-slate-800 mx-2 hidden sm:block"></div>
             <Button
               variant="ghost"
               size="icon"
-              className="rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white"
+              className="rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
             >
               <Settings className="h-5 w-5" />
             </Button>
@@ -1801,8 +1861,8 @@ export default function EmployeeDetailPage({
       <div className="flex flex-col lg:flex-row gap-8">
         {/* Sidebar Navigation */}
         <aside className="w-full lg:w-72 flex-shrink-0">
-          <div className="sticky top-8 space-y-2 rounded-[2rem] border border-slate-800 bg-slate-950/40 p-4 backdrop-blur-xl">
-            <p className="px-4 py-2 text-[10px] font-bold uppercase tracking-[0.3em] text-slate-500">
+          <div className="sticky top-8 space-y-2 rounded-[2rem] border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 p-4 backdrop-blur-xl">
+            <p className="px-4 py-2 text-[10px] font-bold uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500">
               Navigation
             </p>
             {sidebarMenuItems.map((item) => (
@@ -1812,15 +1872,15 @@ export default function EmployeeDetailPage({
                 className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3.5 text-sm font-medium transition-all duration-300 ${
                   activeTab === item.id
                     ? "bg-emerald-600 text-white shadow-lg shadow-emerald-600/20"
-                    : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                    : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200"
                 }`}
               >
                 <item.icon
-                  className={`h-5 w-5 ${activeTab === item.id ? "text-white" : "text-slate-500"}`}
+                  className={`h-5 w-5 ${activeTab === item.id ? "text-white" : "text-slate-400 dark:text-slate-500"}`}
                 />
                 {item.label}
                 {item.id === "dokumen" && (
-                  <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-slate-800 text-[10px] text-slate-400">
+                  <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] text-slate-600 dark:text-slate-400">
                     8
                   </span>
                 )}
@@ -1876,17 +1936,17 @@ export default function EmployeeDetailPage({
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   {/* Summary Column */}
                   <div className="space-y-8">
-                    <Card className="overflow-hidden border-slate-800 bg-slate-950/40 backdrop-blur-xl">
-                      <CardHeader className="border-b border-slate-800/50 bg-slate-900/20">
-                        <CardTitle className="text-base font-bold text-white flex items-center gap-2">
+                    <Card className="overflow-hidden border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl">
+                      <CardHeader className="border-b border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/20">
+                        <CardTitle className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                           <User className="h-5 w-5 text-emerald-500" />
                           Quick Profile
                         </CardTitle>
                       </CardHeader>
                       <CardContent className="p-0">
-                        <div className="p-6 flex flex-col items-center text-center border-b border-slate-800/50">
+                        <div className="p-6 flex flex-col items-center text-center border-b border-slate-200 dark:border-slate-800/50">
                           <div className="relative mb-4 group">
-                            <div className="h-32 w-32 rounded-[2.5rem] bg-slate-800 p-1 ring-1 ring-slate-700 shadow-2xl transition-transform duration-500 group-hover:scale-105 flex items-center justify-center overflow-hidden">
+                            <div className="h-32 w-32 rounded-[2.5rem] bg-slate-100 dark:bg-slate-800 p-1 ring-1 ring-slate-200 dark:ring-slate-700 shadow-2xl transition-transform duration-500 group-hover:scale-105 flex items-center justify-center overflow-hidden">
                               {profilePhotoFileId ? (
                                 <SecureDriveImage
                                   fileId={profilePhotoFileId}
@@ -1897,16 +1957,16 @@ export default function EmployeeDetailPage({
                                   }
                                 />
                               ) : (
-                                <div className="flex h-full w-full items-center justify-center rounded-[2.5rem] bg-slate-800">
+                                <div className="flex h-full w-full items-center justify-center rounded-[2.5rem] bg-slate-100 dark:bg-slate-800">
                                   <User className="h-12 w-12 text-slate-400" />
                                 </div>
                               )}
                             </div>
                           </div>
-                          <h2 className="text-xl font-bold text-white mb-1">
+                          <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-1">
                             {fullName}
                           </h2>
-                          <p className="text-sm text-slate-400 mb-4">
+                          <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                             {positionLabel}
                           </p>
                           <div className="flex gap-2">
@@ -1924,7 +1984,7 @@ export default function EmployeeDetailPage({
                               {completeness.percentage}%
                             </span>
                           </div>
-                          <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
+                          <div className="h-2 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
                             <div
                               className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 rounded-full transition-all duration-1000"
                               style={{ width: `${completeness.percentage}%` }}
@@ -1934,7 +1994,7 @@ export default function EmployeeDetailPage({
                       </CardContent>
                     </Card>
 
-                    <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl">
+                    <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl">
                       <CardHeader>
                         <CardTitle className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-500">
                           Informasi Dasar
@@ -1954,10 +2014,10 @@ export default function EmployeeDetailPage({
 
                   {/* Detail Column */}
                   <div className="lg:col-span-2 space-y-8">
-                    <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl">
-                      <CardHeader className="border-b border-slate-800/50 flex flex-row items-center justify-between">
+                    <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl">
+                      <CardHeader className="border-b border-slate-200 dark:border-slate-800/50 flex flex-row items-center justify-between">
                         <div>
-                          <CardTitle className="text-lg font-bold text-white">
+                          <CardTitle className="text-lg font-bold text-slate-900 dark:text-white">
                             Struktur & Penempatan
                           </CardTitle>
                           <CardDescription className="text-slate-500">
@@ -1999,26 +2059,26 @@ export default function EmployeeDetailPage({
                       </CardContent>
                     </Card>
 
-                    <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl overflow-hidden">
-                      <CardHeader className="border-b border-slate-800/50">
-                        <CardTitle className="text-lg font-bold text-white">
+                    <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl overflow-hidden">
+                      <CardHeader className="border-b border-slate-200 dark:border-slate-800/50">
+                        <CardTitle className="text-lg font-bold text-slate-900 dark:text-white">
                           Ringkasan Payroll
                         </CardTitle>
                       </CardHeader>
                       <CardContent className="p-8">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                          <div className="rounded-3xl bg-slate-900/50 p-6 border border-slate-800">
+                          <div className="rounded-3xl bg-slate-50 dark:bg-slate-900/50 p-6 border border-slate-200 dark:border-slate-800">
                             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">
                               Rekening
                             </p>
-                            <p className="text-lg font-bold text-white truncate">
+                            <p className="text-lg font-bold text-slate-900 dark:text-white truncate">
                               {rek.bankName || "N/A"}
                             </p>
-                            <p className="text-xs text-slate-400 font-mono mt-1">
+                            <p className="text-xs text-slate-600 dark:text-slate-400 font-mono mt-1">
                               {rek.bankAccountNumber || "N/A"}
                             </p>
                           </div>
-                          <div className="rounded-3xl bg-slate-900/50 p-6 border border-slate-800">
+                          <div className="rounded-3xl bg-slate-50 dark:bg-slate-900/50 p-6 border border-slate-200 dark:border-slate-800">
                             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">
                               Gaji Pokok
                             </p>
@@ -2028,11 +2088,11 @@ export default function EmployeeDetailPage({
                                 : "Confidential"}
                             </p>
                           </div>
-                          <div className="rounded-3xl bg-slate-900/50 p-6 border border-slate-800">
+                          <div className="rounded-3xl bg-slate-50 dark:bg-slate-900/50 p-6 border border-slate-200 dark:border-slate-800">
                             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">
                               Masa Kerja
                             </p>
-                            <p className="text-lg font-bold text-white">
+                            <p className="text-lg font-bold text-slate-900 dark:text-white">
                               {hrdInfo.tanggalMasuk
                                 ? format(
                                     new Date(hrdInfo.tanggalMasuk),
@@ -2065,9 +2125,9 @@ export default function EmployeeDetailPage({
                 />
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   <div className="lg:col-span-2 space-y-8">
-                    <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl">
-                      <CardHeader className="border-b border-slate-800/50 bg-slate-900/20">
-                        <CardTitle className="flex items-center gap-2 text-lg font-bold text-white">
+                    <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl">
+                      <CardHeader className="border-b border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/20">
+                        <CardTitle className="flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-white">
                           <User className="h-5 w-5 text-blue-500" />
                           Identitas Pribadi
                         </CardTitle>
@@ -2092,9 +2152,9 @@ export default function EmployeeDetailPage({
                       </CardContent>
                     </Card>
 
-                    <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl">
-                      <CardHeader className="border-b border-slate-800/50 bg-slate-900/20">
-                        <CardTitle className="flex items-center gap-2 text-lg font-bold text-white">
+                    <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl">
+                      <CardHeader className="border-b border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/20">
+                        <CardTitle className="flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-white">
                           <Heart className="h-5 w-5 text-red-500" />
                           Kesehatan & Fisik
                         </CardTitle>
@@ -2121,9 +2181,9 @@ export default function EmployeeDetailPage({
                       </CardContent>
                     </Card>
 
-                    <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl">
-                      <CardHeader className="border-b border-slate-800/50">
-                        <CardTitle className="text-lg font-bold text-white flex items-center gap-2">
+                    <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl">
+                      <CardHeader className="border-b border-slate-200 dark:border-slate-800/50">
+                        <CardTitle className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
                           <UsersIcon className="h-5 w-5 text-purple-500" />
                           Keluarga & Tanggungan
                         </CardTitle>
@@ -2147,10 +2207,10 @@ export default function EmployeeDetailPage({
                                       (k: any, i: number) => (
                                         <div
                                           key={i}
-                                          className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6"
+                                          className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-6"
                                         >
                                           <div className="flex justify-between items-start mb-4">
-                                            <h4 className="font-bold text-white">
+                                            <h4 className="font-bold text-slate-900 dark:text-white">
                                               {k.name}
                                             </h4>
                                             <Badge
@@ -2183,10 +2243,10 @@ export default function EmployeeDetailPage({
                                       (k: any, i: number) => (
                                         <div
                                           key={i}
-                                          className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6"
+                                          className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-6"
                                         >
                                           <div className="flex justify-between items-start mb-4">
-                                            <h4 className="font-bold text-white">
+                                            <h4 className="font-bold text-slate-900 dark:text-white">
                                               {k.name}
                                             </h4>
                                             <Badge
@@ -2225,7 +2285,7 @@ export default function EmployeeDetailPage({
                       value={dd.nik}
                     />
 
-                    <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl">
+                    <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl">
                       <CardHeader>
                         <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
                           Kontak Darurat
@@ -2236,9 +2296,9 @@ export default function EmployeeDetailPage({
                           contacts.map((c, i) => (
                             <div
                               key={i}
-                              className="p-4 rounded-2xl bg-slate-900/50 border border-slate-800"
+                              className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800"
                             >
-                              <p className="text-sm font-bold text-white">
+                              <p className="text-sm font-bold text-slate-900 dark:text-white">
                                 {c.name}
                               </p>
                               <p className="text-[10px] text-emerald-500 uppercase font-bold">
@@ -2269,16 +2329,16 @@ export default function EmployeeDetailPage({
                   currentNotes={profileDoc?.verificationNotes?.address}
                 />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl">
-                    <CardHeader className="border-b border-slate-800/50 bg-slate-900/20">
-                      <CardTitle className="flex items-center gap-2 text-lg font-bold text-white">
+                  <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl">
+                    <CardHeader className="border-b border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/20">
+                      <CardTitle className="flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-white">
                         <MapPin className="h-5 w-5 text-emerald-500" />
                         Alamat Sesuai KTP
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="p-8">
-                      <div className="rounded-3xl border border-slate-800 bg-slate-900/30 p-8 min-h-[120px] flex items-center shadow-inner">
-                        <p className="text-slate-200 leading-relaxed italic text-lg">
+                      <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/30 p-8 min-h-[120px] flex items-center shadow-inner">
+                        <p className="text-slate-800 dark:text-slate-200 leading-relaxed italic text-lg">
                           {formatAddress(al.ktp) ||
                             "Alamat KTP belum dilengkapi."}
                         </p>
@@ -2288,39 +2348,39 @@ export default function EmployeeDetailPage({
                         const ktpComponents = extractAddressComponents(al.ktp);
                         return (
                           <div className="mt-6 space-y-4">
-                            <h3 className="text-xs font-bold text-white uppercase tracking-widest">Detail Alamat KTP</h3>
+                            <h3 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-widest">Detail Alamat KTP</h3>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Provinsi</p>
-                                <p className="text-sm text-slate-200">{ktpComponents.province || <span className="text-slate-500">Belum diisi</span>}</p>
+                              <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">Provinsi</p>
+                                <p className="text-sm text-slate-800 dark:text-slate-200">{ktpComponents.province || <span className="text-slate-500">Belum diisi</span>}</p>
                               </div>
-                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Kabupaten/Kota</p>
-                                <p className="text-sm text-slate-200">{ktpComponents.city || <span className="text-slate-500">Belum diisi</span>}</p>
+                              <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">Kabupaten/Kota</p>
+                                <p className="text-sm text-slate-800 dark:text-slate-200">{ktpComponents.city || <span className="text-slate-500">Belum diisi</span>}</p>
                               </div>
-                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Kecamatan</p>
-                                <p className="text-sm text-slate-200">{ktpComponents.district || <span className="text-slate-500">Belum diisi</span>}</p>
+                              <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">Kecamatan</p>
+                                <p className="text-sm text-slate-800 dark:text-slate-200">{ktpComponents.district || <span className="text-slate-500">Belum diisi</span>}</p>
                               </div>
-                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Desa/Kelurahan</p>
-                                <p className="text-sm text-slate-200">{ktpComponents.village || <span className="text-slate-500">Belum diisi</span>}</p>
+                              <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">Desa/Kelurahan</p>
+                                <p className="text-sm text-slate-800 dark:text-slate-200">{ktpComponents.village || <span className="text-slate-500">Belum diisi</span>}</p>
                               </div>
-                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Jalan / Nama Jalan</p>
-                                <p className="text-sm text-slate-200">{ktpComponents.street || <span className="text-slate-500">Belum diisi</span>}</p>
+                              <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">Jalan / Nama Jalan</p>
+                                <p className="text-sm text-slate-800 dark:text-slate-200">{ktpComponents.street || <span className="text-slate-500">Belum diisi</span>}</p>
                               </div>
-                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">RT</p>
-                                <p className="text-sm text-slate-200">{ktpComponents.rt || <span className="text-slate-500">Belum diisi</span>}</p>
+                              <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">RT</p>
+                                <p className="text-sm text-slate-800 dark:text-slate-200">{ktpComponents.rt || <span className="text-slate-500">Belum diisi</span>}</p>
                               </div>
-                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">RW</p>
-                                <p className="text-sm text-slate-200">{ktpComponents.rw || <span className="text-slate-500">Belum diisi</span>}</p>
+                              <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">RW</p>
+                                <p className="text-sm text-slate-800 dark:text-slate-200">{ktpComponents.rw || <span className="text-slate-500">Belum diisi</span>}</p>
                               </div>
-                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Kode Pos</p>
-                                <p className="text-sm text-slate-200">{ktpComponents.postalCode || <span className="text-slate-500">Belum diisi</span>}</p>
+                              <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">Kode Pos</p>
+                                <p className="text-sm text-slate-800 dark:text-slate-200">{ktpComponents.postalCode || <span className="text-slate-500">Belum diisi</span>}</p>
                               </div>
                             </div>
                           </div>
@@ -2329,16 +2389,16 @@ export default function EmployeeDetailPage({
                     </CardContent>
                   </Card>
 
-                  <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl">
-                    <CardHeader className="border-b border-slate-800/50 bg-slate-900/20">
-                      <CardTitle className="flex items-center gap-2 text-lg font-bold text-white">
+                  <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl">
+                    <CardHeader className="border-b border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/20">
+                      <CardTitle className="flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-white">
                         <MapPin className="h-5 w-5 text-blue-500" />
                         Alamat Domisili
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="p-8">
-                      <div className="rounded-3xl border border-slate-800 bg-slate-900/30 p-8 min-h-[120px] flex items-center shadow-inner">
-                        <p className="text-slate-200 leading-relaxed italic text-lg">
+                      <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/30 p-8 min-h-[120px] flex items-center shadow-inner">
+                        <p className="text-slate-800 dark:text-slate-200 leading-relaxed italic text-lg">
                           {formatAddress(al.domisili) ||
                             "Alamat domisili belum dilengkapi."}
                         </p>
@@ -2348,39 +2408,39 @@ export default function EmployeeDetailPage({
                         const domicileComponents = extractAddressComponents(al.domisili);
                         return (
                           <div className="mt-6 space-y-4">
-                            <h3 className="text-xs font-bold text-white uppercase tracking-widest">Detail Alamat Domisili</h3>
+                            <h3 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-widest">Detail Alamat Domisili</h3>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Provinsi</p>
-                                <p className="text-sm text-slate-200">{domicileComponents.province || <span className="text-slate-500">Belum diisi</span>}</p>
+                              <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">Provinsi</p>
+                                <p className="text-sm text-slate-800 dark:text-slate-200">{domicileComponents.province || <span className="text-slate-500">Belum diisi</span>}</p>
                               </div>
-                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Kabupaten/Kota</p>
-                                <p className="text-sm text-slate-200">{domicileComponents.city || <span className="text-slate-500">Belum diisi</span>}</p>
+                              <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">Kabupaten/Kota</p>
+                                <p className="text-sm text-slate-800 dark:text-slate-200">{domicileComponents.city || <span className="text-slate-500">Belum diisi</span>}</p>
                               </div>
-                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Kecamatan</p>
-                                <p className="text-sm text-slate-200">{domicileComponents.district || <span className="text-slate-500">Belum diisi</span>}</p>
+                              <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">Kecamatan</p>
+                                <p className="text-sm text-slate-800 dark:text-slate-200">{domicileComponents.district || <span className="text-slate-500">Belum diisi</span>}</p>
                               </div>
-                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Desa/Kelurahan</p>
-                                <p className="text-sm text-slate-200">{domicileComponents.village || <span className="text-slate-500">Belum diisi</span>}</p>
+                              <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">Desa/Kelurahan</p>
+                                <p className="text-sm text-slate-800 dark:text-slate-200">{domicileComponents.village || <span className="text-slate-500">Belum diisi</span>}</p>
                               </div>
-                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Jalan / Nama Jalan</p>
-                                <p className="text-sm text-slate-200">{domicileComponents.street || <span className="text-slate-500">Belum diisi</span>}</p>
+                              <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">Jalan / Nama Jalan</p>
+                                <p className="text-sm text-slate-800 dark:text-slate-200">{domicileComponents.street || <span className="text-slate-500">Belum diisi</span>}</p>
                               </div>
-                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">RT</p>
-                                <p className="text-sm text-slate-200">{domicileComponents.rt || <span className="text-slate-500">Belum diisi</span>}</p>
+                              <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">RT</p>
+                                <p className="text-sm text-slate-800 dark:text-slate-200">{domicileComponents.rt || <span className="text-slate-500">Belum diisi</span>}</p>
                               </div>
-                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">RW</p>
-                                <p className="text-sm text-slate-200">{domicileComponents.rw || <span className="text-slate-500">Belum diisi</span>}</p>
+                              <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">RW</p>
+                                <p className="text-sm text-slate-800 dark:text-slate-200">{domicileComponents.rw || <span className="text-slate-500">Belum diisi</span>}</p>
                               </div>
-                              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700 hover:border-slate-600 transition-colors">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Kode Pos</p>
-                                <p className="text-sm text-slate-200">{domicileComponents.postalCode || <span className="text-slate-500">Belum diisi</span>}</p>
+                              <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
+                                <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">Kode Pos</p>
+                                <p className="text-sm text-slate-800 dark:text-slate-200">{domicileComponents.postalCode || <span className="text-slate-500">Belum diisi</span>}</p>
                               </div>
                             </div>
                           </div>
@@ -2389,6 +2449,108 @@ export default function EmployeeDetailPage({
                     </CardContent>
                   </Card>
                 </div>
+              </TabsContent>
+
+              <TabsContent value="kehadiran" className="space-y-8">
+                <Card className="bg-white dark:bg-slate-950/40 border-slate-200 dark:border-slate-800 overflow-hidden">
+                  <CardHeader className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/20">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-white">
+                        <Clock className="h-5 w-5 text-teal-500" />
+                        Kehadiran & Absensi
+                      </CardTitle>
+                      {(userProfile?.role === "hrd" ||
+                        userProfile?.role === "super-admin") && (
+                        <Button
+                          size="sm"
+                          className="bg-teal-600 hover:bg-teal-700 dark:bg-teal-700 dark:hover:bg-teal-800"
+                          onClick={() => setAttendanceDialogOpen(true)}
+                        >
+                          <Pencil className="h-4 w-4 mr-2" />
+                          Atur Metode Absensi
+                        </Button>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-8">
+                    {profileDoc?.attendanceMethod ? (
+                      <div className="space-y-5">
+                        {/* Method display card */}
+                        <div className={`flex items-center gap-4 p-4 rounded-xl border-2 ${
+                          profileDoc.attendanceMethod === "fingerprint"
+                            ? "border-teal-200 dark:border-teal-800 bg-teal-50 dark:bg-teal-900/20"
+                            : "border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20"
+                        }`}>
+                          <div className={`h-10 w-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                            profileDoc.attendanceMethod === "fingerprint"
+                              ? "bg-teal-100 dark:bg-teal-800 text-teal-600 dark:text-teal-300"
+                              : "bg-blue-100 dark:bg-blue-800 text-blue-600 dark:text-blue-300"
+                          }`}>
+                            {profileDoc.attendanceMethod === "fingerprint"
+                              ? <Fingerprint className="h-5 w-5" />
+                              : <Monitor className="h-5 w-5" />
+                            }
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-0.5">
+                              Metode Absensi
+                            </p>
+                            <p className={`text-sm font-semibold ${
+                              profileDoc.attendanceMethod === "fingerprint"
+                                ? "text-teal-700 dark:text-teal-300"
+                                : "text-blue-700 dark:text-blue-300"
+                            }`}>
+                              {profileDoc.attendanceMethod === "fingerprint" ? "Fingerprint" : "Web Absen"}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Audit Trail */}
+                        {profileDoc?.attendanceUpdatedAt && (
+                          <div className="pt-3 border-t border-slate-200 dark:border-slate-700">
+                            <p className="text-xs text-slate-500 dark:text-slate-500">
+                              Diatur oleh{" "}
+                              <span className="font-medium text-slate-700 dark:text-slate-400">
+                                {profileDoc.attendanceUpdatedByName || "-"}
+                              </span>
+                              {" pada "}
+                              <span className="font-medium text-slate-700 dark:text-slate-400">
+                                {profileDoc.attendanceUpdatedAt
+                                  ? format(
+                                      new Date(
+                                        (
+                                          profileDoc.attendanceUpdatedAt as any
+                                        ).seconds * 1000
+                                      ),
+                                      "dd MMM yyyy HH:mm",
+                                      { locale: idLocale }
+                                    )
+                                  : "-"}
+                              </span>
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 bg-slate-50 dark:bg-slate-900/30 rounded-lg">
+                        <Clock className="h-12 w-12 text-slate-400 dark:text-slate-600 mx-auto mb-4 opacity-50" />
+                        <p className="text-slate-600 dark:text-slate-400 mb-6">
+                          Metode absensi belum diatur untuk karyawan ini
+                        </p>
+                        {(userProfile?.role === "hrd" ||
+                          userProfile?.role === "super-admin") && (
+                          <Button
+                            className="bg-teal-600 hover:bg-teal-700 text-white dark:bg-teal-600 dark:hover:bg-teal-500"
+                            onClick={() => setAttendanceDialogOpen(true)}
+                          >
+                            <Plus className="h-4 w-4 mr-2" />
+                            Atur Metode Absensi
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
               </TabsContent>
 
               <TabsContent value="rekening" className="space-y-8">
@@ -2401,9 +2563,9 @@ export default function EmployeeDetailPage({
                 />
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   <div className="lg:col-span-2 space-y-8">
-                    <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl overflow-hidden">
-                      <CardHeader className="border-b border-slate-800/50 bg-slate-900/20">
-                        <CardTitle className="flex items-center gap-2 text-lg font-bold text-white">
+                    <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl overflow-hidden">
+                      <CardHeader className="border-b border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/20">
+                        <CardTitle className="flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-white">
                           <CreditCard className="h-5 w-5 text-emerald-500" />
                           Informasi Rekening & Finansial
                         </CardTitle>
@@ -2439,9 +2601,9 @@ export default function EmployeeDetailPage({
                       currentStatus={profileDoc?.verificationStatus?.bpjs}
                       currentNotes={profileDoc?.verificationNotes?.bpjs}
                     />
-                    <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl overflow-hidden">
-                      <CardHeader className="border-b border-slate-800/50 bg-slate-900/20">
-                        <CardTitle className="text-base font-bold text-white">
+                    <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl overflow-hidden">
+                      <CardHeader className="border-b border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/20">
+                        <CardTitle className="text-base font-bold text-slate-900 dark:text-white">
                           Dokumen Administratif
                         </CardTitle>
                       </CardHeader>
@@ -2488,12 +2650,12 @@ export default function EmployeeDetailPage({
                 />
                 {/* Pendidikan Terakhir */}
                 <div className="space-y-6">
-                  <h3 className="text-xl font-bold text-white flex items-center gap-3">
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
                     <div className="h-8 w-1 bg-emerald-500 rounded-full" />
                     Pendidikan Terakhir
                   </h3>
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    <Card className="lg:col-span-2 border-slate-800 bg-slate-950/40 backdrop-blur-xl">
+                    <Card className="lg:col-span-2 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl">
                       <CardContent className="p-8">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4">
                           <DataRow
@@ -2530,7 +2692,7 @@ export default function EmployeeDetailPage({
 
                 {/* Riwayat Pendidikan Lainnya */}
                 <div className="space-y-6">
-                  <h3 className="text-xl font-bold text-white flex items-center gap-3">
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
                     <div className="h-8 w-1 bg-blue-500 rounded-full" />
                     Riwayat Pendidikan Lainnya
                   </h3>
@@ -2539,10 +2701,10 @@ export default function EmployeeDetailPage({
                       pp.riwayatPendidikan.map((edu: any, idx: number) => (
                         <Card
                           key={idx}
-                          className="border-slate-800 bg-slate-950/40 overflow-hidden"
+                          className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 overflow-hidden"
                         >
-                          <CardHeader className="border-b border-slate-800/50 bg-slate-900/20 flex flex-row items-center justify-between">
-                            <CardTitle className="text-sm font-bold text-white">
+                          <CardHeader className="border-b border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/20 flex flex-row items-center justify-between">
+                            <CardTitle className="text-sm font-bold text-slate-900 dark:text-white">
                               {edu.jenjang} - {edu.namaInstitusi}
                             </CardTitle>
                             {getEducationDocumentUrl(edu) ? (
@@ -2570,7 +2732,7 @@ export default function EmployeeDetailPage({
                               <Button
                                 variant="outline"
                                 size="sm"
-                                className="w-full rounded-xl border-slate-800 bg-slate-900/50"
+                                className="w-full rounded-xl border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50"
                                 onClick={() =>
                                    handleOpenSecureUrl(getEducationDocumentUrl(edu))
                                  }
@@ -2583,7 +2745,7 @@ export default function EmployeeDetailPage({
                         </Card>
                       ))
                     ) : (
-                      <div className="col-span-2 text-center py-10 text-slate-600 border-2 border-dashed border-slate-800 rounded-3xl">
+                      <div className="col-span-2 text-center py-10 text-slate-600 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl">
                         Belum ada riwayat tambahan.
                       </div>
                     )}
@@ -2592,7 +2754,7 @@ export default function EmployeeDetailPage({
 
                 {/* Sertifikasi */}
                 <div className="space-y-6">
-                  <h3 className="text-xl font-bold text-white flex items-center gap-3">
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
                     <div className="h-8 w-1 bg-purple-500 rounded-full" />
                     Sertifikasi & Pelatihan
                   </h3>
@@ -2601,10 +2763,10 @@ export default function EmployeeDetailPage({
                       pp.sertifikasiPelatihan.map((cert: any, idx: number) => (
                         <Card
                           key={idx}
-                          className="border-slate-800 bg-slate-950/40 overflow-hidden"
+                          className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 overflow-hidden"
                         >
-                          <CardHeader className="border-b border-slate-800/50 bg-slate-900/20 flex flex-row items-center justify-between">
-                            <CardTitle className="text-sm font-bold text-white">
+                          <CardHeader className="border-b border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/20 flex flex-row items-center justify-between">
+                            <CardTitle className="text-sm font-bold text-slate-900 dark:text-white">
                               {cert.namaSertifikasi}
                             </CardTitle>
                             {getCertificationDocumentUrl(cert) ? (
@@ -2635,7 +2797,7 @@ export default function EmployeeDetailPage({
                               <Button
                                 variant="outline"
                                 size="sm"
-                                className="w-full rounded-xl border-slate-800 bg-slate-900/50"
+                                className="w-full rounded-xl border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50"
                                 onClick={() =>
                                    handleOpenSecureUrl(getCertificationDocumentUrl(cert))
                                  }
@@ -2648,7 +2810,7 @@ export default function EmployeeDetailPage({
                         </Card>
                       ))
                     ) : (
-                      <div className="col-span-2 text-center py-10 text-slate-600 border-2 border-dashed border-slate-800 rounded-3xl">
+                      <div className="col-span-2 text-center py-10 text-slate-600 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl">
                         Belum ada sertifikasi.
                       </div>
                     )}
@@ -2730,7 +2892,7 @@ export default function EmployeeDetailPage({
                     {/* Header Dashboard Magang */}
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                       <div>
-                        <h3 className="text-2xl font-bold text-white tracking-tight">
+                        <h3 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
                           Administrasi Magang
                         </h3>
                         <p className="text-sm text-slate-500">
@@ -2741,13 +2903,13 @@ export default function EmployeeDetailPage({
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                       {/* 1. Penempatan Magang */}
-                      <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl group hover:border-amber-500/30 transition-all duration-300">
-                        <CardHeader className="border-b border-slate-800/50 flex flex-row items-center justify-between pb-4">
+                      <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl group hover:border-amber-500/30 transition-all duration-300">
+                        <CardHeader className="border-b border-slate-200 dark:border-slate-800/50 flex flex-row items-center justify-between pb-4">
                           <div className="flex items-center gap-3">
                             <div className="h-10 w-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500 border border-amber-500/20">
                               <MapPin className="h-5 w-5" />
                             </div>
-                            <CardTitle className="text-base font-bold text-white">
+                            <CardTitle className="text-base font-bold text-slate-900 dark:text-white">
                               Penempatan Magang
                             </CardTitle>
                           </div>
@@ -2773,13 +2935,13 @@ export default function EmployeeDetailPage({
                       </Card>
 
                       {/* 2. Periode Magang */}
-                      <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl group hover:border-blue-500/30 transition-all duration-300">
-                        <CardHeader className="border-b border-slate-800/50 flex flex-row items-center justify-between pb-4">
+                      <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl group hover:border-blue-500/30 transition-all duration-300">
+                        <CardHeader className="border-b border-slate-200 dark:border-slate-800/50 flex flex-row items-center justify-between pb-4">
                           <div className="flex items-center gap-3">
                             <div className="h-10 w-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-500 border border-blue-500/20">
                               <Calendar className="h-5 w-5" />
                             </div>
-                            <CardTitle className="text-base font-bold text-white">
+                            <CardTitle className="text-base font-bold text-slate-900 dark:text-white">
                               Periode Magang
                             </CardTitle>
                           </div>
@@ -2814,13 +2976,13 @@ export default function EmployeeDetailPage({
                       </Card>
 
                       {/* 3. Uang Saku / Insentif */}
-                      <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl group hover:border-emerald-500/30 transition-all duration-300">
-                        <CardHeader className="border-b border-slate-800/50 flex flex-row items-center justify-between pb-4">
+                      <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl group hover:border-emerald-500/30 transition-all duration-300">
+                        <CardHeader className="border-b border-slate-200 dark:border-slate-800/50 flex flex-row items-center justify-between pb-4">
                           <div className="flex items-center gap-3">
                             <div className="h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 border border-emerald-500/20">
                               <DollarSign className="h-5 w-5" />
                             </div>
-                            <CardTitle className="text-base font-bold text-white">
+                            <CardTitle className="text-base font-bold text-slate-900 dark:text-white">
                               Uang Saku / Insentif
                             </CardTitle>
                           </div>
@@ -2835,18 +2997,18 @@ export default function EmployeeDetailPage({
                             ) : (
                               <DataRow label="Ada/Tidak Uang Saku" value="Tidak ada uang saku" />
                             )}
-                            <div className="bg-slate-900/40 p-3 rounded-lg border border-slate-800/50 mt-2">
+                            <div className="bg-slate-50 dark:bg-slate-900/40 p-3 rounded-lg border border-slate-200 dark:border-slate-800/50 mt-2">
                               <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-2">
                                 Rekening Uang Saku
                               </p>
                               {rek.bankName ? (
                                 <div className="space-y-1">
-                                  <p className="text-xs font-bold text-white">{rek.bankName}</p>
-                                  <p className="text-xs text-slate-400 font-mono">{rek.bankAccountNumber || "-"}</p>
+                                  <p className="text-xs font-bold text-slate-900 dark:text-white">{rek.bankName}</p>
+                                  <p className="text-xs text-slate-600 dark:text-slate-400 font-mono">{rek.bankAccountNumber || "-"}</p>
                                   <p className="text-[10px] text-slate-500 italic">a.n. {rek.bankAccountHolderName || "-"}</p>
                                 </div>
                               ) : (
-                                <p className="text-xs text-slate-400">Belum diisi</p>
+                                <p className="text-xs text-slate-600 dark:text-slate-400">Belum diisi</p>
                               )}
                             </div>
                           </div>
@@ -2854,33 +3016,33 @@ export default function EmployeeDetailPage({
                       </Card>
 
                       {/* 4. Monitoring Magang */}
-                      <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl group hover:border-purple-500/30 transition-all duration-300">
-                        <CardHeader className="border-b border-slate-800/50 flex flex-row items-center justify-between pb-4">
+                      <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl group hover:border-purple-500/30 transition-all duration-300">
+                        <CardHeader className="border-b border-slate-200 dark:border-slate-800/50 flex flex-row items-center justify-between pb-4">
                           <div className="flex items-center gap-3">
                             <div className="h-10 w-10 rounded-xl bg-purple-500/10 flex items-center justify-center text-purple-500 border border-purple-500/20">
                               <BarChart3 className="h-5 w-5" />
                             </div>
-                            <CardTitle className="text-base font-bold text-white">
+                            <CardTitle className="text-base font-bold text-slate-900 dark:text-white">
                               Monitoring Magang
                             </CardTitle>
                           </div>
                         </CardHeader>
                         <CardContent className="pt-6">
                           <div className="space-y-3">
-                            <div className="p-3 bg-slate-900/40 rounded-lg border border-slate-800/50">
-                              <p className="text-xs font-bold text-slate-300 mb-1">Laporan Harian</p>
+                            <div className="p-3 bg-slate-50 dark:bg-slate-900/40 rounded-lg border border-slate-200 dark:border-slate-800/50">
+                              <p className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Laporan Harian</p>
                               <p className="text-[10px] text-slate-500">Belum tersedia</p>
                             </div>
-                            <div className="p-3 bg-slate-900/40 rounded-lg border border-slate-800/50">
-                              <p className="text-xs font-bold text-slate-300 mb-1">Rekap Kehadiran</p>
+                            <div className="p-3 bg-slate-50 dark:bg-slate-900/40 rounded-lg border border-slate-200 dark:border-slate-800/50">
+                              <p className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Rekap Kehadiran</p>
                               <p className="text-[10px] text-slate-500">Belum tersedia</p>
                             </div>
-                            <div className="p-3 bg-slate-900/40 rounded-lg border border-slate-800/50">
-                              <p className="text-xs font-bold text-slate-300 mb-1">Evaluasi Pembimbing</p>
+                            <div className="p-3 bg-slate-50 dark:bg-slate-900/40 rounded-lg border border-slate-200 dark:border-slate-800/50">
+                              <p className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Evaluasi Pembimbing</p>
                               <p className="text-[10px] text-slate-500">Belum tersedia</p>
                             </div>
-                            <div className="p-3 bg-slate-900/40 rounded-lg border border-slate-800/50">
-                              <p className="text-xs font-bold text-slate-300 mb-1">Feedback Akhir</p>
+                            <div className="p-3 bg-slate-50 dark:bg-slate-900/40 rounded-lg border border-slate-200 dark:border-slate-800/50">
+                              <p className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Feedback Akhir</p>
                               <p className="text-[10px] text-slate-500">Belum tersedia</p>
                             </div>
                           </div>
@@ -2894,7 +3056,7 @@ export default function EmployeeDetailPage({
                     {/* Header Dashboard HRD */}
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                       <div>
-                        <h3 className="text-2xl font-bold text-white tracking-tight">
+                        <h3 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
                           Administrasi Kepegawaian
                         </h3>
                         <p className="text-sm text-slate-500">
@@ -2906,13 +3068,13 @@ export default function EmployeeDetailPage({
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                   {/* 1. Struktur & Status Kerja */}
-                  <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl group hover:border-emerald-500/30 transition-all duration-300">
-                    <CardHeader className="border-b border-slate-800/50 flex flex-row items-center justify-between pb-4">
+                  <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl group hover:border-emerald-500/30 transition-all duration-300">
+                    <CardHeader className="border-b border-slate-200 dark:border-slate-800/50 flex flex-row items-center justify-between pb-4">
                       <div className="flex items-center gap-3">
                         <div className="h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 border border-emerald-500/20">
                           <Briefcase className="h-5 w-5" />
                         </div>
-                        <CardTitle className="text-base font-bold text-white">
+                        <CardTitle className="text-base font-bold text-slate-900 dark:text-white">
                           Struktur & Status
                         </CardTitle>
                       </div>
@@ -2957,13 +3119,13 @@ export default function EmployeeDetailPage({
                   </Card>
 
                   {/* 2. Masa Kerja & Kontrak */}
-                  <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl group hover:border-blue-500/30 transition-all duration-300">
-                    <CardHeader className="border-b border-slate-800/50 flex flex-row items-center justify-between pb-4">
+                  <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl group hover:border-blue-500/30 transition-all duration-300">
+                    <CardHeader className="border-b border-slate-200 dark:border-slate-800/50 flex flex-row items-center justify-between pb-4">
                       <div className="flex items-center gap-3">
                         <div className="h-10 w-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-500 border border-blue-500/20">
                           <History className="h-5 w-5" />
                         </div>
-                        <CardTitle className="text-base font-bold text-white">
+                        <CardTitle className="text-base font-bold text-slate-900 dark:text-white">
                           Masa Kerja & Kontrak
                         </CardTitle>
                       </div>
@@ -3024,13 +3186,13 @@ export default function EmployeeDetailPage({
                   </Card>
 
                   {/* 3. Payroll & Benefit */}
-                  <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl group hover:border-emerald-500/30 transition-all duration-300">
-                    <CardHeader className="border-b border-slate-800/50 flex flex-row items-center justify-between pb-4">
+                  <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl group hover:border-emerald-500/30 transition-all duration-300">
+                    <CardHeader className="border-b border-slate-200 dark:border-slate-800/50 flex flex-row items-center justify-between pb-4">
                       <div className="flex items-center gap-3">
                         <div className="h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 border border-emerald-500/20">
                           <CreditCard className="h-5 w-5" />
                         </div>
-                        <CardTitle className="text-base font-bold text-white">
+                        <CardTitle className="text-base font-bold text-slate-900 dark:text-white">
                           Payroll & Benefit
                         </CardTitle>
                       </div>
@@ -3063,12 +3225,12 @@ export default function EmployeeDetailPage({
                               {hrdInfo.allowances.map((al: any) => (
                                 <div
                                   key={al.id}
-                                  className="flex justify-between items-center text-xs py-1 border-b border-slate-800/50 last:border-0"
+                                  className="flex justify-between items-center text-xs py-1 border-b border-slate-200 dark:border-slate-800/50 last:border-0"
                                 >
-                                  <span className="text-slate-400">
+                                  <span className="text-slate-600 dark:text-slate-400">
                                     {al.name}
                                   </span>
-                                  <span className="font-bold text-white">
+                                  <span className="font-bold text-slate-900 dark:text-white">
                                     Rp {al.amount.toLocaleString()}
                                   </span>
                                 </div>
@@ -3095,7 +3257,7 @@ export default function EmployeeDetailPage({
                           />
                         </div>
 
-                        <div className="h-px bg-slate-800/50 my-2"></div>
+                        <div className="h-px bg-slate-200 dark:bg-slate-800/50 my-2"></div>
 
                         <div className="space-y-3">
                           <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
@@ -3130,16 +3292,16 @@ export default function EmployeeDetailPage({
                         </div>
                       </div>
 
-                      <div className="bg-slate-900/40 p-4 rounded-2xl border border-slate-800/50">
+                      <div className="bg-slate-50 dark:bg-slate-900/40 p-4 rounded-2xl border border-slate-200 dark:border-slate-800/50">
                         <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-2">
                           Rekening Payroll
                         </p>
                         {hrdInfo.useDifferentPayrollAccount ? (
                           <div className="space-y-1">
-                            <p className="text-xs font-bold text-white">
+                            <p className="text-xs font-bold text-slate-900 dark:text-white">
                               {hrdInfo.customPayrollBank || "Belum diatur"}
                             </p>
-                            <p className="text-xs text-slate-400 font-mono">
+                            <p className="text-xs text-slate-600 dark:text-slate-400 font-mono">
                               {hrdInfo.customPayrollAccountNumber || "-"}
                             </p>
                             <p className="text-[10px] text-slate-500 italic">
@@ -3148,10 +3310,10 @@ export default function EmployeeDetailPage({
                           </div>
                         ) : (
                           <div className="space-y-1">
-                            <p className="text-xs font-bold text-white">
+                            <p className="text-xs font-bold text-slate-900 dark:text-white">
                               {rek.bankName || "N/A"}
                             </p>
-                            <p className="text-xs text-slate-400 font-mono">
+                            <p className="text-xs text-slate-600 dark:text-slate-400 font-mono">
                               {rek.bankAccountNumber || "-"}
                             </p>
                             <p className="text-[10px] text-slate-500 italic">
@@ -3164,13 +3326,13 @@ export default function EmployeeDetailPage({
                   </Card>
 
                   {/* 4. Kehadiran & Cuti */}
-                  <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl group hover:border-purple-500/30 transition-all duration-300">
-                    <CardHeader className="border-b border-slate-800/50 flex flex-row items-center justify-between pb-4">
+                  <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl group hover:border-purple-500/30 transition-all duration-300">
+                    <CardHeader className="border-b border-slate-200 dark:border-slate-800/50 flex flex-row items-center justify-between pb-4">
                       <div className="flex items-center gap-3">
                         <div className="h-10 w-10 rounded-xl bg-purple-500/10 flex items-center justify-center text-purple-500 border border-purple-500/20">
                           <ClipboardList className="h-5 w-5" />
                         </div>
-                        <CardTitle className="text-base font-bold text-white">
+                        <CardTitle className="text-base font-bold text-slate-900 dark:text-white">
                           Kehadiran & Cuti
                         </CardTitle>
                       </div>
@@ -3185,7 +3347,7 @@ export default function EmployeeDetailPage({
                     </CardHeader>
                     <CardContent className="pt-6">
                       <div className="grid grid-cols-2 gap-4 mb-6">
-                        <div className="bg-slate-900/40 p-3 rounded-2xl border border-slate-800/50">
+                        <div className="bg-slate-50 dark:bg-slate-900/40 p-3 rounded-2xl border border-slate-200 dark:border-slate-800/50">
                           <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-1">
                             Sisa Cuti
                           </p>
@@ -3196,18 +3358,18 @@ export default function EmployeeDetailPage({
                             </span>
                           </p>
                         </div>
-                        <div className="bg-slate-900/40 p-3 rounded-2xl border border-slate-800/50">
+                        <div className="bg-slate-50 dark:bg-slate-900/40 p-3 rounded-2xl border border-slate-200 dark:border-slate-800/50">
                           <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-1">
                             Jadwal
                           </p>
-                          <p className="text-sm font-bold text-white">
+                          <p className="text-sm font-bold text-slate-900 dark:text-white">
                             {hrdInfo.jadwalKerja || "N/A"}
                           </p>
                         </div>
                       </div>
 
                       <div className="grid grid-cols-3 gap-2 text-center">
-                        <div className="p-2 rounded-xl bg-slate-900/40 border border-slate-800/50">
+                        <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800/50">
                           <p className="text-[9px] text-slate-500 uppercase mb-1">
                             Hadir
                           </p>
@@ -3215,7 +3377,7 @@ export default function EmployeeDetailPage({
                             {hrdInfo.hadir || 0}
                           </p>
                         </div>
-                        <div className="p-2 rounded-xl bg-slate-900/40 border border-slate-800/50">
+                        <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800/50">
                           <p className="text-[9px] text-slate-500 uppercase mb-1">
                             Telat
                           </p>
@@ -3223,7 +3385,7 @@ export default function EmployeeDetailPage({
                             {hrdInfo.terlambat || 0}
                           </p>
                         </div>
-                        <div className="p-2 rounded-xl bg-slate-900/40 border border-slate-800/50">
+                        <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800/50">
                           <p className="text-[9px] text-slate-500 uppercase mb-1">
                             Izin/Sakit
                           </p>
@@ -3236,20 +3398,20 @@ export default function EmployeeDetailPage({
                   </Card>
 
                   {/* 5. Karier & Kinerja */}
-                  <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl group hover:border-sky-500/30 transition-all duration-300 xl:col-span-2">
-                    <CardHeader className="border-b border-slate-800/50 flex flex-row items-center justify-between pb-4">
+                  <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl group hover:border-sky-500/30 transition-all duration-300 xl:col-span-2">
+                    <CardHeader className="border-b border-slate-200 dark:border-slate-800/50 flex flex-row items-center justify-between pb-4">
                       <div className="flex items-center gap-3">
                         <div className="h-10 w-10 rounded-xl bg-sky-500/10 flex items-center justify-center text-sky-500 border border-sky-500/20">
                           <GraduationCap className="h-5 w-5" />
                         </div>
-                        <CardTitle className="text-base font-bold text-white">
+                        <CardTitle className="text-base font-bold text-slate-900 dark:text-white">
                           Riwayat Karier & Kinerja
                         </CardTitle>
                       </div>
                       <Button
                         variant="outline"
                         size="sm"
-                        className="rounded-xl border-slate-800 bg-slate-900/50 text-slate-400 hover:text-white"
+                        className="rounded-xl border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
                         onClick={() => setEditingSection("tambah_riwayat")}
                       >
                         <Plus className="h-3.5 w-3.5 mr-2" /> Event Karier
@@ -3257,19 +3419,19 @@ export default function EmployeeDetailPage({
                     </CardHeader>
                     <CardContent className="pt-8">
                       {historyData && historyData.length > 0 ? (
-                        <div className="relative pl-6 space-y-8 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-800/50">
+                        <div className="relative pl-6 space-y-8 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200 dark:before:bg-slate-800/50">
                           {historyData.slice(0, 5).map((h: any) => (
                             <div key={h.id} className="relative">
-                              <div className="absolute -left-[22px] top-1 h-4 w-4 rounded-full border-2 border-slate-900 shadow-lg bg-emerald-500"></div>
+                              <div className="absolute -left-[22px] top-1 h-4 w-4 rounded-full border-2 border-white dark:border-slate-900 shadow-lg bg-emerald-500"></div>
                               <div className="flex flex-col gap-1">
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-2">
-                                    <p className="text-xs font-bold text-white uppercase tracking-wider">
+                                    <p className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
                                       {h.title || h.label || h.type}
                                     </p>
                                     <Badge
                                       variant="outline"
-                                      className="text-[8px] py-0 border-slate-800 text-slate-500 uppercase"
+                                      className="text-[8px] py-0 border-slate-200 dark:border-slate-800 text-slate-500 uppercase"
                                     >
                                       {h.type}
                                     </Badge>
@@ -3307,13 +3469,13 @@ export default function EmployeeDetailPage({
                   </Card>
 
                   {/* 6. Catatan Internal HRD */}
-                  <Card className="border-slate-800 bg-slate-950/40 backdrop-blur-xl group hover:border-red-500/30 transition-all duration-300">
-                    <CardHeader className="border-b border-slate-800/50 flex flex-row items-center justify-between pb-4">
+                  <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl group hover:border-red-500/30 transition-all duration-300">
+                    <CardHeader className="border-b border-slate-200 dark:border-slate-800/50 flex flex-row items-center justify-between pb-4">
                       <div className="flex items-center gap-3">
                         <div className="h-10 w-10 rounded-xl bg-red-500/10 flex items-center justify-center text-red-500 border border-red-500/20">
                           <AlertOctagon className="h-5 w-5" />
                         </div>
-                        <CardTitle className="text-base font-bold text-white">
+                        <CardTitle className="text-base font-bold text-slate-900 dark:text-white">
                           Catatan Internal
                         </CardTitle>
                       </div>
@@ -3327,8 +3489,8 @@ export default function EmployeeDetailPage({
                       </Button>
                     </CardHeader>
                     <CardContent className="pt-6">
-                      <div className="bg-slate-900/40 p-4 rounded-2xl border border-slate-800/50 min-h-[150px]">
-                        <p className="text-sm text-slate-400 leading-relaxed italic">
+                      <div className="bg-slate-50 dark:bg-slate-900/40 p-4 rounded-2xl border border-slate-200 dark:border-slate-800/50 min-h-[150px]">
+                        <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed italic">
                           {hrdInfo.catatanInternalHrd ||
                             "Catatan rahasia HRD belum diisi."}
                         </p>
@@ -3347,9 +3509,9 @@ export default function EmployeeDetailPage({
                   >
                     <DialogContent className="w-[95vw] md:w-[90vw] max-w-4xl h-[95vh] md:h-[90vh] bg-slate-950 border-slate-800 text-slate-100 flex flex-col p-0 overflow-hidden">
                       {/* Header */}
-                      <div className="shrink-0 bg-slate-900/50 backdrop-blur-xl border-b border-slate-800/60 px-6 py-5">
+                      <div className="shrink-0 bg-white dark:bg-slate-900/50 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800/60 px-6 py-5">
                         <DialogHeader>
-                          <DialogTitle className="text-xl font-bold text-white flex items-center gap-3">
+                          <DialogTitle className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
                             <div className="h-10 w-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500 border border-amber-500/20">
                               <Pencil className="h-5 w-5" />
                             </div>
@@ -3402,7 +3564,7 @@ export default function EmployeeDetailPage({
                                     <FormItem>
                                       <FormLabel className="text-xs font-bold uppercase text-slate-500">Nomor Induk Magang</FormLabel>
                                       <FormControl>
-                                        <Input {...field} className="bg-slate-900/50 border-slate-800" placeholder="INT-2024-001" />
+                                        <Input {...field} className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white" placeholder="INT-2024-001" />
                                       </FormControl>
                                     </FormItem>
                                   )}
@@ -3415,11 +3577,11 @@ export default function EmployeeDetailPage({
                                       <FormLabel className="text-xs font-bold uppercase text-slate-500">Brand / Unit *</FormLabel>
                                       <Select onValueChange={field.onChange} value={field.value}>
                                         <FormControl>
-                                          <SelectTrigger className="bg-slate-900/50 border-slate-800">
+                                          <SelectTrigger className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white">
                                             <SelectValue placeholder="Pilih Brand" />
                                           </SelectTrigger>
                                         </FormControl>
-                                        <SelectContent className="bg-slate-900 border-slate-800">
+                                        <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                                           {brands?.map((b) => (
                                             <SelectItem key={b.id} value={b.id || ""}>
                                               {b.name}
@@ -3438,11 +3600,11 @@ export default function EmployeeDetailPage({
                                       <FormLabel className="text-xs font-bold uppercase text-slate-500">Divisi *</FormLabel>
                                       <Select onValueChange={field.onChange} value={field.value} disabled={!form.watch("brandId")}>
                                         <FormControl>
-                                          <SelectTrigger className="bg-slate-900/50 border-slate-800">
+                                          <SelectTrigger className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white">
                                             <SelectValue placeholder="Pilih Divisi" />
                                           </SelectTrigger>
                                         </FormControl>
-                                        <SelectContent className="bg-slate-900 border-slate-800">
+                                        <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                                           {divisions.map((d) => (
                                             <SelectItem key={d.id} value={d.id}>
                                               {d.name}
@@ -3460,7 +3622,7 @@ export default function EmployeeDetailPage({
                                     <FormItem>
                                       <FormLabel className="text-xs font-bold uppercase text-slate-500">Role / Posisi Magang *</FormLabel>
                                       <FormControl>
-                                        <Input {...field} className="bg-slate-900/50 border-slate-800" placeholder="Web Developer Intern" />
+                                        <Input {...field} className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white" placeholder="Web Developer Intern" />
                                       </FormControl>
                                     </FormItem>
                                   )}
@@ -3473,11 +3635,11 @@ export default function EmployeeDetailPage({
                                       <FormLabel className="text-xs font-bold uppercase text-slate-500">PIC / Pembimbing Internal *</FormLabel>
                                       <Select onValueChange={field.onChange} value={field.value} disabled={!form.watch("divisionId")}>
                                         <FormControl>
-                                          <SelectTrigger className="bg-slate-900/50 border-slate-800">
+                                          <SelectTrigger className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white">
                                             <SelectValue placeholder="Pilih PIC" />
                                           </SelectTrigger>
                                         </FormControl>
-                                        <SelectContent className="bg-slate-900 border-slate-800">
+                                        <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                                           {managers.map((m) => (
                                             <SelectItem key={m.uid} value={m.uid}>
                                               {m.fullName}
@@ -3495,7 +3657,7 @@ export default function EmployeeDetailPage({
                                     <FormItem>
                                       <FormLabel className="text-xs font-bold uppercase text-slate-500">Lokasi Penempatan</FormLabel>
                                       <FormControl>
-                                        <Input {...field} className="bg-slate-900/50 border-slate-800" placeholder="Jakarta Office" />
+                                        <Input {...field} className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white" placeholder="Jakarta Office" />
                                       </FormControl>
                                     </FormItem>
                                   )}
@@ -3515,11 +3677,11 @@ export default function EmployeeDetailPage({
                                       <FormLabel className="text-xs font-bold uppercase text-slate-500">Jenis Program Magang</FormLabel>
                                       <Select onValueChange={field.onChange} value={field.value || ""}>
                                         <FormControl>
-                                          <SelectTrigger className="bg-slate-900/50 border-slate-800">
+                                          <SelectTrigger className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white">
                                             <SelectValue placeholder="Pilih Jenis Program" />
                                           </SelectTrigger>
                                         </FormControl>
-                                        <SelectContent className="bg-slate-900 border-slate-800">
+                                        <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                                           <SelectItem value="PKL">PKL (Praktik Kerja Lapangan)</SelectItem>
                                           <SelectItem value="Kampus Merdeka">Kampus Merdeka</SelectItem>
                                           <SelectItem value="Mandiri">Mandiri</SelectItem>
@@ -3537,7 +3699,7 @@ export default function EmployeeDetailPage({
                                     <FormItem>
                                       <FormLabel className="text-xs font-bold uppercase text-slate-500">Tanggal Mulai Magang *</FormLabel>
                                       <FormControl>
-                                        <Input type="date" {...field} className="bg-slate-900/50 border-slate-800" />
+                                        <Input type="date" {...field} className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white" />
                                       </FormControl>
                                     </FormItem>
                                   )}
@@ -3549,7 +3711,7 @@ export default function EmployeeDetailPage({
                                     <FormItem>
                                       <FormLabel className="text-xs font-bold uppercase text-slate-500">Tanggal Selesai Magang *</FormLabel>
                                       <FormControl>
-                                        <Input type="date" {...field} className="bg-slate-900/50 border-slate-800" />
+                                        <Input type="date" {...field} className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white" />
                                       </FormControl>
                                     </FormItem>
                                   )}
@@ -3562,11 +3724,11 @@ export default function EmployeeDetailPage({
                                       <FormLabel className="text-xs font-bold uppercase text-slate-500">Status Magang *</FormLabel>
                                       <Select onValueChange={field.onChange} value={field.value || ""}>
                                         <FormControl>
-                                          <SelectTrigger className="bg-slate-900/50 border-slate-800">
+                                          <SelectTrigger className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white">
                                             <SelectValue placeholder="Pilih Status" />
                                           </SelectTrigger>
                                         </FormControl>
-                                        <SelectContent className="bg-slate-900 border-slate-800">
+                                        <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                                           <SelectItem value="Draft">Draft</SelectItem>
                                           <SelectItem value="Aktif">Aktif</SelectItem>
                                           <SelectItem value="Selesai">Selesai</SelectItem>
@@ -3599,7 +3761,7 @@ export default function EmployeeDetailPage({
                                             const parsed = parseCurrency(e.target.value);
                                             field.onChange(parsed);
                                           }}
-                                          className="bg-slate-900/50 border-slate-800"
+                                          className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
                                           placeholder="Rp 0"
                                         />
                                       </FormControl>
@@ -3621,7 +3783,7 @@ export default function EmployeeDetailPage({
                                     <FormControl>
                                       <Textarea
                                         {...field}
-                                        className="bg-slate-900/50 border-slate-800"
+                                        className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
                                         placeholder="Contoh: Penyesuaian periode magang, perubahan PIC, atau update nominal uang saku."
                                         rows={4}
                                       />
@@ -3654,9 +3816,9 @@ export default function EmployeeDetailPage({
                   >
                   <DialogContent className="w-[95vw] md:w-[90vw] max-w-5xl h-[95vh] md:h-[90vh] bg-slate-950 border-slate-800 text-slate-100 flex flex-col p-0 overflow-hidden shadow-2xl">
                     {/* Sticky Header */}
-                    <div className="shrink-0 z-50 bg-slate-900/50 backdrop-blur-xl border-b border-slate-800/60 px-6 py-5 md:px-10 md:py-7">
+                    <div className="shrink-0 z-50 bg-white dark:bg-slate-900/50 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800/60 px-6 py-5 md:px-10 md:py-7">
                       <DialogHeader>
-                        <DialogTitle className="text-xl md:text-2xl font-black text-white flex items-center gap-4">
+                        <DialogTitle className="text-xl md:text-2xl font-black text-slate-900 dark:text-white flex items-center gap-4">
                           <div className="h-10 w-10 md:h-12 md:w-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 border border-emerald-500/20 shadow-inner">
                             <Pencil className="h-5 w-5 md:h-6 md:w-6" />
                           </div>
@@ -3755,7 +3917,7 @@ export default function EmployeeDetailPage({
                                         <Input
                                           {...field}
                                           placeholder="Contoh: EMP-0001 atau EGS-2026-001"
-                                          className="bg-slate-900/50 border-slate-800 h-12 rounded-xl focus:border-emerald-500/50"
+                                          className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white h-12 rounded-xl focus:border-emerald-500/50"
                                         />
                                       </FormControl>
                                       <p className="text-xs text-slate-500 mt-1">
@@ -3785,11 +3947,11 @@ export default function EmployeeDetailPage({
                                           value={field.value}
                                         >
                                           <FormControl>
-                                            <SelectTrigger className="bg-slate-900/50 border-slate-800 h-12 rounded-xl">
+                                            <SelectTrigger className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white h-12 rounded-xl">
                                               <SelectValue placeholder="Pilih Brand" />
                                             </SelectTrigger>
                                           </FormControl>
-                                          <SelectContent className="bg-slate-900 border-slate-800">
+                                          <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                                             {brands?.map((b) => (
                                               <SelectItem key={b.id!} value={b.id!}>
                                                 {b.name}
@@ -3822,11 +3984,11 @@ export default function EmployeeDetailPage({
                                           disabled={!form.watch("brandId")}
                                         >
                                           <FormControl>
-                                            <SelectTrigger className="bg-slate-900/50 border-slate-800 h-12 rounded-xl">
+                                            <SelectTrigger className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white h-12 rounded-xl">
                                               <SelectValue placeholder="Pilih Divisi" />
                                             </SelectTrigger>
                                           </FormControl>
-                                          <SelectContent className="bg-slate-900 border-slate-800">
+                                          <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                                             {divisions.map((d) => (
                                               <SelectItem key={d.id} value={d.id}>
                                                 {d.name}
@@ -3865,11 +4027,11 @@ export default function EmployeeDetailPage({
                                           value={field.value}
                                         >
                                           <FormControl>
-                                            <SelectTrigger className="bg-slate-900/50 border-slate-800 h-12 rounded-xl">
+                                            <SelectTrigger className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white h-12 rounded-xl">
                                               <SelectValue placeholder="Pilih Jabatan Struktural" />
                                             </SelectTrigger>
                                           </FormControl>
-                                          <SelectContent className="bg-slate-900 border-slate-800">
+                                          <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                                             <SelectItem value="staff">Staff</SelectItem>
                                             <SelectItem value="supervisor">Supervisor</SelectItem>
                                             <SelectItem value="division_manager">Manager Divisi</SelectItem>
@@ -3896,7 +4058,7 @@ export default function EmployeeDetailPage({
                                         <Input
                                           {...field}
                                           placeholder="Contoh: Web Developer, Creative Staff, Finance Staff"
-                                          className="bg-slate-900/50 border-slate-800 h-12 rounded-xl focus:border-emerald-500/50"
+                                          className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white h-12 rounded-xl focus:border-emerald-500/50"
                                         />
                                       </FormControl>
                                       <p className="text-xs text-slate-500 mt-1">
@@ -3924,11 +4086,11 @@ export default function EmployeeDetailPage({
                                           }
                                         >
                                           <FormControl>
-                                            <SelectTrigger className="bg-slate-900/50 border-slate-800 h-12 rounded-xl">
+                                            <SelectTrigger className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white h-12 rounded-xl">
                                               <SelectValue placeholder={form.watch("structuralPosition") === "management" ? "Tidak Wajib untuk Level Manajemen" : "Pilih Atasan Langsung"} />
                                             </SelectTrigger>
                                           </FormControl>
-                                          <SelectContent className="bg-slate-900 border-slate-800 max-h-56">
+                                          <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 max-h-56">
                                             {(isOverrideActive ? allPossibleSupervisors : managers).map((m) => (
                                               <SelectItem
                                                 key={m.uid}
@@ -3970,7 +4132,7 @@ export default function EmployeeDetailPage({
                                                   }
                                                 }
                                               }}
-                                              className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-slate-900 cursor-pointer"
+                                              className="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-white dark:focus:ring-offset-slate-900 cursor-pointer"
                                             />
                                             <label htmlFor="override-manager" className="text-xs font-bold uppercase tracking-widest text-slate-400 cursor-pointer">
                                               Override Atasan Langsung (Di luar Master Organisasi)
@@ -3994,7 +4156,7 @@ export default function EmployeeDetailPage({
                                           <Input
                                             {...field}
                                             placeholder="Wajib diisi: Alasan atasan berbeda dari master struktur..."
-                                            className="bg-slate-900/50 border-slate-800 h-12 rounded-xl focus:border-amber-500/50"
+                                            className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white h-12 rounded-xl focus:border-amber-500/50"
                                           />
                                         </FormControl>
                                       </FormItem>
@@ -4016,11 +4178,11 @@ export default function EmployeeDetailPage({
                                         value={field.value}
                                       >
                                         <FormControl>
-                                          <SelectTrigger className="bg-slate-900/50 border-slate-800 h-12 rounded-xl">
+                                          <SelectTrigger className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white h-12 rounded-xl">
                                             <SelectValue placeholder="Pilih Sistem Kerja" />
                                           </SelectTrigger>
                                         </FormControl>
-                                        <SelectContent className="bg-slate-900 border-slate-800">
+                                        <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                                           <SelectItem value="WFO">
                                             WFO (Office)
                                           </SelectItem>
@@ -4062,7 +4224,7 @@ export default function EmployeeDetailPage({
                                         <Input
                                           type="date"
                                           {...field}
-                                          className="bg-slate-900/50 border-slate-800 h-12 rounded-xl focus:border-emerald-500/50"
+                                          className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white h-12 rounded-xl focus:border-emerald-500/50"
                                         />
                                       </FormControl>
                                       <p className="text-xs text-slate-500 mt-1">
@@ -4086,7 +4248,7 @@ export default function EmployeeDetailPage({
                                         <Textarea
                                           {...field}
                                           placeholder="Contoh: Mutasi internal, promosi, penyesuaian struktur, koreksi data HRD"
-                                          className="bg-slate-900/50 border-slate-800 min-h-[80px] rounded-xl focus:border-emerald-500/50"
+                                          className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white min-h-[80px] rounded-xl focus:border-emerald-500/50"
                                         />
                                       </FormControl>
                                       <p className="text-xs text-slate-500 mt-1">
@@ -4115,11 +4277,11 @@ export default function EmployeeDetailPage({
                                       value={field.value || "promotion"}
                                     >
                                       <FormControl>
-                                        <SelectTrigger className="bg-slate-900 border-slate-800">
+                                        <SelectTrigger className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                                           <SelectValue />
                                         </SelectTrigger>
                                       </FormControl>
-                                      <SelectContent className="bg-slate-900 border-slate-800">
+                                      <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                                         <SelectItem value="promotion">
                                           Promotion
                                         </SelectItem>
@@ -4156,7 +4318,7 @@ export default function EmployeeDetailPage({
                                         {...field}
                                         value={field.value || ""}
                                         placeholder="Contoh: Kenaikan Jabatan Senior"
-                                        className="bg-slate-900 border-slate-800"
+                                        className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
                                       />
                                     </FormControl>
                                   </FormItem>
@@ -4175,7 +4337,7 @@ export default function EmployeeDetailPage({
                                         {...field}
                                         value={field.value || ""}
                                         placeholder="Detail perubahan..."
-                                        className="bg-slate-900 border-slate-800 min-h-[100px]"
+                                        className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white min-h-[100px]"
                                       />
                                     </FormControl>
                                   </FormItem>
@@ -4194,7 +4356,7 @@ export default function EmployeeDetailPage({
                                         type="date"
                                         {...field}
                                         value={field.value || ""}
-                                        className="bg-slate-900 border-slate-800"
+                                        className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
                                       />
                                     </FormControl>
                                   </FormItem>
@@ -4216,7 +4378,7 @@ export default function EmployeeDetailPage({
                                     <FormControl>
                                       <Textarea
                                         {...field}
-                                        className="bg-slate-900 border-slate-800 min-h-[300px] text-sm leading-relaxed"
+                                        className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white min-h-[300px] text-sm leading-relaxed"
                                         placeholder="Masukkan catatan rahasia terkait performa, behavior, atau informasi sensitif lainnya..."
                                       />
                                     </FormControl>
@@ -4243,11 +4405,11 @@ export default function EmployeeDetailPage({
                                         value={field.value || ""}
                                       >
                                         <FormControl>
-                                          <SelectTrigger className="bg-slate-900 border-slate-800">
+                                          <SelectTrigger className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                                             <SelectValue />
                                           </SelectTrigger>
                                         </FormControl>
-                                        <SelectContent className="bg-slate-900 border-slate-800">
+                                        <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                                           {TIPE_KARYAWAN_OPTIONS.map((o) => (
                                             <SelectItem key={o} value={o}>
                                               {o}
@@ -4342,7 +4504,7 @@ export default function EmployeeDetailPage({
                                       <FormLabel className="text-xs font-black text-slate-500 uppercase">
                                         Status Siklus (Auto)
                                       </FormLabel>
-                                      <div className="flex items-center gap-3 h-10 px-3 bg-slate-900 border border-slate-800 rounded-md">
+                                      <div className="flex items-center gap-3 h-10 px-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md">
                                         <Badge
                                           variant="outline"
                                           className={
@@ -4394,7 +4556,7 @@ export default function EmployeeDetailPage({
                                                 type="date"
                                                 {...field}
                                                 value={field.value || ""}
-                                                className="bg-slate-900 border-slate-800"
+                                                className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
                                               />
                                             </FormControl>
                                           </FormItem>
@@ -4413,11 +4575,11 @@ export default function EmployeeDetailPage({
                                               value={field.value || "custom"}
                                             >
                                               <FormControl>
-                                                <SelectTrigger className="bg-slate-900 border-slate-800">
+                                                <SelectTrigger className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                                                   <SelectValue placeholder="Pilih Durasi" />
                                                 </SelectTrigger>
                                               </FormControl>
-                                              <SelectContent className="bg-slate-900 border-slate-800">
+                                              <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                                                 <SelectItem value="1">
                                                   1 Bulan
                                                 </SelectItem>
@@ -4463,7 +4625,7 @@ export default function EmployeeDetailPage({
                                                     "contractDurationType",
                                                   ) !== "custom"
                                                 }
-                                                className={`bg-slate-900 border-slate-800 ${form.watch("contractDurationType") !== "custom" ? "opacity-70 cursor-not-allowed" : ""}`}
+                                                className={`bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white ${form.watch("contractDurationType") !== "custom" ? "opacity-70 cursor-not-allowed" : ""}`}
                                               />
                                             </FormControl>
                                           </FormItem>
@@ -4483,7 +4645,7 @@ export default function EmployeeDetailPage({
                                               {...field}
                                               value={field.value || ""}
                                               placeholder="Nama Mentor"
-                                              className="bg-slate-900 border-slate-800"
+                                              className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
                                             />
                                           </FormControl>
                                         </FormItem>
@@ -4509,7 +4671,7 @@ export default function EmployeeDetailPage({
                                                 type="date"
                                                 {...field}
                                                 value={field.value || ""}
-                                                className="bg-slate-900 border-slate-800"
+                                                className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
                                               />
                                             </FormControl>
                                           </FormItem>
@@ -4528,11 +4690,11 @@ export default function EmployeeDetailPage({
                                               value={field.value || "custom"}
                                             >
                                               <FormControl>
-                                                <SelectTrigger className="bg-slate-900 border-slate-800">
+                                                <SelectTrigger className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                                                   <SelectValue placeholder="Pilih Durasi" />
                                                 </SelectTrigger>
                                               </FormControl>
-                                              <SelectContent className="bg-slate-900 border-slate-800">
+                                              <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                                                 <SelectItem value="1">
                                                   1 Bulan
                                                 </SelectItem>
@@ -4578,7 +4740,7 @@ export default function EmployeeDetailPage({
                                                     "contractDurationType",
                                                   ) !== "custom"
                                                 }
-                                                className={`bg-slate-900 border-slate-800 ${form.watch("contractDurationType") !== "custom" ? "opacity-70 cursor-not-allowed" : ""}`}
+                                                className={`bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white ${form.watch("contractDurationType") !== "custom" ? "opacity-70 cursor-not-allowed" : ""}`}
                                               />
                                             </FormControl>
                                           </FormItem>
@@ -4598,7 +4760,7 @@ export default function EmployeeDetailPage({
                                               type="date"
                                               {...field}
                                               value={field.value || ""}
-                                              className="bg-slate-900 border-slate-800"
+                                              className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
                                             />
                                           </FormControl>
                                         </FormItem>
@@ -4623,7 +4785,7 @@ export default function EmployeeDetailPage({
                                               {...field}
                                               value={field.value || ""}
                                               placeholder="Contoh: 001/HRD/KONTRAK/2024"
-                                              className="bg-slate-900 border-slate-800"
+                                              className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
                                             />
                                           </FormControl>
                                         </FormItem>
@@ -4643,7 +4805,7 @@ export default function EmployeeDetailPage({
                                                 type="date"
                                                 {...field}
                                                 value={field.value || ""}
-                                                className="bg-slate-900 border-slate-800"
+                                                className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
                                               />
                                             </FormControl>
                                           </FormItem>
@@ -4662,11 +4824,11 @@ export default function EmployeeDetailPage({
                                               value={field.value || "custom"}
                                             >
                                               <FormControl>
-                                                <SelectTrigger className="bg-slate-900 border-slate-800">
+                                                <SelectTrigger className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                                                   <SelectValue placeholder="Pilih Durasi" />
                                                 </SelectTrigger>
                                               </FormControl>
-                                              <SelectContent className="bg-slate-900 border-slate-800">
+                                              <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                                                 <SelectItem value="1">
                                                   1 Bulan
                                                 </SelectItem>
@@ -4712,7 +4874,7 @@ export default function EmployeeDetailPage({
                                                     "contractDurationType",
                                                   ) !== "custom"
                                                 }
-                                                className={`bg-slate-900 border-slate-800 ${form.watch("contractDurationType") !== "custom" ? "opacity-70 cursor-not-allowed" : ""}`}
+                                                className={`bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white ${form.watch("contractDurationType") !== "custom" ? "opacity-70 cursor-not-allowed" : ""}`}
                                               />
                                             </FormControl>
                                           </FormItem>
@@ -4738,7 +4900,7 @@ export default function EmployeeDetailPage({
                                               type="date"
                                               {...field}
                                               value={field.value || ""}
-                                              className="bg-slate-900 border-slate-800"
+                                              className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
                                             />
                                           </FormControl>
                                         </FormItem>
@@ -4757,7 +4919,7 @@ export default function EmployeeDetailPage({
                                               {...field}
                                               value={field.value || ""}
                                               placeholder="Contoh: 001/SK-P/ENV/2024"
-                                              className="bg-slate-900 border-slate-800"
+                                              className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
                                             />
                                           </FormControl>
                                         </FormItem>
@@ -4781,11 +4943,11 @@ export default function EmployeeDetailPage({
                                           value={field.value || ""}
                                         >
                                           <FormControl>
-                                            <SelectTrigger className="bg-slate-900 border-slate-800">
+                                            <SelectTrigger className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                                               <SelectValue />
                                             </SelectTrigger>
                                           </FormControl>
-                                          <SelectContent className="bg-slate-900 border-slate-800">
+                                          <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                                             <SelectItem value="WFO">
                                               WFO
                                             </SelectItem>
@@ -4815,7 +4977,7 @@ export default function EmployeeDetailPage({
                                           <Input
                                             {...field}
                                             value={field.value || ""}
-                                            className="bg-slate-900 border-slate-800"
+                                            className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
                                           />
                                         </FormControl>
                                       </FormItem>
@@ -4834,7 +4996,7 @@ export default function EmployeeDetailPage({
                                         <Textarea
                                           {...field}
                                           value={field.value || ""}
-                                          className="bg-slate-900 border-slate-800"
+                                          className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
                                         />
                                       </FormControl>
                                     </FormItem>
@@ -4862,7 +5024,7 @@ export default function EmployeeDetailPage({
                                         onChange={(e) =>
                                           field.onChange(Number(e.target.value))
                                         }
-                                        className="bg-slate-900 border-slate-800"
+                                        className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
                                       />
                                     </FormControl>
                                   </FormItem>
@@ -4904,7 +5066,7 @@ export default function EmployeeDetailPage({
                                     (al: any, idx: number) => (
                                       <div
                                         key={al.id}
-                                        className="p-4 rounded-xl border border-slate-800 bg-slate-900/30 flex flex-col gap-3"
+                                        className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/30 flex flex-col gap-3"
                                       >
                                         <div className="flex items-center gap-2">
                                           <Input
@@ -4966,7 +5128,7 @@ export default function EmployeeDetailPage({
                                             <SelectTrigger className="h-8 text-[10px]">
                                               <SelectValue />
                                             </SelectTrigger>
-                                            <SelectContent className="bg-slate-900">
+                                            <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                                               <SelectItem value="tetap">
                                                 Tetap
                                               </SelectItem>
@@ -5005,7 +5167,7 @@ export default function EmployeeDetailPage({
                                 </div>
                               </div>
 
-                              <div className="h-px bg-slate-800 my-4"></div>
+                              <div className="h-px bg-slate-200 dark:bg-slate-800 my-4"></div>
 
                               <div className="grid grid-cols-2 gap-4">
                                 <FormField
@@ -5026,7 +5188,7 @@ export default function EmployeeDetailPage({
                                               Number(e.target.value),
                                             )
                                           }
-                                          className="bg-slate-900 border-slate-800"
+                                          className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
                                         />
                                       </FormControl>
                                     </FormItem>
@@ -5050,7 +5212,7 @@ export default function EmployeeDetailPage({
                                               Number(e.target.value),
                                             )
                                           }
-                                          className="bg-slate-900 border-slate-800"
+                                          className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
                                         />
                                       </FormControl>
                                     </FormItem>
@@ -5076,7 +5238,7 @@ export default function EmployeeDetailPage({
                                               Number(e.target.value),
                                             )
                                           }
-                                          className="bg-slate-900 border-slate-800"
+                                          className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
                                         />
                                       </FormControl>
                                     </FormItem>
@@ -5100,7 +5262,7 @@ export default function EmployeeDetailPage({
                                               Number(e.target.value),
                                             )
                                           }
-                                          className="bg-slate-900 border-slate-800"
+                                          className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
                                         />
                                       </FormControl>
                                     </FormItem>
@@ -5127,7 +5289,7 @@ export default function EmployeeDetailPage({
                                               Number(e.target.value),
                                             )
                                           }
-                                          className="bg-slate-900 border-slate-800"
+                                          className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
                                         />
                                       </FormControl>
                                     </FormItem>
@@ -5151,7 +5313,7 @@ export default function EmployeeDetailPage({
                                               Number(e.target.value),
                                             )
                                           }
-                                          className="bg-slate-900 border-slate-800"
+                                          className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
                                         />
                                       </FormControl>
                                     </FormItem>
@@ -5175,7 +5337,7 @@ export default function EmployeeDetailPage({
                                               Number(e.target.value),
                                             )
                                           }
-                                          className="bg-slate-900 border-slate-800"
+                                          className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
                                         />
                                       </FormControl>
                                     </FormItem>
@@ -5229,11 +5391,11 @@ export default function EmployeeDetailPage({
                         </div>
 
                         {/* Sticky Footer */}
-                        <div className="shrink-0 z-50 bg-slate-900/80 backdrop-blur-xl border-t border-slate-800/60 px-6 py-5 md:px-10 md:py-6 flex justify-end items-center gap-4">
+                        <div className="shrink-0 z-50 bg-white dark:bg-slate-900/80 backdrop-blur-xl border-t border-slate-200 dark:border-slate-800/60 px-6 py-5 md:px-10 md:py-6 flex justify-end items-center gap-4">
                           <Button
                             type="button"
                             variant="outline"
-                            className="h-12 px-8 rounded-xl border-slate-800 bg-slate-900/50 text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
+                            className="h-12 px-8 rounded-xl border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
                             onClick={() => setEditingSection(null)}
                           >
                             Batal
@@ -5264,10 +5426,10 @@ export default function EmployeeDetailPage({
               </TabsContent>
 
               <TabsContent value="lembur">
-                <Card className="border-slate-800 bg-slate-950/40 rounded-[2rem] shadow-2xl backdrop-blur-xl">
-                  <CardHeader className="border-b border-slate-800/50 p-6 flex flex-row items-center justify-between">
+                <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 rounded-[2rem] shadow-2xl backdrop-blur-xl">
+                  <CardHeader className="border-b border-slate-200 dark:border-slate-800/50 p-6 flex flex-row items-center justify-between">
                     <div>
-                      <CardTitle className="text-lg font-bold text-white flex items-center gap-2">
+                      <CardTitle className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
                         <ClipboardList className="h-5 w-5 text-emerald-400" />
                         Riwayat Pengajuan Lembur
                       </CardTitle>
@@ -5283,27 +5445,27 @@ export default function EmployeeDetailPage({
                     {overtimeData && overtimeData.length > 0 ? (
                       <div className="overflow-x-auto">
                         <Table>
-                          <TableHeader className="bg-slate-900/50">
-                            <TableRow className="border-slate-800/50 hover:bg-slate-900/50">
-                              <TableHead className="text-[10px] uppercase font-black text-slate-400 h-12 px-6">
+                          <TableHeader className="bg-slate-50 dark:bg-slate-900/50">
+                            <TableRow className="border-slate-200 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-900/50">
+                              <TableHead className="text-[10px] uppercase font-black text-slate-500 dark:text-slate-400 h-12 px-6">
                                 Tanggal
                               </TableHead>
-                              <TableHead className="text-[10px] uppercase font-black text-slate-400 h-12">
+                              <TableHead className="text-[10px] uppercase font-black text-slate-500 dark:text-slate-400 h-12">
                                 Jam Kerja
                               </TableHead>
-                              <TableHead className="text-[10px] uppercase font-black text-slate-400 h-12">
+                              <TableHead className="text-[10px] uppercase font-black text-slate-500 dark:text-slate-400 h-12">
                                 Durasi Diajukan
                               </TableHead>
-                              <TableHead className="text-[10px] uppercase font-black text-slate-400 h-12 text-emerald-400">
+                              <TableHead className="text-[10px] uppercase font-black text-slate-500 dark:text-slate-400 h-12 text-emerald-400">
                                 Durasi Final Payroll
                               </TableHead>
-                              <TableHead className="text-[10px] uppercase font-black text-slate-400 h-12">
+                              <TableHead className="text-[10px] uppercase font-black text-slate-500 dark:text-slate-400 h-12">
                                 Lokasi
                               </TableHead>
-                              <TableHead className="text-[10px] uppercase font-black text-slate-400 h-12">
+                              <TableHead className="text-[10px] uppercase font-black text-slate-500 dark:text-slate-400 h-12">
                                 Status
                               </TableHead>
-                              <TableHead className="text-[10px] uppercase font-black text-slate-400 h-12 px-6">
+                              <TableHead className="text-[10px] uppercase font-black text-slate-500 dark:text-slate-400 h-12 px-6">
                                 Catatan HRD
                               </TableHead>
                             </TableRow>
@@ -5335,22 +5497,22 @@ export default function EmployeeDetailPage({
                               return (
                                 <TableRow
                                   key={ov.id || index}
-                                  className="border-slate-800/50 hover:bg-slate-900/20 transition-colors"
+                                  className="border-slate-200 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-900/20 transition-colors"
                                 >
-                                  <TableCell className="px-6 font-medium text-slate-200 text-sm">
+                                  <TableCell className="px-6 font-medium text-slate-800 dark:text-slate-200 text-sm">
                                     {ovDate ? format(ovDate, "eeee, dd MMMM yyyy", { locale: idLocale }) : "-"}
                                   </TableCell>
-                                  <TableCell className="text-slate-300 text-sm font-semibold">
+                                  <TableCell className="text-slate-700 dark:text-slate-300 text-sm font-semibold">
                                     {ov.startTime || "-"} - {ov.endTime || "-"}
                                   </TableCell>
-                                  <TableCell className="text-slate-400 text-sm">
+                                  <TableCell className="text-slate-600 dark:text-slate-400 text-sm">
                                     {submittedLabel}
                                   </TableCell>
                                   <TableCell className="text-emerald-400 text-sm font-bold">
                                     {finalLabel}
                                   </TableCell>
-                                  <TableCell className="text-slate-300 text-sm capitalize">
-                                    {ov.location === "kantor" ? "💻 Kantor (WFO)" 
+                                  <TableCell className="text-slate-700 dark:text-slate-300 text-sm capitalize">
+                                    {ov.location === "kantor" ? "💻 Kantor (WFO)"
                                       : ov.location === "remote" ? "🏡 Remote (WFH)" 
                                       : ov.location === "site" ? "🚗 Dinas" 
                                       : ov.location || "-"}
@@ -5380,16 +5542,16 @@ export default function EmployeeDetailPage({
 
               <TabsContent value="riwayat">
                 {/* Extended History View */}
-                <Card className="border-slate-800 bg-slate-950/40">
-                  <CardHeader className="border-b border-slate-800/50">
-                    <CardTitle className="text-lg font-bold">
+                <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40">
+                  <CardHeader className="border-b border-slate-200 dark:border-slate-800/50">
+                    <CardTitle className="text-lg font-bold text-slate-900 dark:text-white">
                       Audit Trail Lengkap
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="p-0">
                     <Table>
-                      <TableHeader className="bg-slate-900/50">
-                        <TableRow className="border-slate-800/50">
+                      <TableHeader className="bg-slate-50 dark:bg-slate-900/50">
+                        <TableRow className="border-slate-200 dark:border-slate-800/50">
                           <TableHead className="text-[10px] uppercase font-black text-slate-500 h-10 px-6">
                             Waktu
                           </TableHead>
@@ -5411,7 +5573,7 @@ export default function EmployeeDetailPage({
                         {historyData?.map((h: any) => (
                           <TableRow
                             key={h.id}
-                            className="border-slate-800/50 hover:bg-slate-900/30"
+                            className="border-slate-200 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-900/30"
                           >
                             <TableCell className="px-6 text-[10px] text-slate-500 font-mono">
                               {h.changedAt?.toDate
@@ -5424,7 +5586,7 @@ export default function EmployeeDetailPage({
                             <TableCell>
                               <Badge
                                 variant="outline"
-                                className="text-[9px] uppercase border-slate-800 text-slate-500"
+                                className="text-[9px] uppercase border-slate-200 dark:border-slate-800 text-slate-500"
                               >
                                 {h.type}
                               </Badge>
@@ -5435,11 +5597,11 @@ export default function EmployeeDetailPage({
                                   <span className="text-slate-500">
                                     {h.label}:
                                   </span>{" "}
-                                  <span className="text-white font-medium">
+                                  <span className="text-slate-800 dark:text-white font-medium">
                                     {h.oldValue}
                                   </span>{" "}
                                   →{" "}
-                                  <span className="text-emerald-400 font-bold">
+                                  <span className="text-emerald-600 dark:text-emerald-400 font-bold">
                                     {h.newValue}
                                   </span>
                                 </p>
@@ -5447,10 +5609,10 @@ export default function EmployeeDetailPage({
                                 h.title
                               )}
                             </TableCell>
-                            <TableCell className="text-[11px] text-slate-400 italic">
+                            <TableCell className="text-[11px] text-slate-600 dark:text-slate-400 italic">
                               "{h.note || "-"}"
                             </TableCell>
-                            <TableCell className="px-6 text-right text-[10px] font-bold text-slate-300">
+                            <TableCell className="px-6 text-right text-[10px] font-bold text-slate-700 dark:text-slate-300">
                               {h.changedByName}
                             </TableCell>
                           </TableRow>
@@ -5464,6 +5626,15 @@ export default function EmployeeDetailPage({
           </Tabs>
         </main>
       </div>
+
+      {/* Attendance Method Dialog */}
+      <AttendanceMethodEditDialog
+        open={attendanceDialogOpen}
+        onOpenChange={setAttendanceDialogOpen}
+        employee={profileDoc}
+        sites={sites}
+        onSave={handleSaveAttendanceSettings}
+      />
     </div>
   );
 }

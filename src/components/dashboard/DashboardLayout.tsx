@@ -188,6 +188,8 @@ export function DashboardLayout({
         const visibleKeys = new Set(navSettings.visibleMenuItems);
         if (roleKey === 'super-admin' || roleKey === 'hrd') {
             visibleKeys.add('overtime_payroll_recap');
+            visibleKeys.add('hrd.dashboard.karyawan');
+            visibleKeys.add('hrd.dashboard.rekrutmen');
         }
         currentConfig = currentConfig.map(group => ({
             ...group,

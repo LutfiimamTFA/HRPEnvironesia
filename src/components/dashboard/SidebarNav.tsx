@@ -34,17 +34,25 @@ export function SidebarNav({ menuConfig }: SidebarNavProps) {
 
     return (
         <Sidebar collapsible="icon" className="border-r border-slate-200 dark:border-slate-800">
-            <SidebarHeader className="border-b border-slate-200 dark:border-slate-800 pt-4 pb-4">
-                 <Link href="/admin" className="flex items-center gap-3.5 px-2">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-teal-500 to-teal-600 shadow-sm flex-shrink-0">
-                        <span className="font-bold text-white text-lg">E</span>
+            <SidebarHeader className="border-none bg-transparent px-5 pt-5 pb-3">
+                <Link href="/admin">
+                    {/* Expanded */}
+                    <div className={cn(isCollapsed && "hidden")}>
+                        <img
+                            src="/images/hrp-logo.svg"
+                            alt="Environesia"
+                            className="w-[150px] h-auto object-contain"
+                        />
+                        <p className="mt-2 text-xs text-slate-400">Human Capital Portal</p>
                     </div>
-                     <div className={cn(
-                        "leading-tight transition-all duration-200",
-                        isCollapsed && "hidden"
-                    )}>
-                        <div className="font-bold text-slate-900 dark:text-white text-base">Environesia</div>
-                        <div className="text-xs text-slate-600 dark:text-slate-400">Human Capital Portal</div>
+
+                    {/* Collapsed */}
+                    <div className={cn("hidden", isCollapsed && "block")}>
+                        <img
+                            src="/images/hrp-logo.svg"
+                            alt="Environesia"
+                            className="w-7 h-7 object-contain object-left"
+                        />
                     </div>
                 </Link>
             </SidebarHeader>

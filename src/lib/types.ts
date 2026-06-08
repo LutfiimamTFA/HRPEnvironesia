@@ -470,6 +470,16 @@ export type EmployeeProfile = {
   // --- Kehadiran & Cuti ---
   leaveBalance?: LeaveBalanceSummary;
 
+  // --- Attendance Settings ---
+  attendanceMethod?: string; // "fingerprint" | "web_photo" | "hybrid" | "exempt"
+  attendanceRequired?: boolean;
+  attendanceLocationMode?: string; // "office_site" | "free_gps" | "specific_site"
+  attendanceSiteIds?: string[];
+  attendancePolicyNote?: string;
+  attendanceUpdatedAt?: Timestamp | null;
+  attendanceUpdatedBy?: string | null;
+  attendanceUpdatedByName?: string | null;
+
   // --- Data Penggajian (Hanya untuk HRD) ---
   payroll?: {
     baseSalary?: number;
