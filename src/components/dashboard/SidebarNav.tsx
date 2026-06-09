@@ -34,28 +34,33 @@ export function SidebarNav({ menuConfig }: SidebarNavProps) {
 
     return (
         <Sidebar collapsible="icon" className="border-r border-slate-200 dark:border-slate-800">
-            <SidebarHeader className="border-none bg-transparent px-5 pt-5 pb-3">
-                <Link href="/admin">
-                    {/* Expanded */}
-                    <div className={cn(isCollapsed && "hidden")}>
-                        <img
-                            src="/images/hrp-logo.svg"
-                            alt="Environesia"
-                            className="w-[150px] h-auto object-contain"
-                        />
-                        <p className="mt-2 text-xs text-slate-400">Human Capital Portal</p>
-                    </div>
+    <SidebarHeader className="border-none bg-transparent px-0 pt-4 pb-3 overflow-visible">
+  <Link href="/admin" className="block w-full overflow-visible">
+    {/* Expanded */}
+    <div className={cn("overflow-visible", isCollapsed && "hidden")}>
+      <div className="h-20 w-full flex items-center justify-center overflow-visible px-0">
+        <img
+          src="/images/hrp-logo.svg"
+          alt="Environesia"
+          className="w-[210px] max-w-none h-auto object-contain scale-[1.47]"
+        />
+      </div>
 
-                    {/* Collapsed */}
-                    <div className={cn("hidden", isCollapsed && "block")}>
-                        <img
-                            src="/images/hrp-logo.svg"
-                            alt="Environesia"
-                            className="w-7 h-7 object-contain object-left"
-                        />
-                    </div>
-                </Link>
-            </SidebarHeader>
+      <p className="mt-0 text-center text-xs text-slate-400 px-2">
+        Human Capital Portal
+      </p>
+    </div>
+
+    {/* Collapsed */}
+    <div className={cn("hidden", isCollapsed && "flex items-center justify-center")}>
+      <img
+        src="/images/hrp-logo.svg"
+        alt="Environesia"
+        className="w-8 h-8 object-contain"
+      />
+    </div>
+  </Link>
+</SidebarHeader>
             <SidebarContent className="px-2 py-4">
                 {menuConfig.map((group, groupIndex) => (
                     <Fragment key={group.title || groupIndex}>

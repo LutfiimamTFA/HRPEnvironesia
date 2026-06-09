@@ -4,7 +4,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowRight, FileText, Leaf, Search, User, UserCheck, ShieldCheck, BarChart, Globe, Menu, X, Users, Loader2 } from 'lucide-react';
+import { ArrowRight, FileText, Search, User, UserCheck, ShieldCheck, BarChart, Globe, Menu, X, Users, Loader2 } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -199,9 +199,13 @@ const Header = () => {
         <header className={cn("sticky top-0 z-50 w-full transition-all duration-300", scrolled ? "bg-background/80 backdrop-blur-lg border-b" : "bg-transparent")}>
             <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
                 <div className="flex h-20 items-center justify-between">
-                    <Link href="/careers" className="flex items-center gap-2">
-                        <Leaf className="h-7 w-7 text-primary" />
-                        <span className="text-xl font-bold tracking-tight">Environesia Karir</span>
+                    <Link href="/careers" className="flex items-center gap-3">
+                        <img
+                            src="/images/hrp-logo.svg"
+                            alt="Environesia"
+                            className="h-8 w-auto object-contain"
+                        />
+                        <span className="text-xl font-bold tracking-tight text-foreground">Environesia Vacancies</span>
                     </Link>
                     <nav className="hidden items-center gap-8 text-sm font-medium md:flex">
                         {menuItems.map((item) => (
@@ -230,9 +234,13 @@ const Header = () => {
                             <SheetContent side="left" className="w-[80vw] p-0">
                                 <div className="flex flex-col h-full">
                                     <div className="p-4 border-b">
-                                        <Link href="/careers" className="flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
-                                            <Leaf className="h-6 w-6 text-primary" />
-                                            <span className="text-lg font-bold">Environesia Karir</span>
+                                        <Link href="/careers" className="flex items-center gap-3" onClick={() => setMobileMenuOpen(false)}>
+                                            <img
+                                                src="/images/hrp-logo.svg"
+                                                alt="Environesia"
+                                                className="h-7 w-auto object-contain"
+                                            />
+                                            <span className="text-base font-bold text-foreground">Environesia Vacancies</span>
                                         </Link>
                                     </div>
                                     <nav className="flex flex-col gap-4 p-4">
@@ -575,8 +583,12 @@ const Footer = () => {
             <div className="py-8 grid grid-cols-1 md:grid-cols-3 gap-8">
                 <div>
                     <div className="flex items-center gap-2">
-                        <Leaf className="h-6 w-6 text-primary" />
-                        <span className="text-lg font-bold">Environesia Karir</span>
+                        <img
+                            src="/images/hrp-logo.svg"
+                            alt="Environesia"
+                            className="h-6 w-auto object-contain"
+                        />
+                        <span className="text-lg font-bold">Environesia Vacancies</span>
                     </div>
                     <p className="mt-2 text-sm text-muted-foreground">{t.Footer.tagline}</p>
                 </div>

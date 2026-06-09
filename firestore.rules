@@ -898,5 +898,12 @@ service cloud.firestore {
         allow update, delete: if isSuperAdmin() || isHrd();
       }
     }
+
+    // Landing Page CMS Sections
+    match /landing_sections/{sectionId} {
+      allow list: if isSignedIn();
+      allow get: if isSignedIn();
+      allow create, update, delete: if isSuperAdmin();
+    }
   }
 }

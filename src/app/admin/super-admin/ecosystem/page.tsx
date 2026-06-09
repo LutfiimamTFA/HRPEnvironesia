@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { EcosystemCompaniesClient } from '@/components/dashboard/super-admin/EcosystemCompaniesClient';
-import { EcosystemSectionsClient } from '@/components/dashboard/super-admin/EcosystemSectionsClient';
+import { LandingSectionsClient } from '@/components/dashboard/super-admin/LandingSectionsClient';
 
 export default function EcosystemPage() {
   const hasAccess = useRoleGuard('super-admin');
@@ -33,7 +33,7 @@ export default function EcosystemPage() {
           <EcosystemCompaniesClient />
         </TabsContent>
         <TabsContent value="sections" className="mt-4">
-          <EcosystemSectionsClient />
+          <LandingSectionsClient />
         </TabsContent>
       </Tabs>
     </DashboardLayout>

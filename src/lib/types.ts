@@ -2304,3 +2304,113 @@ export type LeaveBalanceAdjustment = {
   adjustedByName: string;
   createdAt: Timestamp;
 };
+
+// Landing Page CMS Types
+export type LandingSectionType =
+  | 'hero'
+  | 'jobs'
+  | 'why_environesia'
+  | 'ecosystem_companies'
+  | 'recruitment_process'
+  | 'basecamp'
+  | 'how_to_apply'
+  | 'faq'
+  | 'footer';
+
+export type LandingSectionLayout =
+  | 'default'
+  | 'text-left'
+  | 'text-center'
+  | 'text-right'
+  | 'image-left'
+  | 'image-right'
+  | 'image-full';
+
+export type LandingBenefit = {
+  id?: string;
+  title: string;
+  description: string;
+  icon?: string;
+  order: number;
+  isActive?: boolean;
+};
+
+export type LandingRecruitmentStep = {
+  id?: string;
+  title: string;
+  description: string;
+  order: number;
+  isActive?: boolean;
+};
+
+export type LandingHowToApplyStep = {
+  id?: string;
+  title: string;
+  description: string;
+  icon?: string;
+  order: number;
+  isActive?: boolean;
+};
+
+export type LandingFAQItem = {
+  id?: string;
+  question: string;
+  answer: string;
+  order: number;
+  isActive?: boolean;
+};
+
+export type LandingSection = {
+  id?: string;
+  sectionKey: LandingSectionType;
+  type: string;
+  title: string;
+  subtitle?: string;
+  description?: string;
+  imageUrl?: string;
+  driveFileId?: string;
+  backgroundImageUrl?: string;
+  backgroundDriveFileId?: string;
+
+  // Button fields
+  primaryButtonText?: string;
+  primaryButtonUrl?: string;
+  secondaryButtonText?: string;
+  secondaryButtonUrl?: string;
+  buttonText?: string;
+  buttonUrl?: string;
+
+  // Layout & Display
+  layout?: LandingSectionLayout;
+  overlayMode?: 'light' | 'dark' | 'none';
+  textPosition?: 'left' | 'center' | 'right';
+
+  // Content for specific sections
+  benefits?: LandingBenefit[];
+  steps?: LandingRecruitmentStep[];
+  howToApplySteps?: LandingHowToApplyStep[];
+  faqItems?: LandingFAQItem[];
+
+  // Stats for hero
+  stats?: Array<{
+    label: string;
+    value: string;
+  }>;
+
+  // Footer fields
+  brandText?: string;
+  tagline?: string;
+
+  // Section Management
+  order: number;
+  isActive: boolean;
+  isSystem: boolean;
+  isDeletable: boolean;
+  isEditable: boolean;
+
+  // Metadata
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  createdBy?: string;
+  updatedBy?: string;
+};

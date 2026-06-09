@@ -25,9 +25,9 @@ export function resolveProfileUid(profile: any): string | null {
  */
 export function resolveEventUid(event: any): string | null {
   return (
+    event.uid ||
     event.employeeUid ||
     event.userId ||
-    event.uid ||
     event.ownerUid ||
     event.createdBy ||
     event.employee?.uid ||
@@ -37,30 +37,34 @@ export function resolveEventUid(event: any): string | null {
 
 /**
  * Event type yang menunjukkan Kehadiran Masuk (Check In)
+ * Support: IN, in, tap_in, check_in, kehadiran_masuk, masuk
  */
 export function isCheckInEvent(type: string): boolean {
   const checkInTypes = [
+    'in',
     'tap_in',
     'check_in',
     'kehadiran_masuk',
     'masuk',
-    'in',
   ];
-  return checkInTypes.includes((type || '').toLowerCase());
+  const normalizedType = (type || '').toLowerCase();
+  return checkInTypes.includes(normalizedType);
 }
 
 /**
  * Event type yang menunjukkan Kehadiran Pulang (Check Out)
+ * Support: OUT, out, tap_out, check_out, kehadiran_pulang, pulang
  */
 export function isCheckOutEvent(type: string): boolean {
   const checkOutTypes = [
+    'out',
     'tap_out',
     'check_out',
     'kehadiran_pulang',
     'pulang',
-    'out',
   ];
-  return checkOutTypes.includes((type || '').toLowerCase());
+  const normalizedType = (type || '').toLowerCase();
+  return checkOutTypes.includes(normalizedType);
 }
 
 /**
@@ -95,22 +99,18 @@ export function resolvePhotoUrl(event: any): string | null {
 export function resolveAddress(event: any): string {
   if (!event) return '-';
 
-  // Direct address fields
-  if (event.address || event.fullAddress) {
-    return event.address || event.fullAddress;
-  }
+  // Priority 1: Direct address fields
+  if (event.address) return event.address;
+  if (event.fullAddress) return event.fullAddress;
 
-  // Location object
-  if (event.location?.address || event.location?.fullAddress) {
-    return event.location.address || event.location.fullAddress;
-  }
+  // Priority 2: Location object
+  if (event.location?.address) return event.location.address;
+  if (event.location?.fullAddress) return event.location.fullAddress;
 
-  // Address detail object
-  if (event.addressDetail?.fullAddress) {
-    return event.addressDetail.fullAddress;
-  }
+  // Priority 3: Address detail object
+  if (event.addressDetail?.fullAddress) return event.addressDetail.fullAddress;
 
-  // Build from components
+  // Priority 4: Build from addressDetail components
   if (event.addressDetail) {
     const { road, village, city, state } = event.addressDetail;
     const parts = [road, village, city, state].filter(Boolean);
@@ -119,9 +119,19 @@ export function resolveAddress(event: any): string {
     }
   }
 
-  // Fallback: show coordinates if address not available
+  // Priority 5: Coordinates
   if (event.coordinates?.latitude && event.coordinates?.longitude) {
     return `${event.coordinates.latitude}, ${event.coordinates.longitude}`;
+  }
+
+  // Priority 6: Geo object
+  if (event.geo?.lat && event.geo?.lng) {
+    return `${event.geo.lat}, ${event.geo.lng}`;
+  }
+
+  // Priority 7: location.coordinates
+  if (event.location?.coordinates?.lat && event.location?.coordinates?.lng) {
+    return `${event.location.coordinates.lat}, ${event.location.coordinates.lng}`;
   }
 
   return '-';
@@ -151,6 +161,69 @@ export function resolveCoordinates(event: any): { latitude: number; longitude: n
 }
 
 /**
+ * Get timestamp dari event dengan berbagai fallback
+ */
+export function getEventTimestamp(event: any): Date | null {
+  if (!event) return null;
+
+  const isValidDate = (date: any): boolean => {
+    return date instanceof Date && !isNaN(date.getTime());
+  };
+
+  // Priority 1: tsClient
+  if (event.tsClient) {
+    try {
+      const date = event.tsClient.toDate ? event.tsClient.toDate() : new Date(event.tsClient);
+      if (isValidDate(date)) return date;
+    } catch {}
+  }
+
+  // Priority 2: tsServer
+  if (event.tsServer) {
+    try {
+      const date = event.tsServer.toDate ? event.tsServer.toDate() : new Date(event.tsServer);
+      if (isValidDate(date)) return date;
+    } catch {}
+  }
+
+  // Priority 3: datetime.iso
+  if (event.datetime?.iso) {
+    try {
+      const date = new Date(event.datetime.iso);
+      if (isValidDate(date)) return date;
+    } catch {}
+  }
+
+  // Priority 4: Build from datetime components
+  if (event.datetime?.year && event.datetime?.month && event.datetime?.day) {
+    try {
+      const hour = event.datetime.hour || 0;
+      const minute = event.datetime.minute || 0;
+      const second = event.datetime.second || 0;
+      const date = new Date(
+        event.datetime.year,
+        event.datetime.month - 1, // JS month is 0-indexed
+        event.datetime.day,
+        hour,
+        minute,
+        second
+      );
+      if (isValidDate(date)) return date;
+    } catch {}
+  }
+
+  // Priority 5: createdAt
+  if (event.createdAt) {
+    try {
+      const date = event.createdAt.toDate ? event.createdAt.toDate() : new Date(event.createdAt);
+      if (isValidDate(date)) return date;
+    } catch {}
+  }
+
+  return null;
+}
+
+/**
  * Format jam dari timestamp/Date
  */
 export function formatTime(timestamp: any): string {
@@ -158,6 +231,7 @@ export function formatTime(timestamp: any): string {
 
   try {
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    if (isNaN(date.getTime())) return '-';
     return date.toLocaleTimeString('id-ID', {
       hour: '2-digit',
       minute: '2-digit',

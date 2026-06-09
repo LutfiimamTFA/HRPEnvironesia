@@ -15,10 +15,13 @@ import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { getInitials } from '@/lib/utils';
 import { normalizeGoogleDriveImageUrl } from '@/lib/profile-photo';
 import Link from 'next/link';
-import { XCircle, Eye } from 'lucide-react';
+import { XCircle, Search, Eye, Camera } from 'lucide-react';
 import { DeleteConfirmationDialog } from './DeleteConfirmationDialog';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { AttendanceDetailModal } from './AttendanceDetailModal';
+import { getAttendanceImageUrl } from '@/lib/google-drive-image';
 import {
   resolveProfileUid,
   resolveEventUid,
@@ -31,6 +34,7 @@ import {
   calculateLateMinutes,
   calculateEarlyLeaveMinutes,
   determineStatus,
+  getEventTimestamp,
 } from '@/lib/attendance-helpers';
 
 interface AttendanceRecord {
@@ -45,13 +49,14 @@ interface AttendanceRecord {
   tapOut: string;
   tapInId: string | null;
   tapOutId: string | null;
-  status: 'Sedang Bekerja' | 'Selesai' | 'Belum Tap In' | 'Cuti Tahunan' | 'Fingerprint' | 'Metode Belum Diatur';
+  status: 'Sedang Bekerja' | 'Selesai' | 'Belum Tap In' | 'Cuti Tahunan' | 'Fingerprint' | 'Metode Belum Diatur' | 'Terlambat' | 'Offsite';
   mode: 'onsite' | 'offsite' | '-';
   photoUrl?: string | null;
   address: string;
   location: { lat: number; lng: number } | null;
   lateMinutes: number | null;
   earlyLeaveMinutes: number | null;
+  rawEvent?: any; // Original event data for accessing drive info
 }
 
 const kpiCardsData = [
@@ -77,8 +82,11 @@ export function AttendanceMonitoringClient() {
   const [date, setDate] = useState<Date | null>(new Date());
   const [brandFilter, setBrandFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [eventsToDelete, setEventsToDelete] = useState<{ tapInId: string | null, tapOutId: string | null, userName: string | null }>({ tapInId: null, tapOutId: null, userName: null });
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [selectedRecord, setSelectedRecord] = useState<any>(null);
   const firestore = useFirestore();
   const { toast } = useToast();
 
@@ -134,12 +142,11 @@ export function AttendanceMonitoringClient() {
 
   const eventsQuery = useMemoFirebase(() => {
     if (!date) return null;
-    const start = startOfDay(date);
-    const end = endOfDay(date);
+    // Query by datetime.date field (format: YYYY-MM-DD)
+    const selectedDateString = format(date, 'yyyy-MM-dd');
     return query(
       collection(firestore, 'attendance_events'),
-      where('tsServer', '>=', start),
-      where('tsServer', '<=', end)
+      where('datetime.date', '==', selectedDateString)
     );
   }, [firestore, date]);
   const { data: attendanceEvents, isLoading: isLoadingEvents, mutate: mutateEvents } = useCollection<AttendanceEvent>(eventsQuery);
@@ -220,7 +227,19 @@ export function AttendanceMonitoringClient() {
       return { tableData: [], summaryData: defaultSummary, uniqueBrands: new Set<string>() };
     }
 
-    const getTimestamp = (event: any): Timestamp | undefined => event.tsServer || event.timestamp || event.ts || event.createdAt;
+    // Safe format time helper
+    const safeFormatTime = (timestamp: Date | null): string => {
+      if (!timestamp) return '-';
+      try {
+        if (!(timestamp instanceof Date) || isNaN(timestamp.getTime())) {
+          return '-';
+        }
+        return format(timestamp, 'HH:mm');
+      } catch {
+        return '-';
+      }
+    };
+
     const brandMap = new Map(brands.map(b => [b.id, b.name]));
     const activeSite = sites.find(s => s.isActive);
 
@@ -308,8 +327,8 @@ export function AttendanceMonitoringClient() {
         });
       }
 
-      const tapInTimestamp = checkInEvent ? getTimestamp(checkInEvent) : null;
-      const tapOutTimestamp = checkOutEvent ? getTimestamp(checkOutEvent) : null;
+      const tapInTimestamp = checkInEvent ? getEventTimestamp(checkInEvent) : null;
+      const tapOutTimestamp = checkOutEvent ? getEventTimestamp(checkOutEvent) : null;
 
       // Extract photo URL and address from events (priority: check-in, then check-out)
       const photoUrl = resolvePhotoUrl(checkInEvent) || resolvePhotoUrl(checkOutEvent);
@@ -365,25 +384,23 @@ export function AttendanceMonitoringClient() {
         }
 
         if (activeSite) {
-          const tapInTime = tapInTimestamp.toDate();
-          const shiftStart = new Date(tapInTime);
+          const shiftStart = new Date(tapInTimestamp);
           const [startHour, startMinute] = activeSite.shift.startTime.split(':').map(Number);
           shiftStart.setHours(startHour, startMinute + activeSite.shift.graceLateMinutes, 0, 0);
 
-          if (tapInTime > shiftStart) {
-            lateMinutes = differenceInMinutes(tapInTime, shiftStart);
+          if (tapInTimestamp > shiftStart) {
+            lateMinutes = differenceInMinutes(tapInTimestamp, shiftStart);
             summary.terlambat++;
           }
         }
       }
 
       if (tapOut && tapOutTimestamp && activeSite) {
-        const tapOutTime = tapOutTimestamp.toDate();
-        const shiftEnd = new Date(tapOutTime);
+        const shiftEnd = new Date(tapOutTimestamp);
         const [endHour, endMinute] = activeSite.shift.endTime.split(':').map(Number);
         shiftEnd.setHours(endHour, endMinute, 0, 0);
-        if (tapOutTime < shiftEnd) {
-          earlyLeaveMinutes = differenceInMinutes(shiftEnd, tapOutTime);
+        if (tapOutTimestamp < shiftEnd) {
+          earlyLeaveMinutes = differenceInMinutes(shiftEnd, tapOutTimestamp);
         }
       }
 
@@ -395,8 +412,8 @@ export function AttendanceMonitoringClient() {
         brandName: resolvedBrand,
         divisionName: resolvedDivision,
         attendanceMethod,
-        tapIn: tapInTimestamp ? format(tapInTimestamp.toDate(), 'HH:mm') : '-',
-        tapOut: tapOutTimestamp ? format(tapOutTimestamp.toDate(), 'HH:mm') : '-',
+        tapIn: safeFormatTime(tapInTimestamp),
+        tapOut: safeFormatTime(tapOutTimestamp),
         tapInId: tapIn?.id || null,
         tapOutId: tapOut?.id || null,
         status: status,
@@ -406,10 +423,22 @@ export function AttendanceMonitoringClient() {
         location: tapIn?.location || null,
         lateMinutes,
         earlyLeaveMinutes,
+        rawEvent: checkInEvent || checkOutEvent, // Store original event for getting best image URL
       };
     });
 
     const filteredTableData = processedData.filter(row => {
+      // Apply search filter
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase();
+        const matchSearch =
+          row.name.toLowerCase().includes(query) ||
+          row.employeeNumber.toLowerCase().includes(query) ||
+          row.brandName.toLowerCase().includes(query);
+        if (!matchSearch) return false;
+      }
+
+      // Apply status filter
       if (statusFilter === 'all') return true;
       if (statusFilter === 'present') return row.status === 'Sedang Bekerja' || row.status === 'Selesai';
       if (statusFilter === 'absent') return row.status === 'Belum Tap In';
@@ -444,6 +473,10 @@ export function AttendanceMonitoringClient() {
       sampleEvent: sampleEvent ? {
         uid: sampleEventUid,
         type: sampleEvent.type,
+        tsClient: sampleEvent.tsClient ? 'exists' : 'null',
+        tsServer: sampleEvent.tsServer ? 'exists' : 'null',
+        datetimeIso: (sampleEvent as any).datetime?.iso ? 'exists' : 'null',
+        datetimeDate: (sampleEvent as any).datetime?.date ? (sampleEvent as any).datetime.date : 'null',
       } : null,
     });
 
@@ -465,7 +498,7 @@ export function AttendanceMonitoringClient() {
       ],
       uniqueBrands: uniqueBrandIds,
     };
-  }, [employeeProfiles, attendanceEvents, sites, brands, brandFilter, statusFilter, date, leaveRequests]);
+  }, [employeeProfiles, attendanceEvents, sites, brands, brandFilter, statusFilter, searchQuery, date, leaveRequests]);
 
   const handleCancelClick = (row: AttendanceRecord) => {
     setEventsToDelete({ tapInId: row.tapInId, tapOutId: row.tapOutId, userName: row.name });
@@ -517,32 +550,49 @@ export function AttendanceMonitoringClient() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-2">
-        <GoogleDatePicker value={date} onChange={setDate} />
-        <Select value={brandFilter} onValueChange={setBrandFilter} disabled={isLoadingBrands}>
-          <SelectTrigger className="w-full sm:w-[180px]">
-            <SelectValue placeholder="Semua Brand" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Semua Brand</SelectItem>
-            {brands?.filter(b => brandOptions.includes(b.id!)).map(brand => (
-              <SelectItem key={brand.id!} value={brand.id!}>{brand.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-full sm:w-[180px]">
-            <SelectValue placeholder="Semua Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Semua Status</SelectItem>
-            <SelectItem value="present">Hadir</SelectItem>
-            <SelectItem value="absent">Belum Tap In</SelectItem>
-            <SelectItem value="leave">Cuti Tahunan</SelectItem>
-            <SelectItem value="late">Terlambat</SelectItem>
-            <SelectItem value="offsite">Offsite</SelectItem>
-          </SelectContent>
-        </Select>
+      {/* Filter Controls */}
+      <div className="space-y-3">
+        {/* Search & Date */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              placeholder="Cari nama, ID, atau brand..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <GoogleDatePicker value={date} onChange={setDate} />
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={brandFilter} onValueChange={setBrandFilter} disabled={isLoadingBrands}>
+            <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectValue placeholder="Semua Brand" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua Brand</SelectItem>
+              {brands?.filter(b => brandOptions.includes(b.id!)).map(brand => (
+                <SelectItem key={brand.id!} value={brand.id!}>{brand.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectValue placeholder="Semua Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua Status</SelectItem>
+              <SelectItem value="present">Hadir</SelectItem>
+              <SelectItem value="absent">Belum Tap In</SelectItem>
+              <SelectItem value="leave">Cuti Tahunan</SelectItem>
+              <SelectItem value="late">Terlambat</SelectItem>
+              <SelectItem value="offsite">Offsite</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {isLoading ? <MonitoringSkeleton /> : (
@@ -608,17 +658,49 @@ export function AttendanceMonitoringClient() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      {row.photoUrl ? (
-                        <Link href={row.photoUrl} target="_blank">
-                          <Avatar>
-                            <AvatarImage src={normalizeGoogleDriveImageUrl(row.photoUrl)} alt={`Foto ${row.name}`} />
-                            <AvatarFallback>{getInitials(row.name)}</AvatarFallback>
-                          </Avatar>
-                        </Link>
+                      {row.photoUrl && row.rawEvent ? (
+                        <button
+                          onClick={() => {
+                            setSelectedRecord(row);
+                            setIsDetailModalOpen(true);
+                          }}
+                          className="relative group"
+                          title="Klik untuk melihat bukti absensi"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={row.photoUrl}
+                            alt="Bukti selfie"
+                            className="h-12 w-12 rounded object-cover bg-slate-200 dark:bg-slate-700"
+                            onError={(e) => {
+                              // On error, show camera icon instead
+                              e.currentTarget.style.display = 'none';
+                              const parent = e.currentTarget.parentElement;
+                              if (parent) {
+                                parent.classList.add('flex', 'items-center', 'justify-center');
+                                const icon = document.createElement('div');
+                                icon.className = 'h-5 w-5 text-slate-400';
+                                icon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>';
+                                parent.appendChild(icon);
+                              }
+                            }}
+                          />
+                          {/* Overlay icon mata saat hover */}
+                          <div className="absolute inset-0 flex items-center justify-center rounded bg-black/0 group-hover:bg-black/40 transition-colors">
+                            <Eye className="h-5 w-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
+                        </button>
                       ) : (
-                        <Avatar>
-                          <AvatarFallback>{getInitials(row.name)}</AvatarFallback>
-                        </Avatar>
+                        <button
+                          onClick={() => {
+                            setSelectedRecord(row);
+                            setIsDetailModalOpen(true);
+                          }}
+                          className="h-12 w-12 flex items-center justify-center rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors group"
+                          title="Foto tersedia - klik untuk melihat"
+                        >
+                          <Camera className="h-5 w-5 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors" />
+                        </button>
                       )}
                     </TableCell>
                     <TableCell className="text-xs max-w-xs truncate text-slate-700 dark:text-slate-200" title={row.address}>
@@ -631,29 +713,67 @@ export function AttendanceMonitoringClient() {
                     <TableCell className="text-slate-700 dark:text-slate-200">{row.tapIn}</TableCell>
                     <TableCell className="text-slate-700 dark:text-slate-200">{row.tapOut}</TableCell>
                     <TableCell>
-                      <Badge variant={
-                        row.status === 'Belum Tap In' || row.status === 'Metode Belum Diatur' ? 'secondary' :
-                        row.status === 'Cuti Tahunan' ? 'outline' :
-                        row.status === 'Fingerprint' ? 'secondary' :
-                        'default'
-                      } className={
-                        row.status === 'Cuti Tahunan' ? 'bg-indigo-500/10 dark:bg-indigo-900/30 border-indigo-500/20 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold' :
-                        row.status === 'Metode Belum Diatur' ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300' :
-                        ''
+                      <Badge className={
+                        row.status === 'Sedang Bekerja'
+                          ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 font-semibold'
+                          : row.status === 'Selesai'
+                          ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                          : row.status === 'Belum Tap In'
+                          ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'
+                          : row.status === 'Cuti Tahunan'
+                          ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300'
+                          : row.status === 'Fingerprint'
+                          ? 'bg-slate-100 text-slate-800 dark:bg-slate-900/30 dark:text-slate-300'
+                          : 'bg-slate-100 text-slate-800 dark:bg-slate-900/30 dark:text-slate-300'
                       }>
                         {row.status}
+                        {row.lateMinutes && row.lateMinutes > 0 && ' ⚠️'}
+                        {row.mode === 'offsite' && ' 📍'}
                       </Badge>
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
-                        {row.lateMinutes !== null && row.lateMinutes > 0 && <Badge variant="destructive" className="bg-red-600 dark:bg-red-700">⏰ {row.lateMinutes}m</Badge>}
-                        {row.earlyLeaveMinutes !== null && row.earlyLeaveMinutes > 0 && <Badge variant="destructive" className="bg-amber-600 dark:bg-amber-700">🚪 Pulang Awal</Badge>}
+                        {row.lateMinutes !== null && row.lateMinutes > 0 && (
+                          <Badge className="bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
+                            Terlambat {row.lateMinutes}m
+                          </Badge>
+                        )}
+                        {row.earlyLeaveMinutes !== null && row.earlyLeaveMinutes > 0 && (
+                          <Badge className="bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300">
+                            Pulang Awal {row.earlyLeaveMinutes}m
+                          </Badge>
+                        )}
+                        {(!row.lateMinutes || row.lateMinutes <= 0) && (!row.earlyLeaveMinutes || row.earlyLeaveMinutes <= 0) && (
+                          <span className="text-xs text-slate-500 dark:text-slate-400">-</span>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => handleCancelClick(row)} disabled={!row.tapInId && !row.tapOutId} title="Batalkan Absensi">
-                        <XCircle className="h-4 w-4 text-red-600 dark:text-red-500" />
-                      </Button>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1 text-xs"
+                          onClick={() => {
+                            setSelectedRecord(row);
+                            setIsDetailModalOpen(true);
+                          }}
+                          title="Lihat detail absensi"
+                        >
+                          Detail
+                        </Button>
+                        {row.tapInId || row.tapOutId ? (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleCancelClick(row)}
+                            title="Batalkan absensi"
+                            className="h-9 w-9"
+                          >
+                            <XCircle className="h-4 w-4 text-red-600 dark:text-red-500" />
+                          </Button>
+                        ) : null}
+                      </div>
                     </TableCell>
                   </TableRow>
                 )) : (
@@ -676,6 +796,16 @@ export function AttendanceMonitoringClient() {
         onConfirm={confirmCancelAttendance}
         itemName={`catatan absensi untuk ${eventsToDelete.userName}`}
         itemType=""
+      />
+
+      {/* Detail Modal */}
+      <AttendanceDetailModal
+        isOpen={isDetailModalOpen}
+        onClose={() => {
+          setIsDetailModalOpen(false);
+          setSelectedRecord(null);
+        }}
+        record={selectedRecord}
       />
     </div>
   );
