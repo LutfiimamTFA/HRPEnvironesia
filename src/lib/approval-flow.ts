@@ -66,6 +66,43 @@ export function resolveApprovalTarget(
     };
   }
 
+  // HRD as requester: approval must NOT go to HRD themselves.
+  // Route to directSupervisorUid → managerUid (from master) → directorUid → null.
+  const requesterRole = userProfile?.role || "";
+  if (requesterRole === "hrd") {
+    const supervisorCandidates = [
+      masterOrganization?.directSupervisorUid,
+      masterOrganization?.managerId,
+      masterOrganization?.managerUid,
+      masterOrganization?.directorUid,
+      directSupervisorUid,
+    ].filter(Boolean) as string[];
+
+    for (const uid of supervisorCandidates) {
+      if (uid && uid !== employeeUid) {
+        const name =
+          masterOrganization?.directSupervisorName ||
+          masterOrganization?.managerName ||
+          masterOrganization?.directorName ||
+          directSupervisorName ||
+          null;
+        return {
+          approvalTargetUid: uid,
+          approvalTargetName: name,
+          approvalLevel: "management_to_hrd",
+        };
+      }
+    }
+
+    return {
+      approvalTargetUid: null,
+      approvalTargetName: null,
+      approvalLevel: "management_to_hrd",
+      reason:
+        "Atasan HRD belum ditentukan. Hubungi Direktur atau Super Admin untuk mengatur struktur organisasi HRD.",
+    };
+  }
+
   if (structuralPosition === "division_manager") {
     const managerDirectSupervisorId =
       masterOrganization?.managerDirectSupervisorId ||
@@ -394,6 +431,49 @@ export function resolveApproverSkippingSelf(
     (employeeProfile?.isDivisionManager || userProfile?.isDivisionManager
       ? "division_manager"
       : "staff");
+
+  // HRD as requester: skip self-approval by routing to supervisor/director
+  if (userProfile?.role === "hrd") {
+    const directSupervisorUid =
+      (employeeProfile as any)?.directSupervisorUid ||
+      (employeeProfile as any)?.supervisorUid ||
+      masterOrganization?.directSupervisorUid ||
+      masterOrganization?.directorUid ||
+      null;
+    const directSupervisorName =
+      (employeeProfile as any)?.directSupervisorName ||
+      (employeeProfile as any)?.supervisorName ||
+      masterOrganization?.directSupervisorName ||
+      masterOrganization?.directorName ||
+      null;
+
+    if (directSupervisorUid && directSupervisorUid !== applicantUid) {
+      return { uid: directSupervisorUid, name: directSupervisorName, role: "director" };
+    }
+
+    // Fallback to any director in allUsers
+    const director = allUsers?.find(
+      (u: any) =>
+        u.structuralLevel === "management" ||
+        u.role === "manager" ||
+        u.role === "super-admin",
+    );
+    if (director && director.uid !== applicantUid) {
+      return {
+        uid: director.uid,
+        name: director.fullName || director.displayName || null,
+        role: "director",
+        reason: "Fallback ke Direktur/Super Admin karena atasan HRD belum dikonfigurasi.",
+      };
+    }
+
+    return {
+      uid: null,
+      name: null,
+      reason:
+        "Atasan HRD belum ditentukan. Hubungi Direktur atau Super Admin.",
+    };
+  }
 
   // Get the initial direct manager
   const initialManager = getDirectManagerForEmployee(employeeProfile, masterOrganization);

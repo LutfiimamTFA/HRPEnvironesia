@@ -592,8 +592,9 @@ export type HrdEmploymentInfo = {
   workRole?: string;
   employeeType?: string;
   employmentStatus?: string;
-  directSupervisorUid?: string;
-  directSupervisorName?: string;
+  directSupervisorUid?: string | null;
+  directSupervisorName?: string | null;
+  directSuperiorSource?: string | null;
   workLocation?: string;
   structureEffectiveDate?: string;
   structureChangeReason?: string;
@@ -2025,6 +2026,8 @@ export type PermissionRequest = {
   applicantBrandId?: string | null;
   applicantBrandName?: string | null;
   applicantCompanyName?: string | null;
+  // Requester role snapshot (used to determine approval flow variant, e.g., "hrd")
+  requesterRole?: string | null;
   // Manager snapshot (manager fields already exist but include role for clarity)
   managerRole?: string | null;
   // New separation: bentuk izin (form) and alasan izin (reason)

@@ -13,6 +13,7 @@ export default function PengajuanIzinPage() {
 
   const menuConfig = useMemo(() => {
     if (!userProfile) return [];
+    if (userProfile.role === 'hrd') return MENU_CONFIG['hrd'] || [];
     if (userProfile.employmentType === 'magang') return MENU_CONFIG['karyawan-magang'];
     if (userProfile.employmentType === 'training') return MENU_CONFIG['karyawan-training'];
     return MENU_CONFIG['karyawan'];

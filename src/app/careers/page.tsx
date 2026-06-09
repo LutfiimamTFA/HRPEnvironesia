@@ -1,22 +1,21 @@
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
-import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowRight, FileText, Search, User, UserCheck, ShieldCheck, BarChart, Globe, Menu, X, Users, Loader2 } from 'lucide-react';
+import { ArrowRight, FileText, Search, User, UserCheck, ShieldCheck, BarChart, Globe, Menu, Users, Loader2, TrendingUp, Globe2, CheckSquare, MapPin } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import imagePlaceholders from '@/lib/placeholder-images.json';
 import { JobExplorerSkeleton } from '@/components/careers/JobExplorer';
 import dynamic from 'next/dynamic';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, query, where, orderBy } from 'firebase/firestore';
 import type { EcosystemCompany } from '@/lib/types';
+import { getCompanyLogoSrc, getLocalCompanyLogo } from '@/lib/ecosystem-logo';
 
 
 const DynamicJobExplorerClient = dynamic(
@@ -110,8 +109,8 @@ const t = {
     ]
   },
   OfficeSpotlight: {
-    title: "Basecamp Environesia",
-    subtitle: "Tempat ide-ide hebat lahir. Kantor pusat kami di Yogyakarta adalah pusat kolaborasi, inovasi, dan aksi nyata untuk lingkungan."
+    title: "Kantor Pusat Environesia",
+    subtitle: "Berpusat di Yogyakarta, kantor Environesia menjadi ruang kolaborasi, koordinasi, dan pengembangan inovasi untuk menghadirkan solusi lingkungan yang berdampak."
   },
   HowToApply: {
     title: "Cara Mudah Melamar",
@@ -272,45 +271,96 @@ const Header = () => {
 };
 
 
-// --- Hero Section ---
-const HeroSection = () => {
-    return (
-        <section id="hero" className="relative w-full overflow-hidden bg-background">
-            <div className="absolute inset-0">
-                <Image
-                    src={imagePlaceholders.careers_hero.src}
-                    alt={imagePlaceholders.careers_hero.alt}
-                    data-ai-hint={imagePlaceholders.careers_hero.ai_hint}
-                    fill
-                    priority
-                    className="object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
-                <div className="absolute inset-0 bg-background/50" />
+const statsData = [
+    { label: 'Fast Growth', value: 'Since 2016', icon: TrendingUp },
+    { label: 'International Projects', value: '10+ Countries', icon: Globe2 },
+    { label: 'Project Delivered', value: '1000+', icon: CheckSquare },
+    { label: 'Customer Served About', value: '500+', icon: Users },
+    { label: 'Project Distribution', value: '38 Provinces', icon: MapPin },
+];
+
+const HeroStatsFloating = () => (
+    <div className="absolute bottom-0 left-1/2 z-20 w-full max-w-6xl -translate-x-1/2 translate-y-1/2 px-4 sm:px-6 lg:px-8">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 shadow-xl dark:border-slate-700/80">
+            <div className="grid grid-cols-2 gap-px bg-slate-200 dark:bg-slate-700/80 lg:grid-cols-5">
+                {statsData.map((stat, index) => {
+                    const Icon = stat.icon;
+                    return (
+                        <div
+                            key={stat.label}
+                            className={cn(
+                                "flex items-center gap-3 bg-white px-5 py-5 dark:bg-slate-900",
+                                index === 4 && "col-span-2 lg:col-span-1"
+                            )}
+                        >
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-600 dark:bg-teal-950/60 dark:text-teal-400">
+                                <Icon className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{stat.label}</p>
+                                <p className="text-xl font-bold leading-tight text-slate-900 dark:text-white">{stat.value}</p>
+                            </div>
+                        </div>
+                    );
+                })}
             </div>
-            <div className="relative z-10 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
-                <div className="flex min-h-[70vh] flex-col items-center justify-center pb-20 pt-32 text-center lg:min-h-dvh">
-                    <h1 className="text-4xl font-extrabold tracking-tight text-foreground md:text-6xl lg:text-7xl">
-                        {t.Hero.title}
-                    </h1>
-                    <p className="mt-6 max-w-2xl text-lg text-muted-foreground">
-                        {t.Hero.subtitle}
-                    </p>
-                    <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4 w-full max-w-xs sm:max-w-none">
-                      <Button size="lg" className="h-12 px-8 text-base w-full sm:w-auto" asChild>
+        </div>
+    </div>
+);
+
+// --- Hero Section ---
+const HeroSection = ({ backgroundImageUrl }: { backgroundImageUrl?: string }) => {
+    return (
+        <section id="hero" className="relative" style={{ minHeight: 'calc(100vh - 76px)' }}>
+            {/* Background image */}
+            <div
+                className="absolute inset-0"
+                style={{
+                    backgroundImage: "url('/images/LP-1.jpg')",
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center 18%',
+                    backgroundRepeat: 'no-repeat',
+                }}
+            />
+
+            {/* Cinematic overlays — consistent across light & dark mode */}
+            <div className="absolute inset-0 bg-slate-950/45" />
+            <div className="absolute inset-0 bg-gradient-to-b from-slate-950/35 via-slate-950/20 to-slate-950/60" />
+            <div className="absolute inset-0 bg-gradient-to-r from-slate-950/35 via-transparent to-slate-950/25" />
+
+            {/* Content */}
+            <div
+                className="relative z-10 mx-auto flex max-w-7xl flex-col items-center justify-center px-6 pb-40 pt-28 text-center sm:px-8"
+                style={{ minHeight: 'calc(100vh - 76px)' }}
+            >
+                <h1 className="max-w-6xl text-5xl font-bold leading-[0.95] tracking-tight text-white drop-shadow-lg md:text-7xl lg:text-8xl">
+                    {t.Hero.title}
+                </h1>
+
+                <p className="mt-6 max-w-2xl text-lg leading-relaxed text-slate-100 drop-shadow-md">
+                    {t.Hero.subtitle}
+                </p>
+
+                <div className="mt-10 flex w-full max-w-xs flex-col items-center justify-center gap-4 sm:max-w-none sm:flex-row">
+                    <Button
+                        size="lg"
+                        className="h-12 w-full border-0 bg-teal-500 px-8 text-base text-white hover:bg-teal-600 sm:w-auto"
+                        asChild
+                    >
                         <a href="#lowongan">{t.Hero.ctaPrimary}</a>
-                      </Button>
-                      <Button size="lg" variant="secondary" className="h-12 px-8 text-base w-full sm:w-auto" asChild>
+                    </Button>
+                    <Button
+                        size="lg"
+                        className="h-12 w-full border-0 bg-white/90 px-8 text-base text-slate-950 hover:bg-white sm:w-auto"
+                        asChild
+                    >
                         <Link href="/careers/login">{t.Hero.ctaSecondary}</Link>
-                      </Button>
-                    </div>
-                     <div className="mt-16 flex flex-wrap items-center justify-center gap-x-8 gap-y-4 text-sm text-muted-foreground">
-                        <span className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-primary"/> {t.Hero.badgeProjects}</span>
-                        <span className="flex items-center gap-2"><Globe className="h-4 w-4 text-primary"/> {t.Hero.badgeProvinces}</span>
-                        <span className="flex items-center gap-2"><BarChart className="h-4 w-4 text-primary"/> {t.Hero.badgeServices}</span>
-                    </div>
+                    </Button>
                 </div>
             </div>
+
+            {/* Floating stats bar — overlaps hero bottom and next section top */}
+            <HeroStatsFloating />
         </section>
     );
 }
@@ -323,7 +373,7 @@ const JobExplorerSection = () => {
     }, []);
     
     return (
-        <section id="lowongan" className="w-full scroll-mt-20 py-16 lg:py-24">
+        <section id="lowongan" className="w-full scroll-mt-20 pt-36 pb-16 lg:pt-24 lg:pb-24">
             <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
                 <div className="mx-auto max-w-2xl text-center">
                     <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{t.JobExplorer.title}</h2>
@@ -419,17 +469,15 @@ const EcosystemSection = () => {
                                 className="group relative flex flex-col bg-card rounded-[3.5rem] p-1.5 border border-border/40 hover:border-primary/40 transition-all duration-1000 hover:shadow-[0_80px_120px_-30px_rgba(0,0,0,0.2)] md:hover:-translate-y-8"
                             >
                                 <div className="relative flex flex-col h-full bg-background rounded-[3.2rem] overflow-hidden">
-                                    <div className="relative w-full aspect-[16/11] flex items-center justify-center p-16 overflow-hidden">
-                                        <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.04] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
-                                        
-                                        <div className="relative w-full h-full transition-all duration-1000 group-hover:scale-110">
-                                            <Image
-                                                src={company.iconUrl}
-                                                alt={company.name}
-                                                fill
-                                                className="object-contain filter grayscale contrast-125 brightness-110 group-hover:grayscale-0 group-hover:contrast-100 group-hover:brightness-100 transition-all duration-1000"
-                                            />
-                                        </div>
+                                    <div className="flex h-40 w-full items-center justify-center px-4">
+                                        <img
+                                            src={getCompanyLogoSrc(company)}
+                                            alt={`${company.name || (company as any).companyName} logo`}
+                                            className="block h-auto max-h-32 min-h-[90px] w-auto min-w-[240px] max-w-[380px] object-contain opacity-100"
+                                            onError={(e) => {
+                                                e.currentTarget.src = getLocalCompanyLogo(company.name || (company as any).companyName);
+                                            }}
+                                        />
                                     </div>
                                     <div className="flex-1 p-8 pt-0 flex flex-col justify-center items-center text-center">
                                         <h3 className="text-xl font-bold text-foreground tracking-tight group-hover:text-primary transition-colors duration-300">
@@ -488,20 +536,29 @@ const OfficeSpotlightSection = () => {
     return (
     <section className="w-full py-16 lg:py-24 bg-card">
         <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
-            <Card className="overflow-hidden relative flex items-end min-h-[500px] rounded-2xl shadow-lg">
-                 <Image
-                    src={imagePlaceholders.careers_office_spotlight.src}
-                    alt={imagePlaceholders.careers_office_spotlight.alt}
-                    data-ai-hint={imagePlaceholders.careers_office_spotlight.ai_hint}
-                    fill
-                    className="object-cover"
+            <div className="relative overflow-hidden rounded-2xl shadow-lg min-h-[460px] flex items-end">
+                <div
+                    className="absolute inset-0"
+                    style={{
+                        backgroundImage: "url('/images/Banner%20Kantor.jpg')",
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center center',
+                        backgroundRepeat: 'no-repeat',
+                    }}
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
-                <div className="relative z-10 p-8 md:p-12 text-white">
-                    <h2 className="text-3xl md:text-4xl font-bold">{t.OfficeSpotlight.title}</h2>
-                    <p className="mt-2 max-w-lg text-white/80">{t.OfficeSpotlight.subtitle}</p>
+                <div className="absolute inset-0 bg-gradient-to-l from-slate-950/75 via-slate-950/35 to-slate-950/10" />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/60 via-transparent to-transparent" />
+                <div className="relative z-10 flex min-h-[460px] w-full items-center justify-end px-10 md:px-14">
+                    <div className="max-w-[520px] text-left">
+                        <h2 className="text-4xl font-bold leading-tight text-white md:text-5xl">
+                            {t.OfficeSpotlight.title}
+                        </h2>
+                        <p className="mt-4 text-base leading-relaxed text-slate-100 md:text-lg">
+                            {t.OfficeSpotlight.subtitle}
+                        </p>
+                    </div>
                 </div>
-            </Card>
+            </div>
         </div>
     </section>
 )};
@@ -616,11 +673,19 @@ const Footer = () => {
 
 // --- Main Page Component ---
 export default function CareersPage() {
+  const firestore = useFirestore();
+  const heroQuery = useMemoFirebase(
+    () => query(collection(firestore, 'landing_sections'), where('sectionKey', '==', 'hero')),
+    [firestore]
+  );
+  const { data: heroSections } = useCollection(heroQuery);
+  const heroData = heroSections?.[0];
+
   return (
     <div className="flex min-h-dvh flex-col bg-background font-body text-foreground">
       <Header />
       <main className="flex-1">
-        <HeroSection />
+        <HeroSection backgroundImageUrl={heroData?.backgroundImageUrl} />
         <JobExplorerSection />
         <ValuePropsSection />
         <EcosystemSection />

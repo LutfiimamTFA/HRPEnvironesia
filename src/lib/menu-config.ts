@@ -56,6 +56,38 @@ export type MenuGroup = {
   items: MenuItem[];
 };
 
+const MENU_KEY_ALIASES: Record<string, string> = {
+  pengajuan_izin: "employee.permission",
+  pengajuan_cuti: "employee.leave",
+  perjalanan_dinas: "management.business_trip_missions",
+  data_karyawan: "employee.data.karyawan",
+  data_saya: "employee.profile",
+  "pengajuan-izin": "employee.permission",
+  "pengajuan-cuti": "employee.leave",
+  "perjalanan-dinas": "management.business_trip_missions",
+  "data-karyawan": "employee.data.karyawan",
+  "data-saya": "employee.profile",
+};
+
+export function normalizeMenuKey(menuKey?: string | null): string {
+  if (!menuKey) return "";
+
+  const normalizedKey = menuKey.toLowerCase().trim();
+  return MENU_KEY_ALIASES[normalizedKey] || menuKey;
+}
+
+export function normalizeMenuVisibilityKeys(
+  menuKeys?: string[] | null,
+): string[] {
+  if (!Array.isArray(menuKeys)) return [];
+
+  return Array.from(
+    new Set(
+      menuKeys.map((menuKey) => normalizeMenuKey(menuKey)).filter(Boolean),
+    ),
+  );
+}
+
 const RECRUITMENT_MENU_ITEMS: MenuGroup = {
   title: "Rekrutmen",
   items: [
@@ -679,6 +711,29 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
         },
       ],
     },
+    {
+      title: "FITUR PRIBADI",
+      items: [
+        {
+          key: "hrd.personal.profile",
+          href: "/admin/karyawan/profile",
+          label: "Data Diri Saya",
+          icon: createElement(User),
+        },
+        {
+          key: "hrd.personal.permission",
+          href: "/admin/karyawan/pengajuan-izin",
+          label: "Pengajuan Izin",
+          icon: createElement(FileHeart),
+        },
+        {
+          key: "hrd.personal.leave",
+          href: "/admin/karyawan/pengajuan-cuti",
+          label: "Pengajuan Cuti",
+          icon: createElement(CalendarOff),
+        },
+      ],
+    },
   ],
   manager: [
     MANAGEMENT_MENU_ITEMS,
@@ -932,3 +987,36 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
     },
   ],
 };
+
+export function normalizeMenuRole(
+  userRole: string | null | undefined,
+  structuralLevel?: string,
+): string {
+  if (!userRole) {
+    const structural = (structuralLevel || "").toLowerCase().trim();
+    return /director|direktur|direksi|management|manajemen/.test(structural)
+      ? "manager"
+      : "karyawan";
+  }
+
+  const role = userRole.toLowerCase().trim();
+  const structural = (structuralLevel || "").toLowerCase().trim();
+
+  // Management / Director / Direksi / Manajemen should always use the manager visibility set.
+  if (
+    /director|direktur|direksi|management|manajemen/.test(role) ||
+    /director|direktur|direksi|management|manajemen/.test(structural)
+  ) {
+    return "manager";
+  }
+
+  // Return role as-is if it matches known roles.
+  if (
+    ["super-admin", "hrd", "manager", "karyawan", "kandidat"].includes(role)
+  ) {
+    return role;
+  }
+
+  // Default to karyawan for unknown / staff roles.
+  return "karyawan";
+}

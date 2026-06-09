@@ -68,7 +68,9 @@ export function calculateKpisAndRecords(
     if (filters.brandId && !userBrandIds.includes(filters.brandId)) return false;
     if (filters.employmentType && user.employmentType !== filters.employmentType) return false;
     if (filters.searchTerm && !user.fullName.toLowerCase().includes(filters.searchTerm.toLowerCase())) return false;
-    return ['karyawan', 'magang', 'training'].includes(user.role);
+    // HRD is also an active employee, include them alongside regular employees
+    return ['karyawan', 'magang', 'training'].includes(user.role) ||
+      (user.role === 'hrd' && user.isActive === true);
   });
 
   const activeSite = filters.siteId ? sites.find(s => s.id === filters.siteId) : sites.find(s => s.isActive);

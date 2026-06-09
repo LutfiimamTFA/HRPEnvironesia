@@ -118,17 +118,47 @@ export function EmployeeAdminFormDialog({
 
   const form = useForm<AdminFormValues>({
     resolver: zodResolver(adminFormSchema),
+    defaultValues: {
+      fullName: "",
+      email: "",
+      role: "karyawan",
+      employmentType: "karyawan",
+      employmentStage: "probation",
+      employmentStatus: "active",
+      employeeNumber: "",
+      positionTitle: "",
+      division: "",
+      brandId: "",
+      joinDate: new Date(),
+      managerUid: "",
+    },
   });
 
   const selectedBrandId = form.watch("brandId");
 
+  // Fetch supervisors: managers, management/directors, and super-admins
+  // We'll filter and sort them based on their relevance to the employee's brand/division
   const { data: supervisors, isLoading: isLoadingSupervisors } =
     useCollection<UserProfile>(
       useMemoFirebase(
         () =>
           query(
             collection(firestore, "users"),
-            where("role", "in", ["manager", "hrd", "super-admin"]),
+            where("role", "in", ["manager", "hrd", "super-admin", "director", "direktur", "direksi"]),
+            where("isActive", "==", true),
+          ),
+        [firestore],
+      ),
+    );
+
+  // Also fetch all management-level users for scope matching
+  const { data: managementUsers, isLoading: isLoadingManagement } =
+    useCollection<UserProfile>(
+      useMemoFirebase(
+        () =>
+          query(
+            collection(firestore, "users"),
+            where("structuralLevel", "==", "management"),
             where("isActive", "==", true),
           ),
         [firestore],
@@ -148,6 +178,104 @@ export function EmployeeAdminFormDialog({
         [selectedBrandId, firestore],
       ),
     );
+
+  // Build filtered and sorted supervisor list based on employee's brand/division
+  const filterSupervisors = useMemo(() => {
+    if (!supervisors || !managementUsers || !profile) return [];
+
+    const employeeBrandId = profile.brandId;
+    const employeeDivisionId = profile.division;
+    const employeeUid = profile.uid;
+
+    const supervisorsList: Array<{
+      uid: string;
+      fullName: string;
+      role: string;
+      source: "division_manager" | "management_scope_exact" | "management_scope_brand" | "super_admin";
+      sourceLabel: string;
+    }> = [];
+    const seenUids = new Set<string>();
+
+    // Priority 1: Division Managers from divisions
+    if (divisions && employeeBrandId && employeeDivisionId) {
+      const div = divisions.find((d) => d.id === employeeDivisionId);
+      if (div?.managerId && div.managerId !== employeeUid) {
+        const mgr = supervisors.find((s) => s.uid === div.managerId);
+        if (mgr && mgr.isActive !== false) {
+          supervisorsList.push({
+            uid: mgr.uid,
+            fullName: mgr.fullName,
+            role: mgr.role || "manager",
+            source: "division_manager",
+            sourceLabel: "Manager Divisi",
+          });
+          seenUids.add(mgr.uid);
+        }
+      }
+    }
+
+    // Priority 2 & 3: Management users with matching scopes
+    const managementCandidates = managementUsers.filter((m) => m.uid !== employeeUid && m.isActive !== false);
+
+    // Check each management user's scopes
+    for (const mgmt of managementCandidates) {
+      if (seenUids.has(mgmt.uid)) continue;
+
+      const scopes = mgmt.managementScopes || [];
+      let matchType: "exact" | "brand" | null = null;
+
+      for (const scope of scopes) {
+        // Check exact division match
+        if (scope.brandId === employeeBrandId &&
+            scope.scopeType === "selected_divisions" &&
+            scope.divisionIds?.includes(employeeDivisionId)) {
+          matchType = "exact";
+          break;
+        }
+        // Check brand-level scope (seluruh brand/perusahaan within brand)
+        if (scope.brandId === employeeBrandId &&
+            (scope.scopeType === "brand" || scope.scopeType === "all")) {
+          matchType = "brand";
+        }
+      }
+
+      if (matchType === "exact") {
+        supervisorsList.push({
+          uid: mgmt.uid,
+          fullName: mgmt.fullName,
+          role: mgmt.role || "director",
+          source: "management_scope_exact",
+          sourceLabel: "Direksi / Manajemen (Divisi)",
+        });
+        seenUids.add(mgmt.uid);
+      } else if (matchType === "brand") {
+        supervisorsList.push({
+          uid: mgmt.uid,
+          fullName: mgmt.fullName,
+          role: mgmt.role || "director",
+          source: "management_scope_brand",
+          sourceLabel: "Direksi / Manajemen (Brand)",
+        });
+        seenUids.add(mgmt.uid);
+      }
+    }
+
+    // Priority 4: Super Admin as fallback
+    const superAdmin = supervisors.find(
+      (s) => (s.role === "super-admin" || s.role === "super_admin") && s.uid !== employeeUid && s.isActive !== false
+    );
+    if (superAdmin) {
+      supervisorsList.push({
+        uid: superAdmin.uid,
+        fullName: superAdmin.fullName,
+        role: superAdmin.role,
+        source: "super_admin",
+        sourceLabel: "Super Admin",
+      });
+    }
+
+    return supervisorsList;
+  }, [supervisors, managementUsers, profile, divisions]);
 
   useEffect(() => {
     if (open) {
@@ -248,10 +376,10 @@ export function EmployeeAdminFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Edit Data Administrasi: {profile?.fullName}</DialogTitle>
-          <DialogDescription>
+      <DialogContent className="max-w-2xl bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white">
+        <DialogHeader className="border-b border-slate-200 dark:border-slate-800 pb-4">
+          <DialogTitle className="text-slate-950 dark:text-white">Edit Data Administrasi: {profile?.fullName}</DialogTitle>
+          <DialogDescription className="text-slate-500 dark:text-slate-400">
             Ubah data kepegawaian dan administrasi untuk pengguna ini. Perubahan
             akan disimpan di master data karyawan.
           </DialogDescription>
@@ -461,37 +589,77 @@ export function EmployeeAdminFormDialog({
                 name="managerUid"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Atasan Langsung</FormLabel>
+                    <FormLabel className="text-slate-700 dark:text-slate-300">Atasan Langsung</FormLabel>
+                    {filterSupervisors.length === 0 && (
+                      <FormDescription className="text-amber-700 dark:text-amber-400 text-sm bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 rounded-lg px-3 py-2">
+                        {divisions && divisions.length > 0
+                          ? "Manager divisi belum tersedia. Anda dapat memilih Direksi/Manajemen yang menaungi brand/divisi ini."
+                          : "Belum ada atasan yang sesuai. Atur Manager Divisi atau Direksi/Manajemen pada Organisasi Perusahaan terlebih dahulu."}
+                      </FormDescription>
+                    )}
                     <Select
                       onValueChange={field.onChange}
                       value={field.value ?? undefined}
+                      disabled={filterSupervisors.length === 0}
                     >
                       <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Pilih atasan" />
+                        <SelectTrigger className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white">
+                          <SelectValue placeholder={filterSupervisors.length === 0 ? "Tidak ada opsi" : "Pilih atasan"} />
                         </SelectTrigger>
                       </FormControl>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectLabel>Managers</SelectLabel>
-                          {supervisors
-                            ?.filter((s) => s.role === "manager")
-                            .map((s) => (
-                              <SelectItem key={s.uid} value={s.uid}>
-                                {s.fullName}
-                              </SelectItem>
-                            ))}
-                        </SelectGroup>
-                        <SelectGroup>
-                          <SelectLabel>Lainnya</SelectLabel>
-                          {supervisors
-                            ?.filter((s) => s.role !== "manager")
-                            .map((s) => (
-                              <SelectItem key={s.uid} value={s.uid}>
-                                {s.fullName}
-                              </SelectItem>
-                            ))}
-                        </SelectGroup>
+                      <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700">
+                        {filterSupervisors.length > 0 && (
+                          <>
+                            {filterSupervisors.filter((s) => s.source === "division_manager").length > 0 && (
+                              <SelectGroup>
+                                <SelectLabel className="text-[10px] uppercase tracking-widest text-slate-400">Manager Divisi</SelectLabel>
+                                {filterSupervisors
+                                  .filter((s) => s.source === "division_manager")
+                                  .map((s) => (
+                                    <SelectItem key={s.uid} value={s.uid}>
+                                      {s.fullName} — {s.sourceLabel}
+                                    </SelectItem>
+                                  ))}
+                              </SelectGroup>
+                            )}
+                            {filterSupervisors.filter((s) => s.source === "management_scope_exact").length > 0 && (
+                              <SelectGroup>
+                                <SelectLabel className="text-[10px] uppercase tracking-widest text-slate-400">Direksi / Manajemen (Divisi ini)</SelectLabel>
+                                {filterSupervisors
+                                  .filter((s) => s.source === "management_scope_exact")
+                                  .map((s) => (
+                                    <SelectItem key={s.uid} value={s.uid}>
+                                      {s.fullName} — {s.sourceLabel}
+                                    </SelectItem>
+                                  ))}
+                              </SelectGroup>
+                            )}
+                            {filterSupervisors.filter((s) => s.source === "management_scope_brand").length > 0 && (
+                              <SelectGroup>
+                                <SelectLabel className="text-[10px] uppercase tracking-widest text-slate-400">Direksi / Manajemen (Brand)</SelectLabel>
+                                {filterSupervisors
+                                  .filter((s) => s.source === "management_scope_brand")
+                                  .map((s) => (
+                                    <SelectItem key={s.uid} value={s.uid}>
+                                      {s.fullName} — {s.sourceLabel}
+                                    </SelectItem>
+                                  ))}
+                              </SelectGroup>
+                            )}
+                            {filterSupervisors.filter((s) => s.source === "super_admin").length > 0 && (
+                              <SelectGroup>
+                                <SelectLabel className="text-[10px] uppercase tracking-widest text-slate-400">Fallback</SelectLabel>
+                                {filterSupervisors
+                                  .filter((s) => s.source === "super_admin")
+                                  .map((s) => (
+                                    <SelectItem key={s.uid} value={s.uid}>
+                                      {s.fullName} — {s.sourceLabel}
+                                    </SelectItem>
+                                  ))}
+                              </SelectGroup>
+                            )}
+                          </>
+                        )}
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -501,7 +669,7 @@ export function EmployeeAdminFormDialog({
             </div>
           </form>
         </Form>
-        <DialogFooter className="pt-4 mt-4 border-t">
+        <DialogFooter className="pt-4 mt-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Batal
           </Button>

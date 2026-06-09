@@ -40,6 +40,7 @@ export default function PengajuanCutiPage() {
       ""
     ).toLowerCase();
 
+    if (userProfile.role === 'hrd') return MENU_CONFIG['hrd'] || [];
     if (empType.includes('magang') || empType.includes('intern')) {
       return MENU_CONFIG['karyawan-magang'];
     }

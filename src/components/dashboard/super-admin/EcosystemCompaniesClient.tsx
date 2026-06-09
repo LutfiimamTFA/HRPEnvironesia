@@ -7,14 +7,15 @@ import type { EcosystemCompany } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { MoreHorizontal, Pencil, PlusCircle, Trash2 } from 'lucide-react';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { MoreHorizontal, Eye, Pencil, PlusCircle, Trash2 } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { DeleteConfirmationDialog } from '../DeleteConfirmationDialog';
 import { EcosystemCompanyFormDialog } from './EcosystemCompanyFormDialog';
-import Image from 'next/image';
+import { EcosystemCompanyDetailDialog } from './EcosystemCompanyDetailDialog';
+import { getCompanyLogoSrc, getLocalCompanyLogo } from '@/lib/ecosystem-logo';
 import type { Brand } from '@/lib/types';
 
 
@@ -47,6 +48,7 @@ export function EcosystemCompaniesClient() {
   const { toast } = useToast();
 
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<EcosystemCompany | null>(null);
 
@@ -69,6 +71,11 @@ export function EcosystemCompaniesClient() {
   const handleCreate = () => {
     setSelectedItem(null);
     setIsFormOpen(true);
+  };
+
+  const handleDetail = (item: EcosystemCompany) => {
+    setSelectedItem(item);
+    setIsDetailOpen(true);
   };
 
   const handleEdit = (item: EcosystemCompany) => {
@@ -119,7 +126,14 @@ export function EcosystemCompaniesClient() {
                 <TableRow key={item.id}>
                   <TableCell>{item.sortOrder}</TableCell>
                   <TableCell>
-                    <Image src={item.iconUrl} alt={item.name} width={80} height={40} className="object-contain h-10" />
+                    <img
+                      src={getCompanyLogoSrc(item)}
+                      alt={`${item.name} logo`}
+                      className="h-10 w-24 object-contain"
+                      onError={(e) => {
+                        e.currentTarget.src = getLocalCompanyLogo(item.name);
+                      }}
+                    />
                   </TableCell>
                   <TableCell className="font-medium">{item.name}</TableCell>
                   <TableCell><a href={item.websiteUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">{item.websiteUrl}</a></TableCell>
@@ -128,7 +142,9 @@ export function EcosystemCompaniesClient() {
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        <DropdownMenuItem onSelect={() => handleDetail(item)}><Eye className="mr-2 h-4 w-4" />Detail</DropdownMenuItem>
                         <DropdownMenuItem onSelect={() => handleEdit(item)}><Pencil className="mr-2 h-4 w-4" />Edit</DropdownMenuItem>
+                        <DropdownMenuSeparator />
                         <DropdownMenuItem onSelect={() => handleDelete(item)} className="text-destructive"><Trash2 className="mr-2 h-4 w-4" />Delete</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -141,9 +157,15 @@ export function EcosystemCompaniesClient() {
           </TableBody>
         </Table>
       </div>
-      <EcosystemCompanyFormDialog 
-        open={isFormOpen} 
-        onOpenChange={setIsFormOpen} 
+      <EcosystemCompanyDetailDialog
+        open={isDetailOpen}
+        onOpenChange={setIsDetailOpen}
+        item={selectedItem}
+        onEdit={handleEdit}
+      />
+      <EcosystemCompanyFormDialog
+        open={isFormOpen}
+        onOpenChange={setIsFormOpen}
         item={selectedItem}
         brands={brands || []}
       />

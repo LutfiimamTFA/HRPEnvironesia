@@ -113,6 +113,11 @@ async function resolveDrivePath(
       pathSegments = ["ecosystem_assets", "logos"];
       break;
 
+    case "ecosystem_logo":
+    case "company_logo":
+      pathSegments = ["ecosystem_assets", "company_logos"];
+      break;
+
     case "section_asset":
       pathSegments = ["ecosystem_assets", "sections"];
       break;

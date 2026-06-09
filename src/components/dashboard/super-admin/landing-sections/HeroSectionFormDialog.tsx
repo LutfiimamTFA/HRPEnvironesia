@@ -94,7 +94,14 @@ export function HeroSectionFormDialog({
       return;
     }
 
-    onSave(formData);
+    // Auto-set button links ke default (tidak boleh diubah admin)
+    const dataToSave = {
+      ...formData,
+      primaryButtonUrl: formData.primaryButtonUrl || '#lowongan',
+      secondaryButtonUrl: formData.secondaryButtonUrl || '/careers/register',
+    };
+
+    onSave(dataToSave);
   };
 
   return (
@@ -140,52 +147,34 @@ export function HeroSectionFormDialog({
             />
           </div>
 
-          {/* Primary Button */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="primaryButtonText">Teks Tombol Utama</Label>
-              <Input
-                id="primaryButtonText"
-                name="primaryButtonText"
-                value={formData.primaryButtonText || ''}
-                onChange={handleInputChange}
-                placeholder="Lihat Lowongan"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="primaryButtonUrl">Link Tombol Utama</Label>
-              <Input
-                id="primaryButtonUrl"
-                name="primaryButtonUrl"
-                value={formData.primaryButtonUrl || ''}
-                onChange={handleInputChange}
-                placeholder="#lowongan"
-              />
-            </div>
+          {/* Primary Button Text */}
+          <div className="space-y-2">
+            <Label htmlFor="primaryButtonText">Teks Tombol Utama</Label>
+            <Input
+              id="primaryButtonText"
+              name="primaryButtonText"
+              value={formData.primaryButtonText || ''}
+              onChange={handleInputChange}
+              placeholder="Lihat Lowongan"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              💡 Admin hanya mengubah nama tombol. Arah tombol sudah diatur otomatis oleh sistem.
+            </p>
           </div>
 
-          {/* Secondary Button */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="secondaryButtonText">Teks Tombol Kedua</Label>
-              <Input
-                id="secondaryButtonText"
-                name="secondaryButtonText"
-                value={formData.secondaryButtonText || ''}
-                onChange={handleInputChange}
-                placeholder="Kirim Lamaran Cepat"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="secondaryButtonUrl">Link Tombol Kedua</Label>
-              <Input
-                id="secondaryButtonUrl"
-                name="secondaryButtonUrl"
-                value={formData.secondaryButtonUrl || ''}
-                onChange={handleInputChange}
-                placeholder="/careers/register"
-              />
-            </div>
+          {/* Secondary Button Text */}
+          <div className="space-y-2">
+            <Label htmlFor="secondaryButtonText">Teks Tombol Kedua</Label>
+            <Input
+              id="secondaryButtonText"
+              name="secondaryButtonText"
+              value={formData.secondaryButtonText || ''}
+              onChange={handleInputChange}
+              placeholder="Kirim Lamaran Cepat"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              💡 Admin hanya mengubah nama tombol. Arah tombol sudah diatur otomatis oleh sistem.
+            </p>
           </div>
 
           {/* Background Image */}

@@ -27,8 +27,7 @@ const EXCLUDED_USER_ROLES = new Set([
   "super-admin",
   "super_admin",
   "superadmin",
-  "hrd",
-  "hr",
+  // "hrd" intentionally NOT excluded — HRD is also an active employee
   "admin-system",
   "system-admin",
   "system_admin",
@@ -145,9 +144,11 @@ export function buildEmployeeDirectory(
       user.structuralPosition === "division_manager";
 
     const isCandidate = (user.role || "").toLowerCase() === "kandidat";
+    const isHrdEmployee = user.role === "hrd" && user.isActive;
     if (
       !isDivisionManager &&
       user.role !== "karyawan" &&
+      !isHrdEmployee &&
       !user.employmentType
     ) {
       return;

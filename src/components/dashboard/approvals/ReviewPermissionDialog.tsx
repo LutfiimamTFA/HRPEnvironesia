@@ -461,8 +461,12 @@ export function ReviewPermissionDialog({
   // We'll open attachments in a new tab via internal preview endpoint.
 
   const isFinal = isFinalStatus(submission.status);
+  // Prevent HRD from approving their own submission
+  const isHrdViewingOwnRequest = mode === "hrd" && submission.uid === userProfile?.uid;
+
   const canAct = useMemo(() => {
     if (isFinal) return false;
+    if (isHrdViewingOwnRequest) return false;
     if (mode === "manager") {
       return isActionableStatus(submission.status, "manager");
     }
@@ -470,10 +474,11 @@ export function ReviewPermissionDialog({
       return isHrdValidationPhase(submission);
     }
     return false;
-  }, [submission, mode, isFinal]);
+  }, [submission, mode, isFinal, isHrdViewingOwnRequest]);
 
   const canShowActions = useMemo(() => {
     if (isFinal) return false;
+    if (isHrdViewingOwnRequest) return false;
     if (mode === "manager") {
       return (
         submission.waitingForUid === userProfile?.uid &&
@@ -484,7 +489,7 @@ export function ReviewPermissionDialog({
       return isHrdValidationPhase(submission);
     }
     return false;
-  }, [submission, userProfile, mode, isFinal]);
+  }, [submission, userProfile, mode, isFinal, isHrdViewingOwnRequest]);
   const isOfficeExit =
     submission.type === "keluar_kantor" ||
     submission.formType === "keluar_kantor";
@@ -600,6 +605,7 @@ export function ReviewPermissionDialog({
       let status: PermissionRequest["status"] = submission.status;
       let payload: Partial<PermissionRequest> = {};
       const isManagerAction = mode === "manager";
+      const isHrdRequester = submission.requesterRole === "hrd";
 
       const nowTs = Timestamp.now();
 
@@ -608,8 +614,10 @@ export function ReviewPermissionDialog({
           if (decision === "approve") status = "verified_manager";
           else if (decision === "reject") status = "rejected_manager";
         } else {
-          if (decision === "approve") status = "approved_by_manager";
-          else if (decision === "reject") status = "rejected_manager";
+          if (decision === "approve") {
+            // HRD requesters skip the HRD validation step — director approval is final
+            status = isHrdRequester ? "approved" : "approved_by_manager";
+          } else if (decision === "reject") status = "rejected_manager";
           else if (decision === "revise") status = "revision_manager";
         }
 
@@ -632,7 +640,7 @@ export function ReviewPermissionDialog({
             at: nowTs,
             note: note || null,
           },
-          ...(decision === "approve" && !isOfficeExit
+          ...(decision === "approve" && !isOfficeExit && !isHrdRequester
             ? [
                 {
                   event: "Pengajuan diteruskan ke HRD untuk validasi",
@@ -653,11 +661,17 @@ export function ReviewPermissionDialog({
           timeline: updatedTimeline,
           // Update approval routing when manager approves (non-office-exit)
           ...(decision === "approve" && !isOfficeExit
-            ? {
-                currentApprovalStep: "hrd",
-                waitingForUid: null,
-                waitingForName: "HRD",
-              }
+            ? isHrdRequester
+              ? {
+                  currentApprovalStep: "done",
+                  waitingForUid: null,
+                  waitingForName: null,
+                }
+              : {
+                  currentApprovalStep: "hrd",
+                  waitingForUid: null,
+                  waitingForName: "HRD",
+                }
             : {}),
         };
       } else {
@@ -833,34 +847,60 @@ export function ReviewPermissionDialog({
                     Alur Persetujuan
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="p-5 space-y-3">
-                  <p className="text-xs text-muted-foreground mb-2">
-                    Dibuka melalui preview internal HRP
-                  </p>
+                <CardContent className="p-5 space-y-4">
+                  {(() => {
+                    const isHrdReq = submission.requesterRole === "hrd";
+                    return (
+                      <>
+                        {isHrdReq && (
+                          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-900/40 dark:bg-blue-950/20">
+                            <p className="text-xs font-semibold text-blue-900 dark:text-blue-200">
+                              💡 Catatan Alur Khusus HRD
+                            </p>
+                            <p className="text-xs text-blue-800 dark:text-blue-300 mt-1">
+                              Karena pengajuan ini dibuat oleh HRD, keputusan akhir berada di Direktur. HRD hanya menerima rekap administrasi setelah keputusan diberikan.
+                            </p>
+                          </div>
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                          {isHrdReq
+                            ? "Pengajuan ini akan dikirim ke Direktur sebagai approver final. Setelah diputuskan, data otomatis masuk ke rekap HRD."
+                            : "Pengajuan ini akan dikirim terlebih dahulu ke approver, lalu diteruskan ke HRD setelah disetujui."}
+                        </p>
+                      </>
+                    );
+                  })()}
+
                   {/* Step visual */}
                   <div className="flex items-center gap-3 flex-wrap text-sm">
                     {(() => {
+                      const isHrdReq = submission.requesterRole === "hrd";
                       const steps = [
                         {
                           uid: submission.uid,
                           name: submission.fullName,
                           role: "Pengaju",
+                          subRole: isHrdReq ? "(HRD)" : undefined,
                           done: true,
                           at: safeToDate(submission.createdAt),
                         },
                         {
                           uid: submission.managerUid,
-                          name: submission.managerName || "Atasan",
-                          role: "Atasan Langsung",
+                          name: submission.managerName || "Direktur",
+                          role: isHrdReq ? "Approver Final" : "Atasan Langsung",
+                          subRole: isHrdReq ? "(Direktur)" : undefined,
                           done: !!submission.managerDecisionAt,
                           at: safeToDate(submission.managerDecisionAt),
                         },
                         {
                           uid: submission.hrdReviewerUid,
                           name: submission.approvalFlow?.hrdName || "HRD",
-                          role: "Validasi Akhir",
-                          done: !!submission.hrdDecisionAt,
-                          at: safeToDate(submission.hrdDecisionAt),
+                          role: isHrdReq ? "Rekap Administrasi" : "Validasi Akhir",
+                          subRole: isHrdReq ? "(Tidak menentukan persetujuan)" : undefined,
+                          done: isHrdReq
+                            ? submission.status === "approved"
+                            : !!submission.hrdDecisionAt,
+                          at: isHrdReq ? undefined : safeToDate(submission.hrdDecisionAt),
                         },
                       ];
                       return steps.map((step, i, arr) => {
@@ -894,6 +934,11 @@ export function ReviewPermissionDialog({
                               <p className="text-[10px] text-muted-foreground">
                                 {step.role}
                               </p>
+                              {step.subRole && (
+                                <p className="text-[9px] text-muted-foreground italic">
+                                  {step.subRole}
+                                </p>
+                              )}
                               {step.at && (
                                 <p className="text-[10px] text-muted-foreground">
                                   {format(step.at, "dd MMM HH:mm", {
@@ -913,48 +958,60 @@ export function ReviewPermissionDialog({
 
                   {/* Info rows */}
                   <div className="grid grid-cols-2 gap-x-6 gap-y-2 border-t border-border pt-3">
-                    <InfoRow label="Pengaju" value={submission.fullName} />
-                    <InfoRow
-                      label="Atasan Langsung"
-                      value={submission.managerName || "—"}
-                    />
-                    <InfoRow
-                      label="Status Atasan"
-                      value={
-                        submission.managerDecisionAt
-                          ? submission.status.includes("approved") ||
-                            submission.status === "closed"
-                            ? "Disetujui"
-                            : submission.status.includes("rejected")
-                              ? "Ditolak"
-                              : submission.status.includes("revision")
-                                ? "Minta Revisi"
-                                : "Diputuskan"
-                          : "Menunggu"
-                      }
-                    />
-                    <InfoRow
-                      label="Status HRD"
-                      value={
-                        submission.hrdDecisionAt
-                          ? submission.status === "approved" ||
-                            submission.status === "closed"
-                            ? "Disetujui"
-                            : submission.status === "rejected_hrd"
-                              ? "Ditolak"
-                              : "Diputuskan"
-                          : submission.status === "pending_hrd" ||
-                              submission.status === "approved_by_manager"
-                            ? "Menunggu validasi"
-                            : "—"
-                      }
-                    />
-                    <InfoRow
-                      label="Menunggu"
-                      value={submission.waitingForName || "—"}
-                    />
-                    {(submission.managerNotes || submission.hrdNotes) && (
-                      <div className="col-span-2 pt-1">
+                    {(() => {
+                      const isHrdReq = submission.requesterRole === "hrd";
+                      return (
+                        <>
+                          <InfoRow label="Pengaju" value={submission.fullName} />
+                          <InfoRow
+                            label={isHrdReq ? "Approver Final" : "Atasan Langsung"}
+                            value={submission.managerName || "—"}
+                          />
+                          <InfoRow
+                            label={isHrdReq ? "Status Direktur" : "Status Atasan"}
+                            value={
+                              submission.managerDecisionAt
+                                ? submission.status.includes("approved") ||
+                                  submission.status === "closed"
+                                  ? "Disetujui"
+                                  : submission.status.includes("rejected")
+                                    ? "Ditolak"
+                                    : submission.status.includes("revision")
+                                      ? "Minta Revisi"
+                                      : "Diputuskan"
+                                : isHrdReq
+                                  ? "Menunggu Direktur"
+                                  : "Menunggu"
+                            }
+                          />
+                          <InfoRow
+                            label={isHrdReq ? "Rekap Administrasi" : "Status HRD"}
+                            value={
+                              isHrdReq
+                                ? submission.status === "approved"
+                                  ? "Tercatat di rekap HRD"
+                                  : submission.status === "closed"
+                                    ? "Tercatat di rekap HRD"
+                                    : "Menunggu hasil keputusan direktur"
+                                : submission.hrdDecisionAt
+                                  ? submission.status === "approved" ||
+                                    submission.status === "closed"
+                                    ? "Disetujui"
+                                    : submission.status === "rejected_hrd"
+                                      ? "Ditolak"
+                                      : "Diputuskan"
+                                  : submission.status === "pending_hrd" ||
+                                      submission.status === "approved_by_manager"
+                                    ? "Menunggu validasi"
+                                    : "—"
+                            }
+                          />
+                          <InfoRow
+                            label={isHrdReq ? "Penugasan" : "Menunggu"}
+                            value={submission.waitingForName || "—"}
+                          />
+                          {(submission.managerNotes || submission.hrdNotes) && (
+                            <div className="col-span-2 pt-1">
                         {submission.managerNotes && (
                           <div className="text-xs">
                             <span className="text-muted-foreground font-medium">
@@ -977,6 +1034,9 @@ export function ReviewPermissionDialog({
                         )}
                       </div>
                     )}
+                        </>
+                      );
+                    })()}
                   </div>
                 </CardContent>
               </Card>
@@ -1436,6 +1496,24 @@ export function ReviewPermissionDialog({
                       />
                     </form>
                   </Form>
+                </div>
+              )}
+
+              {isHrdViewingOwnRequest && (
+                <div className="rounded-lg border border-teal-200 bg-teal-50 p-4 dark:border-teal-900/40 dark:bg-teal-950/20">
+                  <div className="flex items-start gap-3">
+                    <ShieldCheck className="h-4 w-4 mt-0.5 text-teal-600 dark:text-teal-400 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-semibold text-teal-800 dark:text-teal-300">
+                        Ini adalah pengajuan Anda
+                      </p>
+                      <p className="text-xs text-teal-700 dark:text-teal-400 mt-1">
+                        {submission.status === "approved"
+                          ? "Pengajuan sudah disetujui direktur dan masuk rekap administrasi HRD."
+                          : "Pengajuan sedang menunggu persetujuan direktur. Rekap HRD akan diperbarui otomatis."}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

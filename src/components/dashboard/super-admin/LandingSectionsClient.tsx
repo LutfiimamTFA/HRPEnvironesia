@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { useCollection, useFirestore, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
-import { collection, query, doc, orderBy, setDoc } from 'firebase/firestore';
+import { useAuth } from '@/providers/auth-provider';
+import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
+import { collection, query, orderBy } from 'firebase/firestore';
 import type { LandingSection } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
@@ -198,6 +199,7 @@ function SectionCard({ section, onEdit, onToggleActive, isSynced }: SectionCardP
 export function LandingSectionsClient() {
   const firestore = useFirestore();
   const { toast } = useToast();
+  const { firebaseUser } = useAuth();
 
   const [editingSection, setEditingSection] = useState<Partial<LandingSection> | null>(null);
   const [activeDialog, setActiveDialog] = useState<string | null>(null);
@@ -230,20 +232,45 @@ export function LandingSectionsClient() {
   };
 
   const handleToggleActive = async (section: Partial<LandingSection>) => {
-    if (!section.id) {
+    if (!section.sectionKey) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Section ID not found.',
+        description: 'Section key not found.',
       });
       return;
     }
 
     try {
-      await updateDocumentNonBlocking(
-        doc(firestore, 'landing_sections', section.id),
-        { isActive: !section.isActive, updatedAt: new Date() }
-      );
+      const idToken = await firebaseUser?.getIdToken();
+      if (!idToken) {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: 'Not authenticated.',
+        });
+        return;
+      }
+
+      const response = await fetch('/api/admin/landing-sections', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          sectionKey: section.sectionKey,
+          data: {
+            isActive: !section.isActive,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to update section');
+      }
+
       toast({
         title: 'Status Updated',
         description: `"${section.title}" is now ${!section.isActive ? 'visible' : 'hidden'}.`,
@@ -255,15 +282,35 @@ export function LandingSectionsClient() {
   };
 
   const handleSaveSection = async (updatedData: Partial<LandingSection>) => {
-    if (!editingSection?.id) return;
+    if (!editingSection?.sectionKey) return;
     try {
-      await updateDocumentNonBlocking(
-        doc(firestore, 'landing_sections', editingSection.id),
-        {
-          ...updatedData,
-          updatedAt: new Date(),
-        }
-      );
+      const idToken = await firebaseUser?.getIdToken();
+      if (!idToken) {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: 'Not authenticated.',
+        });
+        return;
+      }
+
+      const response = await fetch('/api/admin/landing-sections', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          sectionKey: editingSection.sectionKey,
+          data: updatedData,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to save section');
+      }
+
       toast({
         title: 'Section Updated',
         description: `"${updatedData.title || editingSection.title}" has been saved.`,
@@ -279,20 +326,36 @@ export function LandingSectionsClient() {
   const handleGenerateDefaults = async () => {
     setIsGeneratingDefaults(true);
     try {
-      const now = new Date();
-      for (const defaultSection of DEFAULT_LANDING_SECTIONS) {
-        const docId = defaultSection.sectionKey as string;
-        await setDoc(
-          doc(firestore, 'landing_sections', docId),
-          {
-            ...defaultSection,
-            id: docId,
-            createdAt: now,
-            updatedAt: now,
-            createdBy: 'admin-manual-sync',
-          }
-        );
+      const idToken = await firebaseUser?.getIdToken();
+      if (!idToken) {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: 'Not authenticated.',
+        });
+        return;
       }
+
+      for (const defaultSection of DEFAULT_LANDING_SECTIONS) {
+        const sectionKey = defaultSection.sectionKey as string;
+        const response = await fetch('/api/admin/landing-sections', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            sectionKey,
+            data: defaultSection,
+          }),
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || `Failed to create section ${sectionKey}`);
+        }
+      }
+
       toast({
         title: 'Defaults Generated',
         description: 'All default sections have been created in Firestore.',

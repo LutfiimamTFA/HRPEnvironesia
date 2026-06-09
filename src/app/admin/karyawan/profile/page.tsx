@@ -41,6 +41,7 @@ export default function EmployeeProfilePage() {
 
   const menuConfig = useMemo(() => {
     if (!userProfile) return [];
+    if (userProfile.role === "hrd") return MENU_CONFIG["hrd"] || [];
     const roleKey =
       userProfile.employmentType === "magang"
         ? "karyawan-magang"

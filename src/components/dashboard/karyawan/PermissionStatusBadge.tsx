@@ -21,13 +21,16 @@ export const permissionStatusDisplay: Record<PermissionRequestStatus, { label: s
 };
 
 /** Returns a human-readable status label, optionally including names from the submission. */
-export function getHumanStatusLabel(status: string, submission?: Pick<PermissionRequest, 'managerName' | 'waitingForName'>): string {
+export function getHumanStatusLabel(status: string, submission?: Pick<PermissionRequest, 'managerName' | 'waitingForName' | 'requesterRole'>): string {
     const managerName = submission?.waitingForName || submission?.managerName || null;
+    const isHrdRequester = submission?.requesterRole === 'hrd';
     switch (status) {
-        case 'pending_manager': return managerName ? `Menunggu persetujuan ${managerName}` : 'Menunggu Atasan';
+        case 'pending_manager': return managerName
+            ? `Menunggu persetujuan ${managerName}`
+            : isHrdRequester ? 'Menunggu Direktur' : 'Menunggu Atasan';
         case 'rejected_manager': return managerName ? `Ditolak oleh ${managerName}` : 'Ditolak Atasan';
         case 'revision_manager': return managerName ? `Perlu revisi dari ${managerName}` : 'Perlu Revisi';
-        case 'approved_by_manager': return 'Disetujui Atasan → Menunggu HRD';
+        case 'approved_by_manager': return isHrdRequester ? 'Disetujui' : 'Disetujui Atasan → Menunggu HRD';
         case 'pending_hrd': return 'Menunggu validasi HRD';
         case 'rejected_hrd': return 'Ditolak HRD';
         case 'revision_hrd': return 'Perlu revisi dari HRD';
@@ -43,7 +46,7 @@ export function getHumanStatusLabel(status: string, submission?: Pick<Permission
 
 interface PermissionStatusBadgeProps {
   status: PermissionRequestStatus;
-  submission?: Pick<PermissionRequest, 'managerName' | 'waitingForName'>;
+  submission?: Pick<PermissionRequest, 'managerName' | 'waitingForName' | 'requesterRole'>;
   className?: string;
 }
 

@@ -848,6 +848,7 @@ export function PermissionRequestForm({
       (payload as any).managerUid = managerUid;
       (payload as any).managerName = managerName || null;
       (payload as any).managerRole = directManager.role || null;
+      (payload as any).requesterRole = userProfile.role;
 
       await setDocumentNonBlocking(
         docRef,

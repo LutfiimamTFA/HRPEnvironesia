@@ -6,7 +6,7 @@ import { useRoleGuard } from "@/hooks/useRoleGuard";
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { MENU_CONFIG } from "@/lib/menu-config";
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
-import { collection, query, where } from "firebase/firestore";
+import { collection, query, where, doc, setDoc } from "firebase/firestore";
 import type {
   UserProfile,
   Brand,
@@ -50,6 +50,7 @@ import {
   FileText,
   CreditCard,
   Shield,
+  RefreshCw,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -98,6 +99,8 @@ interface MergedEmployee {
   mappedTypeLabel: string;
   needsHrdAttention: boolean;
   pendingBankRequest?: any;
+  userRole?: string;
+  managementScopes?: any[];
 }
 
 function StatusKepegawaanBadge({ status }: { status: OperationalStatus }) {
@@ -365,6 +368,133 @@ function SummaryCard({
   );
 }
 
+function SyncManagementHrdButton({
+  users,
+  onSuccess,
+}: {
+  users: UserProfile[];
+  onSuccess?: () => void;
+}) {
+  const firestore = useFirestore();
+  const { toast } = useToast();
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleSync = async () => {
+    if (!window.confirm("Sinkronisasi data management dan HRD sebagai karyawan aktif?\n\nOperasi ini tidak akan menghapus data pribadi yang sudah ada.")) return;
+    setIsSyncing(true);
+    let updatedCount = 0;
+    let errorCount = 0;
+
+    try {
+      for (const user of users) {
+        const role = (user.role || "").toLowerCase();
+        if (["super-admin", "super_admin", "system-admin", "admin-system"].includes(role)) continue;
+
+        const isManagement = user.structuralLevel === "management" || (role === "manager" && (user.managementScopes?.length ?? 0) > 0);
+        const isHrd = role === "hrd";
+
+        if (!isManagement && !isHrd) continue;
+
+        const baseData: Record<string, any> = {
+          uid: user.uid,
+          fullName: user.fullName,
+          email: user.email || "",
+          employmentStatus: "active",
+          isEmployee: true,
+          canRequestOvertime: false,
+          updatedAt: new Date().toISOString(),
+        };
+
+        if (isManagement) {
+          baseData.structuralLevel = "management";
+          baseData.workRole = user.workRole || user.jobTitle || "Manager";
+          baseData.positionTitle = user.workRole || user.positionTitle || "Manager";
+
+          const primaryScope = user.managementScopes?.[0] || null;
+          if (primaryScope) {
+            baseData.managementScopes = user.managementScopes;
+            const isAllBrands = primaryScope.scopeType === "all" || primaryScope.brandId === "all";
+            const isSelectedDivisions = primaryScope.scopeType === "selected_divisions";
+
+            if (!isAllBrands) {
+              baseData.brandId = primaryScope.brandId;
+              baseData.brandName = primaryScope.brandName;
+            } else {
+              baseData.brandId = null;
+              baseData.brandName = "Semua Brand / Perusahaan";
+            }
+
+            if (isSelectedDivisions && (primaryScope.divisionIds?.length ?? 0) > 0 && primaryScope.divisionIds![0] !== "all") {
+              baseData.divisionId = primaryScope.divisionIds![0];
+              baseData.divisionName = primaryScope.divisionNames?.[0] || "Divisi";
+            } else {
+              baseData.divisionId = null;
+              baseData.divisionName = isAllBrands ? "Semua Brand / Perusahaan" : "Seluruh Brand / Perusahaan";
+            }
+          }
+        }
+
+        if (isHrd) {
+          baseData.role = "hrd";
+          baseData.workRole = user.workRole || "HRD";
+          baseData.positionTitle = user.workRole || user.positionTitle || "HRD";
+          baseData.canRequestLeave = true;
+          baseData.canRequestPermission = true;
+          baseData.canUseEmployeeFeatures = true;
+          baseData.attendanceMethod = baseData.attendanceMethod || "web";
+
+          const brandIdRaw = user.brandId;
+          const resolvedBrandId = Array.isArray(brandIdRaw) ? brandIdRaw[0] : brandIdRaw;
+          if (resolvedBrandId) baseData.brandId = resolvedBrandId;
+          if (user.brandName) baseData.brandName = user.brandName;
+          if (user.divisionId) baseData.divisionId = user.divisionId;
+          if (user.divisionName) baseData.divisionName = user.divisionName;
+        }
+
+        try {
+          const empRef = doc(firestore, "employee_profiles", user.uid);
+          await setDoc(empRef, baseData, { merge: true });
+          updatedCount++;
+        } catch (e) {
+          errorCount++;
+          console.error(`[SyncMgmt] Failed for ${user.fullName}:`, e);
+        }
+      }
+
+      toast({
+        title: "Sinkronisasi Selesai",
+        description: `${updatedCount} profil diperbarui${errorCount ? `, ${errorCount} gagal` : ""}. Refresh halaman untuk melihat perubahan.`,
+      });
+      onSuccess?.();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Gagal Sinkronisasi",
+        description: error.message,
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={handleSync}
+      disabled={isSyncing}
+      className="rounded-xl border-teal-300 dark:border-teal-800 bg-white dark:bg-slate-900/50 text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-950/20 hover:text-teal-700 dark:hover:text-teal-300"
+    >
+      {isSyncing ? (
+        <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <RefreshCw className="mr-2 h-3.5 w-3.5" />
+      )}
+      Sinkronisasi Management & HRD
+    </Button>
+  );
+}
+
 export default function KaryawanDataPage() {
   const { userProfile } = useAuth();
   const hasAccess = useRoleGuard(["hrd", "super-admin"]);
@@ -454,7 +584,8 @@ export default function KaryawanDataPage() {
 
     const systemRoles = [
       "super-admin", "system-admin", "admin-system",
-      "super_admin", "system_admin", "admin_system", "hrd",
+      "super_admin", "system_admin", "admin_system",
+      // "hrd" intentionally NOT excluded — HRD is also an active employee
     ];
 
     // Index users and employees by uid for fast lookup
@@ -564,17 +695,20 @@ export default function KaryawanDataPage() {
         mappedTypeLabel: getMappedEmployeeTypeLabel(mappedType),
         needsHrdAttention: normalized.needsHrdAttention,
         pendingBankRequest: pendingBankRequests?.find((r) => r.employeeUid === uid),
+        userRole: user?.role || "",
+        managementScopes: user?.managementScopes || (profile as any)?.managementScopes || [],
       });
     });
 
-    // ── PASS 2: users with role 'karyawan' that have NO profile yet ──────────
+    // ── PASS 2: users with role 'karyawan'/'hrd'/management that have NO profile yet ──
     // Only show these if they don't already appear via profile
     (users ?? []).forEach((u) => {
       if (seenUids.has(u.uid)) return;
       if (u.role && systemRoles.includes(u.role)) return;
       if (u.role === "kandidat") return;
-      // Only include users that explicitly have a karyawan role or have employment data
-      if (u.role !== "karyawan" && !(u as any).employmentType && !(u as any).structuralLevel) return;
+      // Include karyawan, HRD (active employee), or users with employment/structural data
+      const isHrdUser = u.role === "hrd" && u.isActive !== false;
+      if (u.role !== "karyawan" && !isHrdUser && !(u as any).employmentType && !(u as any).structuralLevel) return;
 
       seenUids.add(u.uid);
 
@@ -618,6 +752,8 @@ export default function KaryawanDataPage() {
         mappedTypeLabel: getMappedEmployeeTypeLabel(mappedType),
         needsHrdAttention: true,
         pendingBankRequest: pendingBankRequests?.find((r) => r.employeeUid === u.uid),
+        userRole: u.role || "",
+        managementScopes: u.managementScopes || [],
       });
     });
 
@@ -903,7 +1039,8 @@ export default function KaryawanDataPage() {
                 Directory administrasi karyawan terpusat PT. HRP Environesia
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <SyncManagementHrdButton users={users ?? []} onSuccess={() => mutate?.()} />
               <Button
                 variant="outline"
                 size="sm"
@@ -1321,17 +1458,28 @@ export default function KaryawanDataPage() {
                                       </TableCell>
                                       <TableCell className="py-6 align-middle">
                                         <div className="flex flex-col gap-1 items-start">
-                                          <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                                            {emp.brandName}
-                                          </span>
+                                          {emp.brandName ? (
+                                            <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                                              {emp.brandName}
+                                            </span>
+                                          ) : (emp.structuralPosition === "management" || emp.userRole === "manager") ? (
+                                            <span className="text-xs text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1">
+                                              <AlertTriangle className="h-3 w-3 flex-shrink-0" />
+                                              {(emp.managementScopes?.length ?? 0) > 0 ? "Belum sinkron dari scope" : "Brand belum diatur"}
+                                            </span>
+                                          ) : (
+                                            <span className="text-sm text-slate-400 dark:text-slate-500">—</span>
+                                          )}
                                           <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                                             {emp.division}
                                           </span>
-                                          {(emp.isDivisionManager || emp.structuralPosition === "division_manager") ? (
+                                          {emp.userRole === "hrd" ? (
+                                            <Badge className="bg-teal-500/10 text-teal-600 border-teal-500/20 text-[10px] mt-1 h-5 px-1.5 uppercase font-bold tracking-widest dark:text-teal-400">HRD</Badge>
+                                          ) : (emp.isDivisionManager || emp.structuralPosition === "division_manager") ? (
                                             <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-[10px] mt-1 h-5 px-1.5 uppercase font-bold tracking-widest">Manager Divisi</Badge>
                                           ) : emp.structuralPosition === "supervisor" ? (
                                             <Badge className="bg-indigo-500/10 text-indigo-400 border-indigo-500/20 text-[10px] mt-1 h-5 px-1.5 uppercase font-bold tracking-widest">Supervisor</Badge>
-                                          ) : emp.structuralPosition === "management" ? (
+                                          ) : emp.structuralPosition === "management" || emp.userRole === "manager" ? (
                                             <Badge className="bg-purple-500/10 text-purple-400 border-purple-500/20 text-[10px] mt-1 h-5 px-1.5 uppercase font-bold tracking-widest">Direksi/Manajemen</Badge>
                                           ) : (
                                             <Badge className="bg-slate-500/10 text-slate-400 border-slate-500/20 text-[10px] mt-1 h-5 px-1.5 uppercase font-bold tracking-widest">Staff</Badge>

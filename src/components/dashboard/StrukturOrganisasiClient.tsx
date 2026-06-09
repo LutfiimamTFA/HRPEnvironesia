@@ -433,6 +433,7 @@ function SyncRelationshipsButton({
         size="sm"
         onClick={handleSync}
         disabled={isSyncing}
+        className="gap-2 rounded-xl border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
       >
         {isSyncing ? "Menyinkronkan..." : "Sinkronisasi Atasan Staff"}
       </Button>
@@ -457,11 +458,11 @@ function SyncRelationshipsButton({
                   Berhasil Update
                 </p>
               </div>
-              <div className="p-4 bg-slate-800 rounded-xl border border-slate-700">
-                <p className="text-3xl font-black text-slate-300">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
+                <p className="text-3xl font-black text-slate-700 dark:text-slate-300">
                   {syncResult?.skipped}
                 </p>
-                <p className="text-xs text-slate-400 mt-1 uppercase tracking-widest">
+                <p className="mt-1 text-xs uppercase tracking-widest text-slate-500 dark:text-slate-400">
                   Dilewati / Benar
                 </p>
               </div>
@@ -504,32 +505,32 @@ function HierarchyPreview({
   if (!selectedUser && currentScopes.length === 0) return null;
 
   return (
-    <div className="mt-8 space-y-4 p-6 rounded-2xl bg-slate-900 border-2 border-emerald-500/20 shadow-xl shadow-emerald-500/5">
-      <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
-        <Network className="h-5 w-5 text-emerald-500" />
-        <h4 className="font-black text-white uppercase tracking-wider text-sm">
-          Preview Hirarki Baru
-        </h4>
+    <div className="mt-8 space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-teal-900/50 dark:bg-slate-950">
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-4 text-sm font-bold uppercase tracking-wide text-slate-700 dark:border-slate-800 dark:text-white">
+        <Network className="h-4 w-4 text-teal-500" />
+        <h4>Preview Hirarki Baru</h4>
       </div>
 
       <div className="space-y-6">
         {/* Director Node */}
-        <div className="flex items-center gap-4 bg-emerald-500/10 p-4 rounded-xl border border-emerald-500/30">
-          <div className="h-10 w-10 rounded-lg bg-emerald-500 flex items-center justify-center text-white font-bold">
-            {selectedUser?.fullName?.charAt(0) || "?"}
-          </div>
-          <div>
-            <p className="text-xs text-emerald-400 font-bold uppercase tracking-widest">
-              {selectedWorkRole || "Jabatan Belum Dipilih"}
-            </p>
-            <h5 className="font-black text-white text-base">
-              {selectedUser?.fullName || "User Belum Dipilih"}
-            </h5>
+        <div className="mt-2 rounded-2xl border border-teal-200 bg-teal-50 p-4 dark:border-teal-900/60 dark:bg-teal-950/30">
+          <div className="flex items-center gap-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-500 text-sm font-bold text-white">
+              {selectedUser?.fullName?.charAt(0) || "?"}
+            </div>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-teal-700 dark:text-teal-300">
+                {selectedWorkRole || "Jabatan Belum Dipilih"}
+              </p>
+              <h5 className="text-base font-semibold text-slate-950 dark:text-white">
+                {selectedUser?.fullName || "User Belum Dipilih"}
+              </h5>
+            </div>
           </div>
         </div>
 
         {/* Scopes Mapping */}
-        <div className="space-y-4 pl-4 border-l-2 border-slate-800 ml-5">
+        <div className="ml-5 mt-5 space-y-4 border-l border-slate-200 pl-5 dark:border-slate-700">
           {currentScopes.map((scope, sIdx) => {
             const managersInScope = users.filter(
               (u) =>
@@ -542,13 +543,13 @@ function HierarchyPreview({
             return (
               <div key={sIdx} className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <Building2 className="h-4 w-4 text-slate-500" />
-                  <span className="font-bold text-slate-300 text-sm">
+                  <Building2 className="h-4 w-4 text-slate-400" />
+                  <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                     {scope.brandName}
                   </span>
                   <Badge
                     variant="outline"
-                    className="text-[9px] py-0 h-4 border-slate-700 text-slate-500"
+                    className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
                   >
                     {scope.divisionIds.includes("all")
                       ? "Seluruh Divisi"
@@ -567,16 +568,13 @@ function HierarchyPreview({
 
                       return (
                         <div key={dm.uid} className="space-y-2">
-                          <div className="flex items-center gap-3 bg-blue-500/5 p-3 rounded-lg border border-blue-500/20">
-                            <UserCheck className="h-4 w-4 text-blue-400" />
-                            <div>
-                              <p className="text-[10px] text-blue-400 font-bold uppercase">
-                                {dm.divisionName || "Manager Divisi"}
-                              </p>
-                              <p className="text-sm font-bold text-white">
-                                {dm.fullName}
-                              </p>
-                            </div>
+                          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-teal-600 dark:text-teal-300">
+                              {dm.divisionName || "Manager Divisi"}
+                            </p>
+                            <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                              {dm.fullName}
+                            </p>
                           </div>
 
                           {/* Staff Under Manager */}
@@ -585,18 +583,18 @@ function HierarchyPreview({
                               staffUnderDm.map((s) => (
                                 <div
                                   key={s.uid}
-                                  className="flex items-center gap-2 p-2 bg-slate-950/50 rounded-md border border-slate-800"
+                                  className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 p-2 dark:border-slate-800 dark:bg-slate-900/50"
                                 >
-                                  <div className="h-5 w-5 rounded bg-slate-800 flex items-center justify-center text-[10px] text-slate-500 font-bold">
+                                  <div className="flex h-5 w-5 items-center justify-center rounded bg-slate-200 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-500">
                                     {s.fullName.charAt(0)}
                                   </div>
-                                  <span className="text-xs text-slate-400">
+                                  <span className="text-xs text-slate-700 dark:text-slate-400">
                                     {s.fullName}
                                   </span>
                                 </div>
                               ))
                             ) : (
-                              <p className="text-[10px] text-slate-600 italic">
+                              <p className="mt-2 text-xs italic text-slate-500 dark:text-slate-400">
                                 Belum ada staff di bawah manager ini
                               </p>
                             )}
@@ -605,7 +603,7 @@ function HierarchyPreview({
                       );
                     })
                   ) : (
-                    <p className="text-[10px] text-slate-600 italic p-2 bg-slate-900/50 rounded border border-slate-800/50">
+                    <p className="mt-2 rounded border border-slate-200 bg-slate-50 p-2 text-xs italic text-slate-500 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-400">
                       Tidak ditemukan Manager Divisi aktif dalam scope{" "}
                       {scope.brandName} ini.
                     </p>
@@ -615,7 +613,7 @@ function HierarchyPreview({
             );
           })}
           {currentScopes.length === 0 && (
-            <p className="text-xs text-slate-500 italic">
+            <p className="text-xs italic text-slate-500 dark:text-slate-400">
               Belum ada scope brand/divisi yang ditambahkan.
             </p>
           )}
@@ -802,13 +800,45 @@ function ManagementTab({
 
       await updateDoc(userRef, updateData);
 
-      // Also update employee profile if it exists
+      // Derive primary brand/division from first scope for employee_profiles sync
+      const primaryScope = currentScopes[0] || null;
+      const empProfilePatch: Record<string, any> = {
+        ...updateData,
+        uid: selectedUser.uid,
+        fullName: selectedUser.fullName,
+        email: selectedUser.email || "",
+        employmentStatus: "active",
+        isEmployee: true,
+        canRequestOvertime: false,
+      };
+
+      if (primaryScope) {
+        const isAllBrands = primaryScope.scopeType === "all" || primaryScope.brandId === "all";
+        const isSelectedDivisions = primaryScope.scopeType === "selected_divisions";
+
+        if (!isAllBrands) {
+          empProfilePatch.brandId = primaryScope.brandId;
+          empProfilePatch.brandName = primaryScope.brandName;
+        } else {
+          empProfilePatch.brandId = null;
+          empProfilePatch.brandName = "Semua Brand / Perusahaan";
+        }
+
+        if (isSelectedDivisions && (primaryScope.divisionIds?.length ?? 0) > 0 && primaryScope.divisionIds![0] !== "all") {
+          empProfilePatch.divisionId = primaryScope.divisionIds![0];
+          empProfilePatch.divisionName = primaryScope.divisionNames?.[0] || "Divisi";
+        } else {
+          empProfilePatch.divisionId = null;
+          empProfilePatch.divisionName = isAllBrands ? "Semua Brand / Perusahaan" : "Seluruh Brand / Perusahaan";
+        }
+      }
+
       const empRef = doc(firestore, "employee_profiles", selectedUser.uid);
-      await setDoc(empRef, updateData, { merge: true });
+      await setDoc(empRef, empProfilePatch, { merge: true });
 
       toast({
         title: "Berhasil",
-        description: "Data manajemen telah diperbarui.",
+        description: "Data manajemen dan profil karyawan telah diperbarui.",
       });
       setIsDialogOpen(false);
       setIsAddDialogOpen(false);
@@ -824,13 +854,13 @@ function ManagementTab({
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center bg-slate-900/50 p-4 rounded-xl border border-slate-800">
+      <div className="mb-5 flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-6 py-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div>
-          <h3 className="text-xl font-bold flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5 text-emerald-500" />
+          <h3 className="flex items-center gap-2 text-lg font-semibold text-slate-950 dark:text-white">
+            <ShieldCheck className="h-5 w-5 text-teal-500" />
             Daftar Direktur & Manajemen
           </h3>
-          <p className="text-sm text-muted-foreground">
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             Kelola pejabat struktural tingkat manajemen dan area kewenangannya.
           </p>
         </div>
@@ -843,29 +873,29 @@ function ManagementTab({
             }}
           >
             <DialogTrigger asChild>
-              <Button size="lg" className="bg-emerald-600 hover:bg-emerald-500">
-                <Plus className="h-5 w-5 mr-2" />
+              <Button size="sm" className="gap-2 rounded-xl bg-teal-500 px-4 text-sm font-semibold text-white shadow-sm hover:bg-teal-600">
+                <Plus className="h-4 w-4" />
                 Tetapkan Management Baru
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col p-0 overflow-hidden border-slate-800 shadow-2xl">
-              <DialogHeader className="p-8 border-b border-slate-800 bg-slate-950 sticky top-0 z-10">
-                <DialogTitle className="text-3xl font-black text-white">
+            <DialogContent className="flex max-h-[90vh] max-w-5xl flex-col overflow-hidden border-slate-200 bg-white p-0 shadow-xl dark:border-slate-800 dark:bg-slate-950">
+              <DialogHeader className="sticky top-0 z-10 border-b border-slate-200 bg-white px-8 py-6 dark:border-slate-800 dark:bg-slate-950">
+                <DialogTitle className="text-2xl font-bold text-slate-950 dark:text-white">
                   Tetapkan Level Management
                 </DialogTitle>
-                <DialogDescription className="text-base text-slate-400 mt-2">
+                <DialogDescription className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                   Pilih user manager dan tentukan scope kewenangannya secara
                   mendetail.
                 </DialogDescription>
               </DialogHeader>
 
-              <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+              <div className="flex-1 overflow-y-auto bg-white px-8 py-8 custom-scrollbar dark:bg-slate-950">
                 <div className="space-y-12 pb-12">
                   {/* Section 1 & 2 */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                     <div className="space-y-4">
-                      <Label className="text-sm font-bold flex items-center gap-3 text-slate-300">
-                        <div className="h-7 w-7 rounded-full bg-emerald-500 text-white flex items-center justify-center text-sm font-black">
+                      <Label className="mb-1 flex items-center gap-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-teal-500 text-sm font-bold text-white">
                           1
                         </div>
                         Pilih User Manager
@@ -878,7 +908,7 @@ function ManagementTab({
                           )
                         }
                       >
-                        <SelectTrigger className="h-14 border-slate-700 bg-slate-900 text-base focus:ring-emerald-500">
+                        <SelectTrigger className="h-12 border-slate-200 bg-white text-sm text-slate-900 focus:border-teal-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
                           <SelectValue placeholder="Cari user dengan role manager..." />
                         </SelectTrigger>
                         <SelectContent>
@@ -903,8 +933,8 @@ function ManagementTab({
                     </div>
 
                     <div className="space-y-4">
-                      <Label className="text-sm font-bold flex items-center gap-3 text-slate-300">
-                        <div className="h-7 w-7 rounded-full bg-emerald-500 text-white flex items-center justify-center text-sm font-black">
+                      <Label className="mb-1 flex items-center gap-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-teal-500 text-sm font-bold text-white">
                           2
                         </div>
                         Jabatan Manajemen / Work Role
@@ -913,7 +943,7 @@ function ManagementTab({
                         value={selectedWorkRole}
                         onValueChange={setSelectedWorkRole}
                       >
-                        <SelectTrigger className="h-14 border-slate-700 bg-slate-900 text-base focus:ring-emerald-500">
+                        <SelectTrigger className="h-12 border-slate-200 bg-white text-sm text-slate-900 focus:border-teal-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
                           <SelectValue placeholder="Pilih jabatan resmi..." />
                         </SelectTrigger>
                         <SelectContent>
@@ -927,32 +957,32 @@ function ManagementTab({
                     </div>
                   </div>
 
-                  <Separator className="bg-slate-800" />
+                  <Separator className="bg-slate-200 dark:bg-slate-800" />
 
                   {/* Section 3 */}
                   <div className="space-y-8">
                     <div className="flex items-center justify-between">
-                      <Label className="text-sm font-bold flex items-center gap-3 text-slate-300">
-                        <div className="h-7 w-7 rounded-full bg-emerald-500 text-white flex items-center justify-center text-sm font-black">
+                      <Label className="mb-1 flex items-center gap-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-teal-500 text-sm font-bold text-white">
                           3
                         </div>
                         Scope Kewenangan Direktur
                       </Label>
                       <Badge
                         variant="outline"
-                        className="text-emerald-500 border-emerald-500/40 bg-emerald-500/5 px-3 py-1 font-bold"
+                        className="border-teal-200 bg-teal-50 px-3 py-1 font-semibold text-teal-700 dark:border-teal-900/50 dark:bg-teal-950/30 dark:text-teal-300"
                       >
                         {currentScopes.length} Scope Ditambahkan
                       </Badge>
                     </div>
 
-                    <div className="p-5 rounded-2xl bg-blue-500/5 border border-blue-500/20 flex gap-4 items-start shadow-inner">
-                      <Info className="h-6 w-6 text-blue-400 shrink-0 mt-0.5" />
+                    <div className="flex gap-4 items-start rounded-2xl border border-blue-200 bg-blue-50 px-5 py-4 dark:border-blue-900/50 dark:bg-blue-950/30">
+                      <Info className="h-5 w-5 text-blue-500 shrink-0 mt-0.5 dark:text-blue-400" />
                       <div className="space-y-1">
-                        <p className="text-sm text-blue-300 font-bold leading-relaxed">
+                        <p className="text-sm font-semibold leading-relaxed text-blue-800 dark:text-blue-200">
                           Info Scope Kewenangan
                         </p>
-                        <p className="text-xs text-blue-300/70 leading-relaxed">
+                        <p className="text-xs leading-relaxed text-blue-700/80 dark:text-blue-300/70">
                           Direktur dapat membawahi seluruh brand ini secara
                           default. Pilih divisi hanya jika kewenangan ingin
                           dibatasi ke unit kerja tertentu saja.
@@ -962,16 +992,16 @@ function ManagementTab({
 
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
                       {/* Scope Picker */}
-                      <div className="lg:col-span-5 space-y-6 p-7 rounded-3xl bg-slate-900 border-2 border-slate-800 shadow-xl">
+                      <div className="lg:col-span-5 space-y-5 rounded-2xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-900">
                         <div className="space-y-3">
-                          <Label className="text-xs font-black uppercase tracking-widest text-slate-500">
+                          <Label className="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
                             Pilih Brand / Perusahaan
                           </Label>
                           <Select
                             value={selectedBrand}
                             onValueChange={setSelectedBrand}
                           >
-                            <SelectTrigger className="h-12 bg-slate-950 border-slate-700">
+                            <SelectTrigger className="h-11 border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950">
                               <SelectValue placeholder="Pilih Brand" />
                             </SelectTrigger>
                             <SelectContent>
@@ -986,10 +1016,10 @@ function ManagementTab({
                         </div>
 
                         <div className="space-y-3">
-                          <Label className="text-xs font-black uppercase tracking-widest text-slate-500">
+                          <Label className="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
                             Pilih Divisi
                           </Label>
-                          <ScrollArea className="h-56 border border-slate-800 rounded-2xl p-4 bg-slate-950/50 shadow-inner">
+                          <ScrollArea className="h-56 rounded-2xl border border-slate-200 bg-white p-4 shadow-inner dark:border-slate-700 dark:bg-slate-950/50">
                             <div className="space-y-3">
                               {isLoadingDivisions ? (
                                 <div className="flex flex-col items-center justify-center h-40 gap-3">
@@ -1000,7 +1030,7 @@ function ManagementTab({
                                 </div>
                               ) : selectedBrand === "all" ? (
                                 <div className="p-6 text-center">
-                                  <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 px-4 py-1.5 font-bold">
+                                  <Badge className="rounded-full bg-teal-100 px-4 py-1.5 font-semibold text-teal-700 dark:bg-teal-900/50 dark:text-teal-200">
                                     Akses Seluruh Brand & Divisi
                                   </Badge>
                                   <p className="text-[10px] text-slate-500 mt-3 italic leading-relaxed">
@@ -1010,10 +1040,10 @@ function ManagementTab({
                                 </div>
                               ) : divisions.length > 0 ? (
                                 <>
-                                  <div className="flex items-center space-x-3 pb-3 border-b border-slate-800 mb-3">
+                                  <div className="mb-3 flex items-center space-x-3 border-b border-slate-200 pb-3 dark:border-slate-700">
                                     <Checkbox
                                       id="add-brand-scope"
-                                      className="h-5 w-5 border-emerald-500/50 data-[state=checked]:bg-emerald-500"
+                                      className="h-5 w-5 border-teal-400/50 data-[state=checked]:bg-teal-500 dark:border-teal-500/50"
                                       checked={isBrandScope}
                                       onCheckedChange={(checked) => {
                                         const enabled = Boolean(checked);
@@ -1023,7 +1053,7 @@ function ManagementTab({
                                     />
                                     <label
                                       htmlFor="add-brand-scope"
-                                      className="text-sm font-black leading-none cursor-pointer text-emerald-400"
+                                      className="cursor-pointer text-sm font-semibold leading-none text-teal-600 dark:text-teal-400"
                                     >
                                       Seluruh Brand / Perusahaan
                                     </label>
@@ -1031,11 +1061,11 @@ function ManagementTab({
                                   {divisions.map((div: Division) => (
                                     <div
                                       key={div.id}
-                                      className="flex items-center space-x-3 py-2 px-1 hover:bg-slate-900/50 rounded-lg transition-colors"
+                                      className="flex items-center space-x-3 rounded-lg px-1 py-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-900/50"
                                     >
                                       <Checkbox
                                         id={`add-div-${div.id}`}
-                                        className="h-5 w-5 border-slate-700 data-[state=checked]:bg-emerald-500"
+                                        className="h-5 w-5 border-slate-300 data-[state=checked]:bg-teal-500 dark:border-slate-700"
                                         checked={selectedDivisions.includes(
                                           div.id!,
                                         )}
@@ -1056,7 +1086,7 @@ function ManagementTab({
                                       />
                                       <label
                                         htmlFor={`add-div-${div.id}`}
-                                        className="text-sm leading-none cursor-pointer text-slate-300"
+                                        className="cursor-pointer text-sm leading-none text-slate-700 dark:text-slate-300"
                                       >
                                         {div.name}
                                       </label>
@@ -1103,7 +1133,7 @@ function ManagementTab({
 
                         <Button
                           size="lg"
-                          className="w-full h-14 bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/20 font-black"
+                          className="h-12 w-full gap-2 rounded-xl bg-teal-500 font-semibold hover:bg-teal-600"
                           onClick={handleAddScope}
                           disabled={!selectedBrand}
                         >
@@ -1114,28 +1144,28 @@ function ManagementTab({
 
                       {/* Selected Scopes List */}
                       <div className="lg:col-span-7 space-y-4">
-                        <Label className="text-xs font-black uppercase tracking-widest text-slate-500">
+                        <Label className="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
                           Daftar Scope Ditambahkan:
                         </Label>
                         <div className="grid grid-cols-1 gap-4 max-h-[500px] overflow-y-auto pr-3 custom-scrollbar">
                           {currentScopes.map((scope, idx) => (
                             <div
                               key={idx}
-                              className="group relative flex flex-col p-5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-emerald-500/50 transition-all shadow-lg hover:shadow-emerald-500/5"
+                              className="group relative flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-teal-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-teal-500/50"
                             >
                               <div className="flex justify-between items-start mb-3">
                                 <div className="flex items-center gap-3">
-                                  <div className="p-2 bg-emerald-500/10 rounded-lg">
-                                    <Building2 className="h-5 w-5 text-emerald-500" />
+                                  <div className="rounded-lg bg-teal-50 p-2 dark:bg-teal-900/30">
+                                    <Building2 className="h-5 w-5 text-teal-600 dark:text-teal-400" />
                                   </div>
-                                  <span className="font-black text-white text-base tracking-tight">
+                                  <span className="text-base font-semibold text-slate-900 dark:text-white">
                                     {scope.brandName}
                                   </span>
                                 </div>
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-10 w-10 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl"
+                                  className="h-10 w-10 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 dark:text-slate-500 dark:hover:bg-red-950/30 dark:hover:text-red-300"
                                   onClick={() => handleRemoveScope(idx)}
                                 >
                                   <Trash2 className="h-5 w-5" />
@@ -1143,7 +1173,7 @@ function ManagementTab({
                               </div>
                               <div className="flex flex-wrap gap-2">
                                 {scope.divisionIds.includes("all") ? (
-                                  <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-xs px-3 py-1 font-black">
+                                  <Badge className="rounded-full bg-teal-100 px-3 py-1 text-xs font-semibold text-teal-700 dark:bg-teal-900/50 dark:text-teal-200">
                                     Seluruh Brand / Perusahaan
                                   </Badge>
                                 ) : (
@@ -1155,7 +1185,7 @@ function ManagementTab({
                                       <Badge
                                         key={i}
                                         variant="secondary"
-                                        className="bg-slate-800 text-slate-300 border-slate-700 text-xs px-2.5 py-1"
+                                        className="border-slate-200 bg-slate-100 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
                                       >
                                         {dn}
                                       </Badge>
@@ -1166,9 +1196,9 @@ function ManagementTab({
                             </div>
                           ))}
                           {currentScopes.length === 0 && (
-                            <div className="flex flex-col items-center justify-center py-24 border-2 border-dashed border-slate-800 rounded-3xl opacity-30">
-                              <Network className="h-12 w-12 mb-4" />
-                              <p className="text-sm font-black uppercase tracking-widest">
+                            <div className="flex flex-col items-center justify-center py-16 rounded-2xl border border-dashed border-slate-200 text-slate-400 dark:border-slate-700 dark:text-slate-500">
+                              <Network className="h-10 w-10 mb-3" />
+                              <p className="text-sm font-semibold uppercase tracking-widest">
                                 Belum Ada Scope
                               </p>
                             </div>
@@ -1188,18 +1218,18 @@ function ManagementTab({
                 </div>
               </div>
 
-              <DialogFooter className="p-8 border-t border-slate-800 bg-slate-950 sticky bottom-0 z-10 shadow-[0_-10px_20px_rgba(0,0,0,0.4)]">
+              <DialogFooter className="sticky bottom-0 z-10 border-t border-slate-200 bg-white px-8 py-5 dark:border-slate-800 dark:bg-slate-950">
                 <Button
                   variant="outline"
                   size="lg"
-                  className="h-14 px-10 text-base font-bold border-slate-700 hover:bg-slate-900"
+                  className="h-12 border-slate-200 bg-white px-8 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                   onClick={() => setIsAddDialogOpen(false)}
                 >
                   Batal
                 </Button>
                 <Button
                   size="lg"
-                  className="h-14 px-12 bg-emerald-600 hover:bg-emerald-500 text-base font-black shadow-lg shadow-emerald-900/30"
+                  className="h-12 px-10 bg-teal-500 font-semibold hover:bg-teal-600 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
                   onClick={handleSaveScopes}
                   disabled={
                     !selectedUser ||
@@ -1218,102 +1248,87 @@ function ManagementTab({
 
       <div className="grid grid-cols-1 gap-4">
         {managementUsers.map((user) => (
-          <Card key={user.uid} className="bg-slate-900/40 border-slate-800">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <div className="space-y-1">
-                <CardTitle className="text-lg">{user.fullName}</CardTitle>
-                <CardDescription>
+          <div
+            key={user.uid}
+            className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:shadow-md dark:border-slate-800 dark:bg-slate-900"
+          >
+            <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+              <div className="flex-1">
+                <p className="text-base font-semibold text-slate-950 dark:text-white">
+                  {user.fullName}
+                </p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                   {user.workRole || "Direktur / Manajemen"}
-                </CardDescription>
+                </p>
+                <p className="mt-5 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                  Scope Manajemen
+                </p>
+                <div className="mt-3 flex flex-wrap gap-3">
+                  {user.managementScopes && user.managementScopes.length > 0 ? (
+                    user.managementScopes.map((scope, idx) => (
+                      <div
+                        key={idx}
+                        className="inline-flex min-w-[220px] gap-2 rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 dark:border-teal-900/60 dark:bg-teal-950/40"
+                      >
+                        <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-teal-500" />
+                        <div>
+                          <p className="text-sm font-medium text-teal-700 dark:text-teal-300">
+                            {scope.brandName}
+                          </p>
+                          <p className="mt-1 text-xs text-teal-600/80 dark:text-teal-300/70">
+                            {scope.divisionIds.includes("all")
+                              ? "Seluruh Brand / Perusahaan"
+                              : scope.divisionNames.join(", ")}
+                          </p>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="rounded-xl border border-dashed border-slate-200 px-4 py-3 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                      Belum ada scope manajemen
+                    </p>
+                  )}
+                </div>
               </div>
               {isSuperAdmin && (
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => handleEditScope(user)}
+                  className="shrink-0 gap-2 rounded-xl border-slate-200 bg-white text-slate-700 shadow-sm hover:border-teal-300 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-teal-600 dark:hover:text-teal-300"
                 >
-                  <Pencil className="h-3 w-3 mr-2" />
+                  <Pencil className="h-3 w-3" />
                   Atur Scope
                 </Button>
               )}
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <Label className="text-xs uppercase text-muted-foreground">
-                  Scope Manajemen:
-                </Label>
-                <div className="flex flex-wrap gap-2">
-                  {user.managementScopes && user.managementScopes.length > 0 ? (
-                    user.managementScopes.map((scope, idx) => (
-                      <div
-                        key={idx}
-                        className="flex flex-col gap-1.5 p-3 rounded-xl bg-slate-800/40 border border-slate-700/50 min-w-[220px]"
-                      >
-                        <div className="flex items-center gap-2">
-                          <div className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
-                          <span className="text-sm font-black text-white">
-                            {scope.brandName}
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5 pl-4">
-                          {scope.divisionIds.includes("all") ? (
-                            <span className="text-[10px] text-emerald-400/80 font-black italic tracking-tight">
-                              — Seluruh Brand / Perusahaan
-                            </span>
-                          ) : (
-                            <div className="flex flex-wrap gap-1 items-center">
-                              <span className="text-[9px] text-slate-500 font-bold mr-1">
-                                Divisi:
-                              </span>
-                              {scope.divisionNames.map((div) => (
-                                <Badge
-                                  key={div}
-                                  variant="secondary"
-                                  className="text-[9px] py-0 h-4 bg-slate-900 text-slate-400 border-slate-800"
-                                >
-                                  {div}
-                                </Badge>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-slate-500 italic p-4 border-2 border-dashed border-slate-800 rounded-xl w-full text-center">
-                      Belum ada scope yang ditetapkan.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         ))}
       </div>
 
       {/* Scope Dialog (Edit) */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col p-0 overflow-hidden border-slate-800">
-          <DialogHeader className="p-8 border-b border-slate-800 bg-slate-950 sticky top-0 z-10">
-            <DialogTitle className="text-3xl font-black text-white">
+        <DialogContent className="flex max-h-[90vh] max-w-5xl flex-col overflow-hidden border-slate-200 bg-white p-0 shadow-xl dark:border-slate-800 dark:bg-slate-950">
+          <DialogHeader className="sticky top-0 z-10 border-b border-slate-200 bg-white px-8 py-6 dark:border-slate-800 dark:bg-slate-950">
+            <DialogTitle className="text-2xl font-bold text-slate-950 dark:text-white">
               Pengaturan Management: {selectedUser?.fullName}
             </DialogTitle>
-            <DialogDescription className="text-base text-slate-400 mt-2">
+            <DialogDescription className="mt-1 text-sm text-slate-500 dark:text-slate-400">
               Perbarui jabatan dan scope kewenangan secara mendetail.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+          <div className="flex-1 overflow-y-auto bg-white px-8 py-8 custom-scrollbar dark:bg-slate-950">
             <div className="space-y-12 pb-12">
               <div className="space-y-4">
-                <Label className="text-sm font-bold text-slate-300">
+                <Label className="mb-1 text-sm font-semibold text-slate-700 dark:text-slate-300">
                   Jabatan Manajemen / Work Role
                 </Label>
                 <Select
                   value={selectedWorkRole}
                   onValueChange={setSelectedWorkRole}
                 >
-                  <SelectTrigger className="h-14 border-slate-700 bg-slate-900 text-base focus:ring-emerald-500">
+                  <SelectTrigger className="h-12 border-slate-200 bg-white text-sm text-slate-900 focus:border-teal-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
                     <SelectValue placeholder="Pilih jabatan resmi..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -1326,16 +1341,16 @@ function ManagementTab({
                 </Select>
               </div>
 
-              <Separator className="bg-slate-800" />
+              <Separator className="bg-slate-200 dark:bg-slate-800" />
 
               <div className="space-y-8">
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm font-bold text-slate-300">
+                  <Label className="mb-1 text-sm font-semibold text-slate-700 dark:text-slate-300">
                     Scope Kewenangan Direktur
                   </Label>
                   <Badge
                     variant="outline"
-                    className="text-emerald-500 border-emerald-500/40 bg-emerald-500/5 px-3 py-1 font-bold"
+                    className="border-teal-200 bg-teal-50 px-3 py-1 font-semibold text-teal-700 dark:border-teal-900/50 dark:bg-teal-950/30 dark:text-teal-300"
                   >
                     {currentScopes.length} Scope Aktif
                   </Badge>
@@ -1343,16 +1358,16 @@ function ManagementTab({
 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
                   {/* Scope Picker */}
-                  <div className="lg:col-span-5 space-y-6 p-7 rounded-3xl bg-slate-900 border-2 border-slate-800 shadow-xl">
+                  <div className="lg:col-span-5 space-y-5 rounded-2xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-900">
                     <div className="space-y-3">
-                      <Label className="text-xs font-black uppercase tracking-widest text-slate-500">
+                      <Label className="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
                         Pilih Brand / Perusahaan
                       </Label>
                       <Select
                         value={selectedBrand}
                         onValueChange={setSelectedBrand}
                       >
-                        <SelectTrigger className="h-12 bg-slate-950 border-slate-700">
+                        <SelectTrigger className="h-11 border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950">
                           <SelectValue placeholder="Pilih Brand" />
                         </SelectTrigger>
                         <SelectContent>
@@ -1367,10 +1382,10 @@ function ManagementTab({
                     </div>
 
                     <div className="space-y-3">
-                      <Label className="text-xs font-black uppercase tracking-widest text-slate-500">
+                      <Label className="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
                         Pilih Divisi
                       </Label>
-                      <ScrollArea className="h-56 border border-slate-800 rounded-2xl p-4 bg-slate-950/50 shadow-inner">
+                      <ScrollArea className="h-56 rounded-2xl border border-slate-200 bg-white p-4 shadow-inner dark:border-slate-700 dark:bg-slate-950/50">
                         <div className="space-y-3">
                           {isLoadingDivisions ? (
                             <div className="flex flex-col items-center justify-center h-40 gap-3">
@@ -1381,16 +1396,16 @@ function ManagementTab({
                             </div>
                           ) : selectedBrand === "all" ? (
                             <div className="p-6 text-center">
-                              <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 px-4 py-1.5">
+                              <Badge className="rounded-full bg-teal-100 px-4 py-1.5 font-semibold text-teal-700 dark:bg-teal-900/50 dark:text-teal-200">
                                 Otomatis Semua Divisi
                               </Badge>
                             </div>
                           ) : divisions.length > 0 ? (
                             <>
-                              <div className="flex items-center space-x-3 pb-3 border-b border-slate-800 mb-3">
+                              <div className="mb-3 flex items-center space-x-3 border-b border-slate-200 pb-3 dark:border-slate-700">
                                 <Checkbox
                                   id="edit-brand-scope"
-                                  className="h-5 w-5 border-emerald-500/50 data-[state=checked]:bg-emerald-500"
+                                  className="h-5 w-5 border-teal-400/50 data-[state=checked]:bg-teal-500 dark:border-teal-500/50"
                                   checked={isBrandScope}
                                   onCheckedChange={(checked) => {
                                     const enabled = Boolean(checked);
@@ -1400,7 +1415,7 @@ function ManagementTab({
                                 />
                                 <label
                                   htmlFor="edit-brand-scope"
-                                  className="text-sm font-black leading-none cursor-pointer text-emerald-400"
+                                  className="cursor-pointer text-sm font-semibold leading-none text-teal-600 dark:text-teal-400"
                                 >
                                   Seluruh Brand / Perusahaan
                                 </label>
@@ -1408,11 +1423,11 @@ function ManagementTab({
                               {divisions.map((div: Division) => (
                                 <div
                                   key={div.id}
-                                  className="flex items-center space-x-3 py-2 px-1 hover:bg-slate-900/50 rounded-lg transition-colors"
+                                  className="flex items-center space-x-3 rounded-lg px-1 py-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-900/50"
                                 >
                                   <Checkbox
                                     id={`edit-div-${div.id}`}
-                                    className="h-5 w-5 border-slate-700 data-[state=checked]:bg-emerald-500"
+                                    className="h-5 w-5 border-slate-300 data-[state=checked]:bg-teal-500 dark:border-slate-700"
                                     checked={selectedDivisions.includes(
                                       div.id!,
                                     )}
@@ -1433,7 +1448,7 @@ function ManagementTab({
                                   />
                                   <label
                                     htmlFor={`edit-div-${div.id}`}
-                                    className="text-sm leading-none cursor-pointer text-slate-300"
+                                    className="cursor-pointer text-sm leading-none text-slate-700 dark:text-slate-300"
                                   >
                                     {div.name}
                                   </label>
@@ -1454,7 +1469,7 @@ function ManagementTab({
 
                     <Button
                       size="lg"
-                      className="w-full h-14 bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/20 font-black"
+                      className="h-12 w-full gap-2 rounded-xl bg-teal-500 font-semibold hover:bg-teal-600"
                       onClick={handleAddScope}
                       disabled={
                         !selectedBrand ||
@@ -1471,7 +1486,7 @@ function ManagementTab({
 
                   {/* Selected Scopes List */}
                   <div className="lg:col-span-7 space-y-4">
-                    <Label className="text-xs font-black uppercase tracking-widest text-slate-500">
+                    <Label className="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
                       Scope Terpilih:
                     </Label>
                     <div className="grid grid-cols-1 gap-4 max-h-[500px] overflow-y-auto pr-3 custom-scrollbar">
@@ -1480,21 +1495,21 @@ function ManagementTab({
                           return (
                             <div
                               key={idx}
-                              className="group relative flex flex-col p-5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-emerald-500/50 transition-all shadow-lg hover:shadow-emerald-500/5"
+                              className="group relative flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-teal-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-teal-500/50"
                             >
                               <div className="flex justify-between items-start mb-3">
                                 <div className="flex items-center gap-3">
-                                  <div className="p-2 bg-emerald-500/10 rounded-lg">
-                                    <Building2 className="h-5 w-5 text-emerald-500" />
+                                  <div className="rounded-lg bg-teal-50 p-2 dark:bg-teal-900/30">
+                                    <Building2 className="h-5 w-5 text-teal-600 dark:text-teal-400" />
                                   </div>
-                                  <span className="font-black text-white text-base tracking-tight">
+                                  <span className="text-base font-semibold text-slate-900 dark:text-white">
                                     {scope.brandName}
                                   </span>
                                 </div>
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="text-slate-500 hover:text-red-500"
+                                  className="gap-1 rounded-lg px-3 py-2 text-sm text-slate-400 hover:bg-red-50 hover:text-red-600 dark:text-slate-500 dark:hover:bg-red-950/30 dark:hover:text-red-300"
                                   onClick={() => handleRemoveScope(idx)}
                                 >
                                   <Trash2 className="h-4 w-4 mr-2" />
@@ -1503,7 +1518,7 @@ function ManagementTab({
                               </div>
                               <div className="flex flex-wrap gap-2">
                                 {scope.divisionIds.includes("all") ? (
-                                  <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-xs px-3 py-1 font-bold">
+                                  <Badge className="rounded-full bg-teal-100 px-3 py-1 text-xs font-semibold text-teal-700 dark:bg-teal-900/50 dark:text-teal-200">
                                     Seluruh Unit Kerja / Divisi
                                   </Badge>
                                 ) : (
@@ -1511,7 +1526,7 @@ function ManagementTab({
                                     <Badge
                                       key={i}
                                       variant="secondary"
-                                      className="bg-slate-800 text-slate-300 border-slate-700 text-xs px-2.5 py-1"
+                                      className="border-slate-200 bg-slate-100 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
                                     >
                                       {dn}
                                     </Badge>
@@ -1522,9 +1537,9 @@ function ManagementTab({
                           );
                         })
                       ) : (
-                        <p className="text-sm text-slate-500 italic p-4 border-2 border-dashed border-slate-800 rounded-xl w-full text-center">
-                          Belum ada scope aktif.
-                        </p>
+                        <div className="w-full rounded-xl border border-dashed border-slate-200 p-6 text-center dark:border-slate-700">
+                          <p className="text-sm italic text-slate-400 dark:text-slate-500">Belum ada scope aktif.</p>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -1541,18 +1556,18 @@ function ManagementTab({
             </div>
           </div>
 
-          <DialogFooter className="p-8 border-t border-slate-800 bg-slate-950 sticky bottom-0 z-10 shadow-[0_-10px_20px_rgba(0,0,0,0.4)]">
+          <DialogFooter className="sticky bottom-0 z-10 border-t border-slate-200 bg-white px-8 py-5 dark:border-slate-800 dark:bg-slate-950">
             <Button
               variant="outline"
               size="lg"
-              className="h-14 px-10 text-base font-bold border-slate-700 hover:bg-slate-900"
+              className="h-12 border-slate-200 bg-white px-8 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
               onClick={() => setIsDialogOpen(false)}
             >
               Batal
             </Button>
             <Button
               size="lg"
-              className="h-14 px-12 bg-emerald-600 hover:bg-emerald-500 text-base font-black shadow-lg shadow-emerald-900/30"
+              className="h-12 px-10 bg-teal-500 font-semibold hover:bg-teal-600 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
               onClick={handleSaveScopes}
               disabled={
                 !selectedUser || !selectedWorkRole || currentScopes.length === 0
@@ -1795,13 +1810,13 @@ function DivisionManagerTab({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4 bg-slate-900/50 p-6 rounded-xl border border-slate-800">
-        <div className="h-12 w-12 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500">
+      <div className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-white px-6 py-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-600 dark:bg-teal-950/50 dark:text-teal-400">
           <UserCheck className="h-6 w-6" />
         </div>
         <div>
-          <h3 className="text-lg font-bold">Penempatan Manager Divisi</h3>
-          <p className="text-sm text-muted-foreground">
+          <h3 className="text-lg font-semibold text-slate-950 dark:text-white">Penempatan Manager Divisi</h3>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             Tentukan penanggung jawab untuk setiap divisi di masing-masing
             brand.
           </p>
@@ -1945,10 +1960,10 @@ function BrandDivisionCard({
   }, [brand.id, firestore]);
 
   return (
-    <Card className="bg-slate-900/30 border-slate-800 h-fit">
-      <CardHeader className="bg-slate-900/50 pb-4">
+    <Card className="h-fit border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <CardHeader className="bg-slate-50/50 pb-4 dark:bg-slate-900/50">
         <CardTitle className="text-md flex items-center gap-2">
-          <Building2 className="h-4 w-4 text-emerald-500" />
+          <Building2 className="h-4 w-4 text-teal-500" />
           {brand.name}
         </CardTitle>
       </CardHeader>

@@ -900,10 +900,11 @@ service cloud.firestore {
     }
 
     // Landing Page CMS Sections
+    // All writes are done via server API with Firebase Admin SDK
+    // Client can only read
     match /landing_sections/{sectionId} {
-      allow list: if isSignedIn();
-      allow get: if isSignedIn();
-      allow create, update, delete: if isSuperAdmin();
+      allow read: if request.auth != null;
+      allow create, update, delete: if false;
     }
   }
 }

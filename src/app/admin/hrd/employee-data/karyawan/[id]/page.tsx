@@ -49,7 +49,9 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -525,6 +527,7 @@ export default function EmployeeDetailPage({
   const [divisions, setDivisions] = useState<any[]>([]);
   const [managers, setManagers] = useState<any[]>([]);
   const [warningNoManager, setWarningNoManager] = useState(false);
+  const [managerWarningMessage, setManagerWarningMessage] = useState("Belum ada atasan yang sesuai. Atur Manager Divisi atau Direksi/Manajemen pada Organisasi Perusahaan terlebih dahulu.");
   const [isOverrideActive, setIsOverrideActive] = useState(false);
   const [allPossibleSupervisors, setAllPossibleSupervisors] = useState<any[]>([]);
   const [attendanceDialogOpen, setAttendanceDialogOpen] = useState(false);
@@ -903,7 +906,6 @@ export default function EmployeeDetailPage({
   useEffect(() => {
     const brandId = watchBrandIdForManagers;
     const divisionId = watchDivisionIdForManagers;
-    const isDM = watchStructuralPositionForManagers === "division_manager" || normalizedData?.structuralPosition === "division_manager";
 
     if (!brandId || !divisionId) {
       setManagers([]);
@@ -921,42 +923,147 @@ export default function EmployeeDetailPage({
         }
 
         const sp = watchStructuralPositionForManagers;
+
+        // Management level: no supervisor required
         if (sp === "management") {
-            setManagers([]);
-            setWarningNoManager(false);
-            if (!isOverrideActive) form.setValue("directSupervisorUid", "");
-            return;
+          setManagers([]);
+          setWarningNoManager(false);
+          if (!isOverrideActive) form.setValue("directSupervisorUid", "");
+          return;
         }
 
-        let mgrQuery;
+        const candidates: any[] = [];
+        const seenUids = new Set<string>();
+
+        // A) For division_manager: find management-level users only
+        // For staff/supervisor/koordinator: find division managers + management users
         if (sp === "division_manager") {
-            mgrQuery = query(collection(firestore, "users"), where("structuralLevel", "==", "management"));
-        } else if (sp === "supervisor") {
-            mgrQuery = query(collection(firestore, "users"), where("structuralPosition", "==", "division_manager"), where("divisionId", "==", divisionId));
+          // Division manager's superior = management/direksi
+          const mgmtSnap = await getDocs(query(collection(firestore, "users"), where("structuralLevel", "==", "management")));
+          const mgmtUsers = mgmtSnap.docs.map(d => ({ uid: d.id, ...d.data() })) as any[];
+          for (const m of mgmtUsers) {
+            if (m.uid === employeeId || seenUids.has(m.uid)) continue;
+            if (m.isActive === false) continue;
+            // Priority: scope matches brand exactly
+            const scopes: any[] = m.managementScopes || [];
+            const hasExact = scopes.some((s: any) => (s.brandId === brandId || s.brandId === "all") && (s.divisionIds?.includes(divisionId) || s.divisionIds?.includes("all")));
+            const hasBrand = scopes.some((s: any) => s.brandId === brandId || s.brandId === "all");
+            if (hasExact || hasBrand) {
+              candidates.push({ ...m, _source: "management_scope_exact", _sourceLabel: `Direksi/Manajemen · ${m.workRole || m.positionTitle || "Manajemen"}` });
+              seenUids.add(m.uid);
+            }
+          }
+          // If no scope match, include all management
+          if (candidates.length === 0) {
+            for (const m of mgmtUsers) {
+              if (m.uid === employeeId || seenUids.has(m.uid)) continue;
+              if (m.isActive === false) continue;
+              candidates.push({ ...m, _source: "management_scope_brand", _sourceLabel: `Direksi/Manajemen · ${m.workRole || "Manajemen"}` });
+              seenUids.add(m.uid);
+            }
+          }
         } else {
-            mgrQuery = query(collection(firestore, "users"), where("structuralPosition", "in", ["supervisor", "division_manager"]), where("divisionId", "==", divisionId));
+          // Staff / Supervisor / Koordinator
+          // B1) Division manager of same division (highest priority)
+          const divMgrSnap = await getDocs(query(
+            collection(firestore, "users"),
+            where("structuralPosition", "==", "division_manager"),
+            where("divisionId", "==", divisionId)
+          ));
+          for (const d of divMgrSnap.docs) {
+            const m = { uid: d.id, ...d.data() } as any;
+            if (m.uid === employeeId || seenUids.has(m.uid)) continue;
+            if (m.isActive === false) continue;
+            candidates.push({ ...m, _source: "division_manager", _sourceLabel: `Manager Divisi ${selectedDivision?.name || ""}` });
+            seenUids.add(m.uid);
+          }
+
+          // B1b) Supervisor of same division (for staff level)
+          if (sp === "staff") {
+            const supSnap = await getDocs(query(
+              collection(firestore, "users"),
+              where("structuralPosition", "==", "supervisor"),
+              where("divisionId", "==", divisionId)
+            ));
+            for (const d of supSnap.docs) {
+              const m = { uid: d.id, ...d.data() } as any;
+              if (m.uid === employeeId || seenUids.has(m.uid)) continue;
+              if (m.isActive === false) continue;
+              candidates.push({ ...m, _source: "division_manager", _sourceLabel: `Supervisor · ${selectedDivision?.name || ""}` });
+              seenUids.add(m.uid);
+            }
+          }
+
+          // B2) Management users with exact scope (brand + division)
+          const mgmtSnap = await getDocs(query(collection(firestore, "users"), where("structuralLevel", "==", "management")));
+          const mgmtUsers = mgmtSnap.docs.map(d => ({ uid: d.id, ...d.data() })) as any[];
+
+          for (const m of mgmtUsers) {
+            if (m.uid === employeeId || seenUids.has(m.uid)) continue;
+            if (m.isActive === false) continue;
+            const scopes: any[] = m.managementScopes || [];
+            const hasExact = scopes.some((s: any) =>
+              s.brandId === brandId &&
+              s.scopeType === "selected_divisions" &&
+              s.divisionIds?.includes(divisionId)
+            );
+            if (hasExact) {
+              const brandLabel = scopes.find((s: any) => s.brandId === brandId)?.brandName || brandId;
+              const divLabel = selectedDivision?.name || divisionId;
+              candidates.push({ ...m, _source: "management_scope_exact", _sourceLabel: `Direksi/Manajemen · ${brandLabel} / ${divLabel}` });
+              seenUids.add(m.uid);
+            }
+          }
+
+          // B3) Management users with brand-level scope
+          for (const m of mgmtUsers) {
+            if (m.uid === employeeId || seenUids.has(m.uid)) continue;
+            if (m.isActive === false) continue;
+            const scopes: any[] = m.managementScopes || [];
+            const hasBrand = scopes.some((s: any) =>
+              (s.brandId === brandId && (s.scopeType === "brand" || s.divisionIds?.includes("all"))) ||
+              s.brandId === "all" || s.scopeType === "all"
+            );
+            if (hasBrand) {
+              const scopeEntry = scopes.find((s: any) => s.brandId === brandId || s.brandId === "all");
+              const brandLabel = scopeEntry?.brandName || brandId;
+              const scopeDesc = (scopeEntry?.brandId === "all" || scopeEntry?.scopeType === "all") ? "Seluruh Brand" : brandLabel;
+              candidates.push({ ...m, _source: "management_scope_brand", _sourceLabel: `Direksi/Manajemen · ${scopeDesc}` });
+              seenUids.add(m.uid);
+            }
+          }
         }
 
-        const snap = await getDocs(mgrQuery);
-        const dirs = snap.docs.map(doc => ({ uid: doc.id, ...doc.data() })) as any[];
-        const filteredDirs = dirs.filter(d => d.uid !== employeeId);
-        
-        setManagers(filteredDirs);
+        const hasDivManager = candidates.some(c => c._source === "division_manager");
+        const hasMgmt = candidates.some(c => c._source?.startsWith("management"));
 
-        if (filteredDirs.length === 0) {
-            setWarningNoManager(true);
-            if (!isOverrideActive) {
-                const currentSupervisor = form.getValues("directSupervisorUid");
-                if (currentSupervisor === employeeId) form.setValue("directSupervisorUid", "");
+        setManagers(candidates);
+
+        if (candidates.length === 0) {
+          setWarningNoManager(true);
+          setManagerWarningMessage("Belum ada atasan yang sesuai. Atur Manager Divisi atau Direksi/Manajemen pada Organisasi Perusahaan terlebih dahulu.");
+          if (!isOverrideActive) {
+            const currentSupervisor = form.getValues("directSupervisorUid");
+            if (currentSupervisor === employeeId) form.setValue("directSupervisorUid", "");
+          }
+        } else if (!hasDivManager && hasMgmt) {
+          // No division manager but management users exist — show info, not warning
+          setWarningNoManager(true);
+          setManagerWarningMessage("Manager divisi belum tersedia. Anda dapat memilih Direksi/Manajemen yang menaungi brand/divisi ini.");
+          if (!isOverrideActive) {
+            const currentVal = form.getValues("directSupervisorUid");
+            if (!candidates.find(c => c.uid === currentVal)) {
+              form.setValue("directSupervisorUid", candidates[0].uid);
             }
+          }
         } else {
-            setWarningNoManager(false);
-            if (!isOverrideActive) {
-               const currentVal = form.getValues("directSupervisorUid");
-               if (!filteredDirs.find(d => d.uid === currentVal)) {
-                   form.setValue("directSupervisorUid", filteredDirs[0].uid);
-               }
+          setWarningNoManager(false);
+          if (!isOverrideActive) {
+            const currentVal = form.getValues("directSupervisorUid");
+            if (!candidates.find(c => c.uid === currentVal)) {
+              form.setValue("directSupervisorUid", candidates[0].uid);
             }
+          }
         }
       } catch (error) {
         console.error("Error loading managers:", error);
@@ -1117,14 +1224,29 @@ export default function EmployeeDetailPage({
       const possibleMgrs = isOverrideActive ? allPossibleSupervisors : managers;
       const s = possibleMgrs?.find((m) => m.uid === values.directSupervisorUid);
 
+      // Determine directSuperiorSource
+      const isManagementLevel = values.structuralPosition === "management";
+      let directSuperiorSource: string | null = null;
+      if (isManagementLevel) {
+        directSuperiorSource = "not_required_management_level";
+      } else if (isOverrideActive) {
+        directSuperiorSource = "manual_override";
+      } else if (s?._source === "division_manager") {
+        directSuperiorSource = "division_manager";
+      } else if (s?._source?.startsWith("management")) {
+        directSuperiorSource = "management_scope";
+      } else if (s) {
+        directSuperiorSource = "division_manager";
+      }
+
       const updatedValues = {
         ...values,
         brand: b ? b.name : (values as any).brandName || "",
         brandName: b ? b.name : (values as any).brandName || "",
         divisionName: d ? d.name : (values as any).divisionName || "",
-        directSupervisorName: s
-          ? s.fullName
-          : (values as any).directSupervisorName || "",
+        directSupervisorName: isManagementLevel ? null : (s ? s.fullName : (values as any).directSupervisorName || ""),
+        directSupervisorUid: isManagementLevel ? null : values.directSupervisorUid,
+        directSuperiorSource,
       };
 
       // Determine what changed for history
@@ -1398,25 +1520,34 @@ export default function EmployeeDetailPage({
       };
 
       // Build a structural-only payload — NEVER includes identity fields
-      const structuralPayload = sanitizePayload({
-        brandId: updatedValues.brandId,
-        brandName: updatedValues.brandName || undefined,
-        divisionId: updatedValues.divisionId,
-        divisionName: updatedValues.divisionName || undefined,
-        structuralPosition: updatedValues.structuralPosition,
-        structuralLevel: updatedValues.structuralPosition || undefined,
-        position: updatedValues.workRole || undefined,
-        workRole: updatedValues.workRole || undefined,
-        directManagerId: updatedValues.directSupervisorUid || undefined,
-        directManagerName: updatedValues.directSupervisorName || undefined,
-        directSupervisorUid: updatedValues.directSupervisorUid || undefined,
-        directSupervisorName: updatedValues.directSupervisorName || undefined,
-        isDivisionManager: isDM,
-        directManagerOverrideReason: isOverrideActive ? ((updatedValues as any).directManagerOverrideReason || undefined) : undefined,
-        isOverrideActive: isOverrideActive,
-        structureUpdatedAt: serverTimestamp(),
-        structureUpdatedBy: userProfile?.uid || undefined,
-      });
+      const supervisorFields = isManagementLevel
+        ? { directManagerId: null, directManagerName: null, directSupervisorUid: null, directSupervisorName: null, directSuperiorSource: "not_required_management_level" }
+        : {
+            directManagerId: (updatedValues as any).directSupervisorUid || undefined,
+            directManagerName: (updatedValues as any).directSupervisorName || undefined,
+            directSupervisorUid: (updatedValues as any).directSupervisorUid || undefined,
+            directSupervisorName: (updatedValues as any).directSupervisorName || undefined,
+            directSuperiorSource: (updatedValues as any).directSuperiorSource || undefined,
+          };
+
+      const structuralPayload = {
+        ...sanitizePayload({
+          brandId: updatedValues.brandId,
+          brandName: updatedValues.brandName || undefined,
+          divisionId: updatedValues.divisionId,
+          divisionName: updatedValues.divisionName || undefined,
+          structuralPosition: updatedValues.structuralPosition,
+          structuralLevel: updatedValues.structuralPosition || undefined,
+          position: updatedValues.workRole || undefined,
+          workRole: updatedValues.workRole || undefined,
+          isDivisionManager: isDM,
+          directManagerOverrideReason: isOverrideActive ? ((updatedValues as any).directManagerOverrideReason || undefined) : undefined,
+          isOverrideActive: isOverrideActive,
+          structureUpdatedAt: serverTimestamp(),
+          structureUpdatedBy: userProfile?.uid || undefined,
+        }),
+        ...supervisorFields,
+      };
       
       // Use merge:true to guarantee identity fields are NEVER overwritten
       await setDoc(profileRef, structuralPayload, { merge: true });
@@ -3814,7 +3945,7 @@ export default function EmployeeDetailPage({
                     open={!!editingSection}
                     onOpenChange={(open) => !open && setEditingSection(null)}
                   >
-                  <DialogContent className="w-[95vw] md:w-[90vw] max-w-5xl h-[95vh] md:h-[90vh] bg-slate-950 border-slate-800 text-slate-100 flex flex-col p-0 overflow-hidden shadow-2xl">
+                  <DialogContent className="w-[95vw] md:w-[90vw] max-w-5xl h-[95vh] md:h-[90vh] bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 flex flex-col p-0 overflow-hidden shadow-2xl">
                     {/* Sticky Header */}
                     <div className="shrink-0 z-50 bg-white dark:bg-slate-900/50 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800/60 px-6 py-5 md:px-10 md:py-7">
                       <DialogHeader>
@@ -3890,11 +4021,11 @@ export default function EmployeeDetailPage({
                           {editingSection === "struktur" ? (
                             <div className="space-y-8">
                               {/* Info Box - Full Width */}
-                              <div className="p-5 md:p-6 bg-blue-500/5 border border-blue-500/20 rounded-2xl flex gap-4 items-start">
-                                <div className="h-10 w-10 shrink-0 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400">
+                              <div className="p-5 md:p-6 bg-blue-50 border border-blue-200 dark:bg-blue-950/30 dark:border-blue-900/50 rounded-2xl flex gap-4 items-start">
+                                <div className="h-10 w-10 shrink-0 rounded-xl bg-blue-100 dark:bg-blue-500/10 flex items-center justify-center text-blue-600 dark:text-blue-400">
                                   <Info className="h-5 w-5" />
                                 </div>
-                                <p className="text-sm text-slate-400 leading-relaxed">
+                                <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
                                   Perubahan struktur akan memperbarui penempatan
                                   karyawan dan tersimpan sebagai riwayat audit
                                   HRD. Pastikan brand, divisi, jabatan
@@ -4073,50 +4204,100 @@ export default function EmployeeDetailPage({
                                 <FormField
                                   control={form.control}
                                   name="directSupervisorUid"
-                                  render={({ field }) => (
+                                  render={({ field }) => {
+                                    const spValue = form.watch("structuralPosition");
+                                    const isManagementLevel = spValue === "management";
+                                    return (
                                       <FormItem>
                                         <FormLabel className="text-xs font-bold uppercase tracking-widest text-slate-500">
                                           Atasan Langsung
+                                          {isManagementLevel && (
+                                            <span className="ml-2 text-[10px] font-normal normal-case text-slate-400">(tidak wajib)</span>
+                                          )}
                                         </FormLabel>
-                                        <Select
-                                          onValueChange={field.onChange}
-                                          value={field.value}
-                                          disabled={
-                                            (!form.watch("brandId") || !form.watch("divisionId")) && form.watch("structuralPosition") !== "management"
-                                          }
-                                        >
-                                          <FormControl>
-                                            <SelectTrigger className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white h-12 rounded-xl">
-                                              <SelectValue placeholder={form.watch("structuralPosition") === "management" ? "Tidak Wajib untuk Level Manajemen" : "Pilih Atasan Langsung"} />
-                                            </SelectTrigger>
-                                          </FormControl>
-                                          <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 max-h-56">
-                                            {(isOverrideActive ? allPossibleSupervisors : managers).map((m) => (
-                                              <SelectItem
-                                                key={m.uid}
-                                                value={m.uid}
-                                              >
-                                                {m.fullName}
-                                              </SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
-                                        
+                                        {isManagementLevel ? (
+                                          <div className="flex items-center gap-3 h-12 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+                                            <span className="text-sm text-slate-400 dark:text-slate-500 italic">Tidak wajib untuk level manajemen</span>
+                                          </div>
+                                        ) : (
+                                          <Select
+                                            onValueChange={field.onChange}
+                                            value={field.value}
+                                            disabled={!form.watch("brandId") || !form.watch("divisionId")}
+                                          >
+                                            <FormControl>
+                                              <SelectTrigger className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white h-12 rounded-xl">
+                                                <SelectValue placeholder="Pilih Atasan Langsung" />
+                                              </SelectTrigger>
+                                            </FormControl>
+                                            <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 max-h-64">
+                                              {isOverrideActive
+                                                ? allPossibleSupervisors.map((m) => (
+                                                    <SelectItem key={m.uid} value={m.uid}>
+                                                      {m.fullName}
+                                                    </SelectItem>
+                                                  ))
+                                                : (() => {
+                                                    const divManagers = managers.filter(m => m._source === "division_manager");
+                                                    const mgmtExact = managers.filter(m => m._source === "management_scope_exact");
+                                                    const mgmtBrand = managers.filter(m => m._source === "management_scope_brand");
+                                                    return (
+                                                      <>
+                                                        {divManagers.length > 0 && (
+                                                          <SelectGroup>
+                                                            <SelectLabel className="text-[10px] uppercase tracking-widest text-slate-400">Manager Divisi</SelectLabel>
+                                                            {divManagers.map((m) => (
+                                                              <SelectItem key={m.uid} value={m.uid}>
+                                                                {m.fullName} — {m._sourceLabel || "Manager Divisi"}
+                                                              </SelectItem>
+                                                            ))}
+                                                          </SelectGroup>
+                                                        )}
+                                                        {mgmtExact.length > 0 && (
+                                                          <SelectGroup>
+                                                            <SelectLabel className="text-[10px] uppercase tracking-widest text-slate-400">Direksi / Manajemen (Divisi ini)</SelectLabel>
+                                                            {mgmtExact.map((m) => (
+                                                              <SelectItem key={m.uid} value={m.uid}>
+                                                                {m.fullName} — {m._sourceLabel}
+                                                              </SelectItem>
+                                                            ))}
+                                                          </SelectGroup>
+                                                        )}
+                                                        {mgmtBrand.length > 0 && (
+                                                          <SelectGroup>
+                                                            <SelectLabel className="text-[10px] uppercase tracking-widest text-slate-400">Direksi / Manajemen (Brand)</SelectLabel>
+                                                            {mgmtBrand.map((m) => (
+                                                              <SelectItem key={m.uid} value={m.uid}>
+                                                                {m.fullName} — {m._sourceLabel}
+                                                              </SelectItem>
+                                                            ))}
+                                                          </SelectGroup>
+                                                        )}
+                                                      </>
+                                                    );
+                                                  })()
+                                              }
+                                            </SelectContent>
+                                          </Select>
+                                        )}
+
                                         <p className="text-xs text-slate-500 mt-1">
-                                          {isOverrideActive 
-                                            ? "Pilih atasan langsung dari seluruh karyawan aktif (mode override)."
-                                            : "Atasan otomatis disesuaikan berdasarkan Jabatan Struktural yang dipilih."}
+                                          {isManagementLevel
+                                            ? "Level Direktur/Manajemen tidak memerlukan atasan langsung dalam sistem."
+                                            : isOverrideActive
+                                              ? "Pilih atasan langsung dari seluruh karyawan aktif (mode override)."
+                                              : "Atasan otomatis disesuaikan berdasarkan brand, divisi, dan Jabatan Struktural."}
                                         </p>
 
-                                        {warningNoManager && form.watch("divisionId") && form.watch("structuralPosition") !== "management" && (
-                                          <div className="flex items-center gap-2 mt-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-medium">
+                                        {warningNoManager && form.watch("divisionId") && !isManagementLevel && (
+                                          <div className="flex items-center gap-2 mt-2 p-3 rounded-lg bg-amber-50 border border-amber-200 dark:bg-amber-950/30 dark:border-amber-900/60 text-amber-800 dark:text-amber-200 text-xs font-medium">
                                             <span className="text-lg">⚠️</span>
-                                            <span>Belum ada atasan dengan level yang sesuai. Silakan atur dulu karyawan level Direktur/Manajemen atau Manager Divisi.</span>
+                                            <span>{managerWarningMessage}</span>
                                           </div>
                                         )}
 
-                                        {form.watch("brandId") && form.watch("divisionId") && (
-                                          <div className="flex items-center space-x-2 py-3 mt-2 border-t border-slate-800/50">
+                                        {!isManagementLevel && form.watch("brandId") && form.watch("divisionId") && (
+                                          <div className="flex items-center space-x-2 py-3 mt-2 border-t border-slate-200 dark:border-slate-800/50">
                                             <input
                                               type="checkbox"
                                               id="override-manager"
@@ -4140,7 +4321,8 @@ export default function EmployeeDetailPage({
                                           </div>
                                         )}
                                       </FormItem>
-                                  )}
+                                  );
+                                  }}
                                 />
 
                                 {isOverrideActive && (

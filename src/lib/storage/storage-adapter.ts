@@ -37,6 +37,7 @@ export type StorageCategory =
   | "leave"
   | "permission"
   | "logo"
+  | "ecosystem_logo"
   | "section_asset"
   | "business_trip_spd";
 
