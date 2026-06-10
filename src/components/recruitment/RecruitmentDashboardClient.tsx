@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { PlusCircle, Upload, LayoutGrid, List } from 'lucide-react';
 import { GlobalFilterBar } from './GlobalFilterBar';
-import { calculateKpis } from '@/lib/recruitment/metrics';
+import { calculateKpis, getJobPerformance } from '@/lib/recruitment/metrics';
 import { KpiCard } from './KpiCard';
 import { CommandCenter } from './CommandCenter';
 import { AnalyticsCharts } from './AnalyticsCharts';
@@ -96,6 +96,11 @@ export function RecruitmentDashboardClient() {
         return calculateKpis(filteredApplications, filters);
     }, [filteredApplications, filters]);
 
+    const jobPerformance = useMemo(() => {
+        if (!filteredApplications || !jobs) return [];
+        return getJobPerformance(filteredApplications, jobs);
+    }, [filteredApplications, jobs]);
+
 
     if (isLoading) {
         return <DashboardSkeleton />;
@@ -143,7 +148,7 @@ export function RecruitmentDashboardClient() {
                             <KpiCard title="Time to 1st Response" value={`${kpis.avgTimeToFirstResponse}d`} />
                         </div>
                     )}
-                    <CommandCenter applications={filteredApplications} />
+                    <CommandCenter applications={filteredApplications} jobs={jobs || []} />
                 </TabsContent>
 
                  <TabsContent value="candidates" className="mt-0">

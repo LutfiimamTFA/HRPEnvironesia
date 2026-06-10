@@ -1,6 +1,6 @@
 
-import { subDays, differenceInDays, startOfDay, format } from 'date-fns';
-import type { JobApplication } from '@/lib/types';
+import { subDays, differenceInDays, startOfDay, format, isToday, isAfter, isBefore } from 'date-fns';
+import type { JobApplication, Job } from '@/lib/types';
 import { statusDisplayLabels } from '@/components/recruitment/ApplicationStatusBadge';
 
 export type FilterState = {
@@ -21,43 +21,96 @@ const countBy = <T,>(arr: T[], fn: (item: T) => string | number | undefined) => 
 
 export const calculateKpis = (applications: JobApplication[], filters: FilterState) => {
   const now = new Date();
+  const sevenDaysAgo = subDays(now, 7);
   const rangeStart = filters.dateRange.from || subDays(now, 30);
   const rangeEnd = filters.dateRange.to || now;
 
+  // Base filters
   const appsInDateRange = applications.filter(app => {
     const appliedDate = app.submittedAt?.toDate();
     return appliedDate && appliedDate >= rangeStart && appliedDate <= rangeEnd;
   });
 
   const activeCandidates = applications.filter(app => !['hired', 'rejected', 'draft'].includes(app.status));
-  
-  const hiredInDateRange = applications.filter(app => 
+  const candidatesNewThisWeek = applications.filter(app => {
+    const appliedDate = app.submittedAt?.toDate();
+    return appliedDate && appliedDate >= sevenDaysAgo;
+  });
+
+  const hiredInDateRange = applications.filter(app =>
     app.status === 'hired' && app.updatedAt.toDate() >= rangeStart && app.updatedAt.toDate() <= rangeEnd
   );
 
+  const rejectedInDateRange = applications.filter(app =>
+    app.status === 'rejected' && app.updatedAt.toDate() >= rangeStart && app.updatedAt.toDate() <= rangeEnd
+  );
+
+  // Time to Hire calculation
   const timeToHireDays = hiredInDateRange
     .filter(app => app.submittedAt)
     .map(app => differenceInDays(app.updatedAt.toDate(), app.submittedAt!.toDate()))
     .sort((a, b) => a - b);
-  
-  const medianTimeToHire = timeToHireDays.length > 0 
-    ? timeToHireDays[Math.floor(timeToHireDays.length / 2)] 
+
+  const medianTimeToHire = timeToHireDays.length > 0
+    ? timeToHireDays[Math.floor(timeToHireDays.length / 2)]
     : 0;
 
-  // NOTE: These KPIs require fields not yet in the data model (interviews, offers, stageEnteredAt, source).
-  // They are kept as placeholders.
+  // Interviews Today - dari app.interviews[] embedded array
+  const interviewsToday = applications.reduce((count, app) => {
+    if (!app.interviews || !Array.isArray(app.interviews)) return count;
+    return count + app.interviews.filter(iv =>
+      iv.status === 'scheduled' && isToday(iv.startAt.toDate())
+    ).length;
+  }, 0);
+
+  // Offers Pending - status 'offered' atau offerStatus sent/viewed
+  const offersPending = activeCandidates.filter(app =>
+    app.status === 'offered' || (app as any).offerStatus?.includes('sent') || (app as any).offerStatus?.includes('viewed')
+  ).length;
+
+  // Offer Acceptance Rate
+  const offeredCandidates = applications.filter(app => app.status === 'offered' || (app as any).offerStatus);
+  const acceptedOffers = applications.filter(app =>
+    app.status === 'hired' && ((app as any).offerStatus === 'accepted' || app.status === 'hired')
+  );
+  const offerAcceptanceRate = offeredCandidates.length > 0
+    ? (acceptedOffers.length / offeredCandidates.length) * 100
+    : 0;
+
+  // Candidates Overdue (> 7 days in current stage)
+  const overdueCandidates = activeCandidates.filter(app => {
+    if (!app.updatedAt) return false;
+    const daysInStage = differenceInDays(now, app.updatedAt.toDate());
+    return daysInStage > 7;
+  }).length;
+
+  // Average Time to First Response - dari submitted ke stage pertama
+  const appsWithSubmitted = applications.filter(app => app.submittedAt && app.status !== 'submitted' && app.status !== 'draft');
+  const avgTimeToFirstResponse = appsWithSubmitted.length > 0
+    ? Math.round(
+        appsWithSubmitted.reduce((sum, app) => {
+          const diff = differenceInDays(app.updatedAt.toDate(), app.submittedAt!.toDate());
+          return sum + diff;
+        }, 0) / appsWithSubmitted.length
+      )
+    : 0;
+
   return {
     newApplicants: appsInDateRange.length,
     activeCandidates: activeCandidates.length,
+    candidatesNewThisWeek: candidatesNewThisWeek.length,
+    inInterview: activeCandidates.filter(app => app.status === 'interview').length,
+    inOffered: activeCandidates.filter(app => app.status === 'offered').length,
     inScreening: activeCandidates.filter(app => app.status === 'verification').length,
     assessmentPending: activeCandidates.filter(app => app.status === 'tes_kepribadian').length,
     avgTimeToHire: medianTimeToHire,
-    // --- Placeholders ---
-    interviewsToday: 0,
-    offersPending: 0,
-    offerAcceptanceRate: 0,
-    overdueCandidates: 0,
-    avgTimeToFirstResponse: 0,
+    interviewsToday,
+    offersPending,
+    offerAcceptanceRate,
+    overdueCandidates,
+    avgTimeToFirstResponse,
+    hired: hiredInDateRange.length,
+    rejected: rejectedInDateRange.length,
   };
 };
 
@@ -121,4 +174,40 @@ export const getApplicantsTrend = (applications: JobApplication[], filters: Filt
 export const getSourcePerformance = (applications: JobApplication[]) => {
     // This cannot be implemented until a 'source' field is added to the JobApplication data model.
     return [];
+};
+
+export const getJobPerformance = (applications: JobApplication[], jobs?: Job[]) => {
+  // Group applications by jobId and calculate performance metrics
+  const jobStats = countBy(applications, app => app.jobId);
+  const jobMap = (jobs || []).reduce((acc, job) => ({ ...acc, [job.id!]: job }), {} as Record<string, Job>);
+
+  const jobPerformance = Object.entries(jobStats)
+    .map(([jobId, totalApps]) => {
+      const jobApps = applications.filter(app => app.jobId === jobId);
+      const job = jobMap[jobId];
+
+      const stageBreakdown = countBy(jobApps, app => app.status);
+      const hired = jobApps.filter(app => app.status === 'hired').length;
+      const interviewed = jobApps.filter(app => app.status === 'interview').length;
+      const offered = jobApps.filter(app => app.status === 'offered').length;
+      const activeApps = jobApps.filter(app => !['hired', 'rejected', 'draft'].includes(app.status)).length;
+
+      const conversionRate = totalApps > 0 ? (hired / totalApps) * 100 : 0;
+
+      return {
+        jobId,
+        position: job?.position || 'Unknown Position',
+        brand: job?.brandName || 'Unknown Brand',
+        totalApplicants: totalApps,
+        activeApplicants: activeApps,
+        interviewed,
+        offered,
+        hired,
+        conversionRate: parseFloat(conversionRate.toFixed(1)),
+        status: job?.publishStatus || 'unknown',
+      };
+    })
+    .sort((a, b) => b.totalApplicants - a.totalApplicants);
+
+  return jobPerformance;
 };
