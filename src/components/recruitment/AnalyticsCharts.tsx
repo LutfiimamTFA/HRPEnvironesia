@@ -1,11 +1,14 @@
 'use client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { getFunnelData, getApplicantsTrend, getSourcePerformance } from '@/lib/recruitment/metrics';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { getFunnelData, getApplicantsTrend, getSourcePerformance, getJobPerformance } from '@/lib/recruitment/metrics';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend, PieChart, Pie, Cell } from 'recharts';
 import { ChartContainer, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
-import type { JobApplication } from '@/lib/types';
+import type { JobApplication, Job } from '@/lib/types';
 import type { FilterState } from './RecruitmentDashboardClient';
-import { Info } from 'lucide-react';
+import { Info, TrendingUp } from 'lucide-react';
+import Link from 'next/link';
 
 const chartConfig = {
   applicants: { label: 'Applicants', color: 'hsl(var(--chart-1))' },
@@ -19,10 +22,11 @@ const chartConfig = {
 
 const COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))', 'hsl(var(--chart-5))'];
 
-export function AnalyticsCharts({ applications, filters }: { applications: JobApplication[], filters: FilterState }) {
+export function AnalyticsCharts({ applications, filters, jobs }: { applications: JobApplication[], filters: FilterState, jobs?: Job[] }) {
   const funnelData = getFunnelData(applications);
   const trendData = getApplicantsTrend(applications, filters);
   const sourceData = getSourcePerformance(applications);
+  const jobPerformance = getJobPerformance(applications, jobs);
 
   const renderPlaceholder = (title: string) => (
      <Card>
@@ -102,9 +106,89 @@ export function AnalyticsCharts({ applications, filters }: { applications: JobAp
         </CardContent>
       </Card>
 
-      {renderPlaceholder("Stage Distribution")}
+      <Card className="lg:col-span-2">
+        <CardHeader>
+          <CardTitle>Stage Distribution</CardTitle>
+          <CardDescription>Jumlah kandidat di setiap tahap</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {funnelData.length > 0 ? (
+            <ChartContainer config={chartConfig} className="h-[250px] w-full">
+              <BarChart data={funnelData} layout="vertical">
+                <CartesianGrid horizontal={false} stroke="hsl(var(--border))" />
+                <XAxis type="number" tickLine={false} axisLine={false} />
+                <YAxis dataKey="stage" type="category" tickLine={false} axisLine={false} width={100} />
+                <Tooltip content={<ChartTooltipContent />} />
+                <Bar dataKey="count" fill="hsl(var(--chart-1))" radius={[0, 8, 8, 0]} />
+              </BarChart>
+            </ChartContainer>
+          ) : (
+            <div className="h-[250px] flex items-center justify-center text-muted-foreground">
+              Tidak ada data untuk ditampilkan
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="lg:col-span-3">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-teal-600" />
+            Job Performance
+          </CardTitle>
+          <CardDescription>Performa lowongan berdasarkan jumlah pelamar dan hiring</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {jobPerformance.length > 0 ? (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Posisi</TableHead>
+                    <TableHead>Brand</TableHead>
+                    <TableHead>Pelamar</TableHead>
+                    <TableHead>Aktif</TableHead>
+                    <TableHead>Interview</TableHead>
+                    <TableHead>Offering</TableHead>
+                    <TableHead>Hired</TableHead>
+                    <TableHead>Rate</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {jobPerformance.map(job => (
+                    <TableRow key={job.jobId}>
+                      <TableCell className="font-medium">
+                        <Link href={`/admin/recruitment?jobId=${job.jobId}`} className="text-teal-600 dark:text-teal-400 hover:underline">
+                          {job.position}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{job.brand}</TableCell>
+                      <TableCell className="text-center font-semibold">{job.totalApplicants}</TableCell>
+                      <TableCell className="text-center">{job.activeApplicants}</TableCell>
+                      <TableCell className="text-center">{job.interviewed}</TableCell>
+                      <TableCell className="text-center">{job.offered}</TableCell>
+                      <TableCell className="text-center font-semibold text-green-600 dark:text-green-400">{job.hired}</TableCell>
+                      <TableCell className="text-center">{job.conversionRate.toFixed(1)}%</TableCell>
+                      <TableCell>
+                        <Badge variant={job.status === 'published' ? 'default' : 'secondary'} className="capitalize text-xs">
+                          {job.status === 'published' ? 'Aktif' : 'Draft'}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : (
+            <div className="h-40 flex items-center justify-center text-muted-foreground text-center">
+              <p>Tidak ada data lowongan untuk ditampilkan</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {renderPlaceholder("Time-to-Stage Trend")}
-      {renderPlaceholder("Job Performance")}
       {renderPlaceholder("Recruiter Workload")}
       {renderPlaceholder("Bottleneck Analysis")}
     </div>

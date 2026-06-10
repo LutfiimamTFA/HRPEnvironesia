@@ -188,7 +188,7 @@ export function RecruitmentDashboardClient() {
                 </TabsContent>
 
                 <TabsContent value="analytics" className="mt-0">
-                    <AnalyticsCharts applications={filteredApplications} filters={filters} />
+                    <AnalyticsCharts applications={filteredApplications} filters={filters} jobs={jobs} />
                 </TabsContent>
             </div>
         </Tabs>
