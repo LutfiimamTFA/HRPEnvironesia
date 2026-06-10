@@ -35,10 +35,9 @@ export default function HrdKaryawanDashboardPage() {
     return <DashboardLayout pageTitle="Dashboard" menuConfig={menuConfig}><Skeleton className="h-[600px] w-full" /></DashboardLayout>;
   }
 
-  const isHrdProfileIncomplete =
-    userProfile?.role === 'hrd' &&
-    !profileLoading &&
-    (!employeeProfile || !(employeeProfile as any)?.completeness?.isComplete);
+  // Banner should NOT show on HRD monitoring page
+  // This page is for monitoring employees, not for HRD's private profile
+  const isHrdProfileIncomplete = false;
 
   return (
     <DashboardLayout pageTitle="Dashboard Karyawan" menuConfig={menuConfig}>
