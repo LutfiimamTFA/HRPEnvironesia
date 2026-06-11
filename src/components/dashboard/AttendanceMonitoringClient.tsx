@@ -173,8 +173,10 @@ export function AttendanceMonitoringClient() {
 
     // Priority 2: Event name fields (if event data available)
     if (event?.employeeName) return event.employeeName;
+    if (event?.fullName) return event.fullName;
     if (event?.name) return event.name;
     if (event?.displayName) return event.displayName;
+    if (event?.userName) return event.userName;
 
     // Priority 3: Fallback to email
     if (profile.email) return profile.email;
@@ -184,25 +186,31 @@ export function AttendanceMonitoringClient() {
     if (profile.employeeNumber) return profile.employeeNumber;
     if (profile.employeeId) return profile.employeeId;
     if (event?.employeeNumber) return event.employeeNumber;
+    if (event?.employeeId) return event.employeeId;
 
     // Last resort: indicate incomplete data without blocking
     return 'Data karyawan belum lengkap';
   };
 
-  // Helper: resolve employee number
-  const resolveEmployeeNumber = (profile: any): string => {
+  // Helper: resolve employee number from profile or event
+  const resolveEmployeeNumber = (profile: any, event?: any): string => {
     return profile.hrdEmploymentInfo?.employeeId ||
            profile.employeeNumber ||
            profile.employeeId ||
            profile.employeeCode ||
            profile.nomorIndukKaryawan ||
            profile.nomorInduk ||
+           profile.dataDiriIdentitas?.employeeNumber ||
+           profile.dataDiriIdentitas?.employeeId ||
            profile.nip ||
+           event?.employeeNumber ||
+           event?.employeeId ||
+           event?.nomorIndukKaryawan ||
            'ID belum diatur';
   };
 
-  // Helper: resolve brand/PT
-  const resolveBrandName = (profile: any, brandMap: Map<string, string>): string => {
+  // Helper: resolve brand/PT from profile or event
+  const resolveBrandName = (profile: any, brandMap: Map<string, string>, event?: any): string => {
     const brandId = profile.hrdEmploymentInfo?.brandId || profile.brandId;
     if (brandId) {
       return brandMap.get(brandId) ||
@@ -211,6 +219,9 @@ export function AttendanceMonitoringClient() {
              profile.companyName ||
              profile.company ||
              profile.brand ||
+             event?.brandName ||
+             event?.company ||
+             event?.brand ||
              '-';
     }
     return profile.hrdEmploymentInfo?.brandName ||
@@ -218,15 +229,21 @@ export function AttendanceMonitoringClient() {
            profile.companyName ||
            profile.company ||
            profile.brand ||
+           event?.brandName ||
+           event?.company ||
+           event?.brand ||
            '-';
   };
 
-  // Helper: resolve division
-  const resolveDivisionName = (profile: any): string => {
+  // Helper: resolve division from profile or event
+  const resolveDivisionName = (profile: any, event?: any): string => {
     return profile.hrdEmploymentInfo?.divisionName ||
            profile.hrdEmploymentInfo?.divisi ||
            profile.divisionName ||
            profile.division ||
+           event?.divisionName ||
+           event?.division ||
+           event?.divisi ||
            '-';
   };
 
@@ -309,10 +326,7 @@ export function AttendanceMonitoringClient() {
       })
       .map((profile: any) => {
       const profileUid = getProfileUid(profile)!;
-      const resolvedEmployeeNumber = resolveEmployeeNumber(profile);
-      const resolvedBrand = resolveBrandName(profile, brandMap);
       const resolvedBrandId = profile.hrdEmploymentInfo?.brandId || profile.brandId;
-      const resolvedDivision = resolveDivisionName(profile);
       const attendanceMethod = resolveAttendanceMethod(profile);
 
       // Join with attendance events - using robust UID matching
@@ -325,9 +339,13 @@ export function AttendanceMonitoringClient() {
       // Find check-in and check-out events using robust type detection
       const checkInEvent = userEvents.find((e: any) => isCheckInEvent(e.type));
       const checkOutEvent = userEvents.find((e: any) => isCheckOutEvent(e.type));
+      const eventData = checkInEvent || checkOutEvent;
 
-      // Resolve name with fallback to event data
-      const resolvedName = resolveName(profile, checkInEvent || checkOutEvent);
+      // Resolve name, ID, brand, and division with fallback to event data
+      const resolvedName = resolveName(profile, eventData);
+      const resolvedEmployeeNumber = resolveEmployeeNumber(profile, eventData);
+      const resolvedBrand = resolveBrandName(profile, brandMap, eventData);
+      const resolvedDivision = resolveDivisionName(profile, eventData);
 
       // Debug: log for first few matches
       if (debugMatchStats.length < 3) {
