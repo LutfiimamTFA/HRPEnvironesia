@@ -75,9 +75,13 @@ export function AttendanceDetailModal({ isOpen, onClose, record }: AttendanceDet
   const imageUrl = record.rawEvent ? getAttendanceImageUrl(record.rawEvent) : null;
   const hasPhoto = imageUrl && imageUrl !== '-';
 
+  // Check if photo is expired (auto-deleted after 7 days)
+  const isPhotoExpired = record.rawEvent?.photoExpired === true;
+
   // Check if event has any photo-related data
   const hasPhotoData =
     record.rawEvent &&
+    !isPhotoExpired &&
     (record.rawEvent.photoUrl ||
       record.rawEvent.photoFileId ||
       record.rawEvent.fileId ||
@@ -192,12 +196,14 @@ export function AttendanceDetailModal({ isOpen, onClose, record }: AttendanceDet
             ) : (
               <div className="bg-slate-50 dark:bg-slate-900/20 rounded-lg p-6 text-center">
                 <Badge variant="outline" className="mb-2">
-                  {hasPhotoData ? "Gagal memuat foto" : "Tidak ada foto"}
+                  {isPhotoExpired ? "Foto dihapus" : hasPhotoData ? "Gagal memuat foto" : "Tidak ada foto"}
                 </Badge>
                 <p className="text-sm text-slate-600 dark:text-slate-400">
-                  {hasPhotoData
-                    ? "Data foto ada tetapi tidak dapat dimuat. Hubungi administrator."
-                    : "Bukti selfie absensi tidak tersedia"}
+                  {isPhotoExpired
+                    ? "Foto bukti sudah dihapus otomatis setelah 7 hari untuk efisiensi penyimpanan."
+                    : hasPhotoData
+                      ? "Data foto ada tetapi tidak dapat dimuat. Hubungi administrator."
+                      : "Bukti selfie absensi tidak tersedia"}
                 </p>
               </div>
             )}
