@@ -668,6 +668,12 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
           icon: createElement(Timer),
         },
         {
+          key: "hrd.attendance_payroll_recap",
+          href: "/admin/hrd/rekap-absensi-payroll",
+          label: "Rekap Absensi Payroll",
+          icon: createElement(CalendarClock),
+        },
+        {
           key: "overtime_payroll_recap",
           href: "/admin/overtime-payroll-recap",
           label: "Rekap Lembur Payroll",
