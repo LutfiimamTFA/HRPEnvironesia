@@ -57,6 +57,7 @@ interface AttendanceRecord {
   lateMinutes: number | null;
   earlyLeaveMinutes: number | null;
   rawEvent?: any; // Original event data for accessing drive info
+  profileComplete: boolean; // Whether employee profile has complete data
 }
 
 const kpiCardsData = [
@@ -162,12 +163,37 @@ export function AttendanceMonitoringClient() {
 
   const isLoading = isLoadingConfig || isLoadingProfiles || isLoadingBrands || isLoadingEvents || isLoadingLeaves;
 
-  // Helper: resolve name from profile
+  // Helper: resolve name from profile with comprehensive fallback
   const resolveName = (profile: any): string => {
-    return profile.fullName ||
-           profile.dataDiriIdentitas?.fullName ||
-           profile.name ||
-           'Tidak Diketahui';
+    // Priority order: fullName variants
+    if (profile.fullName) return profile.fullName;
+    if (profile.dataDiriIdentitas?.fullName) return profile.dataDiriIdentitas.fullName;
+
+    // Check alternative naming fields
+    if (profile.namaLengkap) return profile.namaLengkap;
+    if (profile.displayName) return profile.displayName;
+    if (profile.name) return profile.name;
+
+    // Last resort: use email or employeeNumber
+    if (profile.email) return profile.email;
+    if (profile.employeeNumber) return `ID: ${profile.employeeNumber}`;
+    if (profile.employeeId) return `ID: ${profile.employeeId}`;
+
+    // Only if completely empty, indicate need for profile sync
+    return 'Profil tidak ditemukan';
+  };
+
+  // Helper: check if profile has complete data
+  const hasCompleteProfile = (profile: any): boolean => {
+    const hasName = profile.fullName ||
+                   profile.dataDiriIdentitas?.fullName ||
+                   profile.namaLengkap ||
+                   profile.displayName ||
+                   profile.name;
+    const hasEmployeeId = profile.employeeNumber ||
+                         profile.employeeId ||
+                         profile.employeeCode;
+    return !!(hasName && hasEmployeeId);
   };
 
   // Helper: resolve employee number
@@ -424,6 +450,7 @@ export function AttendanceMonitoringClient() {
         lateMinutes,
         earlyLeaveMinutes,
         rawEvent: checkInEvent || checkOutEvent, // Store original event for getting best image URL
+        profileComplete: hasCompleteProfile(profile), // Track whether profile has complete data
       };
     });
 
@@ -631,8 +658,13 @@ export function AttendanceMonitoringClient() {
                 {tableData.length > 0 ? tableData.map((row, idx) => (
                   <TableRow key={`${row.id}-${idx}`} className="border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50">
                     <TableCell className="font-medium text-slate-900 dark:text-white">
-                      <div>
+                      <div className="space-y-1">
                         <p className="font-semibold">{row.name}</p>
+                        {!row.profileComplete && (
+                          <Badge variant="outline" className="text-[10px] bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800">
+                            Perlu sinkronisasi data
+                          </Badge>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell className="text-xs text-slate-600 dark:text-slate-400">
