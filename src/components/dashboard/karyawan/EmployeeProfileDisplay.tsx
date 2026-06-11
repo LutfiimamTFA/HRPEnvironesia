@@ -402,16 +402,16 @@ export function EmployeeProfileDisplay({
             </div>
 
             {!completeness.isFullyComplete && (
-              <div className="mt-4 flex flex-col md:flex-row items-center md:items-start gap-2 bg-orange-50 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-500/20 rounded-xl p-3 text-left">
+              <div className="mt-4 flex flex-col md:flex-row items-center md:items-start gap-2 bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 rounded-xl p-3 text-left">
                 <div className="flex-1">
-                  <p className="text-xs text-orange-700 dark:text-orange-400 font-semibold mb-1">
-                    Blok yang belum lengkap:
+                  <p className="text-xs text-amber-900 dark:text-amber-300 font-semibold mb-1">
+                    Perhatian: Data Belum Lengkap
                   </p>
                   <ul className="text-xs text-slate-700 dark:text-slate-300 flex flex-wrap gap-2">
                     {completeness.missingBlocks.map((block, i) => (
                       <li
                         key={i}
-                        className="bg-orange-100 dark:bg-slate-900/50 px-2 py-1 rounded-md"
+                        className="bg-amber-200 dark:bg-slate-800/60 text-slate-800 dark:text-slate-200 px-2 py-1 rounded-md"
                       >
                         • {block}
                       </li>
@@ -419,10 +419,10 @@ export function EmployeeProfileDisplay({
                   </ul>
                 </div>
                 <div className="text-right flex-shrink-0">
-                  <p className="text-[10px] text-slate-600 dark:text-slate-500 font-bold uppercase tracking-widest">
+                  <p className="text-[10px] text-slate-700 dark:text-slate-500 font-bold uppercase tracking-widest">
                     Progress
                   </p>
-                  <p className="text-lg font-black text-orange-700 dark:text-orange-400">
+                  <p className="text-lg font-black text-amber-900 dark:text-amber-300">
                     {completeness.percentage}%
                   </p>
                 </div>

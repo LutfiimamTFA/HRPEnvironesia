@@ -70,6 +70,20 @@ import {
 } from "@/lib/types";
 import { Separator } from "@/components/ui/separator";
 
+const isDirectionLevel = (positionTitle?: string, role?: string) => {
+  if (!positionTitle && !role) return false;
+  const pos = (positionTitle || "").toLowerCase();
+  const r = (role || "").toLowerCase();
+  return (
+    pos.includes("direksi") ||
+    pos.includes("direktur") ||
+    pos.includes("director") ||
+    r.includes("direksi") ||
+    r.includes("direktur") ||
+    r.includes("director")
+  );
+};
+
 const adminFormSchema = z.object({
   fullName: z.string().min(2, "Nama lengkap wajib diisi."),
   email: z.string().email(),
@@ -79,11 +93,23 @@ const adminFormSchema = z.object({
   employmentStatus: z.enum(EMPLOYMENT_STATUSES).optional(),
   employeeNumber: z.string().optional(),
   positionTitle: z.string().min(3, "Jabatan wajib diisi."),
-  division: z.string().min(2, "Divisi wajib diisi."),
-  brandId: z.string().min(1, "Brand wajib dipilih."),
+  division: z.string().optional(), // Optional for all levels
+  brandId: z.string().optional(), // Optional for all levels
   joinDate: z.date().optional().nullable(),
   managerUid: z.string().optional().nullable(),
-});
+}).refine(
+  (data) => {
+    // For non-direction staff: brand is mandatory
+    if (!isDirectionLevel(data.positionTitle, data.role)) {
+      return !!data.brandId && data.brandId.length > 0;
+    }
+    return true;
+  },
+  {
+    message: "Brand wajib dipilih untuk staff non-Direksi.",
+    path: ["brandId"],
+  }
+);
 
 type AdminFormValues = z.infer<typeof adminFormSchema>;
 
@@ -135,6 +161,8 @@ export function EmployeeAdminFormDialog({
   });
 
   const selectedBrandId = form.watch("brandId");
+  const selectedPositionTitle = form.watch("positionTitle");
+  const isDirector = isDirectionLevel(selectedPositionTitle, user?.role);
 
   // Fetch supervisors: managers, management/directors, and super-admins
   // We'll filter and sort them based on their relevance to the employee's brand/division
@@ -532,69 +560,88 @@ export function EmployeeAdminFormDialog({
               Struktur & Penempatan
             </h3>
             <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="brandId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Brand</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Pilih brand" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {brands?.map((b) => (
-                          <SelectItem key={b.id!} value={b.id!}>
-                            {b.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="division"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Divisi</FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      value={field.value}
-                      disabled={!selectedBrandId || isLoadingDivisions}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Pilih divisi" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {divisions?.map((d) => (
-                          <SelectItem key={d.id!} value={d.name}>
-                            {d.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {!isDirector && (
+                <FormField
+                  control={form.control}
+                  name="brandId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Brand <span className="text-red-500">*</span></FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value || ""}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Pilih brand" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {brands?.map((b) => (
+                            <SelectItem key={b.id!} value={b.id!}>
+                              {b.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+              {isDirector && (
+                <div className="p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/60 rounded-lg">
+                  <p className="text-sm text-blue-800 dark:text-blue-300 font-medium">
+                    <strong>Direksi</strong> tidak memerlukan penempatan Brand/Divisi
+                  </p>
+                </div>
+              )}
+              {!isDirector && (
+                <FormField
+                  control={form.control}
+                  name="division"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Divisi</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value || ""}
+                        disabled={!selectedBrandId || isLoadingDivisions}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Pilih divisi" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {divisions?.map((d) => (
+                            <SelectItem key={d.id!} value={d.name}>
+                              {d.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
               <FormField
                 control={form.control}
                 name="managerUid"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-slate-700 dark:text-slate-300">Atasan Langsung</FormLabel>
-                    {filterSupervisors.length === 0 && (
+                    <FormLabel className="text-slate-700 dark:text-slate-300">
+                      Atasan Langsung
+                      {!isDirector && <span className="text-red-500"> (opsional)</span>}
+                    </FormLabel>
+                    {!isDirector && filterSupervisors.length === 0 && (
                       <FormDescription className="text-amber-700 dark:text-amber-400 text-sm bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 rounded-lg px-3 py-2">
                         {divisions && divisions.length > 0
                           ? "Manager divisi belum tersedia. Anda dapat memilih Direksi/Manajemen yang menaungi brand/divisi ini."
                           : "Belum ada atasan yang sesuai. Atur Manager Divisi atau Direksi/Manajemen pada Organisasi Perusahaan terlebih dahulu."}
+                      </FormDescription>
+                    )}
+                    {isDirector && (
+                      <FormDescription className="text-blue-700 dark:text-blue-400 text-sm bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/60 rounded-lg px-3 py-2">
+                        Untuk level Direksi, atasan langsung bersifat opsional.
                       </FormDescription>
                     )}
                     <Select
