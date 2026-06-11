@@ -1855,16 +1855,28 @@ export default function EmployeeDetailPage({
     return p.includes("direksi") || p.includes("direktur") || p.includes("director");
   };
 
+  // Detect management/director level for division handling
+  const isManagementLevel = (value?: string | null) => {
+    const normalized = String(value || "").toLowerCase();
+    return (
+      normalized.includes("direksi") ||
+      normalized.includes("direktur") ||
+      normalized.includes("director") ||
+      normalized.includes("manajemen") ||
+      normalized.includes("management")
+    );
+  };
+
   const structuralPos = hrdStruktur?.structuralPosition || normalizedData?.structuralPosition || "";
 
-  const brandLabel = isDirectionLevel(structuralPos)
+  const brandLabel = isManagementLevel(structuralPos)
     ? "Tidak berlaku untuk Direksi"
     : hrdInfo.brandName ||
         (empDoc as any)?.brandName ||
         (empDoc as any)?.brand ||
         "Belum diisi";
 
-  const divisionLabel = isDirectionLevel(structuralPos)
+  const divisionLabel = isManagementLevel(structuralPos)
     ? "Tidak berlaku untuk Direksi"
     : hrdInfo.divisionName ||
         (empDoc as any)?.divisionName ||
@@ -1907,10 +1919,9 @@ export default function EmployeeDetailPage({
               : "bg-slate-500/15 text-slate-400 border-slate-500/20";
 
   const actionItems: string[] = [];
-  const isDirectorEmployee = isDirectionLevel(hrdStruktur?.structuralPosition);
-  if (!isDirectorEmployee && !hrdStruktur?.brandName)
+  if (!isManagementLevel(structuralPos) && !hrdStruktur?.brandName)
     actionItems.push("Brand / Perusahaan belum diatur.");
-  if (!isDirectorEmployee && !hrdStruktur?.divisi)
+  if (!isManagementLevel(structuralPos) && !hrdStruktur?.divisi)
     actionItems.push("Divisi belum diatur.");
   if (!hrdStruktur?.jabatan)
     actionItems.push("Jabatan belum diatur.");
@@ -2175,7 +2186,7 @@ export default function EmployeeDetailPage({
                       <CardContent className="p-8">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-2">
                           <DataRow label="Brand / Unit" value={brandLabel} />
-                          {!isDirectorEmployee && <DataRow label="Division" value={divisionLabel} />}
+                          {!isManagementLevel(structuralPos) && <DataRow label="Division" value={divisionLabel} />}
                           <DataRow label="Position" value={positionLabel} />
                           <DataRow
                             label="Manager/Atasan"
@@ -3072,7 +3083,7 @@ export default function EmployeeDetailPage({
                           <div className="grid grid-cols-1 gap-y-2">
                             <DataRow label="Nomor Induk Magang" value={hrdInfo.internId || "Belum diisi"} />
                             <DataRow label="Brand / Unit" value={brandLabel} />
-                            {!isDirectorEmployee && <DataRow label="Divisi" value={divisionLabel} />}
+                            {!isManagementLevel(structuralPos) && <DataRow label="Divisi" value={divisionLabel} />}
                             <DataRow label="Role / Posisi Magang" value={hrdInfo.workRole || hrdInfo.internshipRole || "Belum diisi"} />
                             <DataRow label="PIC / Pembimbing Internal" value={supervisorLabel} />
                             <DataRow label="Lokasi Penempatan" value={hrdInfo.internshipLocation || hrdInfo.workLocation || "Belum diisi"} />
@@ -3236,7 +3247,7 @@ export default function EmployeeDetailPage({
                     <CardContent className="pt-6">
                       <div className="grid grid-cols-1 gap-y-2">
                         <DataRow label="Brand / Unit" value={brandLabel} />
-                        {!isDirectorEmployee && <DataRow label="Divisi" value={divisionLabel} />}
+                        {!isManagementLevel(structuralPos) && <DataRow label="Divisi" value={divisionLabel} />}
                         <DataRow
                           label="Jabatan / Fungsi"
                           value={positionLabel}
