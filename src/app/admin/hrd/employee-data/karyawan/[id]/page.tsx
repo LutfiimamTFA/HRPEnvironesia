@@ -1,6 +1,20 @@
 "use client";
 
 import React, { useMemo, useState, useEffect } from "react";
+
+// Helper functions for Rupiah formatting
+const formatRupiah = (value: number | string | null | undefined): string => {
+  if (value === null || value === undefined || value === "") return "Rp 0";
+  const num = typeof value === "string" ? parseInt(value, 10) : value;
+  if (isNaN(num)) return "Rp 0";
+  return `Rp ${num.toLocaleString("id-ID")}`;
+};
+
+const parseRupiah = (value: string): number => {
+  const cleaned = value.replace(/[^\d]/g, "");
+  const num = parseInt(cleaned, 10);
+  return isNaN(num) ? 0 : num;
+};
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/providers/auth-provider";
 import { useRoleGuard } from "@/hooks/useRoleGuard";
@@ -5468,12 +5482,13 @@ export default function EmployeeDetailPage({
                                     </FormLabel>
                                     <FormControl>
                                       <Input
-                                        type="number"
-                                        {...field}
-                                        value={field.value || ""}
-                                        onChange={(e) =>
-                                          field.onChange(Number(e.target.value))
-                                        }
+                                        type="text"
+                                        placeholder="Rp 0"
+                                        value={formatRupiah(field.value)}
+                                        onChange={(e) => {
+                                          const parsed = parseRupiah(e.target.value);
+                                          field.onChange(parsed);
+                                        }}
                                         className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
                                       />
                                     </FormControl>
@@ -5591,16 +5606,16 @@ export default function EmployeeDetailPage({
                                             </SelectContent>
                                           </Select>
                                           <Input
-                                            type="number"
-                                            placeholder="Nominal"
-                                            value={al.amount || ""}
+                                            type="text"
+                                            placeholder="Rp 0"
+                                            value={formatRupiah(al.amount)}
                                             onChange={(e) => {
                                               const current = [
                                                 ...(form.getValues(
                                                   "allowances",
                                                 ) || []),
                                               ];
-                                              current[idx].amount = Number(
+                                              current[idx].amount = parseRupiah(
                                                 e.target.value,
                                               );
                                               form.setValue(
@@ -5630,12 +5645,12 @@ export default function EmployeeDetailPage({
                                       </FormLabel>
                                       <FormControl>
                                         <Input
-                                          type="number"
-                                          {...field}
-                                          value={field.value || ""}
+                                          type="text"
+                                          placeholder="Rp 0"
+                                          value={formatRupiah(field.value)}
                                           onChange={(e) =>
                                             field.onChange(
-                                              Number(e.target.value),
+                                              parseRupiah(e.target.value),
                                             )
                                           }
                                           className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
@@ -5654,12 +5669,12 @@ export default function EmployeeDetailPage({
                                       </FormLabel>
                                       <FormControl>
                                         <Input
-                                          type="number"
-                                          {...field}
-                                          value={field.value || ""}
+                                          type="text"
+                                          placeholder="Rp 0"
+                                          value={formatRupiah(field.value)}
                                           onChange={(e) =>
                                             field.onChange(
-                                              Number(e.target.value),
+                                              parseRupiah(e.target.value),
                                             )
                                           }
                                           className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
@@ -5680,12 +5695,12 @@ export default function EmployeeDetailPage({
                                       </FormLabel>
                                       <FormControl>
                                         <Input
-                                          type="number"
-                                          {...field}
-                                          value={field.value || ""}
+                                          type="text"
+                                          placeholder="Rp 0"
+                                          value={formatRupiah(field.value)}
                                           onChange={(e) =>
                                             field.onChange(
-                                              Number(e.target.value),
+                                              parseRupiah(e.target.value),
                                             )
                                           }
                                           className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
@@ -5704,12 +5719,12 @@ export default function EmployeeDetailPage({
                                       </FormLabel>
                                       <FormControl>
                                         <Input
-                                          type="number"
-                                          {...field}
-                                          value={field.value || ""}
+                                          type="text"
+                                          placeholder="Rp 0"
+                                          value={formatRupiah(field.value)}
                                           onChange={(e) =>
                                             field.onChange(
-                                              Number(e.target.value),
+                                              parseRupiah(e.target.value),
                                             )
                                           }
                                           className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
@@ -5731,12 +5746,12 @@ export default function EmployeeDetailPage({
                                       </FormLabel>
                                       <FormControl>
                                         <Input
-                                          type="number"
-                                          {...field}
-                                          value={field.value || ""}
+                                          type="text"
+                                          placeholder="Rp 0"
+                                          value={formatRupiah(field.value)}
                                           onChange={(e) =>
                                             field.onChange(
-                                              Number(e.target.value),
+                                              parseRupiah(e.target.value),
                                             )
                                           }
                                           className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
@@ -5755,12 +5770,12 @@ export default function EmployeeDetailPage({
                                       </FormLabel>
                                       <FormControl>
                                         <Input
-                                          type="number"
-                                          {...field}
-                                          value={field.value || ""}
+                                          type="text"
+                                          placeholder="Rp 0"
+                                          value={formatRupiah(field.value)}
                                           onChange={(e) =>
                                             field.onChange(
-                                              Number(e.target.value),
+                                              parseRupiah(e.target.value),
                                             )
                                           }
                                           className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
@@ -5779,12 +5794,12 @@ export default function EmployeeDetailPage({
                                       </FormLabel>
                                       <FormControl>
                                         <Input
-                                          type="number"
-                                          {...field}
-                                          value={field.value || ""}
+                                          type="text"
+                                          placeholder="Rp 0"
+                                          value={formatRupiah(field.value)}
                                           onChange={(e) =>
                                             field.onChange(
-                                              Number(e.target.value),
+                                              parseRupiah(e.target.value),
                                             )
                                           }
                                           className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
