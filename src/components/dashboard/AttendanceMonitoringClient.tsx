@@ -134,11 +134,10 @@ export function AttendanceMonitoringClient() {
   const isLoading = isLoadingConfig || isLoadingProfiles || isLoadingBrands || isLoadingEvents || isLoadingLeaves;
 
   // --- Data Processing ---
-  const { tableData, summaryStats, brandOptions } = useMemo(() => {
+  const { tableData, summaryStats } = useMemo(() => {
     const empty = {
       tableData: [] as AttendanceRecord[],
       summaryStats: { total: 0, hadir: 0, belumTapIn: 0, sedangBekerja: 0, selesai: 0, terlambat: 0, tidakValid: 0, perluReview: 0 },
-      brandOptions: [] as string[],
     };
     if (!allEmployeeProfiles || !brands) return empty;
 
@@ -178,12 +177,12 @@ export function AttendanceMonitoringClient() {
       return method === 'web_absen';
     });
 
-    // Collect ALL brand IDs from employees (comprehensive fallback)
-    const uniqueBrandIds = Array.from(new Set(
+    // Collect brand IDs from employees (for matching/filtering purposes)
+    const employeeBrandIds = new Set(
       webAbsenProfiles
         .map(resolveBrandId)
         .filter((id): id is string => typeof id === 'string')
-    )).sort();
+    );
 
     // Deduplicate by uid
     const seenUids = new Set<string>();
@@ -351,7 +350,7 @@ export function AttendanceMonitoringClient() {
       perluReview: rows.filter(isPerluReview).length,
     };
 
-    return { tableData: rows, summaryStats: stats, brandOptions: uniqueBrandIds };
+    return { tableData: rows, summaryStats: stats };
   }, [allEmployeeProfiles, attendanceEvents, sites, brands, brandFilter, date, leaveRequests]);
 
   // Apply tab + search filter
@@ -473,7 +472,7 @@ export function AttendanceMonitoringClient() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Semua Brand</SelectItem>
-                {brands?.filter(b => brandOptions.includes(b.id!)).map(brand => (
+                {brands?.map(brand => (
                   <SelectItem key={brand.id!} value={brand.id!}>{brand.name}</SelectItem>
                 ))}
               </SelectContent>
