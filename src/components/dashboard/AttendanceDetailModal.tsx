@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { getInitials } from '@/lib/utils';
-import { Copy, X, AlertCircle, RotateCw } from 'lucide-react';
+import { Copy, X, AlertCircle, RotateCw, ShieldAlert } from 'lucide-react';
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { getAttendanceImageUrl } from '@/lib/google-drive-image';
@@ -15,6 +15,7 @@ import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 interface AttendanceDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onMarkInvalid?: () => void;
   record: {
     id: string;
     name: string;
@@ -50,7 +51,7 @@ const getStatusColor = (status: string) => {
   }
 };
 
-export function AttendanceDetailModal({ isOpen, onClose, record }: AttendanceDetailModalProps) {
+export function AttendanceDetailModal({ isOpen, onClose, onMarkInvalid, record }: AttendanceDetailModalProps) {
   const { toast } = useToast();
   const [imageError, setImageError] = useState(false);
   const [reloadCount, setReloadCount] = useState(0);
@@ -123,8 +124,8 @@ export function AttendanceDetailModal({ isOpen, onClose, record }: AttendanceDet
                 <p className="text-xs text-slate-600 dark:text-slate-400">{record.employeeNumber}</p>
               </div>
             </div>
-            <Badge className={`${getStatusColor(record.status)} text-xs px-2 py-0.5 whitespace-nowrap shrink-0`}>
-              {record.status}
+            <Badge className={`${record.rawEvent?.isInvalid ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' : getStatusColor(record.status)} text-xs px-2 py-0.5 whitespace-nowrap shrink-0`}>
+              {record.rawEvent?.isInvalid ? 'Tidak Valid' : record.status}
             </Badge>
           </div>
           <DialogClose className="absolute right-4 top-4" asChild>
@@ -304,6 +305,17 @@ export function AttendanceDetailModal({ isOpen, onClose, record }: AttendanceDet
 
         {/* Footer */}
         <div className="pt-3 border-t border-slate-200 dark:border-slate-700 flex gap-2">
+          {onMarkInvalid && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+              onClick={() => { onClose(); setTimeout(() => onMarkInvalid?.(), 100); }}
+            >
+              <ShieldAlert className="h-4 w-4" />
+              Tandai Tidak Valid
+            </Button>
+          )}
           <Button variant="outline" size="sm" className="flex-1" onClick={onClose}>
             Tutup
           </Button>
