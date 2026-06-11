@@ -33,14 +33,22 @@ export interface PayrollRecapRow {
   lupaHapIn: number;
   lupaHapOut: number;
 
-  // Leave stats
+  // Leave stats (sakit included in izin)
   izin: number;
-  sakit: number;
   dinas: number;
   alpha: number;
 
   // Work stats
   totalJamKerja: number;
+
+  // Detail izin untuk modal
+  leaveDetails: Array<{
+    date: string;
+    type: string;
+    reason?: string;
+    days?: number;
+    status: string;
+  }>;
 
   // Metadata
   effectiveStart: Date;
@@ -104,20 +112,24 @@ function isExcludedRole(role: any): boolean {
 }
 
 function resolveName(employee: any, firstEvent?: any): string {
+  // Profile name
   if (employee.fullName?.trim()) return employee.fullName.trim();
   if (employee.namaLengkap?.trim()) return employee.namaLengkap.trim();
   if (employee.displayName?.trim()) return employee.displayName.trim();
   if (employee.name?.trim()) return employee.name.trim();
   if (employee.dataDiriIdentitas?.fullName?.trim()) return employee.dataDiriIdentitas.fullName.trim();
+  // Event name
   if (firstEvent?.employeeName?.trim()) return firstEvent.employeeName.trim();
   if (firstEvent?.fullName?.trim()) return firstEvent.fullName.trim();
   if (firstEvent?.name?.trim()) return firstEvent.name.trim();
   if (firstEvent?.displayName?.trim()) return firstEvent.displayName.trim();
   if (firstEvent?.email?.trim()) return firstEvent.email.trim();
   if (employee.email?.trim()) return employee.email.trim();
+  // Fallback to employee number
   if (employee.employeeNumber) return employee.employeeNumber;
   if (firstEvent?.employeeNumber) return firstEvent.employeeNumber;
-  return 'Nama belum tersedia';
+  // Last resort
+  return 'Data belum lengkap';
 }
 
 function resolveBrandId(profile: any): string | null {
@@ -311,21 +323,46 @@ export function generateEmployeePayrollRecap(
     } catch { return false; }
   });
 
-  const izin = leavesInPeriod.filter(l => {
-    const t = (l.type || l.leaveType || '').toLowerCase();
-    return t === 'izin' || t === 'permission';
-  }).length;
-  const sakit = leavesInPeriod.filter(l => {
-    const t = (l.type || l.leaveType || '').toLowerCase();
-    return t === 'sakit' || t === 'sick';
-  }).length;
+  // ── Count leave days (izin + sakit = izin) ──
+  let izin = 0;
+  const leaveDetails: any[] = [];
+
+  for (const leave of leavesInPeriod) {
+    const leaveType = (leave.type || leave.leaveType || '').toLowerCase();
+    // Include: izin, sakit, permission, sick, keperluan pribadi, dll
+    const isIzin = ['izin', 'permission', 'sakit', 'sick', 'cuti', 'unpaid leave', 'keperluan pribadi'].includes(leaveType);
+    if (!isIzin) continue;
+
+    try {
+      const ls = startOfDay(leave.startDate?.toDate?.() || new Date(leave.startDate));
+      const le = endOfDay(leave.endDate?.toDate?.() || new Date(leave.endDate));
+
+      // Count days in this leave that fall within period
+      const leaveDays = eachDayOfInterval({ start: ls, end: le })
+        .filter(d => d >= startOfDay(effectiveStart) && d <= endOfDay(effectiveEnd))
+        .filter(d => !isWeekend(d));
+
+      izin += leaveDays.length;
+
+      // Record details
+      for (const day of leaveDays) {
+        leaveDetails.push({
+          date: format(day, 'yyyy-MM-dd'),
+          type: leave.type || leave.leaveType || 'Izin',
+          reason: leave.reason || leave.notes || '',
+          days: 1,
+          status: leave.status || 'approved',
+        });
+      }
+    } catch { /* skip */ }
+  }
+
   const dinas = leavesInPeriod.filter(l => {
     const t = (l.type || l.leaveType || '').toLowerCase();
     return t === 'dinas' || t === 'business_trip';
   }).length;
 
   // ── Alpha: past working days only ──
-  // Count working days that are strictly past (< today) and have no presence/leave
   const effectiveWorkingDays = eachDayOfInterval({
     start: startOfDay(effectiveStart),
     end: startOfDay(effectiveEnd),
@@ -353,7 +390,7 @@ export function generateEmployeePayrollRecap(
   return {
     employeeId,
     fullName: resolveName(employee, firstEvent),
-    employeeNumber: employeeNumber || 'N/A',
+    employeeNumber,
     brandId: resolveBrandId(employee) || '',
     brandName: resolveBrandName(employee, brandMap),
     divisionId: (employee as any).divisionId,
@@ -366,10 +403,10 @@ export function generateEmployeePayrollRecap(
     lupaHapIn,
     lupaHapOut,
     izin,
-    sakit,
     dinas,
     alpha,
     totalJamKerja: Math.floor(totalMinutes / 60),
+    leaveDetails,
     effectiveStart,
     effectiveEnd,
     isPartial,

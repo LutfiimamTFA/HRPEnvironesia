@@ -130,7 +130,6 @@ export default function RekapAbsensiPayrollPage() {
     terlambat: recapRows.reduce((s, r) => s + r.terlambat, 0),
     alpha: recapRows.reduce((s, r) => s + r.alpha, 0),
     izin: recapRows.reduce((s, r) => s + r.izin, 0),
-    sakit: recapRows.reduce((s, r) => s + r.sakit, 0),
   }), [recapRows]);
 
   if (!hasAccess) {
@@ -344,14 +343,13 @@ export default function RekapAbsensiPayrollPage() {
 
         {/* ── Summary Cards ── */}
         {recapRows.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
             {[
               { label: "Karyawan", value: summary.total, color: "text-slate-900 dark:text-white" },
               { label: "Total Hadir", value: summary.hadir, color: "text-green-700 dark:text-green-400" },
               { label: "Terlambat", value: summary.terlambat, color: "text-orange-700 dark:text-orange-400" },
               { label: "Alpha", value: summary.alpha, color: "text-red-700 dark:text-red-400" },
               { label: "Izin", value: summary.izin, color: "text-blue-700 dark:text-blue-400" },
-              { label: "Sakit", value: summary.sakit, color: "text-purple-700 dark:text-purple-400" },
             ].map(card => (
               <Card key={card.label} className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40">
                 <CardContent className="p-4">
@@ -379,7 +377,6 @@ export default function RekapAbsensiPayrollPage() {
                     <TableHead className="text-[10px] uppercase font-black text-slate-500 h-11 text-right">Hadir</TableHead>
                     <TableHead className="text-[10px] uppercase font-black text-slate-500 h-11 text-right">Terlambat</TableHead>
                     <TableHead className="text-[10px] uppercase font-black text-slate-500 h-11 text-right">Izin</TableHead>
-                    <TableHead className="text-[10px] uppercase font-black text-slate-500 h-11 text-right">Sakit</TableHead>
                     <TableHead className="text-[10px] uppercase font-black text-slate-500 h-11 text-right">Alpha</TableHead>
                     <TableHead className="text-[10px] uppercase font-black text-slate-500 h-11 text-right pr-4">Total Jam</TableHead>
                   </TableRow>
@@ -393,7 +390,9 @@ export default function RekapAbsensiPayrollPage() {
                       >
                         <TableCell className="px-4 py-3">
                           <div className="font-medium text-sm text-slate-900 dark:text-white">{row.fullName}</div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">{row.employeeNumber}</div>
+                          {row.employeeNumber && (
+                            <div className="text-xs text-slate-500 dark:text-slate-400">{row.employeeNumber}</div>
+                          )}
                           {row.isPartial && (
                             <div className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">Partial periode</div>
                           )}
@@ -404,16 +403,13 @@ export default function RekapAbsensiPayrollPage() {
                         <TableCell className="text-right text-sm tabular-nums font-semibold text-slate-900 dark:text-white">{row.hadir}</TableCell>
                         <TableCell className="text-right tabular-nums">
                           {row.terlambat > 0 ? (
-                            <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:border-orange-800">
-                              {row.terlambat}×
+                            <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:border-orange-800 text-xs">
+                              {row.terlambat}x / {row.menitTerlambat}m
                             </Badge>
                           ) : <span className="text-sm text-slate-400">—</span>}
                         </TableCell>
                         <TableCell className="text-right text-sm tabular-nums text-slate-700 dark:text-slate-300">
                           {row.izin || <span className="text-slate-400">—</span>}
-                        </TableCell>
-                        <TableCell className="text-right text-sm tabular-nums text-slate-700 dark:text-slate-300">
-                          {row.sakit || <span className="text-slate-400">—</span>}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
                           {row.alpha > 0 ? (
@@ -429,7 +425,7 @@ export default function RekapAbsensiPayrollPage() {
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={10} className="text-center py-10 text-slate-500 dark:text-slate-400">
+                      <TableCell colSpan={9} className="text-center py-10 text-slate-500 dark:text-slate-400">
                         <div className="flex flex-col items-center gap-2">
                           <AlertCircle className="h-6 w-6 text-slate-300 dark:text-slate-600" />
                           <p className="text-sm">Tidak ada data karyawan Web Absen untuk periode ini</p>
