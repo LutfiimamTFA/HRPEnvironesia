@@ -72,11 +72,11 @@ export default function RekapAbsensiPayrollPage() {
       useMemoFirebase(() => collection(firestore, "attendance_events"), [firestore])
     );
 
-  const { data: leaveRequests } = useCollection<any>(
+  const { data: permissionRequests } = useCollection<any>(
     useMemoFirebase(() => {
       return query(
-        collection(firestore, "leave_requests"),
-        where("status", "in", ["approved", "active_leave"])
+        collection(firestore, "permission_requests"),
+        where("status", "in", ["approved", "closed", "approved_hrd", "approved_by_hrd"])
       );
     }, [firestore])
   );
@@ -104,7 +104,7 @@ export default function RekapAbsensiPayrollPage() {
       employees,
       activePeriod,
       attendanceEvents,
-      leaveRequests || [],
+      permissionRequests || [],
       brands
     );
 
@@ -390,9 +390,9 @@ export default function RekapAbsensiPayrollPage() {
                       >
                         <TableCell className="px-4 py-3">
                           <div className="font-medium text-sm text-slate-900 dark:text-white">{row.fullName}</div>
-                          {row.employeeNumber && (
-                            <div className="text-xs text-slate-500 dark:text-slate-400">{row.employeeNumber}</div>
-                          )}
+                          {row.employeeNumber ? (
+                            <div className="text-xs text-slate-500 dark:text-slate-400">NIK: {row.employeeNumber}</div>
+                          ) : null}
                           {row.isPartial && (
                             <div className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">Partial periode</div>
                           )}

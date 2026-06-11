@@ -45,7 +45,9 @@ export interface PayrollRecapRow {
   leaveDetails: Array<{
     date: string;
     type: string;
-    reason?: string;
+    formType?: string;
+    reasonType?: string;
+    keterangan?: string;
     days?: number;
     status: string;
   }>;
@@ -111,13 +113,22 @@ function isExcludedRole(role: any): boolean {
   return ['hrd', 'super_admin', 'superadmin', 'admin', 'direktur', 'direksi', 'management', 'director'].includes(n);
 }
 
+/**
+ * Normalize employee number for matching (uppercase, remove spaces/dashes/underscores)
+ */
+export function normalizeEmployeeNumber(value: any): string {
+  if (!value) return '';
+  return String(value).toUpperCase().replace(/[\s\-_]/g, '');
+}
+
 function resolveName(employee: any, firstEvent?: any): string {
-  // Profile name
+  // Profile name - comprehensive fallback
   if (employee.fullName?.trim()) return employee.fullName.trim();
   if (employee.namaLengkap?.trim()) return employee.namaLengkap.trim();
   if (employee.displayName?.trim()) return employee.displayName.trim();
   if (employee.name?.trim()) return employee.name.trim();
   if (employee.dataDiriIdentitas?.fullName?.trim()) return employee.dataDiriIdentitas.fullName.trim();
+  if (employee.hrdEmploymentInfo?.fullName?.trim()) return employee.hrdEmploymentInfo.fullName.trim();
   // Event name
   if (firstEvent?.employeeName?.trim()) return firstEvent.employeeName.trim();
   if (firstEvent?.fullName?.trim()) return firstEvent.fullName.trim();
@@ -129,7 +140,24 @@ function resolveName(employee: any, firstEvent?: any): string {
   if (employee.employeeNumber) return employee.employeeNumber;
   if (firstEvent?.employeeNumber) return firstEvent.employeeNumber;
   // Last resort
-  return 'Data belum lengkap';
+  return 'Data karyawan';
+}
+
+function resolveEmployeeNumber(employee: any, event?: any): string {
+  if (employee.employeeNumber) return employee.employeeNumber;
+  if (employee.employeeId) return employee.employeeId;
+  if (employee.employeeCode) return employee.employeeCode;
+  if (employee.nomorIndukKaryawan) return employee.nomorIndukKaryawan;
+  if (employee.nomorInduk) return employee.nomorInduk;
+  if (employee.nip) return employee.nip;
+  if (employee.dataDiriIdentitas?.employeeNumber) return employee.dataDiriIdentitas.employeeNumber;
+  if (employee.dataDiriIdentitas?.employeeId) return employee.dataDiriIdentitas.employeeId;
+  if (employee.hrdEmploymentInfo?.employeeNumber) return employee.hrdEmploymentInfo.employeeNumber;
+  if (employee.hrdEmploymentInfo?.employeeId) return employee.hrdEmploymentInfo.employeeId;
+  if (event?.employeeNumber) return event.employeeNumber;
+  if (event?.employeeId) return event.employeeId;
+  if (event?.nomorIndukKaryawan) return event.nomorIndukKaryawan;
+  return '';
 }
 
 function resolveBrandId(profile: any): string | null {
@@ -192,11 +220,12 @@ export function generateEmployeePayrollRecap(
   employee: EmployeeProfile,
   period: PayrollPeriod,
   allEvents: AttendanceEvent[],
-  approvedLeaves: any[],
+  approvedPermissions: any[],
   brandMap: Map<string, string>
 ): PayrollRecapRow {
   const employeeId = (employee as any).id || (employee as any).uid || '';
-  const employeeNumber = employee.employeeNumber || (employee as any).employeeId || '';
+  const employeeNumber = resolveEmployeeNumber(employee);
+  const normalizedEmployeeNumber = normalizeEmployeeNumber(employeeNumber);
 
   // ── Effective date range ──
   let effectiveStart = startOfDay(period.startDate);
@@ -230,11 +259,15 @@ export function generateEmployeePayrollRecap(
   // ── Filter events for this employee ──
   const myEvents = allEvents.filter(e => {
     const ev = e as any;
-    // Match employee
+    // Match employee by UID
     const uid = ev.uid || ev.userId || ev.employeeUid;
+    if (uid && uid === employeeId) return true;
+
+    // Match employee by normalized employee number
     const empNo = ev.employeeNumber || ev.nomorIndukKaryawan;
-    const isMatch = (uid && uid === employeeId) || (empNo && empNo === employeeNumber);
-    if (!isMatch) return false;
+    if (empNo && normalizeEmployeeNumber(empNo) === normalizedEmployeeNumber) return true;
+
+    return false;
 
     // Date range filter
     const dateStr = getEventDateStr(ev);
@@ -311,47 +344,63 @@ export function generateEmployeePayrollRecap(
 
   const hadir = hadirDays.size;
 
-  // ── Approved leaves in period ──
-  const leavesInPeriod = approvedLeaves.filter(leave => {
-    if (leave.employeeId !== employeeId) return false;
+  // ── Approved permissions in period ──
+  const permissionsInPeriod = approvedPermissions.filter(perm => {
+    // Match employee
+    const permUid = perm.uid || perm.applicantUid || perm.requesterUid || perm.employeeUid;
+    const permEmpNo = perm.employeeNumber || perm.nomorIndukKaryawan;
+
+    const uidMatch = permUid && permUid === employeeId;
+    const empNoMatch = permEmpNo && normalizeEmployeeNumber(permEmpNo) === normalizedEmployeeNumber;
+
+    if (!uidMatch && !empNoMatch) return false;
+
+    // Date check
     try {
-      const ls = leave.startDate?.toDate?.() || new Date(leave.startDate);
-      const le = leave.endDate?.toDate?.() || new Date(leave.endDate);
-      return isWithinInterval(ls, { start: effectiveStart, end: effectiveEnd }) ||
-             isWithinInterval(le, { start: effectiveStart, end: effectiveEnd }) ||
-             (isBefore(ls, effectiveStart) && isAfter(le, effectiveEnd));
+      const ps = perm.startDate?.toDate?.() || new Date(perm.startDate);
+      const pe = perm.endDate?.toDate?.() || new Date(perm.endDate);
+      return isWithinInterval(ps, { start: effectiveStart, end: effectiveEnd }) ||
+             isWithinInterval(pe, { start: effectiveStart, end: effectiveEnd }) ||
+             (isBefore(ps, effectiveStart) && isAfter(pe, effectiveEnd));
     } catch { return false; }
   });
 
-  // ── Count leave days (izin + sakit = izin) ──
+  // ── Count permission days (izin including sakit) ──
   let izin = 0;
   const leaveDetails: any[] = [];
 
-  for (const leave of leavesInPeriod) {
-    const leaveType = (leave.type || leave.leaveType || '').toLowerCase();
-    // Include: izin, sakit, permission, sick, keperluan pribadi, dll
-    const isIzin = ['izin', 'permission', 'sakit', 'sick', 'cuti', 'unpaid leave', 'keperluan pribadi'].includes(leaveType);
-    if (!isIzin) continue;
+  for (const perm of permissionsInPeriod) {
+    const formType = perm.formType || perm.type || 'izin';
+    // Include specific forms
+    const isPermission = [
+      'sakit', 'tidak_masuk', 'datang_terlambat', 'pulang_awal',
+      'keluar_kantor', 'duka', 'akademik', 'administrasi_resmi',
+      'lainnya', 'keperluan_pribadi', 'izin', 'permission', 'sick'
+    ].some(t => String(formType).toLowerCase().includes(t));
+
+    if (!isPermission) continue;
 
     try {
-      const ls = startOfDay(leave.startDate?.toDate?.() || new Date(leave.startDate));
-      const le = endOfDay(leave.endDate?.toDate?.() || new Date(leave.endDate));
+      const ps = startOfDay(perm.startDate?.toDate?.() || new Date(perm.startDate));
+      const pe = endOfDay(perm.endDate?.toDate?.() || new Date(perm.endDate));
 
-      // Count days in this leave that fall within period
-      const leaveDays = eachDayOfInterval({ start: ls, end: le })
+      // Count working days in permission that fall within period
+      const permDays = eachDayOfInterval({ start: ps, end: pe })
         .filter(d => d >= startOfDay(effectiveStart) && d <= endOfDay(effectiveEnd))
         .filter(d => !isWeekend(d));
 
-      izin += leaveDays.length;
+      izin += permDays.length;
 
       // Record details
-      for (const day of leaveDays) {
+      for (const day of permDays) {
         leaveDetails.push({
           date: format(day, 'yyyy-MM-dd'),
-          type: leave.type || leave.leaveType || 'Izin',
-          reason: leave.reason || leave.notes || '',
+          type: formType,
+          formType: perm.formType,
+          reasonType: perm.reasonType || '',
+          keterangan: perm.keterangan || perm.notes || perm.reason || '',
           days: 1,
-          status: leave.status || 'approved',
+          status: perm.status || 'approved',
         });
       }
     } catch { /* skip */ }
@@ -375,22 +424,22 @@ export function generateEmployeePayrollRecap(
     if (dateStr >= todayStr) continue;
     // Skip if has attendance
     if (hadirDays.has(dateStr)) continue;
-    // Skip if has approved leave on that day
-    const hasLeave = leavesInPeriod.some(leave => {
+    // Skip if has approved permission on that day
+    const hasPermission = permissionsInPeriod.some(perm => {
       try {
-        const ls = startOfDay(leave.startDate?.toDate?.() || new Date(leave.startDate));
-        const le = endOfDay(leave.endDate?.toDate?.() || new Date(leave.endDate));
-        return day >= ls && day <= le;
+        const ps = startOfDay(perm.startDate?.toDate?.() || new Date(perm.startDate));
+        const pe = endOfDay(perm.endDate?.toDate?.() || new Date(perm.endDate));
+        return day >= ps && day <= pe;
       } catch { return false; }
     });
-    if (hasLeave) continue;
+    if (hasPermission) continue;
     alpha++;
   }
 
   return {
     employeeId,
-    fullName: resolveName(employee, firstEvent),
-    employeeNumber,
+    fullName: resolveName(employee, firstEvent) || 'Data karyawan',
+    employeeNumber: employeeNumber || '',
     brandId: resolveBrandId(employee) || '',
     brandName: resolveBrandName(employee, brandMap),
     divisionId: (employee as any).divisionId,
@@ -419,7 +468,7 @@ export function generatePayrollRecap(
   employees: EmployeeProfile[],
   period: PayrollPeriod,
   attendanceEvents: AttendanceEvent[],
-  approvedLeaves: any[],
+  approvedPermissions: any[],
   brands: any[]
 ): PayrollRecapRow[] {
   const brandMap = new Map(brands.map((b: any) => [b.id, b.name]));
@@ -440,6 +489,6 @@ export function generatePayrollRecap(
 
       return true;
     })
-    .map(emp => generateEmployeePayrollRecap(emp, period, attendanceEvents, approvedLeaves, brandMap))
+    .map(emp => generateEmployeePayrollRecap(emp, period, attendanceEvents, approvedPermissions, brandMap))
     .sort((a, b) => a.fullName.localeCompare(b.fullName, 'id'));
 }
