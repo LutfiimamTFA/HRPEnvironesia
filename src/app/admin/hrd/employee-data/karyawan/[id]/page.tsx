@@ -726,6 +726,9 @@ export default function EmployeeDetailPage({
       alpha: hrdInfo.alpha || 0,
       jatahCuti: hrdInfo.jatahCuti || 12,
       sisaCuti: hrdInfo.sisaCuti || 12,
+      carryOverCuti: (hrdInfo as any).carryOverCuti || 0,
+      cutiEffectiveDate: format(new Date(), "yyyy-MM-dd"),
+      cutiChangeReason: "",
 
       asetPerusahaan: hrdInfo.asetPerusahaan || "",
       catatanBenefit: hrdInfo.catatanBenefit || "",
@@ -1182,7 +1185,7 @@ export default function EmployeeDetailPage({
     if (editingSection === "struktur") {
       const isSavingAsManager = values.structuralPosition === "division_manager";
       const wasManager = normalizedData?.structuralPosition === "division_manager" || normalizedData?.isDivisionManager === true;
-      
+
       if (isSavingAsManager) {
         const selectedDiv = divisions?.find(d => d.id === values.divisionId);
         if (selectedDiv && selectedDiv.managerId && selectedDiv.managerId !== employeeId) {
@@ -1196,6 +1199,50 @@ export default function EmployeeDetailPage({
         if (!confirmRemove) {
           return;
         }
+      }
+    }
+
+    // Validasi untuk Ubah Cuti
+    if (editingSection === "cuti") {
+      const jatahCuti = (values as any).jatahCuti || 0;
+      const sisaCuti = (values as any).sisaCuti || 0;
+      const cutiEffectiveDate = (values as any).cutiEffectiveDate;
+      const cutiChangeReason = (values as any).cutiChangeReason || "";
+
+      if (jatahCuti < 0) {
+        toast({
+          variant: "destructive",
+          title: "Hak Cuti Tidak Valid",
+          description: "Hak cuti tidak boleh negatif.",
+        });
+        return;
+      }
+
+      if (sisaCuti < 0) {
+        toast({
+          variant: "destructive",
+          title: "Sisa Cuti Tidak Valid",
+          description: "Sisa cuti tidak boleh negatif.",
+        });
+        return;
+      }
+
+      if (!cutiEffectiveDate) {
+        toast({
+          variant: "destructive",
+          title: "Tanggal Efektif Wajib Diisi",
+          description: "Mohon isi tanggal efektif perubahan cuti.",
+        });
+        return;
+      }
+
+      if (!cutiChangeReason || cutiChangeReason.trim().length < 10) {
+        toast({
+          variant: "destructive",
+          title: "Alasan Perubahan Wajib Diisi",
+          description: "Mohon isi alasan perubahan (minimal 10 karakter).",
+        });
+        return;
       }
     }
 
@@ -1247,6 +1294,12 @@ export default function EmployeeDetailPage({
         directSupervisorName: isManagementLevel ? null : (s ? s.fullName : (values as any).directSupervisorName || ""),
         directSupervisorUid: isManagementLevel ? null : values.directSupervisorUid,
         directSuperiorSource,
+        // Include cuti fields if updating cuti section
+        ...(editingSection === "cuti" && {
+          jatahCuti: (values as any).jatahCuti,
+          sisaCuti: (values as any).sisaCuti,
+          carryOverCuti: (values as any).carryOverCuti,
+        }),
       };
 
       // Determine what changed for history
@@ -1269,6 +1322,28 @@ export default function EmployeeDetailPage({
           });
         }
       };
+
+      // Special handling for cuti section
+      if (editingSection === "cuti") {
+        trackChange(
+          "jatahCuti",
+          "Hak Cuti Tahunan",
+          hrdInfo.jatahCuti,
+          (values as any).jatahCuti,
+        );
+        trackChange(
+          "sisaCuti",
+          "Sisa Cuti",
+          hrdInfo.sisaCuti,
+          (values as any).sisaCuti,
+        );
+        trackChange(
+          "carryOverCuti",
+          "Sisa Tahun Lalu (Carry Over)",
+          (hrdInfo as any).carryOverCuti,
+          (values as any).carryOverCuti,
+        );
+      }
 
       trackChange(
         "brandId",
@@ -1628,14 +1703,19 @@ export default function EmployeeDetailPage({
           "employment_history",
         );
         for (const change of changes) {
+          // Use cuti-specific fields if available
+          const effectiveDate = editingSection === "cuti"
+            ? (values as any).cutiEffectiveDate || format(new Date(), "yyyy-MM-dd")
+            : updatedValues.tanggalEfektif || format(new Date(), "yyyy-MM-dd");
+          const note = editingSection === "cuti"
+            ? (values as any).cutiChangeReason || "Update data cuti"
+            : updatedValues.catatanAdministrasi || "Update administrasi HRD rutin";
+
           await addDoc(historyCol, {
             ...change,
             type: editingSection || "payroll_update",
-            effectiveDate:
-              updatedValues.tanggalEfektif || format(new Date(), "yyyy-MM-dd"),
-            note:
-              updatedValues.catatanAdministrasi ||
-              "Update administrasi HRD rutin",
+            effectiveDate,
+            note,
             changedAt: serverTimestamp(),
             changedBy: firebaseUser.uid,
             changedByName: userProfile.fullName,
@@ -4565,6 +4645,170 @@ export default function EmployeeDetailPage({
                                         className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
                                       />
                                     </FormControl>
+                                  </FormItem>
+                                )}
+                              />
+                            </div>
+                          ) : null}
+
+                          {editingSection === "cuti" ? (
+                            <div className="space-y-6">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Hak Cuti Tahunan */}
+                                <FormField
+                                  control={form.control}
+                                  name="jatahCuti"
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                                        Hak Cuti Tahunan *
+                                      </FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type="number"
+                                          {...field}
+                                          min="0"
+                                          step="0.5"
+                                          className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white h-12 rounded-xl focus:border-emerald-500/50"
+                                          onChange={(e) =>
+                                            field.onChange(
+                                              e.target.value ? parseFloat(e.target.value) : 0
+                                            )
+                                          }
+                                        />
+                                      </FormControl>
+                                      <p className="text-xs text-slate-500 mt-1">
+                                        Jumlah hari cuti yang berhak diperoleh per tahun.
+                                      </p>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+
+                                {/* Sisa Cuti */}
+                                <FormField
+                                  control={form.control}
+                                  name="sisaCuti"
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                                        Sisa Cuti *
+                                      </FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type="number"
+                                          {...field}
+                                          min="0"
+                                          step="0.5"
+                                          className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white h-12 rounded-xl focus:border-emerald-500/50"
+                                          onChange={(e) =>
+                                            field.onChange(
+                                              e.target.value ? parseFloat(e.target.value) : 0
+                                            )
+                                          }
+                                        />
+                                      </FormControl>
+                                      <p className="text-xs text-slate-500 mt-1">
+                                        Jumlah hari cuti yang masih tersisa.
+                                      </p>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+
+                                {/* Cuti Terpakai (Readonly Calculated) */}
+                                <div>
+                                  <FormLabel className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                                    Cuti Terpakai
+                                  </FormLabel>
+                                  <div className="mt-2 h-12 px-3 rounded-xl bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 flex items-center">
+                                    <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                                      {(form.watch("jatahCuti") || 0) -
+                                        (form.watch("sisaCuti") || 0)}{" "}
+                                      hari
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-slate-500 mt-1">
+                                    Otomatis dihitung (Hak - Sisa).
+                                  </p>
+                                </div>
+
+                                {/* Carry Over (Optional) */}
+                                <FormField
+                                  control={form.control}
+                                  name="carryOverCuti"
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                                        Sisa Tahun Lalu (Carry Over)
+                                      </FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type="number"
+                                          {...field}
+                                          min="0"
+                                          step="0.5"
+                                          className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white h-12 rounded-xl focus:border-emerald-500/50"
+                                          onChange={(e) =>
+                                            field.onChange(
+                                              e.target.value ? parseFloat(e.target.value) : 0
+                                            )
+                                          }
+                                        />
+                                      </FormControl>
+                                      <p className="text-xs text-slate-500 mt-1">
+                                        Cuti dari tahun sebelumnya yang dibawa ke tahun ini.
+                                      </p>
+                                    </FormItem>
+                                  )}
+                                />
+                              </div>
+
+                              {/* Tanggal Efektif Perubahan */}
+                              <FormField
+                                control={form.control}
+                                name="cutiEffectiveDate"
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                                      Tanggal Efektif Perubahan *
+                                    </FormLabel>
+                                    <FormControl>
+                                      <Input
+                                        type="date"
+                                        {...field}
+                                        className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white h-12 rounded-xl focus:border-emerald-500/50"
+                                      />
+                                    </FormControl>
+                                    <p className="text-xs text-slate-500 mt-1">
+                                      Tanggal mulai berlakunya perubahan data cuti.
+                                    </p>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+
+                              {/* Alasan Perubahan */}
+                              <FormField
+                                control={form.control}
+                                name="cutiChangeReason"
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                                      Alasan Perubahan / Log Audit *
+                                    </FormLabel>
+                                    <FormControl>
+                                      <Textarea
+                                        {...field}
+                                        placeholder="Contoh: Koreksi saldo cuti tahun fiskal 2026, Penyesuaian carry over, Penambahan cuti khusus, dll."
+                                        className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white min-h-[100px] rounded-xl focus:border-emerald-500/50"
+                                      />
+                                    </FormControl>
+                                    <p className="text-xs text-slate-500 mt-1">
+                                      Alasan ini akan disimpan sebagai catatan audit untuk
+                                      perubahan data cuti.
+                                    </p>
+                                    <FormMessage />
                                   </FormItem>
                                 )}
                               />
