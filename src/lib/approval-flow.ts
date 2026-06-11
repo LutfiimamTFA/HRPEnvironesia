@@ -1,5 +1,17 @@
 import type { EmployeeProfile, UserProfile } from "@/lib/types";
 
+// Helper to detect management/director level
+export const isManagementLevel = (value?: string | null): boolean => {
+  const normalized = String(value || "").toLowerCase();
+  return (
+    normalized.includes("direksi") ||
+    normalized.includes("direktur") ||
+    normalized.includes("director") ||
+    normalized.includes("manajemen") ||
+    normalized.includes("management")
+  );
+};
+
 export type ApprovalLevel =
   | "staff_to_manager"
   | "manager_to_director"
@@ -475,7 +487,42 @@ export function resolveApproverSkippingSelf(
     };
   }
 
-  // Get the initial direct manager
+  // For management-level users: route directly to HRD, no division/manager search
+  if (isManagementLevel(structuralPosition)) {
+    // Try to find HRD user first
+    const hrdUser = allUsers?.find(
+      (u: any) => u.role === "hrd" || u.roles?.includes("hrd"),
+    );
+    if (hrdUser && hrdUser.uid !== applicantUid) {
+      return {
+        uid: hrdUser.uid,
+        name: hrdUser.fullName || hrdUser.displayName || null,
+        role: "hrd",
+      };
+    }
+
+    // Fallback to Super Admin if no HRD found
+    const superAdmin = allUsers?.find(
+      (u: any) => u.role === "super-admin",
+    );
+    if (superAdmin && superAdmin.uid !== applicantUid) {
+      return {
+        uid: superAdmin.uid,
+        name: superAdmin.fullName || superAdmin.displayName || null,
+        role: "super-admin",
+        reason: "Management level: routed to Super Admin (no HRD available)",
+      };
+    }
+
+    // No HRD or Super Admin found
+    return {
+      uid: null,
+      name: null,
+      reason: "Tidak ada HRD atau Super Admin yang tersedia untuk persetujuan. Hubungi administrator.",
+    };
+  }
+
+  // Get the initial direct manager for non-management staff
   const initialManager = getDirectManagerForEmployee(employeeProfile, masterOrganization);
 
   // If no manager found, return null

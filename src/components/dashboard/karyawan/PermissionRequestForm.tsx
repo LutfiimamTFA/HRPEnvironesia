@@ -68,6 +68,7 @@ import {
 import {
   resolveApprovalTarget,
   resolveApproverSkippingSelf,
+  isManagementLevel,
   type DivisionMasterOrganization,
 } from "@/lib/approval-flow";
 import {
@@ -375,7 +376,18 @@ export function PermissionRequestForm({
     return Array.isArray(raw) ? raw[0] : raw;
   }, [employeeProfile]);
 
+  // Check if user is management level
+  const structuralPos =
+    (employeeProfile as any)?.structuralPosition ||
+    (employeeProfile as any)?.hrdEmploymentInfo?.structuralPosition ||
+    userProfile?.structuralLevel ||
+    "staff";
+  const isUserManagement = isManagementLevel(structuralPos);
+
   const staffDivisionId = useMemo(() => {
+    // Skip division for management-level users
+    if (isUserManagement) return "";
+
     const ep = employeeProfile as any;
     // Priority mirrors LeaveSubmissionClient: employeeProfile.division first
     return (
@@ -386,24 +398,26 @@ export function PermissionRequestForm({
       ep?.hrdEmploymentInfo?.divisi ||
       ""
     );
-  }, [employeeProfile]);
+  }, [employeeProfile, isUserManagement]);
 
   // Layer 1: getDoc by ID — brands/{brandId}/divisions/{divisionId}
   const divisionDocRef = useMemoFirebase(() => {
-    if (!firestore || !staffBrandId || !staffDivisionId) return null;
+    // Skip division lookup for management-level users
+    if (!firestore || !staffBrandId || !staffDivisionId || isUserManagement) return null;
     return doc(firestore, "brands", staffBrandId, "divisions", staffDivisionId);
-  }, [firestore, staffBrandId, staffDivisionId]);
+  }, [firestore, staffBrandId, staffDivisionId, isUserManagement]);
   const { data: divisionDocById } =
     useDoc<DivisionMasterOrganization>(divisionDocRef);
 
   // Layer 2: query by name — in case the doc ID is different from the division name/value
   const divisionNameQuery = useMemoFirebase(() => {
-    if (!firestore || !staffBrandId || !staffDivisionId) return null;
+    // Skip division lookup for management-level users
+    if (!firestore || !staffBrandId || !staffDivisionId || isUserManagement) return null;
     return query(
       collection(firestore, "brands", staffBrandId, "divisions"),
       where("name", "==", staffDivisionId),
     );
-  }, [firestore, staffBrandId, staffDivisionId]);
+  }, [firestore, staffBrandId, staffDivisionId, isUserManagement]);
   const { data: divisionsByName } =
     useCollection<DivisionMasterOrganization>(divisionNameQuery);
 
@@ -713,11 +727,15 @@ export function PermissionRequestForm({
       const managerName = directManager.name || null;
 
       if (!managerUid) {
+        // For management level: HRD or Super Admin not found
+        // For regular staff: manager not found
         const errorMsg = directManager.reason ||
-          `Atasan belum ditemukan. Brand: ${staffBrandId || "—"}, Divisi: ${staffDivisionId || "belum terisi"}. Periksa mapping divisi/brand karyawan.`;
+          (isUserManagement
+            ? `Tidak ada HRD atau Super Admin yang tersedia. Hubungi administrator.`
+            : `Atasan belum ditemukan. Brand: ${staffBrandId || "—"}, Divisi: ${staffDivisionId || "belum terisi"}. Periksa mapping divisi/brand karyawan.`);
         toast({
           variant: "destructive",
-          title: "Atasan Tidak Ditemukan",
+          title: isUserManagement ? "Persetujuan Tidak Tersedia" : "Atasan Tidak Ditemukan",
           description: errorMsg,
         });
         setIsSaving(false);
@@ -744,7 +762,7 @@ export function PermissionRequestForm({
           brandId: Array.isArray(employeeProfile.brandId)
             ? employeeProfile.brandId[0]
             : employeeProfile.brandId || "",
-          division: employeeProfile.division || "N/A",
+          division: isUserManagement ? "N/A (Management Level)" : (employeeProfile.division || "N/A"),
           positionTitle: employeeProfile.positionTitle || "Staf",
           // legacy compatibility: keep `type` but set to reasonType
           type: values.reasonType as any,
