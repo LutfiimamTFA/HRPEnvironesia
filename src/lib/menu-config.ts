@@ -178,6 +178,12 @@ const EMPLOYEE_MONITORING_ITEMS: MenuGroup = {
       icon: createElement(CalendarClock),
     },
     {
+      key: "monitoring.attendance-payroll-recap",
+      href: "/admin/hrd/attendance-payroll-recap",
+      label: "Rekap Absensi Payroll",
+      icon: createElement(CalendarClock),
+    },
+    {
       key: "hrd.permission_approval",
       href: "/admin/hrd/persetujuan-izin",
       label: "Persetujuan Izin",
@@ -666,12 +672,6 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
           href: "/admin/hrd/persetujuan-lembur",
           label: "Persetujuan Lembur",
           icon: createElement(Timer),
-        },
-        {
-          key: "hrd.attendance_payroll_recap",
-          href: "/admin/hrd/rekap-absensi-payroll",
-          label: "Rekap Absensi Payroll",
-          icon: createElement(CalendarClock),
         },
         {
           key: "overtime_payroll_recap",

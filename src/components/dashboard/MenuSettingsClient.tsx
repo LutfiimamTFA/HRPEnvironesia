@@ -89,6 +89,13 @@ export function MenuSettingsClient() {
         ) {
           items.push("overtime_payroll_recap");
         }
+        // Ensure attendance-payroll-recap defaults
+        if (
+          (role.id === "super-admin" || role.id === "hrd") &&
+          !items.includes("monitoring.attendance-payroll-recap")
+        ) {
+          items.push("monitoring.attendance-payroll-recap");
+        }
         // Ensure new leave management menu keys default
         if (role.id === "super-admin") {
           if (!items.includes("hrd.leave_approval"))
