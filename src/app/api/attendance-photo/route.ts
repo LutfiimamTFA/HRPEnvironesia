@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * API proxy untuk mengambil foto bukti absensi dari Google Drive via Apps Script
+ * API proxy untuk mengambil foto bukti absensi dari Google Drive
  * GET /api/attendance-photo?fileId=DRIVE_FILE_ID
  *
  * Flow:
  * 1. HRP menerima fileId
- * 2. HRP memanggil Apps Script dengan action=image&fileId=...&secret=...
- * 3. Apps Script ambil file dari Google Drive, return base64
- * 4. HRP convert base64 ke Buffer dan return sebagai image
+ * 2. HRP fetch langsung dari Google Drive dengan fallback URLs
+ * 3. Return image/jpeg buffer ke browser
+ *
+ * Fallback URLs (in priority order):
+ * 1. https://drive.google.com/thumbnail?id={fileId}&sz=w1000
+ * 2. https://drive.google.com/uc?export=view&id={fileId}
  */
 
 export async function GET(req: NextRequest) {
@@ -23,102 +26,127 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Get Apps Script URL dan secret dari environment
-    const scriptUrl = process.env.GOOGLE_DRIVE_APPS_SCRIPT_URL;
-    const secret = process.env.GOOGLE_DRIVE_UPLOAD_SECRET;
-
-    if (!scriptUrl || !secret) {
-      console.error("Missing Google Drive Apps Script environment variables");
+    // Validate fileId format (basic validation)
+    if (!/^[a-zA-Z0-9-_]+$/.test(fileId)) {
       return NextResponse.json(
-        {
-          error:
-            "Server configuration error: Google Drive Apps Script not configured",
-        },
-        { status: 500 }
+        { error: "Invalid fileId format" },
+        { status: 400 }
       );
     }
 
-    // Call Apps Script dengan action=image untuk ambil file
-    const appsScriptUrl = `${scriptUrl}?action=image&fileId=${encodeURIComponent(
-      fileId
-    )}&secret=${encodeURIComponent(secret)}`;
+    const DEBUG = true; // Enable debug logging temporarily
+    const logPrefix = `[AttendancePhoto/${fileId.substring(0, 8)}]`;
 
-    console.log(`[AttendancePhoto] Fetching from Apps Script: ${scriptUrl}`);
+    if (DEBUG) console.log(`${logPrefix} Processing request`);
 
-    const response = await fetch(appsScriptUrl, {
-      method: "GET",
-      cache: "no-store",
-      headers: {
-        "User-Agent": "HRP-AttendancePhotoProxy/1.0",
+    // Try multiple Google Drive URLs for image retrieval
+    // Priority 1: Thumbnail (faster, lower quality but sufficient for verification)
+    // Priority 2: View/Export (full quality)
+    const googleDriveUrls = [
+      {
+        name: "thumbnail",
+        url: `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w1000`,
       },
-    });
+      {
+        name: "view_export",
+        url: `https://drive.google.com/uc?export=view&id=${encodeURIComponent(fileId)}`,
+      },
+    ];
 
-    if (!response.ok) {
-      console.error(
-        `[AttendancePhoto] Apps Script returned status ${response.status}`
-      );
-      return NextResponse.json(
-        { error: "Failed to fetch image from Google Drive" },
-        { status: response.status }
-      );
-    }
+    let lastError: Error | null = null;
 
-    const base64Text = await response.text();
+    for (const { name, url } of googleDriveUrls) {
+      try {
+        if (DEBUG) console.log(`${logPrefix} Attempting ${name}: ${url.substring(0, 80)}...`);
 
-    if (!base64Text || base64Text.length === 0) {
-      console.error("[AttendancePhoto] Apps Script returned empty response");
-      return NextResponse.json(
-        { error: "Apps Script returned empty image data" },
-        { status: 500 }
-      );
-    }
+        const response = await fetch(url, {
+          method: "GET",
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          },
+          cache: "no-store",
+          redirect: "follow",
+        });
 
-    // Check if response is an error JSON
-    try {
-      const jsonCheck = JSON.parse(base64Text);
-      if (jsonCheck.error) {
-        console.error(
-          `[AttendancePhoto] Apps Script error: ${jsonCheck.error}`
-        );
-        return NextResponse.json(
-          { error: jsonCheck.error },
-          { status: 400 }
-        );
+        if (DEBUG) {
+          console.log(`${logPrefix} ${name} response status: ${response.status}`);
+          console.log(`${logPrefix} ${name} content-type: ${response.headers.get("content-type")}`);
+          console.log(`${logPrefix} ${name} content-length: ${response.headers.get("content-length")}`);
+        }
+
+        // Check if response is successful
+        if (!response.ok) {
+          if (DEBUG) console.log(`${logPrefix} ${name} failed with status ${response.status}`);
+          lastError = new Error(`Google Drive ${name} returned ${response.status}`);
+          continue;
+        }
+
+        // Get content-type from response
+        const contentType = response.headers.get("content-type") || "image/jpeg";
+
+        // Check if it's actually an image
+        if (!contentType.startsWith("image/")) {
+          if (DEBUG) console.log(`${logPrefix} ${name} returned non-image: ${contentType}`);
+          lastError = new Error(`Expected image, got ${contentType}`);
+          continue;
+        }
+
+        // Get response as array buffer
+        const buffer = await response.arrayBuffer();
+
+        // Validate buffer size (must be more than 100 bytes for a real image)
+        if (buffer.byteLength < 100) {
+          if (DEBUG) console.log(`${logPrefix} ${name} buffer too small: ${buffer.byteLength} bytes`);
+          lastError = new Error(`Image buffer too small: ${buffer.byteLength} bytes`);
+          continue;
+        }
+
+        if (DEBUG) {
+          console.log(`${logPrefix} SUCCESS using ${name}`);
+          console.log(`${logPrefix} Buffer size: ${buffer.byteLength} bytes`);
+          console.log(`${logPrefix} Content-Type: ${contentType}`);
+        }
+
+        // Return image with proper headers
+        return new NextResponse(buffer, {
+          status: 200,
+          headers: {
+            "Content-Type": contentType,
+            "Content-Length": buffer.byteLength.toString(),
+            "Cache-Control": "private, max-age=3600", // Cache for 1 hour (image won't change)
+            "X-Content-Type-Options": "nosniff",
+            "X-Source": name,
+          },
+        });
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        if (DEBUG) console.error(`${logPrefix} ${name} error:`, lastError.message);
+        // Continue to next URL
       }
-    } catch {
-      // Not JSON, so it's probably base64 image data - continue
     }
 
-    // Convert base64 to Buffer
-    let buffer: Buffer;
-    try {
-      buffer = Buffer.from(base64Text, "base64");
-    } catch (error) {
-      console.error("[AttendancePhoto] Failed to decode base64:", error);
-      return NextResponse.json(
-        { error: "Invalid image data from Google Drive" },
-        { status: 500 }
-      );
+    // All URLs failed
+    if (DEBUG) {
+      console.error(`${logPrefix} All Google Drive URLs failed`);
+      console.error(`${logPrefix} Last error: ${lastError?.message}`);
     }
 
-    // Return image with proper headers
-    return new NextResponse(buffer, {
-      status: 200,
-      headers: {
-        "Content-Type": "image/jpeg",
-        "Content-Length": buffer.length.toString(),
-        "Cache-Control": "private, max-age=300", // Cache for 5 minutes
-        "X-Content-Type-Options": "nosniff",
-      },
-    });
-  } catch (error) {
-    console.error("[AttendancePhoto] Unexpected error:", error);
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to fetch attendance photo",
+        error: "Failed to fetch image from Google Drive",
+        details: lastError?.message || "No fallback URLs succeeded",
+        fileId: fileId,
+      },
+      { status: 500 }
+    );
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error("[AttendancePhoto] Unexpected error:", errorMsg);
+    return NextResponse.json(
+      {
+        error: "Failed to fetch attendance photo",
+        message: errorMsg,
       },
       { status: 500 }
     );
