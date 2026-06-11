@@ -152,6 +152,13 @@ export function AttendanceMonitoringClient() {
       }
     };
 
+    // Helper: get brand ID with comprehensive fallback
+    const resolveBrandId = (p: any): string | null => {
+      const id = p.hrdEmploymentInfo?.brandId || p.brandId;
+      if (id && typeof id === 'string') return id;
+      return null;
+    };
+
     const brandMap = new Map(brands.map(b => [b.id, b.name]));
     const activeSite = sites?.find((s: any) => s.isActive);
 
@@ -171,11 +178,12 @@ export function AttendanceMonitoringClient() {
       return method === 'web_absen';
     });
 
+    // Collect ALL brand IDs from employees (comprehensive fallback)
     const uniqueBrandIds = Array.from(new Set(
       webAbsenProfiles
-        .map((p: any) => p.hrdEmploymentInfo?.brandId || p.brandId)
+        .map(resolveBrandId)
         .filter((id): id is string => typeof id === 'string')
-    ));
+    )).sort();
 
     // Deduplicate by uid
     const seenUids = new Set<string>();
@@ -190,10 +198,10 @@ export function AttendanceMonitoringClient() {
 
     for (const profile of dedupedProfiles) {
       const profileUid = resolveProfileUid(profile as any)!;
-      const brandId = (profile as any).hrdEmploymentInfo?.brandId || (profile as any).brandId;
+      const profileBrandId = resolveBrandId(profile as any);
 
-      // Brand filter
-      if (brandFilter !== 'all' && brandId !== brandFilter) continue;
+      // Brand filter: only apply if not "all"
+      if (brandFilter !== 'all' && profileBrandId !== brandFilter) continue;
 
       // Find events for this employee
       const userEvents = attendanceEvents?.filter((e: any) => {
@@ -219,10 +227,9 @@ export function AttendanceMonitoringClient() {
         p.nomorIndukKaryawan || p.dataDiriIdentitas?.employeeNumber || p.dataDiriIdentitas?.employeeId ||
         e?.employeeNumber || e?.employeeId || e?.nomorIndukKaryawan || 'ID belum diatur';
 
-      const resolveBrand = (p: any, e?: any): string => {
-        const bId = p.hrdEmploymentInfo?.brandId || p.brandId;
-        return (bId && brandMap.get(bId)) ||
-          p.hrdEmploymentInfo?.brandName || p.brandName || p.companyName || p.company ||
+      const resolveBrand = (p: any, bId: string | null, e?: any): string => {
+        if (bId) return brandMap.get(bId) || bId;
+        return p.hrdEmploymentInfo?.brandName || p.brandName || p.companyName || p.company ||
           e?.brandName || e?.company || '-';
       };
 
@@ -233,7 +240,7 @@ export function AttendanceMonitoringClient() {
 
       const resolvedName = resolveName(profile, eventData);
       const resolvedEmployeeNumber = resolveEmployeeNumber(profile, eventData);
-      const resolvedBrand = resolveBrand(profile, eventData);
+      const resolvedBrand = resolveBrand(profile, profileBrandId, eventData);
       const resolvedDivision = resolveDivision(profile, eventData);
 
       const tapInTimestamp = checkInEvent ? getEventTimestamp(checkInEvent) : null;
@@ -311,7 +318,7 @@ export function AttendanceMonitoringClient() {
         id: profileUid,
         name: resolvedName,
         employeeNumber: resolvedEmployeeNumber,
-        brandId,
+        brandId: profileBrandId,
         brandName: resolvedBrand,
         divisionName: resolvedDivision,
         attendanceMethod: 'web_absen',
@@ -418,42 +425,89 @@ export function AttendanceMonitoringClient() {
     }
   };
 
-  const tabCountMap: Record<StatusTabKey, number> = {
-    all: tableData.length,
-    'belum-tap-in': summaryStats.belumTapIn,
-    'sedang-bekerja': summaryStats.sedangBekerja,
-    selesai: summaryStats.selesai,
-    terlambat: summaryStats.terlambat,
-    'tidak-valid': summaryStats.tidakValid,
-    'perlu-review': summaryStats.perluReview,
+
+  const handleResetFilters = () => {
+    setSearchQuery('');
+    setDate(new Date());
+    setBrandFilter('all');
+    setStatusTab('all');
   };
 
   return (
     <div className="space-y-5">
-      {/* Filters */}
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <Input
-              placeholder="Cari nama, ID, atau brand..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
-            />
+      {/* Filters Card */}
+      <div className="bg-white dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 items-end">
+          {/* Search */}
+          <div>
+            <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider block mb-1.5">
+              Cari
+            </label>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                placeholder="Nama / ID..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-8 h-9 text-sm"
+              />
+            </div>
           </div>
-          <GoogleDatePicker value={date} onChange={setDate} />
-          <Select value={brandFilter} onValueChange={setBrandFilter} disabled={isLoadingBrands}>
-            <SelectTrigger className="w-full sm:w-[180px]">
-              <SelectValue placeholder="Semua Brand" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Semua Brand</SelectItem>
-              {brands?.filter(b => brandOptions.includes(b.id!)).map(brand => (
-                <SelectItem key={brand.id!} value={brand.id!}>{brand.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+
+          {/* Date */}
+          <div>
+            <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider block mb-1.5">
+              Tanggal
+            </label>
+            <GoogleDatePicker value={date} onChange={setDate} />
+          </div>
+
+          {/* Brand */}
+          <div>
+            <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider block mb-1.5">
+              Brand
+            </label>
+            <Select value={brandFilter} onValueChange={setBrandFilter} disabled={isLoadingBrands}>
+              <SelectTrigger className="h-9 text-sm">
+                <SelectValue placeholder="Semua Brand" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Brand</SelectItem>
+                {brands?.filter(b => brandOptions.includes(b.id!)).map(brand => (
+                  <SelectItem key={brand.id!} value={brand.id!}>{brand.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Status Filter */}
+          <div>
+            <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider block mb-1.5">
+              Status
+            </label>
+            <Select value={statusTab} onValueChange={(val) => setStatusTab(val as StatusTabKey)}>
+              <SelectTrigger className="h-9 text-sm">
+                <SelectValue placeholder="Semua Status" />
+              </SelectTrigger>
+              <SelectContent>
+                {STATUS_TABS.map(tab => (
+                  <SelectItem key={tab.key} value={tab.key}>{tab.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Reset Button */}
+          <div className="flex gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 text-xs flex-1"
+              onClick={handleResetFilters}
+            >
+              Reset
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -462,33 +516,16 @@ export function AttendanceMonitoringClient() {
           {/* Summary Cards */}
           <AttendanceSummaryCard stats={summaryStats} />
 
-          {/* Quick Filter Tabs */}
-          <div className="flex flex-wrap gap-2">
-            {STATUS_TABS.map(tab => {
-              const count = tabCountMap[tab.key];
-              const isActive = statusTab === tab.key;
-              return (
-                <button
-                  key={tab.key}
-                  onClick={() => setStatusTab(tab.key)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors border ${
-                    isActive
-                      ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                      : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  {tab.label}
-                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${
-                    isActive
-                      ? 'bg-white/20 text-white'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-                  }`}>
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          {/* Quick Status Tabs (optional visual shortcut) */}
+          {statusTab !== 'all' && (
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-slate-600 dark:text-slate-400">Filter Status aktif:</span>
+              <Badge variant="outline" className="cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800" onClick={() => setStatusTab('all')}>
+                {STATUS_TABS.find(t => t.key === statusTab)?.label}
+                <span className="ml-1">×</span>
+              </Badge>
+            </div>
+          )}
 
           {/* Info Banner */}
           <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
