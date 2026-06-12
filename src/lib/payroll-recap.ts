@@ -1,6 +1,7 @@
 /**
  * Payroll Recap Calculation
  * Generates attendance summary for payroll processing from existing collections
+ * Source of truth: employee_profiles (identity), attendance_events (attendance data)
  */
 
 import { startOfMonth, endOfMonth, eachDayOfInterval, isWeekend, isWithinInterval, isBefore, isAfter, format, startOfDay, endOfDay } from 'date-fns';
@@ -56,6 +57,10 @@ export interface PayrollRecapRow {
   effectiveStart: Date;
   effectiveEnd: Date;
   isPartial: boolean;
+  /** True if employee hasn't joined yet in this period */
+  notYetActive: boolean;
+  /** Disclaimer shown when holiday calendar is not available */
+  hariKerjaNote?: string;
 }
 
 // ─── Period Calculation ────────────────────────────────────────────────────────
@@ -92,10 +97,20 @@ export function calculatePayrollPeriod(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-export function getWorkingDays(startDate: Date, endDate: Date): number {
+/**
+ * Get working days between two dates.
+ * Excludes weekends and optionally company/national holidays.
+ * @param holidays - array of date strings 'YYYY-MM-DD' to exclude
+ */
+export function getWorkingDays(startDate: Date, endDate: Date, holidays: string[] = []): number {
   try {
+    const holidaySet = new Set(holidays);
     const allDays = eachDayOfInterval({ start: startOfDay(startDate), end: startOfDay(endDate) });
-    return allDays.filter(d => !isWeekend(d)).length;
+    return allDays.filter(d => {
+      if (isWeekend(d)) return false;
+      if (holidaySet.has(format(d, 'yyyy-MM-dd'))) return false;
+      return true;
+    }).length;
   } catch {
     return 0;
   }
@@ -104,7 +119,7 @@ export function getWorkingDays(startDate: Date, endDate: Date): number {
 function isWebAbsenMethod(method: any): boolean {
   if (!method) return false;
   const n = String(method).toLowerCase().trim();
-  return n === 'web_absen' || n === 'web';
+  return n === 'web_absen' || n === 'web' || n === 'web absen';
 }
 
 function isExcludedRole(role: any): boolean {
@@ -121,29 +136,35 @@ export function normalizeEmployeeNumber(value: any): string {
   return String(value).toUpperCase().replace(/[\s\-_]/g, '');
 }
 
-function resolveName(employee: any, firstEvent?: any): string {
-  // Profile name - comprehensive fallback
+/**
+ * Resolve employee name — always from employee_profiles only.
+ * Never falls back to employeeNumber so the name row stays distinct from the NIK row.
+ */
+function resolveName(employee: any): string {
+  // Top-level name fields
   if (employee.fullName?.trim()) return employee.fullName.trim();
   if (employee.namaLengkap?.trim()) return employee.namaLengkap.trim();
+  if (employee.nama?.trim()) return employee.nama.trim();
   if (employee.displayName?.trim()) return employee.displayName.trim();
   if (employee.name?.trim()) return employee.name.trim();
+  if (employee.namakaryawan?.trim()) return employee.namakaryawan.trim();
+  if (employee.namaKaryawan?.trim()) return employee.namaKaryawan.trim();
+  // Nested: dataDiriIdentitas
   if (employee.dataDiriIdentitas?.fullName?.trim()) return employee.dataDiriIdentitas.fullName.trim();
+  if (employee.dataDiriIdentitas?.namaLengkap?.trim()) return employee.dataDiriIdentitas.namaLengkap.trim();
+  if (employee.dataDiriIdentitas?.nama?.trim()) return employee.dataDiriIdentitas.nama.trim();
+  if (employee.dataDiriIdentitas?.name?.trim()) return employee.dataDiriIdentitas.name.trim();
+  // Nested: hrdEmploymentInfo
   if (employee.hrdEmploymentInfo?.fullName?.trim()) return employee.hrdEmploymentInfo.fullName.trim();
-  // Event name
-  if (firstEvent?.employeeName?.trim()) return firstEvent.employeeName.trim();
-  if (firstEvent?.fullName?.trim()) return firstEvent.fullName.trim();
-  if (firstEvent?.name?.trim()) return firstEvent.name.trim();
-  if (firstEvent?.displayName?.trim()) return firstEvent.displayName.trim();
-  if (firstEvent?.email?.trim()) return firstEvent.email.trim();
+  if (employee.hrdEmploymentInfo?.namaLengkap?.trim()) return employee.hrdEmploymentInfo.namaLengkap.trim();
+  if (employee.hrdEmploymentInfo?.nama?.trim()) return employee.hrdEmploymentInfo.nama.trim();
+  // Email as last resort before generic fallback
   if (employee.email?.trim()) return employee.email.trim();
-  // Fallback to employee number
-  if (employee.employeeNumber) return employee.employeeNumber;
-  if (firstEvent?.employeeNumber) return firstEvent.employeeNumber;
-  // Last resort
+  // Never return employeeNumber as name — that would duplicate the NIK row
   return 'Data karyawan';
 }
 
-function resolveEmployeeNumber(employee: any, event?: any): string {
+function resolveEmployeeNumber(employee: any): string {
   if (employee.employeeNumber) return employee.employeeNumber;
   if (employee.employeeId) return employee.employeeId;
   if (employee.employeeCode) return employee.employeeCode;
@@ -154,9 +175,6 @@ function resolveEmployeeNumber(employee: any, event?: any): string {
   if (employee.dataDiriIdentitas?.employeeId) return employee.dataDiriIdentitas.employeeId;
   if (employee.hrdEmploymentInfo?.employeeNumber) return employee.hrdEmploymentInfo.employeeNumber;
   if (employee.hrdEmploymentInfo?.employeeId) return employee.hrdEmploymentInfo.employeeId;
-  if (event?.employeeNumber) return event.employeeNumber;
-  if (event?.employeeId) return event.employeeId;
-  if (event?.nomorIndukKaryawan) return event.nomorIndukKaryawan;
   return '';
 }
 
@@ -177,6 +195,56 @@ function resolveDivision(profile: any): string {
     profile.divisionName ||
     profile.division ||
     '-';
+}
+
+/**
+ * Resolve join date from multiple possible fields in employee_profiles
+ */
+function resolveJoinDate(employee: any): Date | null {
+  const raw =
+    employee.joinDate ||
+    employee.startWorkDate ||
+    employee.tanggalMulaiKerja ||
+    employee.startDate ||
+    employee.hrdEmploymentInfo?.joinDate ||
+    employee.hrdEmploymentInfo?.startWorkDate ||
+    employee.hrdEmploymentInfo?.tanggalMulaiKerja ||
+    employee.dataDiriIdentitas?.joinDate ||
+    null;
+
+  if (!raw) return null;
+  try {
+    if (raw instanceof Date) return raw;
+    if (typeof raw.toDate === 'function') return raw.toDate();
+    const d = new Date(raw);
+    return isNaN(d.getTime()) ? null : d;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve resign/end date from multiple possible fields
+ */
+function resolveResignDate(employee: any): Date | null {
+  const raw =
+    employee.resignDate ||
+    employee.endDate ||
+    employee.tanggalBerhenti ||
+    employee.lastWorkDate ||
+    employee.hrdEmploymentInfo?.resignDate ||
+    employee.hrdEmploymentInfo?.endDate ||
+    null;
+
+  if (!raw) return null;
+  try {
+    if (raw instanceof Date) return raw;
+    if (typeof raw.toDate === 'function') return raw.toDate();
+    const d = new Date(raw);
+    return isNaN(d.getTime()) ? null : d;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -221,67 +289,105 @@ export function generateEmployeePayrollRecap(
   period: PayrollPeriod,
   allEvents: AttendanceEvent[],
   approvedPermissions: any[],
-  brandMap: Map<string, string>
+  brandMap: Map<string, string>,
+  holidays: string[] = []
 ): PayrollRecapRow {
   const employeeId = (employee as any).id || (employee as any).uid || '';
   const employeeNumber = resolveEmployeeNumber(employee);
   const normalizedEmployeeNumber = normalizeEmployeeNumber(employeeNumber);
 
-  // ── Effective date range ──
+  // ── Effective date range based on join/resign date ──
   let effectiveStart = startOfDay(period.startDate);
   let effectiveEnd = endOfDay(period.endDate);
   let isPartial = false;
+  let notYetActive = false;
 
-  if (employee.joinDate) {
-    try {
-      const jd = employee.joinDate instanceof Date
-        ? employee.joinDate
-        : typeof (employee.joinDate as any).toDate === 'function'
-          ? (employee.joinDate as any).toDate()
-          : new Date(employee.joinDate as any);
-      if (isAfter(jd, effectiveStart)) { effectiveStart = startOfDay(jd); isPartial = true; }
-    } catch { /* skip */ }
+  const joinDate = resolveJoinDate(employee);
+  if (joinDate) {
+    const joinDay = startOfDay(joinDate);
+    if (isAfter(joinDay, endOfDay(period.endDate))) {
+      // Employee hasn't joined yet during this period
+      notYetActive = true;
+    } else if (isAfter(joinDay, effectiveStart)) {
+      effectiveStart = joinDay;
+      isPartial = true;
+    }
   }
 
-  if ((employee as any).resignDate) {
-    try {
-      const rd = (employee as any).resignDate instanceof Date
-        ? (employee as any).resignDate
-        : typeof (employee as any).resignDate.toDate === 'function'
-          ? (employee as any).resignDate.toDate()
-          : new Date((employee as any).resignDate);
-      if (isBefore(rd, effectiveEnd)) { effectiveEnd = endOfDay(rd); isPartial = true; }
-    } catch { /* skip */ }
+  const resignDate = resolveResignDate(employee);
+  if (resignDate) {
+    const resignDay = endOfDay(resignDate);
+    if (isBefore(resignDay, effectiveStart)) {
+      // Employee already left before this period
+      notYetActive = true;
+    } else if (isBefore(resignDay, effectiveEnd)) {
+      effectiveEnd = resignDay;
+      isPartial = true;
+    }
   }
 
-  const hariKerja = getWorkingDays(effectiveStart, effectiveEnd);
+  // If not active in this period, return zeroed row
+  if (notYetActive) {
+    return {
+      employeeId,
+      fullName: resolveName(employee),
+      employeeNumber,
+      brandId: resolveBrandId(employee) || '',
+      brandName: resolveBrandName(employee, brandMap),
+      divisionId: (employee as any).divisionId,
+      divisionName: resolveDivision(employee),
+      hariKerja: 0,
+      hadir: 0,
+      terlambat: 0,
+      menitTerlambat: 0,
+      pulangAwal: 0,
+      lupaHapIn: 0,
+      lupaHapOut: 0,
+      izin: 0,
+      dinas: 0,
+      alpha: 0,
+      totalJamKerja: 0,
+      leaveDetails: [],
+      effectiveStart: period.startDate,
+      effectiveEnd: period.endDate,
+      isPartial: false,
+      notYetActive: true,
+    };
+  }
 
-  // ── Filter events for this employee ──
+  const hariKerja = getWorkingDays(effectiveStart, effectiveEnd, holidays);
+
+  // ── Filter events for this employee AND within the active period ──
   const myEvents = allEvents.filter(e => {
     const ev = e as any;
-    // Match employee by UID
-    const uid = ev.uid || ev.userId || ev.employeeUid;
-    if (uid && uid === employeeId) return true;
 
-    // Match employee by normalized employee number
-    const empNo = ev.employeeNumber || ev.nomorIndukKaryawan;
-    if (empNo && normalizeEmployeeNumber(empNo) === normalizedEmployeeNumber) return true;
-
-    return false;
-
-    // Date range filter
+    // Date range filter FIRST — reject events outside the effective period
     const dateStr = getEventDateStr(ev);
     if (!dateStr) return false;
 
     try {
       const d = new Date(dateStr);
-      return d >= startOfDay(effectiveStart) && d <= endOfDay(effectiveEnd);
+      if (d < startOfDay(effectiveStart) || d > endOfDay(effectiveEnd)) return false;
     } catch {
       return false;
     }
-  });
 
-  const firstEvent = myEvents[0];
+    // Match employee by UID
+    const uid = ev.uid || ev.userId || ev.employeeUid;
+    if (uid && uid === employeeId) return true;
+
+    // Match employee by normalized employee number (only if employeeId not available)
+    if (!employeeId) {
+      const empNo = ev.employeeNumber || ev.nomorIndukKaryawan;
+      if (empNo && normalizeEmployeeNumber(empNo) === normalizedEmployeeNumber) return true;
+    } else if (normalizedEmployeeNumber) {
+      // Also allow empNo match as secondary when we have an employee number
+      const empNo = ev.employeeNumber || ev.nomorIndukKaryawan;
+      if (empNo && normalizeEmployeeNumber(empNo) === normalizedEmployeeNumber) return true;
+    }
+
+    return false;
+  });
 
   // ── Build per-day maps ──
   const checkInByDay = new Map<string, any>();   // dateStr → event
@@ -346,7 +452,7 @@ export function generateEmployeePayrollRecap(
 
   // ── Approved permissions in period ──
   const permissionsInPeriod = approvedPermissions.filter(perm => {
-    // Match employee
+    // Match employee — UID match is primary
     const permUid = perm.uid || perm.applicantUid || perm.requesterUid || perm.employeeUid;
     const permEmpNo = perm.employeeNumber || perm.nomorIndukKaryawan;
 
@@ -415,7 +521,11 @@ export function generateEmployeePayrollRecap(
   const effectiveWorkingDays = eachDayOfInterval({
     start: startOfDay(effectiveStart),
     end: startOfDay(effectiveEnd),
-  }).filter(d => !isWeekend(d));
+  }).filter(d => {
+    if (isWeekend(d)) return false;
+    if (holidays.includes(format(d, 'yyyy-MM-dd'))) return false;
+    return true;
+  });
 
   let alpha = 0;
   for (const day of effectiveWorkingDays) {
@@ -438,7 +548,7 @@ export function generateEmployeePayrollRecap(
 
   return {
     employeeId,
-    fullName: resolveName(employee, firstEvent) || 'Data karyawan',
+    fullName: resolveName(employee),
     employeeNumber: employeeNumber || '',
     brandId: resolveBrandId(employee) || '',
     brandName: resolveBrandName(employee, brandMap),
@@ -459,6 +569,7 @@ export function generateEmployeePayrollRecap(
     effectiveStart,
     effectiveEnd,
     isPartial,
+    notYetActive: false,
   };
 }
 
@@ -469,9 +580,23 @@ export function generatePayrollRecap(
   period: PayrollPeriod,
   attendanceEvents: AttendanceEvent[],
   approvedPermissions: any[],
-  brands: any[]
+  brands: any[],
+  holidays: string[] = []
 ): PayrollRecapRow[] {
   const brandMap = new Map(brands.map((b: any) => [b.id, b.name]));
+
+  // Build a cross-reference map: normalizedEmployeeNumber → resolved name
+  // So if profile A has the NIK but no name, and profile B (same NIK) has a name, we use B's name.
+  const nikToNameMap = new Map<string, string>();
+  for (const emp of employees) {
+    const empNo = resolveEmployeeNumber(emp as any);
+    if (!empNo) continue;
+    const normalized = normalizeEmployeeNumber(empNo);
+    const name = resolveName(emp as any);
+    if (name !== 'Data karyawan' && !nikToNameMap.has(normalized)) {
+      nikToNameMap.set(normalized, name);
+    }
+  }
 
   return employees
     .filter(emp => {
@@ -489,6 +614,15 @@ export function generatePayrollRecap(
 
       return true;
     })
-    .map(emp => generateEmployeePayrollRecap(emp, period, attendanceEvents, approvedPermissions, brandMap))
+    .map(emp => {
+      const row = generateEmployeePayrollRecap(emp, period, attendanceEvents, approvedPermissions, brandMap, holidays);
+      // If name resolution failed, try cross-reference by NIK
+      if (row.fullName === 'Data karyawan' && row.employeeNumber) {
+        const crossName = nikToNameMap.get(normalizeEmployeeNumber(row.employeeNumber));
+        if (crossName) row.fullName = crossName;
+      }
+      return row;
+    })
+    .filter(row => !row.notYetActive)
     .sort((a, b) => a.fullName.localeCompare(b.fullName, 'id'));
 }

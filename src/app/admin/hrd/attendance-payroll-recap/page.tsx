@@ -24,9 +24,9 @@ import {
 } from "@/components/ui/table";
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
 import { collection, query, where } from "firebase/firestore";
-import { format } from "date-fns";
+import { format, eachDayOfInterval } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
-import { Download, AlertCircle, RotateCcw, CalendarDays } from "lucide-react";
+import { Download, AlertCircle, RotateCcw, CalendarDays, Info } from "lucide-react";
 import type { EmployeeProfile, Brand } from "@/lib/types";
 import {
   calculatePayrollPeriod,
@@ -81,7 +81,30 @@ export default function RekapAbsensiPayrollPage() {
     }, [firestore])
   );
 
+  // Optional: company/national holidays — may not exist
+  const { data: companyHolidays } = useCollection<any>(
+    useMemoFirebase(() => collection(firestore, "company_holidays"), [firestore])
+  );
+
   const isLoading = loadingEmployees || loadingAttendance;
+
+  // Build holiday date strings from company_holidays collection (if available)
+  const holidayDates = useMemo(() => {
+    if (!companyHolidays?.length) return [];
+    return companyHolidays.flatMap((h: any) => {
+      // Support single date field or date range
+      const dates: string[] = [];
+      if (h.date) dates.push(typeof h.date === 'string' ? h.date : format(h.date.toDate?.() || new Date(h.date), 'yyyy-MM-dd'));
+      if (h.startDate && h.endDate) {
+        try {
+          const s = h.startDate.toDate?.() || new Date(h.startDate);
+          const e = h.endDate.toDate?.() || new Date(h.endDate);
+          eachDayOfInterval({ start: s, end: e }).forEach((d: Date) => dates.push(format(d, 'yyyy-MM-dd')));
+        } catch { /* skip */ }
+      }
+      return dates;
+    }).filter(Boolean);
+  }, [companyHolidays]);
 
   // ── Active period ──
   const activePeriod = useMemo(() => {
@@ -105,7 +128,8 @@ export default function RekapAbsensiPayrollPage() {
       activePeriod,
       attendanceEvents,
       permissionRequests || [],
-      brands
+      brands,
+      holidayDates
     );
 
     const divs = new Set<string>();
@@ -121,7 +145,7 @@ export default function RekapAbsensiPayrollPage() {
     });
 
     return { recapRows: filtered, uniqueDivisions: Array.from(divs).sort() };
-  }, [employees, attendanceEvents, permissionRequests, brands, activePeriod, selectedBrand, selectedDivision, searchName]);
+  }, [employees, attendanceEvents, permissionRequests, brands, activePeriod, holidayDates, selectedBrand, selectedDivision, searchName]);
 
   // ── Summary stats ──
   const summary = useMemo(() => ({
@@ -330,15 +354,23 @@ export default function RekapAbsensiPayrollPage() {
         </Card>
 
         {/* ── Period Preview ── */}
-        <div className="flex items-center gap-2 px-1">
-          <CalendarDays className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
-          <p className="text-sm text-slate-700 dark:text-slate-300">
-            <span className="font-semibold text-blue-700 dark:text-blue-400">Periode Aktif:</span>{" "}
-            {format(activePeriod.startDate, "d MMM yyyy", { locale: idLocale })} – {format(activePeriod.endDate, "d MMM yyyy", { locale: idLocale })}
-            <span className="text-slate-400 dark:text-slate-500 ml-2 text-xs">
-              ({recapRows.length} karyawan Web Absen)
-            </span>
-          </p>
+        <div className="flex flex-col gap-1.5 px-1">
+          <div className="flex items-center gap-2">
+            <CalendarDays className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
+            <p className="text-sm text-slate-700 dark:text-slate-300">
+              <span className="font-semibold text-blue-700 dark:text-blue-400">Periode Aktif:</span>{" "}
+              {format(activePeriod.startDate, "d MMM yyyy", { locale: idLocale })} – {format(activePeriod.endDate, "d MMM yyyy", { locale: idLocale })}
+              <span className="text-slate-400 dark:text-slate-500 ml-2 text-xs">
+                ({recapRows.length} karyawan Web Absen)
+              </span>
+            </p>
+          </div>
+          {holidayDates.length === 0 && (
+            <div className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+              <Info className="h-3.5 w-3.5 shrink-0" />
+              <span>Hari kerja dihitung berdasarkan Senin–Jumat, belum termasuk kalender libur perusahaan.</span>
+            </div>
+          )}
         </div>
 
         {/* ── Summary Cards ── */}
