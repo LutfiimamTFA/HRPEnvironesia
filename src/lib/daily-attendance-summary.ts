@@ -54,14 +54,13 @@ export function generateDailySummary(
 
   const divisionName = (employee as any).hrdEmploymentInfo?.divisionName ||
                        (employee as any).hrdEmploymentInfo?.divisi ||
-                       employee.divisionName ||
                        (employee as any).division ||
                        '-';
 
   const employeeName = employee.fullName ||
                       employee.dataDiriIdentitas?.fullName ||
                       (employee as any).namaLengkap ||
-                      employee.name ||
+                      (employee as any).name ||
                       'Data karyawan belum lengkap';
 
   const employeeNumber = employee.employeeNumber ||
@@ -74,7 +73,7 @@ export function generateDailySummary(
   const tapOutTime = checkOutEvent ? getTimeString(checkOutEvent) : null;
 
   // Check if marked invalid
-  const isInvalid = checkInEvent?.isInvalid || checkOutEvent?.isInvalid || false;
+  const isInvalid = (checkInEvent as any)?.isInvalid || (checkOutEvent as any)?.isInvalid || false;
 
   // Determine status
   let status: DailyAttendanceSummary['status'] = 'belum-tap-in';
@@ -137,7 +136,7 @@ export function generateDailySummary(
     earlyLeaveMinutes,
     workDurationMinutes,
     isInvalid,
-    payrollExcluded: (checkInEvent?.payrollExcluded || checkOutEvent?.payrollExcluded) || false,
+    payrollExcluded: ((checkInEvent as any)?.payrollExcluded || (checkOutEvent as any)?.payrollExcluded) || false,
     attendanceMethod: (employee.attendanceMethod || 'not_set') as 'id_card' | 'web_absen' | 'not_set',
     checkInEvent,
     checkOutEvent,
