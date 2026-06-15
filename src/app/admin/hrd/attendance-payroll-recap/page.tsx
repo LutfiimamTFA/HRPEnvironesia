@@ -22,16 +22,24 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
 import { collection, query, where } from "firebase/firestore";
 import { format, eachDayOfInterval } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
-import { Download, AlertCircle, RotateCcw, CalendarDays, Info } from "lucide-react";
+import { Download, AlertCircle, RotateCcw, CalendarDays, Info, Clock } from "lucide-react";
 import type { EmployeeProfile, Brand } from "@/lib/types";
 import {
   calculatePayrollPeriod,
   generatePayrollRecap,
+  mergeEmployeeIdentity,
   type PeriodMode,
+  type PayrollRecapRow,
 } from "@/lib/payroll-recap";
 import { Badge } from "@/components/ui/badge";
 
@@ -40,6 +48,64 @@ const PERIOD_MODES: Array<{ value: PeriodMode; label: string }> = [
   { value: "calendar", label: "Bulan Kalender" },
   { value: "custom", label: "Custom Range" },
 ];
+
+// ── Late Details Modal ──────────────────────────────────────────────────────
+
+function LateDetailsModal({
+  row,
+  open,
+  onClose,
+}: {
+  row: PayrollRecapRow | null;
+  open: boolean;
+  onClose: () => void;
+}) {
+  if (!row) return null;
+  return (
+    <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-base">
+            Rincian Keterlambatan — {row.fullName}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="mt-1">
+          <p className="text-xs text-slate-500 mb-3">
+            Total: <span className="font-semibold text-orange-600">{row.terlambat}×</span>{" "}
+            / <span className="font-semibold text-orange-600">{row.menitTerlambat} menit</span>
+          </p>
+          {row.lateDetails.length === 0 ? (
+            <p className="text-sm text-slate-400 text-center py-6">Tidak ada keterlambatan</p>
+          ) : (
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+              {row.lateDetails.map((d, i) => (
+                <div key={i} className="flex items-center justify-between py-2.5 text-sm">
+                  <div>
+                    <div className="font-medium text-slate-800 dark:text-slate-200">
+                      {format(new Date(d.date), "d MMMM yyyy", { locale: idLocale })}
+                    </div>
+                    <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5">
+                      <Clock className="h-3 w-3" />
+                      Jam masuk: {d.tapInTime}
+                    </div>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className="bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:border-orange-800 text-xs"
+                  >
+                    Terlambat {d.lateMinutes}m
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Page ────────────────────────────────────────────────────────────────────
 
 export default function RekapAbsensiPayrollPage() {
   const hasAccess = useRoleGuard(["hrd", "super-admin"]);
@@ -57,10 +123,23 @@ export default function RekapAbsensiPayrollPage() {
   const [selectedDivision, setSelectedDivision] = useState("all");
   const [searchName, setSearchName] = useState("");
 
-  // ── Data fetching ──
-  const { data: employees, isLoading: loadingEmployees } =
+  // ── Modal state ──
+  const [lateDetailRow, setLateDetailRow] = useState<PayrollRecapRow | null>(null);
+
+  // ── Data fetching (same 3 collections as Data Karyawan) ──
+  const { data: employeeProfiles, isLoading: loadingProfiles } =
     useCollection<EmployeeProfile>(
       useMemoFirebase(() => collection(firestore, "employee_profiles"), [firestore])
+    );
+
+  const { data: users, isLoading: loadingUsers } =
+    useCollection<any>(
+      useMemoFirebase(() => collection(firestore, "users"), [firestore])
+    );
+
+  const { data: employeesDocs, isLoading: loadingEmployeesDocs } =
+    useCollection<any>(
+      useMemoFirebase(() => collection(firestore, "employees"), [firestore])
     );
 
   const { data: brands } = useCollection<Brand>(
@@ -81,18 +160,36 @@ export default function RekapAbsensiPayrollPage() {
     }, [firestore])
   );
 
-  // Optional: company/national holidays — may not exist
   const { data: companyHolidays } = useCollection<any>(
     useMemoFirebase(() => collection(firestore, "company_holidays"), [firestore])
   );
 
-  const isLoading = loadingEmployees || loadingAttendance;
+  const isLoading = loadingProfiles || loadingUsers || loadingEmployeesDocs || loadingAttendance;
 
-  // Build holiday date strings from company_holidays collection (if available)
+  // ── Build lookup maps: uid → user / uid → employeeDoc ──
+  const { usersByUid, employeeDocsByUid } = useMemo(() => {
+    const usersByUid = new Map<string, any>();
+    (users ?? []).forEach(u => { if (u.uid) usersByUid.set(u.uid, u); });
+    const employeeDocsByUid = new Map<string, any>();
+    (employeesDocs ?? []).forEach(e => { if (e.uid) employeeDocsByUid.set(e.uid, e); });
+    return { usersByUid, employeeDocsByUid };
+  }, [users, employeesDocs]);
+
+  // ── Merge employee identity (same logic as Data Karyawan) ──
+  const mergedEmployees = useMemo(() => {
+    if (!employeeProfiles) return [];
+    return (employeeProfiles as any[]).map(profile => {
+      const uid = profile.uid || profile.id;
+      const user = uid ? usersByUid.get(uid) : undefined;
+      const empDoc = uid ? employeeDocsByUid.get(uid) : undefined;
+      return mergeEmployeeIdentity(profile, user, empDoc);
+    });
+  }, [employeeProfiles, usersByUid, employeeDocsByUid]);
+
+  // ── Holiday dates ──
   const holidayDates = useMemo(() => {
     if (!companyHolidays?.length) return [];
     return companyHolidays.flatMap((h: any) => {
-      // Support single date field or date range
       const dates: string[] = [];
       if (h.date) dates.push(typeof h.date === 'string' ? h.date : format(h.date.toDate?.() || new Date(h.date), 'yyyy-MM-dd'));
       if (h.startDate && h.endDate) {
@@ -119,12 +216,12 @@ export default function RekapAbsensiPayrollPage() {
 
   // ── Generate recap ──
   const { recapRows, uniqueDivisions } = useMemo(() => {
-    if (!employees || !attendanceEvents || !brands) {
+    if (!mergedEmployees.length || !attendanceEvents || !brands) {
       return { recapRows: [], uniqueDivisions: [] };
     }
 
     const allRows = generatePayrollRecap(
-      employees,
+      mergedEmployees as any,
       activePeriod,
       attendanceEvents,
       permissionRequests || [],
@@ -145,7 +242,7 @@ export default function RekapAbsensiPayrollPage() {
     });
 
     return { recapRows: filtered, uniqueDivisions: Array.from(divs).sort() };
-  }, [employees, attendanceEvents, permissionRequests, brands, activePeriod, holidayDates, selectedBrand, selectedDivision, searchName]);
+  }, [mergedEmployees, attendanceEvents, permissionRequests, brands, activePeriod, holidayDates, selectedBrand, selectedDivision, searchName]);
 
   // ── Summary stats ──
   const summary = useMemo(() => ({
@@ -184,20 +281,15 @@ export default function RekapAbsensiPayrollPage() {
           </Button>
         </div>
 
-        {/* ── Unified Filter Card ── */}
+        {/* ── Filter Card ── */}
         <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40">
           <CardContent className="pt-5 pb-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
 
-              {/* Mode Periode */}
               <div className="lg:col-span-1">
-                <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1.5">
-                  Mode
-                </label>
+                <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1.5">Mode</label>
                 <Select value={periodMode} onValueChange={v => setPeriodMode(v as PeriodMode)}>
-                  <SelectTrigger className="h-9 text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
+                  <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {PERIOD_MODES.map(m => (
                       <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
@@ -206,16 +298,11 @@ export default function RekapAbsensiPayrollPage() {
                 </Select>
               </div>
 
-              {/* Month (calendar/payroll) */}
               {periodMode !== "custom" && (
                 <div>
-                  <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1.5">
-                    Bulan
-                  </label>
+                  <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1.5">Bulan</label>
                   <Select value={selectedMonth.toString()} onValueChange={v => setSelectedMonth(parseInt(v))}>
-                    <SelectTrigger className="h-9 text-sm">
-                      <SelectValue />
-                    </SelectTrigger>
+                    <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {Array.from({ length: 12 }, (_, i) => (
                         <SelectItem key={i} value={i.toString()}>
@@ -227,16 +314,11 @@ export default function RekapAbsensiPayrollPage() {
                 </div>
               )}
 
-              {/* Year (calendar/payroll) */}
               {periodMode !== "custom" && (
                 <div>
-                  <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1.5">
-                    Tahun
-                  </label>
+                  <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1.5">Tahun</label>
                   <Select value={selectedYear.toString()} onValueChange={v => setSelectedYear(parseInt(v))}>
-                    <SelectTrigger className="h-9 text-sm">
-                      <SelectValue />
-                    </SelectTrigger>
+                    <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {Array.from({ length: 5 }, (_, i) => {
                         const y = new Date().getFullYear() - i;
@@ -247,44 +329,24 @@ export default function RekapAbsensiPayrollPage() {
                 </div>
               )}
 
-              {/* Custom dates */}
               {periodMode === "custom" && (
                 <div>
-                  <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1.5">
-                    Mulai
-                  </label>
-                  <Input
-                    type="date"
-                    value={customStartDate}
-                    onChange={e => setCustomStartDate(e.target.value)}
-                    className="h-9 text-sm"
-                  />
+                  <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1.5">Mulai</label>
+                  <Input type="date" value={customStartDate} onChange={e => setCustomStartDate(e.target.value)} className="h-9 text-sm" />
                 </div>
               )}
 
               {periodMode === "custom" && (
                 <div>
-                  <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1.5">
-                    Selesai
-                  </label>
-                  <Input
-                    type="date"
-                    value={customEndDate}
-                    onChange={e => setCustomEndDate(e.target.value)}
-                    className="h-9 text-sm"
-                  />
+                  <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1.5">Selesai</label>
+                  <Input type="date" value={customEndDate} onChange={e => setCustomEndDate(e.target.value)} className="h-9 text-sm" />
                 </div>
               )}
 
-              {/* Brand */}
               <div>
-                <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1.5">
-                  Brand
-                </label>
+                <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1.5">Brand</label>
                 <Select value={selectedBrand} onValueChange={setSelectedBrand}>
-                  <SelectTrigger className="h-9 text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
+                  <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Semua Brand</SelectItem>
                     {brands?.map(b => (
@@ -294,15 +356,10 @@ export default function RekapAbsensiPayrollPage() {
                 </Select>
               </div>
 
-              {/* Division */}
               <div>
-                <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1.5">
-                  Divisi
-                </label>
+                <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1.5">Divisi</label>
                 <Select value={selectedDivision} onValueChange={setSelectedDivision}>
-                  <SelectTrigger className="h-9 text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
+                  <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Semua Divisi</SelectItem>
                     {uniqueDivisions.map(d => (
@@ -312,37 +369,19 @@ export default function RekapAbsensiPayrollPage() {
                 </Select>
               </div>
 
-              {/* Name search + Reset */}
               <div className="flex gap-2 items-end sm:col-span-2 md:col-span-1">
                 <div className="flex-1">
-                  <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1.5">
-                    Cari
-                  </label>
-                  <Input
-                    placeholder="Nama / NIK..."
-                    value={searchName}
-                    onChange={e => setSearchName(e.target.value)}
-                    className="h-9 text-sm"
-                  />
+                  <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1.5">Cari</label>
+                  <Input placeholder="Nama / NIK..." value={searchName} onChange={e => setSearchName(e.target.value)} className="h-9 text-sm" />
                 </div>
                 <div className="shrink-0">
-                  <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1.5 invisible">
-                    &nbsp;
-                  </label>
+                  <label className="text-xs invisible block mb-1.5">&nbsp;</label>
                   <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-9 px-3"
-                    title="Reset filter"
+                    variant="outline" size="sm" className="h-9 px-3" title="Reset filter"
                     onClick={() => {
-                      setSelectedBrand("all");
-                      setSelectedDivision("all");
-                      setSearchName("");
-                      setPeriodMode("payroll");
-                      setSelectedMonth(new Date().getMonth());
-                      setSelectedYear(new Date().getFullYear());
-                      setCustomStartDate("");
-                      setCustomEndDate("");
+                      setSelectedBrand("all"); setSelectedDivision("all"); setSearchName("");
+                      setPeriodMode("payroll"); setSelectedMonth(new Date().getMonth());
+                      setSelectedYear(new Date().getFullYear()); setCustomStartDate(""); setCustomEndDate("");
                     }}
                   >
                     <RotateCcw className="h-4 w-4" />
@@ -353,7 +392,7 @@ export default function RekapAbsensiPayrollPage() {
           </CardContent>
         </Card>
 
-        {/* ── Period Preview ── */}
+        {/* ── Period Preview + disclaimer ── */}
         <div className="flex flex-col gap-1.5 px-1">
           <div className="flex items-center gap-2">
             <CalendarDays className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
@@ -400,9 +439,7 @@ export default function RekapAbsensiPayrollPage() {
               <Table>
                 <TableHeader className="bg-slate-50 dark:bg-slate-900/50">
                   <TableRow className="border-slate-200 dark:border-slate-800/50">
-                    <TableHead className="text-[10px] uppercase font-black text-slate-500 h-11 px-4 w-[220px]">
-                      Nama / NIK
-                    </TableHead>
+                    <TableHead className="text-[10px] uppercase font-black text-slate-500 h-11 px-4 w-[220px]">Nama / NIK</TableHead>
                     <TableHead className="text-[10px] uppercase font-black text-slate-500 h-11">Brand</TableHead>
                     <TableHead className="text-[10px] uppercase font-black text-slate-500 h-11">Divisi</TableHead>
                     <TableHead className="text-[10px] uppercase font-black text-slate-500 h-11 text-right">Hari Kerja</TableHead>
@@ -417,14 +454,14 @@ export default function RekapAbsensiPayrollPage() {
                   {recapRows.length > 0 ? (
                     recapRows.map(row => (
                       <TableRow
-                        key={row.employeeId}
+                        key={row.employeeId || row.employeeNumber}
                         className="border-slate-200 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-900/20 transition-colors"
                       >
                         <TableCell className="px-4 py-3">
                           <div className="font-medium text-sm text-slate-900 dark:text-white">{row.fullName}</div>
-                          {row.employeeNumber ? (
+                          {row.employeeNumber && (
                             <div className="text-xs text-slate-500 dark:text-slate-400">NIK: {row.employeeNumber}</div>
-                          ) : null}
+                          )}
                           {row.isPartial && (
                             <div className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">Partial periode</div>
                           )}
@@ -435,9 +472,17 @@ export default function RekapAbsensiPayrollPage() {
                         <TableCell className="text-right text-sm tabular-nums font-semibold text-slate-900 dark:text-white">{row.hadir}</TableCell>
                         <TableCell className="text-right tabular-nums">
                           {row.terlambat > 0 ? (
-                            <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:border-orange-800 text-xs">
-                              {row.terlambat}x / {row.menitTerlambat}m
-                            </Badge>
+                            <button
+                              onClick={() => setLateDetailRow(row)}
+                              title="Klik untuk lihat rincian"
+                            >
+                              <Badge
+                                variant="outline"
+                                className="bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:border-orange-800 text-xs cursor-pointer hover:bg-orange-100 transition-colors"
+                              >
+                                {row.terlambat}x / {row.menitTerlambat}m
+                              </Badge>
+                            </button>
                           ) : <span className="text-sm text-slate-400">—</span>}
                         </TableCell>
                         <TableCell className="text-right text-sm tabular-nums text-slate-700 dark:text-slate-300">
@@ -473,6 +518,13 @@ export default function RekapAbsensiPayrollPage() {
         </Card>
 
       </div>
+
+      {/* ── Late Details Modal ── */}
+      <LateDetailsModal
+        row={lateDetailRow}
+        open={!!lateDetailRow}
+        onClose={() => setLateDetailRow(null)}
+      />
     </DashboardLayout>
   );
 }

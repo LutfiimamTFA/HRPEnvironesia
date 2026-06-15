@@ -34,14 +34,17 @@ export type EmploymentStage = (typeof EMPLOYMENT_STAGES)[number];
 export type StructuralLevel = "management" | "division_manager" | "staff";
 
 export type ManagementScope = {
-  brandId: string;
-  brandName: string;
-  divisionIds: string[];
-  divisionNames: string[];
+  brandId?: string;
+  brandName?: string;
+  brandIds?: string[];
+  brandNames?: string[];
+  divisionIds?: string[] | null;
+  divisionNames?: string[] | null;
   divisionId?: string | null;
   divisionName?: string | null;
-  scopeType: "brand" | "all" | "selected_divisions";
+  scopeType: "seluruh_brand" | "divisi_tertentu" | "multi_brand" | "multi_divisi" | "brand" | "all" | "selected_divisions";
   scopeLabel: string;
+  isWholeBrandScope?: boolean;
 };
 
 export type UserProfile = {
@@ -80,8 +83,10 @@ export type UserProfile = {
   managementRole?: string;
   workRole?: string;
   brandName?: string;
-  divisionId?: string;
-  divisionName?: string;
+  divisionId?: string | null;
+  divisionName?: string | null;
+  managedBrandIds?: string[];
+  managedDivisionIds?: string[];
   directSupervisorUid?: string;
   directSupervisorName?: string;
 
@@ -585,8 +590,10 @@ export type HrdEmploymentInfo = {
 
   // New structure fields
   employeeId?: string;
-  divisionId?: string;
-  divisionName?: string;
+  divisionId?: string | null;
+  divisionName?: string | null;
+  divisionIds?: string[] | null;
+  divisionNames?: string[] | null;
   brandName?: string;
   structuralPosition?: string;
   workRole?: string;

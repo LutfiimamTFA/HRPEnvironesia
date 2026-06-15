@@ -472,7 +472,7 @@ function SyncRelationshipsButton({
                 <Label className="text-red-400 font-bold flex items-center gap-2">
                   <AlertCircle className="h-4 w-4" /> Daftar Bermasalah
                 </Label>
-                <ScrollArea className="h-32 border border-slate-800 rounded-xl bg-slate-900 p-3">
+                <ScrollArea className="h-32 border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 p-3">
                   <ul className="list-disc pl-4 space-y-1">
                     {syncResult.problems.map((prob, i) => (
                       <li key={i} className="text-xs text-slate-400">
@@ -762,15 +762,16 @@ function ManagementTab({
       divisionName: isBrandLevel
         ? null
         : divisions.find((d) => d.id === selectedDivisions[0])?.name || null,
+      isWholeBrandScope: isBrandLevel,
       scopeType: isAllBrands
-        ? "all"
+        ? "multi_brand"
         : isBrandLevel
-          ? "brand"
-          : "selected_divisions",
+          ? "seluruh_brand"
+          : "divisi_tertentu",
       scopeLabel: isAllBrands
-        ? "Semua Brand / Perusahaan"
+        ? "Seluruh Brand"
         : isBrandLevel
-          ? "Seluruh Brand / Perusahaan"
+          ? "Seluruh Brand / Unit"
           : "Divisi Tertentu",
     };
 
@@ -1851,7 +1852,7 @@ function DivisionManagerTab({
                 value={selectedManagerUid}
                 onValueChange={setSelectedManagerUid}
               >
-                <SelectTrigger className="h-14 border-slate-700 bg-slate-900 text-base">
+                <SelectTrigger className="h-14 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-base text-slate-900 dark:text-white">
                   <SelectValue placeholder="Pilih karyawan aktif..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -2142,9 +2143,9 @@ function HierarchyTab({
                         .map((s) => (
                           <div
                             key={s.uid}
-                            className="flex items-center gap-3 p-2 bg-slate-900/50 border border-slate-800 rounded-lg ml-4"
+                            className="flex items-center gap-3 p-2 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-lg ml-4"
                           >
-                            <div className="h-6 w-6 rounded bg-slate-800 flex items-center justify-center text-[10px] text-slate-400">
+                            <div className="h-6 w-6 rounded bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-[10px] text-slate-600 dark:text-slate-400">
                               {s.fullName.charAt(0)}
                             </div>
                             <div className="flex flex-col">
