@@ -2012,6 +2012,9 @@ export const OVERTIME_SUBMISSION_STATUSES = [
   "revision_hrd",
   "approved_hrd",
   "approved",
+  "pending_completion_confirmation",
+  "completed_confirmed",
+  "duration_needs_review",
 ] as const;
 export type OvertimeSubmissionStatus =
   (typeof OVERTIME_SUBMISSION_STATUSES)[number];
@@ -2034,6 +2037,22 @@ export type OvertimeSubmission = {
   startTime: string; // "HH:mm"
   endTime: string; // "HH:mm"
   totalDurationMinutes: number;
+
+  // Start-time audit trail (hybrid realtime flow)
+  formCreatedAt?: string | null;           // "HH:MM" waktu form dibuka
+  originalStartTimeAuto?: string | null;   // waktu otomatis saat form dibuka
+  startTimeAdjusted?: boolean | null;      // true jika staff mundurkan jam mulai
+  startTimeAdjustmentMinutes?: number | null; // selisih menit (negatif = dimundurkan)
+  startTimeAdjustmentReason?: string | null;
+
+  // Completion confirmation
+  actualEndTime?: string | null;           // realisasi jam selesai (jika beda dari estimasi)
+  completionStatus?: "confirmed_on_time" | "confirmed_early" | "confirmed_late" | null;
+  completionNote?: string | null;
+  actualDurationMinutes?: number | null;
+  confirmedCompletedAt?: Timestamp | null;
+  confirmedByUid?: string | null;
+  confirmedByName?: string | null;
   overtimeType: "hari_kerja" | "hari_libur" | "urgent";
   overtimeTypeLabel?: string;
   taskDetails?: {
@@ -2123,6 +2142,17 @@ export type OvertimeSubmission = {
   hrdApprovedByName?: string | null;
 
   approvedMinutesFinal?: number | null;
+
+  // Over-daily-limit (>4 jam/hari) tracking
+  isOverDailyLimit?: boolean | null;
+  dailyOvertimeLimitMinutes?: number | null;
+  overtimeRequestedMinutes?: number | null;
+  overtimeApprovedMinutes?: number | null;
+  overtimeRejectedMinutes?: number | null;
+  overtimeExcessMinutes?: number | null;
+  overLimitDecision?: "full_approved" | "partial_approved" | null;
+  hrdOverLimitNote?: string | null;
+
   payrollStatus?: "pending_payroll" | "processing" | "paid" | "excluded" | null;
   payrollStatusUpdatedAt?: Timestamp | null;
   payrollStatusUpdatedBy?: string | null;
@@ -2347,7 +2377,8 @@ export function isActionableStatus(
       status === "approved_by_manager" ||
       status === "revision_hrd" ||
       status === "revision_requested_by_hrd" ||
-      status === "verified_manager"
+      status === "verified_manager" ||
+      status === "duration_needs_review"
     );
   }
 

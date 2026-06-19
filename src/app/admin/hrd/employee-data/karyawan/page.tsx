@@ -6,7 +6,7 @@ import { useRoleGuard } from "@/hooks/useRoleGuard";
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { MENU_CONFIG } from "@/lib/menu-config";
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
-import { collection, query, where, doc, setDoc } from "firebase/firestore";
+import { collection, query, where, doc, setDoc, serverTimestamp, writeBatch } from "firebase/firestore";
 import type {
   UserProfile,
   Brand,
@@ -51,7 +51,17 @@ import {
   CreditCard,
   Shield,
   RefreshCw,
+  Settings2,
+  Monitor,
+  X,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -263,6 +273,387 @@ function AdminCheckIcons({
         </Badge>
       )}
     </div>
+  );
+}
+
+// ─── Attendance Method helpers ──────────────────────────────────────────────
+
+type AttendanceMethodValue = "web_absen" | "id_card" | "fingerprint" | "manual" | undefined;
+
+function getAttendanceMethodLabel(method: AttendanceMethodValue): string {
+  if (!method) return "Belum Diatur";
+  if (method === "web_absen") return "Web Absen";
+  if (method === "id_card" || method === "fingerprint") return "ID Card";
+  return "Manual";
+}
+
+function AttendanceMethodBadge({ method }: { method: AttendanceMethodValue }) {
+  const label = getAttendanceMethodLabel(method);
+  let cls = "border-slate-500/30 text-slate-400 bg-slate-500/10";
+  if (method === "web_absen") cls = "border-blue-500/30 text-blue-500 bg-blue-500/10";
+  else if (method === "id_card" || method === "fingerprint") cls = "border-teal-500/30 text-teal-500 bg-teal-500/10";
+  else if (method === "manual") cls = "border-orange-500/30 text-orange-500 bg-orange-500/10";
+  return (
+    <Badge variant="outline" className={cn("text-[10px] font-bold px-2 py-0 h-5 uppercase tracking-wider", cls)}>
+      {label}
+    </Badge>
+  );
+}
+
+// ─── Kelola Metode Absensi Modal ─────────────────────────────────────────────
+
+interface KelolaMtdAbsensiModalProps {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  employees: MergedEmployee[];
+  currentUserUid: string;
+  currentUserName: string;
+  db: import("firebase/firestore").Firestore;
+  onSuccess: () => void;
+}
+
+function KelolaMtdAbsensiModal({
+  open,
+  onOpenChange,
+  employees,
+  currentUserUid,
+  currentUserName,
+  db,
+  onSuccess,
+}: KelolaMtdAbsensiModalProps) {
+  const [search, setSearch] = useState("");
+  const [methodFilter, setMethodFilter] = useState<"all" | "web_absen" | "id_card" | "manual" | "belum_diatur">("all");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkMethod, setBulkMethod] = useState<"web_absen" | "id_card" | "manual" | "">("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [singleEdit, setSingleEdit] = useState<{ uid: string; name: string } | null>(null);
+  const [singleMethod, setSingleMethod] = useState<"web_absen" | "id_card" | "manual" | "">("");
+  const { toast } = useToast();
+
+  // ── reset on close ──
+  const handleOpenChange = (v: boolean) => {
+    if (!v) {
+      setSelected(new Set());
+      setBulkMethod("");
+      setConfirmOpen(false);
+      setSingleEdit(null);
+    }
+    onOpenChange(v);
+  };
+
+  // ── filter ──
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return employees.filter((e) => {
+      const m = (e.employeeProfile?.attendanceMethod as AttendanceMethodValue) ?? undefined;
+      const normalized = m === "fingerprint" ? "id_card" : m;
+      if (methodFilter === "web_absen" && normalized !== "web_absen") return false;
+      if (methodFilter === "id_card" && normalized !== "id_card") return false;
+      if (methodFilter === "manual" && normalized !== "manual") return false;
+      if (methodFilter === "belum_diatur" && normalized != null) return false;
+      if (q) {
+        const hay = `${e.fullName} ${e.email} ${e.brandName ?? ""} ${e.division ?? ""} ${e.employeeNumber ?? ""}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [employees, search, methodFilter]);
+
+  // ── summary ──
+  const summary = useMemo(() => {
+    let webAbsen = 0, idCard = 0, manual = 0, belum = 0;
+    employees.forEach((e) => {
+      const m = (e.employeeProfile?.attendanceMethod as AttendanceMethodValue) ?? undefined;
+      const n = m === "fingerprint" ? "id_card" : m;
+      if (n === "web_absen") webAbsen++;
+      else if (n === "id_card") idCard++;
+      else if (n === "manual") manual++;
+      else belum++;
+    });
+    return { total: employees.length, webAbsen, idCard, manual, belum };
+  }, [employees]);
+
+  // ── checkbox ──
+  const allChecked = filtered.length > 0 && filtered.every((e) => selected.has(e.uid));
+  const toggleAll = () => {
+    if (allChecked) {
+      const next = new Set(selected);
+      filtered.forEach((e) => next.delete(e.uid));
+      setSelected(next);
+    } else {
+      const next = new Set(selected);
+      filtered.forEach((e) => next.add(e.uid));
+      setSelected(next);
+    }
+  };
+  const toggleOne = (uid: string) => {
+    const next = new Set(selected);
+    if (next.has(uid)) next.delete(uid); else next.add(uid);
+    setSelected(next);
+  };
+
+  // ── save helper ──
+  const saveMethod = async (uids: string[], method: "web_absen" | "id_card" | "manual") => {
+    setSaving(true);
+    try {
+      const batch = writeBatch(db as any);
+      uids.forEach((uid) => {
+        const ref = doc(db as any, "employee_profiles", uid);
+        batch.set(ref, {
+          attendanceMethod: method,
+          attendanceUpdatedAt: serverTimestamp(),
+          attendanceUpdatedBy: currentUserUid,
+          attendanceUpdatedByName: currentUserName,
+        }, { merge: true });
+      });
+      await batch.commit();
+      toast({ title: "Berhasil disimpan", description: `Metode absensi ${uids.length} karyawan diperbarui.` });
+      onSuccess();
+      setSelected(new Set());
+      setBulkMethod("");
+      setConfirmOpen(false);
+      setSingleEdit(null);
+    } catch {
+      toast({ variant: "destructive", title: "Gagal menyimpan", description: "Terjadi kesalahan. Coba lagi." });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const selectedList = [...selected];
+  const methodLabel = (m: string) => m === "web_absen" ? "Web Absen" : m === "id_card" ? "ID Card" : m === "manual" ? "Manual" : m;
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="max-w-5xl w-full max-h-[90vh] flex flex-col p-0 gap-0 bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
+          <DialogTitle className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+            <Settings2 className="h-5 w-5 text-teal-500" />
+            Kelola Metode Absensi
+          </DialogTitle>
+          <DialogDescription className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+            Pantau dan ubah metode absensi karyawan tanpa membuka detail satu per satu.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-y-auto">
+          {/* Summary cards */}
+          <div className="px-6 py-4 grid grid-cols-2 sm:grid-cols-4 gap-3 border-b border-slate-100 dark:border-slate-800/50">
+            {[
+              { label: "Total Karyawan", val: summary.total, cls: "text-slate-600 dark:text-slate-400", bg: "bg-slate-500/10" },
+              { label: "Web Absen", val: summary.webAbsen, cls: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500/10" },
+              { label: "ID Card", val: summary.idCard, cls: "text-teal-600 dark:text-teal-400", bg: "bg-teal-500/10" },
+              { label: "Belum Diatur", val: summary.belum, cls: "text-slate-500 dark:text-slate-400", bg: "bg-slate-100 dark:bg-slate-800" },
+            ].map((s) => (
+              <div key={s.label} className={cn("rounded-xl p-3 flex flex-col gap-1", s.bg)}>
+                <span className={cn("text-2xl font-black", s.cls)}>{s.val}</span>
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{s.label}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Filter bar */}
+          <div className="px-6 py-3 flex flex-wrap gap-2 items-center border-b border-slate-100 dark:border-slate-800/50">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Cari nama, NIK, brand, atau divisi..."
+                className="w-full h-9 pl-9 pr-3 text-sm rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+              />
+            </div>
+            <div className="flex gap-1.5">
+              {(["all", "web_absen", "id_card", "manual", "belum_diatur"] as const).map((f) => {
+                const labels: Record<string, string> = { all: "Semua", web_absen: "Web Absen", id_card: "ID Card", manual: "Manual", belum_diatur: "Belum Diatur" };
+                return (
+                  <button
+                    key={f}
+                    onClick={() => setMethodFilter(f)}
+                    className={cn(
+                      "h-8 px-3 text-xs font-bold rounded-lg border transition-colors",
+                      methodFilter === f
+                        ? "bg-teal-500 text-white border-teal-500"
+                        : "border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60",
+                    )}
+                  >
+                    {labels[f]}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Bulk action bar */}
+          {selected.size > 0 && (
+            <div className="px-6 py-3 bg-teal-500/10 border-b border-teal-500/20 flex flex-wrap items-center gap-3">
+              <span className="text-sm font-bold text-teal-700 dark:text-teal-400">{selected.size} karyawan dipilih</span>
+              <div className="flex gap-2 ml-auto items-center">
+                <span className="text-xs text-slate-500">Ubah ke:</span>
+                {(["web_absen", "id_card", "manual"] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => { setBulkMethod(m); setConfirmOpen(true); }}
+                    className="h-8 px-3 text-xs font-bold rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-teal-500 hover:text-teal-600 transition-colors"
+                  >
+                    {methodLabel(m)}
+                  </button>
+                ))}
+                <button onClick={() => setSelected(new Set())} className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Table */}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[860px] text-sm">
+              <thead className="bg-slate-50 dark:bg-slate-900/40 sticky top-0 z-10">
+                <tr className="border-b border-slate-200 dark:border-slate-800">
+                  <th className="px-4 py-3 w-10">
+                    <input type="checkbox" checked={allChecked} onChange={toggleAll} className="h-4 w-4 rounded border-slate-300 accent-teal-500" />
+                  </th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Nama Karyawan</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider w-[130px]">NIK</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider w-[130px]">Brand</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider w-[140px]">Divisi</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider w-[130px]">Metode Absensi</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider w-[160px]">Terakhir Diubah</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider w-[80px]">Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-6 py-12 text-center text-slate-400 text-sm">
+                      Tidak ada karyawan sesuai filter.
+                    </td>
+                  </tr>
+                ) : filtered.map((emp) => {
+                  const method = (emp.employeeProfile?.attendanceMethod as AttendanceMethodValue) ?? undefined;
+                  const updatedAt = (emp.employeeProfile as any)?.attendanceUpdatedAt;
+                  const updatedByName = (emp.employeeProfile as any)?.attendanceUpdatedByName;
+                  const dateStr = updatedAt?.toDate ? updatedAt.toDate().toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+                  const isSingleEditing = singleEdit?.uid === emp.uid;
+                  return (
+                    <tr
+                      key={emp.uid}
+                      className={cn(
+                        "border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-900/30 transition-colors",
+                        selected.has(emp.uid) && "bg-teal-50/60 dark:bg-teal-900/10",
+                      )}
+                    >
+                      <td className="px-4 py-3">
+                        <input type="checkbox" checked={selected.has(emp.uid)} onChange={() => toggleOne(emp.uid)} className="h-4 w-4 rounded border-slate-300 accent-teal-500" />
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-slate-900 dark:text-white text-[13px]">{emp.fullName}</div>
+                        <div className="text-[11px] text-slate-400">{emp.email}</div>
+                      </td>
+                      <td className="px-4 py-3 text-[12px] font-mono text-slate-600 dark:text-slate-400">
+                        {emp.employeeNumber || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-[12px] text-slate-600 dark:text-slate-400">{emp.brandName || "—"}</td>
+                      <td className="px-4 py-3 text-[12px] text-slate-600 dark:text-slate-400">{emp.division || "—"}</td>
+                      <td className="px-4 py-3">
+                        {isSingleEditing ? (
+                          <div className="flex gap-1 flex-wrap">
+                            {(["web_absen", "id_card", "manual"] as const).map((m) => (
+                              <button
+                                key={m}
+                                onClick={() => setSingleMethod(m)}
+                                className={cn(
+                                  "h-7 px-2 text-[11px] font-bold rounded-md border transition-colors",
+                                  singleMethod === m
+                                    ? "bg-teal-500 text-white border-teal-500"
+                                    : "border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400",
+                                )}
+                              >
+                                {methodLabel(m)}
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <AttendanceMethodBadge method={method} />
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-[11px] text-slate-500 dark:text-slate-400">
+                        <div>{dateStr}</div>
+                        {updatedByName && <div className="text-[10px] text-slate-400 truncate max-w-[150px]">{updatedByName}</div>}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isSingleEditing ? (
+                          <div className="flex gap-1">
+                            <Button
+                              size="sm"
+                              disabled={!singleMethod || saving}
+                              className="h-7 px-2 text-[11px] rounded-md bg-teal-500 hover:bg-teal-600 text-white"
+                              onClick={() => singleMethod && saveMethod([emp.uid], singleMethod as "web_absen" | "id_card" | "manual")}
+                            >
+                              {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : "Simpan"}
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-7 px-2 text-[11px] rounded-md" onClick={() => { setSingleEdit(null); setSingleMethod(""); }}>
+                              Batal
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-3 text-[11px] rounded-md border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-teal-600 hover:border-teal-500"
+                            onClick={() => {
+                              setSingleEdit({ uid: emp.uid, name: emp.fullName });
+                              const cur = (emp.employeeProfile?.attendanceMethod as AttendanceMethodValue) ?? undefined;
+                              setSingleMethod((cur === "fingerprint" ? "id_card" : cur) as any ?? "");
+                            }}
+                          >
+                            Ubah
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 flex-shrink-0 flex items-center justify-between">
+          <span className="text-xs text-slate-400">{filtered.length} karyawan ditampilkan</span>
+          <Button variant="outline" size="sm" className="rounded-xl" onClick={() => handleOpenChange(false)}>
+            Tutup
+          </Button>
+        </div>
+      </DialogContent>
+
+      {/* Bulk confirm dialog */}
+      <Dialog open={confirmOpen} onOpenChange={(v) => { if (!v) setConfirmOpen(false); }}>
+        <DialogContent className="max-w-sm bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-slate-900 dark:text-white">Konfirmasi Perubahan</DialogTitle>
+            <DialogDescription className="text-sm text-slate-500 mt-1">
+              Ubah metode absensi untuk <strong>{selectedList.length} karyawan</strong> menjadi <strong>{methodLabel(bulkMethod)}</strong>?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2 justify-end mt-4">
+            <Button variant="outline" size="sm" className="rounded-xl" onClick={() => setConfirmOpen(false)} disabled={saving}>Batal</Button>
+            <Button
+              size="sm"
+              className="rounded-xl bg-teal-500 hover:bg-teal-600 text-white"
+              disabled={saving || !bulkMethod}
+              onClick={() => bulkMethod && saveMethod(selectedList, bulkMethod as "web_absen" | "id_card" | "manual")}
+            >
+              {saving ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-2" />Menyimpan...</> : "Simpan Perubahan"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </Dialog>
   );
 }
 
@@ -540,6 +931,7 @@ export default function KaryawanDataPage() {
   const [selectedReviewEmp, setSelectedReviewEmp] =
     useState<MergedEmployee | null>(null);
   const [selectedReviewReq, setSelectedReviewReq] = useState<any | null>(null);
+  const [showMtdAbsensiModal, setShowMtdAbsensiModal] = useState(false);
 
   const { data: pendingBankRequests, mutate: mutateBankRequests } =
     useCollection<any>(
@@ -1044,6 +1436,14 @@ export default function KaryawanDataPage() {
               <Button
                 variant="outline"
                 size="sm"
+                className="rounded-xl border-teal-400 dark:border-teal-700 bg-teal-50 dark:bg-teal-900/20 text-teal-700 dark:text-teal-400 hover:bg-teal-100 dark:hover:bg-teal-900/40 font-semibold"
+                onClick={() => setShowMtdAbsensiModal(true)}
+              >
+                <Settings2 className="mr-2 h-3.5 w-3.5" /> Kelola Metode Absensi
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 className="rounded-xl border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
                 onClick={() => setIsImportOpen(true)}
               >
@@ -1405,6 +1805,9 @@ export default function KaryawanDataPage() {
                                   <TableHead className="text-xs uppercase font-bold text-slate-600 dark:text-slate-400 h-12 min-w-[250px]">
                                     Action Needed
                                   </TableHead>
+                                  <TableHead className="text-xs uppercase font-bold text-slate-600 dark:text-slate-400 h-12 w-[130px]">
+                                    Metode Absensi
+                                  </TableHead>
                                   <TableHead className="text-xs uppercase font-bold text-slate-600 dark:text-slate-400 h-12 min-w-[300px]">
                                     Admin Check
                                   </TableHead>
@@ -1580,6 +1983,9 @@ export default function KaryawanDataPage() {
                                             </Badge>
                                           )}
                                         </div>
+                                      </TableCell>
+                                      <TableCell className="py-6 align-middle">
+                                        <AttendanceMethodBadge method={(emp.employeeProfile?.attendanceMethod as AttendanceMethodValue) ?? undefined} />
                                       </TableCell>
                                       <TableCell className="py-6 align-middle">
                                         <AdminCheckIcons
@@ -1760,6 +2166,16 @@ export default function KaryawanDataPage() {
         open={isImportOpen}
         onOpenChange={setIsImportOpen}
         onImportSuccess={() => mutate?.()}
+      />
+
+      <KelolaMtdAbsensiModal
+        open={showMtdAbsensiModal}
+        onOpenChange={setShowMtdAbsensiModal}
+        employees={allMerged}
+        currentUserUid={userProfile?.uid || ""}
+        currentUserName={userProfile?.fullName || userProfile?.email || ""}
+        db={firestore}
+        onSuccess={() => mutate?.()}
       />
 
       {selectedReviewEmp && selectedReviewReq && (

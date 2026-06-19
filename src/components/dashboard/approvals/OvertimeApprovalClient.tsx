@@ -16,7 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Search, UserCheck } from "lucide-react";
+import { Search, UserCheck, AlertTriangle } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -576,6 +576,42 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
     );
   }, [filteredSubmissions, sortOption]);
 
+  const DAILY_LIMIT_MINUTES = 240; // 4 jam
+
+  // Map: "${employeeUid}_${overtimeDateStr}" → total submitted minutes across ALL submissions for that employee+date
+  const dailyOvertimeTotalMap = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!submissions) return map;
+    submissions.forEach((s) => {
+      const uid = s.employeeUid || s.uid || "";
+      if (!uid) return;
+      const dateVal: any = (s as any).overtimeDate ?? s.date;
+      let dateStr = "";
+      if (dateVal && typeof dateVal === "object" && typeof dateVal.toDate === "function") {
+        dateStr = format(dateVal.toDate(), "yyyy-MM-dd");
+      } else if (typeof dateVal === "string") {
+        dateStr = dateVal.slice(0, 10);
+      }
+      if (!dateStr) return;
+      const key = `${uid}_${dateStr}`;
+      map.set(key, (map.get(key) || 0) + (s.totalDurationMinutes || 0));
+    });
+    return map;
+  }, [submissions]);
+
+  const getDailyTotal = (s: OvertimeSubmission): number => {
+    const uid = s.employeeUid || s.uid || "";
+    const dateVal: any = (s as any).overtimeDate ?? s.date;
+    let dateStr = "";
+    if (dateVal && typeof dateVal === "object" && typeof dateVal.toDate === "function") {
+      dateStr = format(dateVal.toDate(), "yyyy-MM-dd");
+    } else if (typeof dateVal === "string") {
+      dateStr = dateVal.slice(0, 10);
+    }
+    if (!uid || !dateStr) return 0;
+    return dailyOvertimeTotalMap.get(`${uid}_${dateStr}`) || 0;
+  };
+
   const payrollRecapGrouped = useMemo(() => {
     if (activeTab !== "rekap_payroll") return [];
 
@@ -588,6 +624,7 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
         brandName: string;
         count: number;
         totalMinutes: number;
+        hasOverLimit: boolean;
         items: OvertimeSubmission[];
       }
     > = {};
@@ -610,11 +647,13 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
           brandName: brand,
           count: 0,
           totalMinutes: 0,
+          hasOverLimit: false,
           items: [],
         };
       }
       groups[empId].count += 1;
       groups[empId].totalMinutes += approvedMinutes;
+      if (s.isOverDailyLimit) groups[empId].hasOverLimit = true;
       groups[empId].items.push(s);
     });
 
@@ -916,55 +955,55 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
           </div>
 
           {mode === "manager" && userProfile ? (
-            <Card className="rounded-3xl border border-border bg-muted p-5">
+            <div className="rounded-2xl border border-teal-200/60 bg-teal-50/40 p-5 shadow-sm">
               <div className="flex items-center gap-3 mb-4">
-                <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-900/5 text-slate-900 dark:bg-slate-200/10 dark:text-slate-100">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-100 text-teal-600">
                   <UserCheck className="h-5 w-5" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold">
+                  <p className="text-sm font-semibold text-slate-900">
                     Scope Persetujuan Anda
                   </p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-slate-500">
                     Sebagai {dynamicRoleLabel}
                   </p>
                 </div>
               </div>
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-3xl border border-border bg-background p-4">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                <div className="rounded-xl border border-white bg-white p-4 shadow-sm">
+                  <p className="text-xs uppercase tracking-wide text-slate-400 font-semibold">
                     Brand
                   </p>
-                  <p className="mt-2 text-sm font-semibold text-slate-100">
+                  <p className="mt-1.5 text-sm font-semibold text-slate-800">
                     {userProfile.brandName || userProfile.brandId || "—"}
                   </p>
                 </div>
-                <div className="rounded-3xl border border-border bg-background p-4">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                <div className="rounded-xl border border-white bg-white p-4 shadow-sm">
+                  <p className="text-xs uppercase tracking-wide text-slate-400 font-semibold">
                     Divisi
                   </p>
-                  <p className="mt-2 text-sm font-semibold text-slate-100">
+                  <p className="mt-1.5 text-sm font-semibold text-slate-800">
                     {userProfile.divisionName || userProfile.division || "—"}
                   </p>
                 </div>
-                <div className="rounded-3xl border border-border bg-background p-4">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                <div className="rounded-xl border border-white bg-white p-4 shadow-sm">
+                  <p className="text-xs uppercase tracking-wide text-slate-400 font-semibold">
                     Jabatan Organisasi
                   </p>
-                  <p className="mt-2 text-sm font-semibold text-slate-100">
+                  <p className="mt-1.5 text-sm font-semibold text-slate-800">
                     {organizationTitle}
                   </p>
                 </div>
-                <div className="rounded-3xl border border-border bg-background p-4">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                <div className="rounded-xl border border-white bg-white p-4 shadow-sm">
+                  <p className="text-xs uppercase tracking-wide text-slate-400 font-semibold">
                     Fungsi Approval Saat Ini
                   </p>
-                  <p className="mt-2 text-sm font-semibold text-slate-100">
+                  <p className="mt-1.5 text-sm font-semibold text-teal-700">
                     {dynamicRoleLabel}
                   </p>
                 </div>
               </div>
-            </Card>
+            </div>
           ) : null}
 
           <div
@@ -1091,38 +1130,46 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
           ) : activeTab === "rekap_payroll" ? (
             payrollRecapGrouped.length > 0 ? (
               <div className="space-y-4">
-                <div className="flex justify-between items-center bg-slate-900/40 p-4 rounded-2xl border border-slate-800">
-                  <div>
-                    <h4 className="text-sm font-bold text-white uppercase tracking-wider">
-                      Rekapitulasi Lembur Bulanan
-                    </h4>
-                    <p className="text-xs text-slate-400">
-                      Total akumulasi jam lembur yang disetujui (siap payroll)
-                      untuk periode {periodFilter}.
-                    </p>
+                {/* Rekap Payroll Header Card */}
+                <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-teal-200/70 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-50 border border-teal-200/60">
+                      <span className="text-base">📊</span>
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+                        Rekapitulasi Lembur Bulanan
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Total akumulasi jam lembur yang disetujui (siap payroll)
+                        untuk periode {periodFilter}.
+                      </p>
+                    </div>
                   </div>
-                  <Badge className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold px-3 py-1">
+                  <Badge className="bg-teal-50 border border-teal-200 text-teal-700 font-bold px-3 py-1 text-xs">
                     {payrollRecapGrouped.length} Karyawan Terdaftar
                   </Badge>
                 </div>
-                <div className="min-w-full overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/20">
+
+                {/* Main Payroll Table */}
+                <div className="min-w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                   <Table>
-                    <TableHeader className="bg-slate-900/50">
-                      <TableRow className="border-slate-800/50 hover:bg-slate-900/50">
-                        <TableHead className="px-6 py-4 text-left text-xs uppercase font-bold text-slate-400 w-10"></TableHead>
-                        <TableHead className="px-3 py-4 text-left text-xs uppercase font-bold text-slate-400">
+                    <TableHeader className="bg-slate-50">
+                      <TableRow className="border-slate-200 hover:bg-slate-50">
+                        <TableHead className="px-6 py-4 text-left text-xs uppercase font-bold text-slate-500 w-10"></TableHead>
+                        <TableHead className="px-3 py-4 text-left text-xs uppercase font-bold text-slate-500">
                           Nama Karyawan
                         </TableHead>
-                        <TableHead className="px-3 py-4 text-left text-xs uppercase font-bold text-slate-400">
+                        <TableHead className="px-3 py-4 text-left text-xs uppercase font-bold text-slate-500">
                           Brand / Divisi
                         </TableHead>
-                        <TableHead className="px-3 py-4 text-center text-xs uppercase font-bold text-slate-400 w-32">
+                        <TableHead className="px-3 py-4 text-center text-xs uppercase font-bold text-slate-500 w-32">
                           Frekuensi Lembur
                         </TableHead>
-                        <TableHead className="px-3 py-4 text-right text-xs uppercase font-bold text-emerald-400 w-48">
+                        <TableHead className="px-3 py-4 text-right text-xs uppercase font-bold text-teal-600 w-48">
                           Total Durasi Payroll
                         </TableHead>
-                        <TableHead className="px-6 py-4 text-right text-xs uppercase font-bold text-slate-400 w-32">
+                        <TableHead className="px-6 py-4 text-right text-xs uppercase font-bold text-slate-500 w-32">
                           Aksi
                         </TableHead>
                       </TableRow>
@@ -1140,7 +1187,7 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                         return (
                           <Fragment key={g.employeeUid}>
                             <TableRow
-                              className="border-slate-800/50 hover:bg-slate-900/10 transition-colors cursor-pointer"
+                              className="border-slate-100 hover:bg-slate-50/80 transition-colors cursor-pointer group"
                               onClick={() =>
                                 setExpandedEmployeeId(
                                   isExpanded ? null : g.employeeUid,
@@ -1148,25 +1195,36 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                               }
                             >
                               <TableCell className="px-6 py-4 text-center">
-                                <span className="text-slate-500 font-mono text-xs">
+                                <span className="text-slate-400 font-mono text-xs group-hover:text-teal-500 transition-colors">
                                   {isExpanded ? "▼" : "▶"}
                                 </span>
                               </TableCell>
-                              <TableCell className="px-3 py-4 font-semibold text-sm text-slate-100">
+                              <TableCell className="px-3 py-4 font-semibold text-sm text-slate-900">
                                 {g.employeeName}
                               </TableCell>
-                              <TableCell className="px-3 py-4 text-sm text-slate-400">
+                              <TableCell className="px-3 py-4 text-sm text-slate-500">
                                 {g.brandName} / {g.divisionName}
                               </TableCell>
                               <TableCell className="px-3 py-4 text-center">
-                                <Badge
-                                  variant="secondary"
-                                  className="bg-slate-850 text-slate-300 font-bold px-2 py-0.5"
-                                >
-                                  {g.count}x Kerja
-                                </Badge>
+                                <div className="flex flex-col items-center gap-1">
+                                  <Badge
+                                    variant="outline"
+                                    className="bg-slate-50 border-slate-200 text-slate-600 font-bold px-2 py-0.5"
+                                  >
+                                    {g.count}x Kerja
+                                  </Badge>
+                                  {g.hasOverLimit && (
+                                    <Badge
+                                      variant="outline"
+                                      className="bg-amber-50 border-amber-200 text-amber-700 font-semibold px-2 py-0.5 text-[10px] flex items-center gap-1"
+                                    >
+                                      <AlertTriangle className="h-2.5 w-2.5" />
+                                      Ada Durasi Tinggi
+                                    </Badge>
+                                  )}
+                                </div>
                               </TableCell>
-                              <TableCell className="px-3 py-4 text-right font-black text-sm text-emerald-400">
+                              <TableCell className="px-3 py-4 text-right font-black text-sm text-teal-600">
                                 {durationLabel}
                               </TableCell>
                               <TableCell
@@ -1176,7 +1234,7 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  className="h-8 border-slate-700 hover:bg-slate-800 hover:text-white rounded-xl text-xs"
+                                  className="h-8 border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600 hover:bg-teal-50 rounded-xl text-xs transition-colors"
                                   onClick={() =>
                                     setExpandedEmployeeId(
                                       isExpanded ? null : g.employeeUid,
@@ -1191,16 +1249,16 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                             {isExpanded && (
                               <TableRow
                                 key={`${g.employeeUid}-details`}
-                                className="bg-slate-950/40 border-slate-850 hover:bg-slate-950/40"
+                                className="bg-teal-50/30 border-teal-100 hover:bg-teal-50/30"
                               >
                                 <TableCell colSpan={6} className="px-8 py-4">
-                                  <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4 space-y-3">
-                                    <h5 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                                  <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3 shadow-sm">
+                                    <h5 className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-2">
                                       <span>📋</span> Rincian Lembur Disetujui
                                     </h5>
                                     <Table>
-                                      <TableHeader className="bg-slate-900/30">
-                                        <TableRow className="border-slate-800/50">
+                                      <TableHeader className="bg-slate-50">
+                                        <TableRow className="border-slate-200">
                                           <TableHead className="py-2 text-xs font-semibold text-slate-500">
                                             Tanggal
                                           </TableHead>
@@ -1213,8 +1271,14 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                                           <TableHead className="py-2 text-xs font-semibold text-slate-500">
                                             Pekerjaan
                                           </TableHead>
-                                          <TableHead className="py-2 text-xs font-semibold text-slate-500 text-right text-emerald-500">
-                                            Durasi Payroll
+                                          <TableHead className="py-2 text-xs font-semibold text-slate-500 text-right">
+                                            Diajukan
+                                          </TableHead>
+                                          <TableHead className="py-2 text-xs font-semibold text-teal-600 text-right">
+                                            Disetujui Payroll
+                                          </TableHead>
+                                          <TableHead className="py-2 text-xs font-semibold text-amber-600 text-right">
+                                            Kelebihan &gt;4 Jam
                                           </TableHead>
                                           <TableHead className="py-2 text-xs font-semibold text-slate-500 text-right">
                                             Aksi
@@ -1252,9 +1316,9 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                                           return (
                                             <TableRow
                                               key={item.id}
-                                              className="border-slate-900/30 hover:bg-slate-900/10"
+                                              className="border-slate-100 hover:bg-slate-50/60"
                                             >
-                                              <TableCell className="py-2 text-xs text-slate-300">
+                                              <TableCell className="py-2 text-xs text-slate-700">
                                                 {ovDate
                                                   ? format(
                                                       ovDate,
@@ -1263,11 +1327,11 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                                                     )
                                                   : "-"}
                                               </TableCell>
-                                              <TableCell className="py-2 text-xs text-slate-400 font-mono">
+                                              <TableCell className="py-2 text-xs text-slate-500 font-mono">
                                                 {item.startTime} -{" "}
                                                 {item.endTime}
                                               </TableCell>
-                                              <TableCell className="py-2 text-xs text-slate-300 capitalize">
+                                              <TableCell className="py-2 text-xs text-slate-700 capitalize">
                                                 {item.location === "kantor"
                                                   ? "💻 Kantor"
                                                   : item.location === "remote"
@@ -1277,19 +1341,36 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                                                       : item.location || "-"}
                                               </TableCell>
                                               <TableCell
-                                                className="py-2 text-xs text-slate-400 truncate max-w-[200px]"
+                                                className="py-2 text-xs text-slate-500 truncate max-w-[200px]"
                                                 title={taskDesc}
                                               >
                                                 {taskDesc}
                                               </TableCell>
-                                              <TableCell className="py-2 text-xs font-bold text-emerald-400 text-right">
+                                              <TableCell className="py-2 text-xs text-slate-500 text-right">
+                                                {item.totalDurationMinutes
+                                                  ? `${Math.floor(item.totalDurationMinutes / 60)}j ${item.totalDurationMinutes % 60}m`
+                                                  : "-"}
+                                              </TableCell>
+                                              <TableCell className="py-2 text-xs font-bold text-teal-600 text-right">
                                                 {itemDurationLabel}
+                                              </TableCell>
+                                              <TableCell className="py-2 text-xs text-right">
+                                                {item.isOverDailyLimit && item.overtimeExcessMinutes ? (
+                                                  <div className="flex items-center justify-end gap-1">
+                                                    <AlertTriangle className="h-3 w-3 text-amber-500" />
+                                                    <span className="font-semibold text-amber-600">
+                                                      +{Math.floor((item.overtimeExcessMinutes || 0) / 60)}j {(item.overtimeExcessMinutes || 0) % 60}m
+                                                    </span>
+                                                  </div>
+                                                ) : (
+                                                  <span className="text-slate-300">—</span>
+                                                )}
                                               </TableCell>
                                               <TableCell className="py-2 text-xs text-right">
                                                 <Button
                                                   variant="link"
                                                   size="sm"
-                                                  className="h-auto p-0 text-blue-400 hover:text-blue-300 font-semibold"
+                                                  className="h-auto p-0 text-teal-600 hover:text-teal-700 font-semibold"
                                                   onClick={() =>
                                                     setSelectedSubmission(item)
                                                   }
@@ -1314,14 +1395,14 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                 </div>
               </div>
             ) : (
-              <div className="flex flex-col h-64 items-center justify-center text-center p-8 bg-muted/20 rounded-3xl border-2 border-dashed border-border/50">
-                <div className="h-12 w-12 rounded-full bg-muted/50 flex items-center justify-center mb-4">
-                  <Search className="h-6 w-6 text-muted-foreground" />
+              <div className="flex flex-col h-64 items-center justify-center text-center p-8 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
+                <div className="h-12 w-12 rounded-full bg-slate-100 flex items-center justify-center mb-4">
+                  <Search className="h-6 w-6 text-slate-400" />
                 </div>
-                <h3 className="text-lg font-semibold text-slate-200">
+                <h3 className="text-lg font-semibold text-slate-700">
                   Tidak ada rekap payroll ditemukan.
                 </h3>
-                <p className="text-sm text-muted-foreground mt-2 max-w-xs">
+                <p className="text-sm text-slate-500 mt-2 max-w-xs">
                   Coba ubah periode atau filter pencarian untuk melihat data
                   payroll disetujui lainnya.
                 </p>
@@ -1385,6 +1466,9 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                       "-";
                     const isTurn = isUserTurn(s);
                     const actionLabel = isTurn ? "Review" : "Detail";
+
+                    const dailyTotal = getDailyTotal(s);
+                    const isOverLimit = dailyTotal > DAILY_LIMIT_MINUTES;
 
                     return (
                       <TableRow
@@ -1498,6 +1582,14 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                             divisionName={s.divisionName || s.division}
                             payrollStatus={s.payrollStatus}
                           />
+                          {isOverLimit && (
+                            <div className="mt-1.5 flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 w-fit">
+                              <AlertTriangle className="h-3 w-3 text-amber-500 flex-shrink-0" />
+                              <span className="text-[10px] font-semibold text-amber-700 leading-tight">
+                                {s.isOverDailyLimit !== undefined ? "Melebihi Acuan 4 Jam" : "Perlu Review Durasi"}
+                              </span>
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className="px-3 py-3 align-top text-right">
                           <Button
@@ -1533,16 +1625,16 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
               </Table>
             </div>
           ) : (
-            <div className="flex flex-col h-64 items-center justify-center text-center p-8 bg-muted/20 rounded-3xl border-2 border-dashed border-border/50">
-              <div className="h-12 w-12 rounded-full bg-muted/50 flex items-center justify-center mb-4">
-                <Search className="h-6 w-6 text-muted-foreground" />
+            <div className="flex flex-col h-64 items-center justify-center text-center p-8 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
+              <div className="h-12 w-12 rounded-full bg-slate-100 flex items-center justify-center mb-4">
+                <Search className="h-6 w-6 text-slate-400" />
               </div>
-              <h3 className="text-lg font-semibold text-slate-200">
+              <h3 className="text-lg font-semibold text-slate-700">
                 {mode === "manager" && activeTab === "perlu_diproses"
                   ? "Tidak ada pengajuan yang perlu Anda proses saat ini."
                   : "Tidak ada pengajuan ditemukan."}
               </h3>
-              <p className="text-sm text-muted-foreground mt-2 max-w-xs">
+              <p className="text-sm text-slate-500 mt-2 max-w-xs">
                 {mode === "manager" && activeTab === "perlu_diproses"
                   ? "Semua pengajuan staff Anda telah diproses atau belum ada pengajuan baru."
                   : "Coba ubah filter atau periode untuk melihat data lainnya."}
@@ -1550,7 +1642,7 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
               {mode === "manager" && activeTab === "perlu_diproses" && (
                 <Button
                   variant="outline"
-                  className="mt-6 rounded-xl"
+                  className="mt-6 rounded-xl border-slate-200 text-slate-700 hover:border-teal-400 hover:text-teal-600"
                   onClick={() => setPersistedActiveTab("riwayat_saya")}
                 >
                   Lihat Riwayat Saya
@@ -1573,6 +1665,7 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
             }
           }}
           mode={mode}
+          dailyTotalMinutes={getDailyTotal(selectedSubmission)}
         />
       )}
     </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -48,6 +48,11 @@ import {
   Image,
   CheckCircle,
   Clock,
+  Info,
+  PlayCircle,
+  StopCircle,
+  ChevronRight,
+  RotateCcw,
 } from "lucide-react";
 import { useAuth } from "@/providers/auth-provider";
 import {
@@ -65,6 +70,7 @@ import {
   collection,
   query,
   where,
+  updateDoc,
 } from "firebase/firestore";
 import { OvertimeStatusBadge } from "./OvertimeStatusBadge";
 import type {
@@ -259,6 +265,15 @@ const OvertimeSubmissionDetailView = ({
   canEdit: boolean;
   onClose: () => void;
 }) => {
+  const firestore = useFirestore();
+  const { userProfile } = useAuth();
+  const { toast } = useToast();
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [completionType, setCompletionType] = useState<"on_time" | "early" | "late" | "">("");
+  const [actualEndTimeInput, setActualEndTimeInput] = useState("");
+  const [completionNote, setCompletionNote] = useState("");
+  const [isSavingConfirm, setIsSavingConfirm] = useState(false);
+
   const currentStatus =
     (submission as any)?.approvalStatus || submission.status || "draft";
   const submittedAt = parseSafeDate(
@@ -328,6 +343,78 @@ const OvertimeSubmissionDetailView = ({
   const rejectionReasonText = submission.rejectionReason;
   const hrdNotesText = submission.hrdNotes;
   const managerNotesText = submission.managerNotes;
+
+  // Deteksi apakah jam selesai estimasi sudah lewat
+  const isApproved = ["approved", "approved_hrd"].includes(currentStatus);
+  const isEndTimePassed = useMemo(() => {
+    if (!isApproved) return false;
+    if (!submission.endTime) return false;
+    const dateVal: any = (submission as any).overtimeDate ?? submission.date;
+    let overtimeDay: Date | null = null;
+    if (dateVal && typeof dateVal === "object" && typeof dateVal.toDate === "function") {
+      overtimeDay = dateVal.toDate();
+    } else if (dateVal instanceof Date) {
+      overtimeDay = dateVal;
+    } else if (typeof dateVal === "string") {
+      overtimeDay = new Date(dateVal);
+    }
+    if (!overtimeDay) return false;
+    const [endH, endM] = submission.endTime.split(":").map(Number);
+    const endDate = new Date(overtimeDay);
+    endDate.setHours(endH, endM, 0, 0);
+    return new Date() > endDate;
+  }, [isApproved, submission]);
+
+  const needsConfirmation = isEndTimePassed &&
+    !["completed_confirmed", "duration_needs_review", "pending_completion_confirmation"].includes(currentStatus) &&
+    !(submission as any).confirmedCompletedAt;
+
+  const handleConfirmCompletion = async () => {
+    if (!completionType) {
+      toast({ variant: "destructive", title: "Pilih status penyelesaian", description: "Pilih apakah lembur selesai sesuai estimasi, lebih cepat, atau lebih lama." });
+      return;
+    }
+    if ((completionType === "early" || completionType === "late") && !actualEndTimeInput) {
+      toast({ variant: "destructive", title: "Jam selesai realisasi wajib diisi" });
+      return;
+    }
+    if (completionType === "late" && !completionNote.trim()) {
+      toast({ variant: "destructive", title: "Catatan koreksi wajib diisi", description: "Karena lembur lebih lama dari estimasi, harap jelaskan penyebabnya." });
+      return;
+    }
+    setIsSavingConfirm(true);
+    try {
+      const docRef = doc(firestore, "overtime_submissions", submission.id!);
+      const actualEnd = completionType === "on_time" ? submission.endTime : actualEndTimeInput;
+      let actualDuration = submission.totalDurationMinutes || 0;
+      if (actualEnd && submission.startTime) {
+        const [sH, sM] = submission.startTime.split(":").map(Number);
+        const [eH, eM] = actualEnd.split(":").map(Number);
+        let diff = (eH * 60 + eM) - (sH * 60 + sM);
+        if (diff < 0) diff += 24 * 60;
+        actualDuration = diff;
+      }
+      const newStatus = completionType === "late" ? "duration_needs_review" : "completed_confirmed";
+      await updateDoc(docRef, {
+        actualEndTime: actualEnd || submission.endTime,
+        completionStatus: completionType === "on_time" ? "confirmed_on_time" : completionType === "early" ? "confirmed_early" : "confirmed_late",
+        completionNote: completionNote.trim() || null,
+        actualDurationMinutes: actualDuration,
+        confirmedCompletedAt: serverTimestamp(),
+        confirmedByUid: userProfile?.uid || null,
+        confirmedByName: userProfile?.fullName || null,
+        status: newStatus,
+        approvalStatus: newStatus,
+        updatedAt: serverTimestamp(),
+      });
+      toast({ title: "Konfirmasi tersimpan", description: "Status lembur diperbarui." });
+      setShowConfirmDialog(false);
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Gagal menyimpan", description: e.message });
+    } finally {
+      setIsSavingConfirm(false);
+    }
+  };
 
   const stepStyles = (state: string) => {
     switch (state) {
@@ -861,7 +948,200 @@ const OvertimeSubmissionDetailView = ({
             )}
           </section>
         )}
+
+        {/* Audit Trail Waktu */}
+        {((submission as any).formCreatedAt || (submission as any).startTimeAdjusted) && (
+          <section className="rounded-3xl border border-slate-200 bg-slate-50 p-5 space-y-3">
+            <div className="flex items-center gap-2 pb-1 border-b border-slate-200">
+              <Clock className="h-4 w-4 text-slate-500" />
+              <p className="text-sm font-semibold text-slate-700">Audit Waktu</p>
+            </div>
+            <div className="grid gap-2 text-sm">
+              {(submission as any).formCreatedAt && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Form dibuka pukul</span>
+                  <span className="font-medium">{(submission as any).formCreatedAt}</span>
+                </div>
+              )}
+              {(submission as any).originalStartTimeAuto && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Jam mulai otomatis awal</span>
+                  <span className="font-medium">{(submission as any).originalStartTimeAuto}</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-slate-500">Jam mulai diajukan</span>
+                <span className="font-medium">{submission.startTime}</span>
+              </div>
+              {(submission as any).startTimeAdjusted && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Penyesuaian jam mulai</span>
+                    <span className="font-semibold text-amber-600">
+                      {Math.abs((submission as any).startTimeAdjustmentMinutes || 0)} menit dimundurkan
+                    </span>
+                  </div>
+                  {(submission as any).startTimeAdjustmentReason && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                      <p className="text-xs text-amber-700 font-medium mb-0.5">Alasan penyesuaian:</p>
+                      <p className="text-xs text-amber-800">{(submission as any).startTimeAdjustmentReason}</p>
+                    </div>
+                  )}
+                </>
+              )}
+              {(submission as any).actualEndTime && (submission as any).actualEndTime !== submission.endTime && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Jam selesai estimasi</span>
+                    <span className="font-medium">{submission.endTime}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Jam selesai realisasi</span>
+                    <span className="font-semibold text-orange-600">{(submission as any).actualEndTime}</span>
+                  </div>
+                </>
+              )}
+              {(submission as any).actualDurationMinutes && (submission as any).actualDurationMinutes !== submission.totalDurationMinutes && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Durasi diajukan</span>
+                    <span className="font-medium">{submission.totalDurationMinutes} menit</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Durasi realisasi</span>
+                    <span className="font-semibold text-orange-600">{(submission as any).actualDurationMinutes} menit</span>
+                  </div>
+                </>
+              )}
+              {(submission as any).approvedMinutesFinal != null && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Durasi disetujui payroll</span>
+                  <span className="font-semibold text-teal-600">{(submission as any).approvedMinutesFinal} menit</span>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Konfirmasi Selesai Banner */}
+        {needsConfirmation && (
+          <section className="rounded-3xl border border-sky-200 bg-sky-50 p-5">
+            <div className="flex items-start gap-3">
+              <div className="rounded-full bg-sky-100 p-2 flex-shrink-0">
+                <CheckCircle className="h-5 w-5 text-sky-600" />
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold text-sky-800 text-sm">Konfirmasi Selesai Lembur</p>
+                <p className="text-xs text-sky-600 mt-1">
+                  Estimasi jam selesai ({submission.endTime}) sudah lewat. Konfirmasi apakah lembur telah selesai dan berapa durasi aktualnya.
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="mt-3 bg-sky-600 hover:bg-sky-700 text-white gap-1.5"
+                  onClick={() => setShowConfirmDialog(true)}
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                  Konfirmasi Sekarang
+                </Button>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* Konfirmasi Selesai — status info */}
+        {(submission as any).confirmedCompletedAt && (
+          <section className="rounded-3xl border border-teal-200 bg-teal-50 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <CheckCircle className="h-4 w-4 text-teal-600" />
+              <p className="text-sm font-semibold text-teal-800">Selesai Dikonfirmasi</p>
+            </div>
+            <div className="text-xs text-teal-700 space-y-1">
+              {(submission as any).completionStatus === "confirmed_late" && (
+                <p className="text-orange-600 font-medium">⚠️ Lembur selesai lebih lama dari estimasi — sedang menunggu review HRD.</p>
+              )}
+              {(submission as any).actualEndTime && (
+                <p>Jam selesai realisasi: <strong>{(submission as any).actualEndTime}</strong></p>
+              )}
+              {(submission as any).completionNote && (
+                <p>Catatan: {(submission as any).completionNote}</p>
+              )}
+            </div>
+          </section>
+        )}
       </div>
+
+      {/* Dialog Konfirmasi Selesai */}
+      {showConfirmDialog && (
+        <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Konfirmasi Selesai Lembur</DialogTitle>
+              <DialogDescription>
+                Lembur {submission.startTime}–{submission.endTime}. Pilih status penyelesaian aktual.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              {/* Pilihan status */}
+              <div className="grid gap-2">
+                {[
+                  { value: "on_time" as const, label: "✅ Selesai sesuai estimasi", desc: `Selesai tepat pukul ${submission.endTime}` },
+                  { value: "early" as const, label: "⏩ Selesai lebih cepat", desc: "Isi jam selesai aktual" },
+                  { value: "late" as const, label: "⏰ Selesai lebih lama", desc: "Memerlukan review HRD" },
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setCompletionType(opt.value)}
+                    className={`w-full text-left rounded-xl border px-4 py-3 transition-colors ${completionType === opt.value ? "border-teal-400 bg-teal-50" : "border-slate-200 hover:border-slate-300"}`}
+                  >
+                    <p className="font-semibold text-sm">{opt.label}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{opt.desc}</p>
+                  </button>
+                ))}
+              </div>
+
+              {/* Jam selesai aktual */}
+              {(completionType === "early" || completionType === "late") && (
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold uppercase text-slate-500">Jam Selesai Aktual</label>
+                  <Input
+                    type="time"
+                    value={actualEndTimeInput}
+                    onChange={(e) => setActualEndTimeInput(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {/* Catatan koreksi (wajib jika late) */}
+              {completionType && (
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold uppercase text-slate-500">
+                    Catatan {completionType === "late" ? "(Wajib)" : "(Opsional)"}
+                  </label>
+                  <textarea
+                    value={completionNote}
+                    onChange={(e) => setCompletionNote(e.target.value)}
+                    placeholder={completionType === "late" ? "Jelaskan mengapa lembur melebihi estimasi..." : "Tambahkan catatan jika perlu..."}
+                    rows={2}
+                    className="w-full text-sm rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:border-teal-500 resize-none"
+                  />
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setShowConfirmDialog(false)}>Batal</Button>
+              <Button
+                onClick={handleConfirmCompletion}
+                disabled={isSavingConfirm || !completionType}
+                className="bg-teal-600 hover:bg-teal-700 text-white"
+              >
+                {isSavingConfirm ? <Loader2 className="h-4 w-4 animate-spin" /> : "Simpan Konfirmasi"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
       <DialogFooter className="sticky bottom-0 z-10 border-t bg-background/95 px-6 py-4 backdrop-blur flex justify-end gap-3">
         <Button variant="ghost" onClick={onClose}>
@@ -890,6 +1170,8 @@ export function OvertimeSubmissionForm({
   const [isSaving, setIsSaving] = useState(false);
   const [attachments, setAttachments] = useState<File[]>([]);
   const [uploadingAttachments, setUploadingAttachments] = useState(false);
+  const [startTimeAdjustmentReason, setStartTimeAdjustmentReason] = useState("");
+  const formCreatedAtRef = useRef<string>(""); // "HH:MM" saat form dibuka, set sekali
   const { userProfile } = useAuth();
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -1043,6 +1325,36 @@ export function OvertimeSubmissionForm({
   const startTimeStr = watch("startTime");
   const endTimeStr = watch("endTime");
   const tasks = watch("tasks");
+
+  const getNowTimeStr = () => {
+    const now = new Date();
+    return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  };
+
+  const setStartTimeNow = () => {
+    setValue("startTime", getNowTimeStr(), { shouldValidate: true });
+  };
+
+  const setEndTimeNow = () => {
+    setValue("endTime", getNowTimeStr(), { shouldValidate: true });
+  };
+
+  const applyEndTimeShortcut = (addMinutes: number) => {
+    const base = startTimeStr || getNowTimeStr();
+    const [h, m] = base.split(":").map(Number);
+    const total = h * 60 + m + addMinutes;
+    const newH = Math.floor(total / 60) % 24;
+    const newM = total % 60;
+    setValue("endTime", `${String(newH).padStart(2, "0")}:${String(newM).padStart(2, "0")}`, { shouldValidate: true });
+  };
+
+  // Deteksi apakah jam mulai dimundurkan lebih awal dari waktu form dibuka
+  const isStartTimeAdjustedBack = useMemo(() => {
+    if (!startTimeStr || !formCreatedAtRef.current || !!submission) return false;
+    const [fH, fM] = formCreatedAtRef.current.split(":").map(Number);
+    const [sH, sM] = startTimeStr.split(":").map(Number);
+    return (sH * 60 + sM) < (fH * 60 + fM);
+  }, [startTimeStr, submission]);
 
   const displayInfo = useMemo(() => {
     const brandMap = new Map(brands.map((b) => [b.id!, b.name]));
@@ -1475,10 +1787,13 @@ export function OvertimeSubmissionForm({
         // Reset attachments state for edit mode
         setAttachments([]);
       } else {
+        const nowStr = getNowTimeStr();
+        formCreatedAtRef.current = nowStr;
+        setStartTimeAdjustmentReason("");
         form.reset({
           date: new Date(),
-          startTime: "17:00",
-          endTime: "19:00",
+          startTime: nowStr,
+          endTime: "",
           overtimeType: "hari_kerja",
           tasks: [{ description: "", estimatedMinutes: 60 }],
           reason: "",
@@ -1570,6 +1885,16 @@ export function OvertimeSubmissionForm({
       return;
     }
 
+    // Validasi alasan penyesuaian jam mulai
+    if (isStartTimeAdjustedBack && !startTimeAdjustmentReason.trim()) {
+      toast({
+        variant: "destructive",
+        title: "Alasan penyesuaian jam mulai wajib diisi",
+        description: "Jam mulai dimundurkan dari waktu form dibuka. Harap jelaskan alasannya.",
+      });
+      return;
+    }
+
     setIsSaving(true);
     try {
       // Upload attachments first
@@ -1642,6 +1967,21 @@ export function OvertimeSubmissionForm({
         startTime: values.startTime,
         endTime: values.endTime,
         totalDurationMinutes: totalDuration,
+
+        // Start-time audit trail
+        ...(mode === "Buat" && {
+          formCreatedAt: formCreatedAtRef.current || values.startTime,
+          originalStartTimeAuto: formCreatedAtRef.current || values.startTime,
+          startTimeAdjusted: isStartTimeAdjustedBack,
+          startTimeAdjustmentMinutes: isStartTimeAdjustedBack
+            ? (() => {
+                const [fH, fM] = (formCreatedAtRef.current || "0:0").split(":").map(Number);
+                const [sH, sM] = values.startTime.split(":").map(Number);
+                return (sH * 60 + sM) - (fH * 60 + fM);
+              })()
+            : 0,
+          startTimeAdjustmentReason: isStartTimeAdjustedBack ? startTimeAdjustmentReason.trim() : null,
+        }),
         overtimeType: values.overtimeType,
         overtimeTypeLabel:
           values.overtimeType === "hari_kerja"
@@ -2162,7 +2502,8 @@ export function OvertimeSubmissionForm({
                 </section>
               )}
 
-              <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              <section className="space-y-4">
+                {/* Row 1: Tanggal */}
                 <FormField
                   control={form.control}
                   name="date"
@@ -2180,51 +2521,142 @@ export function OvertimeSubmissionForm({
                     </FormItem>
                   )}
                 />
+
+                {/* Row 2: Jam Mulai */}
                 <FormField
                   control={form.control}
                   name="startTime"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Jam Mulai</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="time"
-                          {...field}
-                          readOnly={isReadOnly}
-                          className={`${
-                            submitAttempted && !isTimeRangeValid
-                              ? "border-destructive ring-1 ring-destructive"
-                              : ""
-                          }`}
-                        />
-                      </FormControl>
+                      <FormLabel className="flex items-center gap-2">
+                        Jam Mulai
+                        {!isReadOnly && formCreatedAtRef.current && (
+                          <span className="text-[10px] font-normal text-muted-foreground">
+                            (otomatis terisi {formCreatedAtRef.current})
+                          </span>
+                        )}
+                      </FormLabel>
+                      <div className="flex gap-2 items-center">
+                        <FormControl>
+                          <Input
+                            type="time"
+                            {...field}
+                            readOnly={isReadOnly}
+                            className={`flex-1 ${
+                              submitAttempted && !isTimeRangeValid
+                                ? "border-destructive ring-1 ring-destructive"
+                                : ""
+                            }`}
+                          />
+                        </FormControl>
+                        {!isReadOnly && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="flex-shrink-0 text-xs gap-1.5 border-teal-200 text-teal-700 hover:bg-teal-50"
+                            onClick={setStartTimeNow}
+                          >
+                            <PlayCircle className="h-3.5 w-3.5" />
+                            Sekarang
+                          </Button>
+                        )}
+                      </div>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
+
+                {/* Alasan penyesuaian jam mulai — muncul jika dimundurkan */}
+                {isStartTimeAdjustedBack && !isReadOnly && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-2">
+                    <div className="flex items-start gap-2">
+                      <RotateCcw className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-xs font-semibold text-amber-800">Jam mulai dimundurkan dari {formCreatedAtRef.current}</p>
+                        <p className="text-[11px] text-amber-600">Harap jelaskan alasan penyesuaian ini untuk keperluan audit.</p>
+                      </div>
+                    </div>
+                    <textarea
+                      value={startTimeAdjustmentReason}
+                      onChange={(e) => setStartTimeAdjustmentReason(e.target.value)}
+                      placeholder="Contoh: Saya mulai lembur pukul 17.00, tetapi baru mengisi pengajuan setelah pekerjaan berjalan."
+                      rows={2}
+                      className="w-full text-xs rounded-lg border border-amber-300 bg-white px-3 py-2 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 resize-none"
+                    />
+                  </div>
+                )}
+
+                {/* Row 3: Estimasi Durasi (Shortcuts) + Jam Selesai */}
                 <FormField
                   control={form.control}
                   name="endTime"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Jam Selesai</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="time"
-                          {...field}
-                          readOnly={isReadOnly}
-                          className={`${
-                            submitAttempted && !isTimeRangeValid
-                              ? "border-destructive ring-1 ring-destructive"
-                              : ""
-                          }`}
-                        />
-                      </FormControl>
+                      <FormLabel>Estimasi Jam Selesai</FormLabel>
+                      {/* Shortcut buttons */}
+                      {!isReadOnly && (
+                        <div className="flex flex-wrap gap-1.5 mb-2">
+                          {[
+                            { label: "+30m", minutes: 30 },
+                            { label: "+1 jam", minutes: 60 },
+                            { label: "+1j 30m", minutes: 90 },
+                            { label: "+2 jam", minutes: 120 },
+                            { label: "+3 jam", minutes: 180 },
+                            { label: "+4 jam", minutes: 240 },
+                          ].map((s) => (
+                            <button
+                              key={s.label}
+                              type="button"
+                              onClick={() => applyEndTimeShortcut(s.minutes)}
+                              className="text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-teal-400 hover:text-teal-700 hover:bg-teal-50 transition-colors"
+                            >
+                              {s.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex gap-2 items-center">
+                        <FormControl>
+                          <Input
+                            type="time"
+                            {...field}
+                            readOnly={isReadOnly}
+                            className={`flex-1 ${
+                              submitAttempted && !isTimeRangeValid
+                                ? "border-destructive ring-1 ring-destructive"
+                                : ""
+                            }`}
+                          />
+                        </FormControl>
+                        {!isReadOnly && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="flex-shrink-0 text-xs gap-1.5 border-slate-200 text-slate-600 hover:bg-slate-50"
+                            onClick={setEndTimeNow}
+                          >
+                            <StopCircle className="h-3.5 w-3.5" />
+                            Sekarang
+                          </Button>
+                        )}
+                      </div>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
+
+                {/* Durasi otomatis */}
+                {totalDuration > 0 && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Clock className="h-4 w-4 text-teal-500" />
+                    <span>Total Durasi: <strong className="text-teal-600">{Math.floor(totalDuration / 60) > 0 ? `${Math.floor(totalDuration / 60)} jam ` : ""}{totalDuration % 60 > 0 ? `${totalDuration % 60} menit` : ""}</strong></span>
+                  </div>
+                )}
               </section>
+
+
               <section className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <FormField
                   control={form.control}
@@ -2345,9 +2777,9 @@ export function OvertimeSubmissionForm({
                       }
                       className={
                         durationValidation.status === "warning"
-                          ? "border border-amber-500/40 bg-amber-500/10"
+                          ? "border-amber-300 bg-amber-50 dark:border-amber-500/40 dark:bg-amber-500/10"
                           : durationValidation.status === "valid"
-                            ? "border border-green-500/40 bg-green-500/10"
+                            ? "border-green-300 bg-green-50 dark:border-green-500/40 dark:bg-green-500/10"
                             : ""
                       }
                     >
@@ -2355,17 +2787,17 @@ export function OvertimeSubmissionForm({
                         <AlertTriangle className="h-4 w-4" />
                       )}
                       {durationValidation.status === "valid" && (
-                        <UserCheck className="h-4 w-4 text-green-300" />
+                        <UserCheck className="h-4 w-4 text-green-600 dark:text-green-300" />
                       )}
                       {durationValidation.status === "warning" && (
-                        <AlertTriangle className="h-4 w-4 text-amber-300" />
+                        <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                       )}
                       <AlertTitle
                         className={
                           durationValidation.status === "warning"
-                            ? "text-amber-300"
+                            ? "text-amber-800 font-semibold dark:text-amber-300"
                             : durationValidation.status === "valid"
-                              ? "text-green-300"
+                              ? "text-green-800 font-semibold dark:text-green-300"
                               : ""
                         }
                       >
@@ -2379,7 +2811,9 @@ export function OvertimeSubmissionForm({
                         className={
                           durationValidation.status === "error"
                             ? ""
-                            : "text-slate-200"
+                            : durationValidation.status === "warning"
+                              ? "text-amber-700 dark:text-amber-200"
+                              : "text-green-700 dark:text-green-200"
                         }
                       >
                         {durationValidation.message}

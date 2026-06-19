@@ -109,6 +109,10 @@ export function AttendanceMonitoringClient() {
     useMemoFirebase(() => collection(firestore, 'employee_profiles'), [firestore])
   );
 
+  const { data: allUsers, isLoading: isLoadingUsers } = useCollection<any>(
+    useMemoFirebase(() => collection(firestore, 'users'), [firestore])
+  );
+
   const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(
     useMemoFirebase(() => collection(firestore, 'brands'), [firestore])
   );
@@ -131,7 +135,7 @@ export function AttendanceMonitoringClient() {
   }, [firestore]);
   const { data: leaveRequests, isLoading: isLoadingLeaves } = useCollection<any>(leavesQuery);
 
-  const isLoading = isLoadingConfig || isLoadingProfiles || isLoadingBrands || isLoadingEvents || isLoadingLeaves;
+  const isLoading = isLoadingConfig || isLoadingProfiles || isLoadingUsers || isLoadingBrands || isLoadingEvents || isLoadingLeaves;
 
   // --- Data Processing ---
   const { tableData, summaryStats } = useMemo(() => {
@@ -151,7 +155,23 @@ export function AttendanceMonitoringClient() {
       }
     };
 
-    // Helper: get brand ID with comprehensive fallback
+    // ── NIK normalization ────────────────────────────────────────────────────
+    const normalizeNik = (v: string | null | undefined): string => {
+      if (!v) return '';
+      return v.trim().replace(/\s+/g, '').toUpperCase();
+    };
+
+    // ── Lookup maps from users collection ───────────────────────────────────
+    const userByUid = new Map<string, any>();
+    const userByEmail = new Map<string, any>();
+    for (const u of allUsers || []) {
+      const uid = u.uid || u.id;
+      if (uid) userByUid.set(uid, u);
+      const email = (u.email || '').toLowerCase().trim();
+      if (email) userByEmail.set(email, u);
+    }
+
+    // ── Helper: get brand ID with comprehensive fallback ────────────────────
     const resolveBrandId = (p: any): string | null => {
       const id = p.hrdEmploymentInfo?.brandId || p.brandId;
       if (id && typeof id === 'string') return id;
@@ -161,7 +181,7 @@ export function AttendanceMonitoringClient() {
     const brandMap = new Map(brands.map(b => [b.id, b.name]));
     const activeSite = sites?.find((s: any) => s.isActive);
 
-    // Only active employees, not candidates
+    // ── Active non-candidate profiles ────────────────────────────────────────
     const activeProfiles = allEmployeeProfiles.filter((p: any) => {
       if (p.isActive === false) return false;
       const status = p.status || p.employmentStatus || '';
@@ -171,20 +191,13 @@ export function AttendanceMonitoringClient() {
       return true;
     });
 
-    // Only Web Absen employees
+    // ── Web Absen employees ─────────────────────────────────────────────────
     const webAbsenProfiles = activeProfiles.filter((p: any) => {
       const method = p.attendanceMethod || p.hrdEmploymentInfo?.attendanceMethod;
       return method === 'web_absen';
     });
 
-    // Collect brand IDs from employees (for matching/filtering purposes)
-    const employeeBrandIds = new Set(
-      webAbsenProfiles
-        .map(resolveBrandId)
-        .filter((id): id is string => typeof id === 'string')
-    );
-
-    // Deduplicate by uid
+    // ── Deduplicate by uid ──────────────────────────────────────────────────
     const seenUids = new Set<string>();
     const dedupedProfiles = webAbsenProfiles.filter((p: any) => {
       const uid = resolveProfileUid(p);
@@ -193,7 +206,95 @@ export function AttendanceMonitoringClient() {
       return true;
     });
 
+    // ── NIK lookup: normalizedNik → profile ─────────────────────────────────
+    const profileByNik = new Map<string, any>();
+    // ── Email lookup: email → profile ───────────────────────────────────────
+    const profileByEmail = new Map<string, any>();
+    for (const p of dedupedProfiles as any[]) {
+      const rawNik = p.hrdEmploymentInfo?.employeeId || p.employeeNumber || p.employeeId ||
+        p.nomorIndukKaryawan || p.dataDiriIdentitas?.employeeNumber || p.dataDiriIdentitas?.employeeId;
+      const nik = normalizeNik(rawNik);
+      if (nik) profileByNik.set(nik, p);
+      const email = (p.email || '').toLowerCase().trim();
+      if (email) profileByEmail.set(email, p);
+    }
+
+    // ── Group events by all possible employee keys ───────────────────────────
+    // uid → events (primary)
+    const eventsByUid = new Map<string, any[]>();
+    // normalizedNik → events (fallback)
+    const eventsByNik = new Map<string, any[]>();
+    // email → events (fallback)
+    const eventsByEmail = new Map<string, any[]>();
+
+    for (const e of (attendanceEvents || []) as any[]) {
+      const uid = resolveEventUid(e);
+      if (uid) {
+        if (!eventsByUid.has(uid)) eventsByUid.set(uid, []);
+        eventsByUid.get(uid)!.push(e);
+      }
+      const rawNik = e.employeeNumber || e.nomorIndukKaryawan || e.employeeId || e.nik;
+      const nik = normalizeNik(rawNik);
+      if (nik) {
+        if (!eventsByNik.has(nik)) eventsByNik.set(nik, []);
+        eventsByNik.get(nik)!.push(e);
+      }
+      const email = (e.email || e.employeeEmail || '').toLowerCase().trim();
+      if (email) {
+        if (!eventsByEmail.has(email)) eventsByEmail.set(email, []);
+        eventsByEmail.get(email)!.push(e);
+      }
+    }
+
+    // ── Resolve functions ────────────────────────────────────────────────────
+    /**
+     * Resolve employee name with multi-source fallback:
+     * 1. employee_profiles fields
+     * 2. users collection (by uid)
+     * 3. attendance event fields
+     * 4. email / employeeNumber as last resort before giving up
+     */
+    const resolveName = (p: any, profileUid: string, e?: any): string => {
+      // Try profile fields first
+      const fromProfile = p.fullName || p.dataDiriIdentitas?.fullName || p.namaLengkap ||
+        p.displayName || p.name;
+      if (fromProfile) return fromProfile;
+      // Try users collection by uid
+      const userRecord = userByUid.get(profileUid);
+      const fromUser = userRecord?.fullName || userRecord?.displayName || userRecord?.namaLengkap || userRecord?.name;
+      if (fromUser) return fromUser;
+      // Try users collection by email
+      const profileEmail = (p.email || '').toLowerCase().trim();
+      const userByEmailRecord = profileEmail ? userByEmail.get(profileEmail) : null;
+      const fromUserByEmail = userByEmailRecord?.fullName || userByEmailRecord?.displayName;
+      if (fromUserByEmail) return fromUserByEmail;
+      // Try event fields
+      const fromEvent = e?.employeeName || e?.fullName || e?.name || e?.displayName || e?.userName;
+      if (fromEvent) return fromEvent;
+      // Last resort: email or employee number (still readable, not "belum lengkap")
+      return p.email || e?.email || 'Data karyawan belum lengkap';
+    };
+
+    const resolveEmployeeNumber = (p: any, e?: any): string =>
+      p.hrdEmploymentInfo?.employeeId || p.employeeNumber || p.employeeId || p.employeeCode ||
+      p.nomorIndukKaryawan || p.dataDiriIdentitas?.employeeNumber || p.dataDiriIdentitas?.employeeId ||
+      e?.employeeNumber || e?.employeeId || e?.nomorIndukKaryawan || 'ID belum diatur';
+
+    const resolveBrand = (p: any, bId: string | null, e?: any): string => {
+      if (bId) return brandMap.get(bId) || bId;
+      return p.hrdEmploymentInfo?.brandName || p.brandName || p.companyName || p.company ||
+        e?.brandName || e?.company || '-';
+    };
+
+    const resolveDivision = (p: any, e?: any): string =>
+      p.hrdEmploymentInfo?.divisionName || p.hrdEmploymentInfo?.divisi ||
+      p.divisionName || p.division ||
+      e?.divisionName || e?.division || e?.divisi || '-';
+
+    // ── Build table rows ─────────────────────────────────────────────────────
     const rows: AttendanceRecord[] = [];
+    // Track which event UIDs are consumed so we can later add orphaned ones
+    const consumedEventUids = new Set<string>();
 
     for (const profile of dedupedProfiles) {
       const profileUid = resolveProfileUid(profile as any)!;
@@ -202,45 +303,57 @@ export function AttendanceMonitoringClient() {
       // Brand filter: only apply if not "all"
       if (brandFilter !== 'all' && profileBrandId !== brandFilter) continue;
 
-      // Find events for this employee
-      const userEvents = attendanceEvents?.filter((e: any) => {
-        const eventUid = resolveEventUid(e);
-        return eventUid && eventUid === profileUid;
-      }) || [];
+      // ── Find events with multi-key fallback ─────────────────────────────
+      let userEvents: any[] = [];
+      let matchedBy = 'uid';
+
+      // 1. Primary: match by uid
+      userEvents = eventsByUid.get(profileUid) || [];
+
+      // 2. Fallback: match by normalized NIK
+      if (userEvents.length === 0) {
+        const rawNik = profile.hrdEmploymentInfo?.employeeId || (profile as any).employeeNumber ||
+          (profile as any).employeeId || (profile as any).nomorIndukKaryawan ||
+          (profile as any).dataDiriIdentitas?.employeeNumber;
+        const nik = normalizeNik(rawNik);
+        if (nik && eventsByNik.has(nik)) {
+          userEvents = eventsByNik.get(nik)!;
+          matchedBy = 'nik';
+        }
+      }
+
+      // 3. Fallback: match by email
+      if (userEvents.length === 0) {
+        const email = ((profile as any).email || '').toLowerCase().trim();
+        if (email && eventsByEmail.has(email)) {
+          userEvents = eventsByEmail.get(email)!;
+          matchedBy = 'email';
+        }
+      }
+
+      // Mark these event UIDs as consumed
+      userEvents.forEach((e: any) => {
+        const uid = resolveEventUid(e);
+        if (uid) consumedEventUids.add(uid);
+      });
 
       const checkInEvent = userEvents.find((e: any) => isCheckInEvent(e.type));
       const checkOutEvent = userEvents.find((e: any) => isCheckOutEvent(e.type));
       const eventData = checkInEvent || checkOutEvent;
 
-      // Resolve names and IDs
-      const resolveName = (p: any, e?: any): string => {
-        return p.fullName || p.dataDiriIdentitas?.fullName || p.namaLengkap || p.displayName || p.name ||
-          e?.employeeName || e?.fullName || e?.name || e?.displayName || e?.userName ||
-          p.email || e?.email ||
-          p.employeeNumber || p.employeeId || e?.employeeNumber || e?.employeeId ||
-          'Data karyawan belum lengkap';
-      };
-
-      const resolveEmployeeNumber = (p: any, e?: any): string =>
-        p.hrdEmploymentInfo?.employeeId || p.employeeNumber || p.employeeId || p.employeeCode ||
-        p.nomorIndukKaryawan || p.dataDiriIdentitas?.employeeNumber || p.dataDiriIdentitas?.employeeId ||
-        e?.employeeNumber || e?.employeeId || e?.nomorIndukKaryawan || 'ID belum diatur';
-
-      const resolveBrand = (p: any, bId: string | null, e?: any): string => {
-        if (bId) return brandMap.get(bId) || bId;
-        return p.hrdEmploymentInfo?.brandName || p.brandName || p.companyName || p.company ||
-          e?.brandName || e?.company || '-';
-      };
-
-      const resolveDivision = (p: any, e?: any): string =>
-        p.hrdEmploymentInfo?.divisionName || p.hrdEmploymentInfo?.divisi ||
-        p.divisionName || p.division ||
-        e?.divisionName || e?.division || e?.divisi || '-';
-
-      const resolvedName = resolveName(profile, eventData);
+      const resolvedName = resolveName(profile, profileUid, eventData);
       const resolvedEmployeeNumber = resolveEmployeeNumber(profile, eventData);
       const resolvedBrand = resolveBrand(profile, profileBrandId, eventData);
       const resolvedDivision = resolveDivision(profile, eventData);
+
+      console.log('[MONITORING ABSEN DEBUG] profile→event mapping:', {
+        profileUid,
+        resolvedName,
+        resolvedEmployeeNumber,
+        matchedBy,
+        hasCheckIn: !!checkInEvent,
+        hasCheckOut: !!checkOutEvent,
+      });
 
       const tapInTimestamp = checkInEvent ? getEventTimestamp(checkInEvent) : null;
       const tapOutTimestamp = checkOutEvent ? getEventTimestamp(checkOutEvent) : null;
@@ -317,7 +430,7 @@ export function AttendanceMonitoringClient() {
         id: profileUid,
         name: resolvedName,
         employeeNumber: resolvedEmployeeNumber,
-        brandId: profileBrandId,
+        brandId: profileBrandId ?? undefined,
         brandName: resolvedBrand,
         divisionName: resolvedDivision,
         attendanceMethod: 'web_absen',
@@ -350,8 +463,17 @@ export function AttendanceMonitoringClient() {
       perluReview: rows.filter(isPerluReview).length,
     };
 
+    console.log('[MONITORING ABSEN DEBUG] attendance raw:', attendanceEvents);
+    console.log('[MONITORING ABSEN DEBUG] employee profiles raw:', allEmployeeProfiles);
+    console.log('[MONITORING ABSEN DEBUG] users raw:', allUsers);
+    console.log('[MONITORING ABSEN DEBUG] mapped rows:', rows.map(r => ({
+      profileId: r.id,
+      matchedEmployeeName: r.name,
+      matchedEmployeeNumber: r.employeeNumber,
+    })));
+
     return { tableData: rows, summaryStats: stats };
-  }, [allEmployeeProfiles, attendanceEvents, sites, brands, brandFilter, date, leaveRequests]);
+  }, [allEmployeeProfiles, allUsers, attendanceEvents, sites, brands, brandFilter, date, leaveRequests]);
 
   // Apply tab + search filter
   const filteredRows = useMemo(() => {
@@ -387,7 +509,7 @@ export function AttendanceMonitoringClient() {
         isInvalid: true,
         invalidatedAt: serverTimestamp(),
         invalidatedByUid: userProfile.uid,
-        invalidatedByName: userProfile.displayName || userProfile.email,
+        invalidatedByName: (userProfile as any).displayName || userProfile.fullName || userProfile.email,
         invalidReason: reason,
         invalidNote: note,
         payrollExcluded: true,

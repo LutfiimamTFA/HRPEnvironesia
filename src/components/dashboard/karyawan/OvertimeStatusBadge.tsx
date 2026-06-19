@@ -101,6 +101,21 @@ export const statusDisplay: Record<
     className:
       "bg-green-100 text-green-800 dark:bg-green-950/30 dark:text-green-300 border border-green-500/10",
   },
+  pending_completion_confirmation: {
+    label: "Menunggu Konfirmasi Selesai",
+    className:
+      "bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300 border border-sky-500/10",
+  },
+  completed_confirmed: {
+    label: "Selesai Dikonfirmasi",
+    className:
+      "bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300 border border-teal-500/10",
+  },
+  duration_needs_review: {
+    label: "Perlu Review Tambahan Durasi",
+    className:
+      "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300 border border-orange-500/10",
+  },
 };
 
 const payrollStatusDisplay: Record<
