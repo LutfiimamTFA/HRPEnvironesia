@@ -66,6 +66,8 @@ const DEFAULT_PLACEHOLDERS = [
   "signerTitle",
   "letterNumber",
   "responseDeadline",
+  "responseDeadlineTime",
+  "companyName",
 ];
 
 const formSchema = z.object({
@@ -148,51 +150,31 @@ export function OfferingTemplateDialog({
         employmentType: "fulltime",
         htmlTemplate: `
 <div class="offering-container">
-  <div class="letter-meta">
-    <p>NOMOR: {{letterNumber}}</p>
-    <p>{{startDate}}</p>
-  </div>
-  
   <div class="address-block">
-    <p>Kepada Yth,<br><strong>{{candidateName}}</strong></p>
+    <p>Dear <strong>{{candidateName}}</strong>,</p>
   </div>
-  
-  <h2 class="letter-title">SURAT PENAWARAN KERJA (OFFERING LETTER)</h2>
-  
-  <p>Halo {{candidateName}},</p>
-  
-  <p>Selamat! Kami dari <strong>{{brandName}}</strong> sangat terkesan dengan kualifikasi Anda. Melalui surat ini, kami bermaksud menawarkan posisi <strong>{{jobTitle}}</strong> kepada Anda.</p>
-  
-  <table class="detail-table">
-    <tr>
-      <td class="label-td">Gaji Bulanan</td>
-      <td>: Rp {{salary}}</td>
-    </tr>
-    <tr>
-      <td class="label-td">Tanggal Mulai</td>
-      <td>: {{startDate}}</td>
-    </tr>
-    <tr>
-      <td class="label-td">Batas Respons</td>
-      <td>: {{responseDeadline}}</td>
-    </tr>
-  </table>
-  
-  <p>Penawaran ini tunduk pada syarat dan ketentuan yang berlaku di {{brandName}}.</p>
-  
+
+  <p>Terimalah salam hangat dari kami <strong>{{brandName}}</strong>.</p>
+
+  <p>Berdasarkan hasil proses seleksi dan wawancara yang telah Saudara ikuti bersama tim kami, dengan senang hati kami sampaikan bahwa Saudara telah sesuai dengan kualifikasi yang dibutuhkan oleh perusahaan untuk posisi <strong>{{jobTitle}}</strong>.</p>
+
+  <p>Berikut kami kirimkan Surat Penawaran Kerja yang dapat Saudara pertimbangkan. Apabila Saudara menyetujui penawaran tersebut, silakan membubuhkan tanda tangan pada Lembar Penerimaan Posisi, kemudian mengunggah kembali dokumen yang telah ditandatangani melalui portal ini maksimal <strong>{{responseDeadline}}</strong> untuk melanjutkan tahap berikutnya, yaitu penandatanganan kontrak.</p>
+
+  <p>Kami sangat berharap Saudara dapat mempertimbangkan dan bergabung dengan perusahaan kami. Apabila terdapat hal-hal yang perlu didiskusikan lebih lanjut, mohon jangan ragu untuk menghubungi tim Human Capital.</p>
+
+  <p>Demikian surat penawaran ini kami sampaikan. Atas perhatian dan kerja sama yang baik, kami ucapkan terima kasih.</p>
+
   <div class="signature-block">
-    <p>Hormat kami,</p>
+    <p>Regards,</p>
     <div class="sig-space"></div>
-    <p><strong>{{signerName}}</strong><br>{{signerTitle}}</p>
+    <p><strong>Human Capital</strong><br>{{brandName}}</p>
   </div>
 </div>`,
         cssTemplate: `
-.offering-container { font-family: 'Arial', sans-serif; padding: 40px; color: #333; line-height: 1.6; }
-.letter-meta { text-align: right; margin-bottom: 40px; }
-.address-block { margin-bottom: 30px; }
-.letter-title { text-align: center; text-decoration: underline; margin-bottom: 30px; }
+.offering-container { font-family: 'Arial', sans-serif; padding: 40px; color: #333; line-height: 1.8; max-width: 700px; margin: 0 auto; }
+.address-block { margin-bottom: 24px; }
 .detail-table { width: 100%; margin: 20px 0; border-collapse: collapse; }
-.label-td { width: 30%; padding: 8px 0; font-weight: bold; }
+.label-td { width: 30%; padding: 6px 0; font-weight: bold; vertical-align: top; }
 .signature-block { margin-top: 60px; }
 .sig-space { height: 80px; }
 `,

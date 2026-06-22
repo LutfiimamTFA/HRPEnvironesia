@@ -148,19 +148,58 @@ export default function JobApplyPage() {
         router.push('/careers/portal/profile?step=5');
         return;
       }
+      const profileData = profileSnap.data();
 
       // 5. Check candidate-level personality test status ─────────────
       const candidateTestSnap = await getDoc(
         doc(firestore, 'candidate_personality_tests', userProfile.uid)
       );
-      const hasCompletedPersonalityTest =
-        candidateTestSnap.exists() && candidateTestSnap.data()?.status === 'completed';
+      const candidateTestData = candidateTestSnap.exists() ? candidateTestSnap.data() : null;
+      const completedApplicationTest = userApplications.find(app =>
+        app.personalityTestCompleted === true ||
+        app.personalityTestStatus === 'completed' ||
+        app.personalityTestCompletedAt != null
+      );
+      const hasCompletedPersonalityTest = Boolean(
+        candidateTestData?.status === 'completed' ||
+        candidateTestData?.status === 'selesai' ||
+        candidateTestData?.isCompleted === true ||
+        candidateTestData?.personalityTestCompleted === true ||
+        candidateTestData?.completedAt != null ||
+        completedApplicationTest
+      );
       const existingTestSessionId = hasCompletedPersonalityTest
-        ? candidateTestSnap.data()?.sessionId
+        ? candidateTestData?.sessionId || completedApplicationTest?.personalityTestResultId
         : undefined;
 
       // 6. Build and submit application ──────────────────────────────
       const applicationRef = doc(firestore, 'applications', applicationId);
+
+      // Build profile snapshot — HRD reads this stable copy, not the live profile
+      const candidateProfileSnapshot = {
+        fullName: profileData?.fullName || userProfile.fullName || '',
+        email: profileData?.email || userProfile.email || '',
+        phone: profileData?.phone || '',
+        nickname: profileData?.nickname || '',
+        gender: profileData?.gender || '',
+        birthPlace: profileData?.birthPlace || '',
+        birthDate: profileData?.birthDate || null,
+        addressKtp: profileData?.addressKtp || null,
+        addressDomicile: profileData?.addressDomicile || null,
+        education: profileData?.education || [],
+        workExperience: profileData?.workExperience || [],
+        organizationExperience: profileData?.organizationalExperience || [],
+        certifications: profileData?.certifications || [],
+        skills: profileData?.skills || [],
+        selfDescription: profileData?.selfDescription || '',
+        linkedinUrl: profileData?.linkedinUrl || '',
+        portfolioUrl: profileData?.websiteUrl || '',
+        cvUrl: profileData?.cvUrl || '',
+        cvFileId: profileData?.cvFileId || '',
+        ijazahUrl: profileData?.ijazahUrl || '',
+        ijazahFileId: profileData?.ijazahFileId || '',
+        snapshotAt: serverTimestamp(),
+      };
 
       const applicationData: Omit<JobApplication, 'id'> = {
         candidateUid: userProfile.uid,
@@ -177,10 +216,21 @@ export default function JobApplyPage() {
         // Personality test fields
         personalityTestRequired: !hasCompletedPersonalityTest,
         personalityTestCompleted: hasCompletedPersonalityTest,
+        personalityTestStatus: hasCompletedPersonalityTest ? 'completed' : 'pending',
+        ...(hasCompletedPersonalityTest && { personalityTestSource: 'global_candidate_test' }),
         ...(existingTestSessionId && { personalityTestResultId: existingTestSessionId }),
+        allPanelistIds: job.assignedUserIds || [],
+        internalReviewConfig: {
+          enabled: Boolean(job.assignedUserIds?.length),
+          assignedReviewerUids: job.assignedUserIds || [],
+          visibilityMode: 'shared_internal',
+          reviewLocked: false,
+        },
         // If test already done → go straight to screening (HRD review)
         // If not → tes_kepribadian (must do test first)
         status: hasCompletedPersonalityTest ? 'screening' : 'tes_kepribadian',
+        stage: hasCompletedPersonalityTest ? 'screening' : 'tes_kepribadian',
+        candidateProfileSnapshot,
         createdAt: serverTimestamp() as any,
         updatedAt: serverTimestamp() as any,
         submittedAt: serverTimestamp() as any,

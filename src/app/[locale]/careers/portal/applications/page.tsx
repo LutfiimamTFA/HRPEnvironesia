@@ -137,10 +137,17 @@ function ApplicationCard({
   const offerStartDate = offerDetails.startDate
     ? new Date(offerDetails.startDate)
     : null;
-  const offerContractDuration = offerDetails.contractDurationMonths || "-";
+  const offerContractDuration = offerDetails.contractDurationMonths
+    ? `${offerDetails.contractDurationMonths} bulan`
+    : "-";
   const offerFirstDayTime = offerDetails.firstDayTime || "-";
   const offerFirstDayLocation = offerDetails.firstDayLocation || "-";
-  const offerHrContact = offerDetails.hrContact || "-";
+  const offerHrContact = (() => {
+    const name = offerDetails.humanCapitalContactName;
+    const phone = offerDetails.humanCapitalContactPhone;
+    if (name || phone) return [name, phone].filter(Boolean).join(" - ");
+    return offerDetails.humanCapitalContact || offerDetails.hrContact || "-";
+  })();
   const offerAdditionalNotes = activeOffering?.additionalNotes || "";
   const activeOfferIsAvailable = !!activeOfferingId && activeOffering?.isActive;
   const offerDocumentUrl = activeOffering?.documentUrl;
@@ -149,10 +156,7 @@ function ApplicationCard({
     `Offering_${application.jobPosition.replace(/\s+/g, "_")}.pdf`;
   const offerContractEndDate =
     offerStartDate && offerDetails.contractDurationMonths
-      ? addMonths(
-          offerStartDate,
-          parseInt(offerDetails.contractDurationMonths, 10),
-        )
+      ? addMonths(offerStartDate, Number(offerDetails.contractDurationMonths))
       : null;
 
   useEffect(() => {

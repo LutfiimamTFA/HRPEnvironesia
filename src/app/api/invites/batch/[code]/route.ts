@@ -25,8 +25,16 @@ export async function GET(
     
     const batch = batchDoc.data() as InviteBatch;
 
+    if (batch.isActive === false) {
+      return NextResponse.json({ error: 'Link undangan ini sudah tidak aktif.' }, { status: 410 });
+    }
+
+    if (batch.expiresAt && (batch.expiresAt as any).toMillis() < Date.now()) {
+      return NextResponse.json({ error: 'Link undangan ini sudah kedaluwarsa.' }, { status: 410 });
+    }
+
     if (batch.claimedSlots >= batch.totalSlots) {
-      return NextResponse.json({ error: 'Kuota untuk undangan ini sudah habis.' }, { status: 410 });
+      return NextResponse.json({ error: 'Kuota undangan ini sudah penuh. Silakan hubungi Human Capital.' }, { status: 410 });
     }
 
     const { createdAt, updatedAt, ...rest } = batch;

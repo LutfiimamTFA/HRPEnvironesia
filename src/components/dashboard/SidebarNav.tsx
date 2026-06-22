@@ -52,9 +52,9 @@ export function SidebarNav({ menuConfig }: SidebarNavProps) {
     </div>
 
     {/* Collapsed */}
-    <div className={cn("hidden", isCollapsed && "flex items-center justify-center")}>
+    <div className={cn("hidden py-3", isCollapsed && "flex items-center justify-center")}>
       <img
-        src="/images/hrp-logo.svg"
+        src="/images/logo.png"
         alt="Environesia"
         className="w-8 h-8 object-contain"
       />

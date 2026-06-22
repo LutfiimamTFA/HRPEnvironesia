@@ -73,6 +73,14 @@ export function UnifiedInternalDecision({
 
   const existingPra = application.recruitmentInternalDecision;
   const existingPasca = application.postInterviewDecision;
+  const existingHrdEvaluationDecision =
+    (application as any).hrdEvaluationDecision as
+      | "needs_discussion"
+      | "not_continue"
+      | "continue"
+      | undefined;
+  const existingHrdEvaluationDecisionLabel =
+    (application as any).hrdEvaluationDecisionLabel as string | undefined;
 
   const isPascaAvailable = useMemo(() => {
     // Always available if in interview status or beyond
@@ -128,6 +136,18 @@ export function UnifiedInternalDecision({
     setIsSubmitting(true);
     try {
       const appRef = doc(firestore, "applications", application.id);
+      const hrdEvaluationDecision =
+        praDecision === "lanjut_ke_tahap_selanjutnya"
+          ? "continue"
+          : praDecision === "pending_internal"
+            ? "needs_discussion"
+            : "not_continue";
+      const hrdEvaluationDecisionLabel =
+        praDecision === "lanjut_ke_tahap_selanjutnya"
+          ? "Lanjut ke tahap berikutnya"
+          : praDecision === "pending_internal"
+            ? "Butuh diskusi lanjutan"
+            : "Tidak dilanjutkan";
 
       if (praDecision === "lanjut_ke_tahap_selanjutnya" && onStageChange) {
         if (
@@ -144,6 +164,12 @@ export function UnifiedInternalDecision({
       const isLanjut = praDecision === "lanjut_ke_tahap_selanjutnya";
 
       await updateDocumentNonBlocking(appRef, {
+        hrdEvaluationDecision,
+        hrdEvaluationDecisionLabel,
+        hrdEvaluationDecisionAt: serverTimestamp(),
+        hrdEvaluationDecisionBy: userProfile.uid,
+        hrdEvaluationDecisionByName: userProfile.fullName,
+        hrdEvaluationDecisionNote: praNote,
         recruitmentInternalDecision: {
           status: praDecision,
           note: praNote,
@@ -153,8 +179,11 @@ export function UnifiedInternalDecision({
         },
         // Internal decisions: only "lanjut" is visible to candidates.
         // pending_internal and tidak_dilanjutkan stay hidden — candidate sees "Dalam Evaluasi".
-        candidateVisibleStatus: isLanjut ? "lanjut_tahap_berikutnya" : "dalam_evaluasi",
-        candidateStatus: isLanjut ? "interview_scheduled" : "menunggu",
+        status: isLanjut ? "interview" : "screening",
+        stage: isLanjut ? "interview" : "screening",
+        candidateVisibleStatus: isLanjut ? "interview" : "dalam_evaluasi",
+        candidateVisibleStage: isLanjut ? "wawancara" : "evaluasi_hrd",
+        ...(isLanjut ? { candidateStatus: "interview_scheduled" } : {}),
         // Replace full object instead of dot-path to satisfy affectedKeys() in Firestore rules
         internalReviewConfig: {
           ...(application.internalReviewConfig || {}),
@@ -204,15 +233,15 @@ export function UnifiedInternalDecision({
       // Only "lanjut" advances the public stage. "tidak_lanjut" and "pending" are
       // internal HRD decisions — application.status stays at its current value
       // so the candidate portal always shows "Evaluasi Setelah Wawancara".
+      const nextStatus =
+        pascaDecision === "lanjut" ? "offered" : application.status;
       const nextStage =
-        pascaDecision === "lanjut"
-          ? "offered"
-          : application.status;
+        pascaDecision === "lanjut" ? "offering" : application.stage || application.status;
 
-      // candidateVisibleStatus: "lanjut" makes the candidate visible as advancing;
-      // everything else keeps the neutral post-interview holding state.
       const nextCandidateVisibleStatus =
-        pascaDecision === "lanjut" ? "lanjut_tahap_berikutnya" : "evaluasi_setelah_wawancara";
+        pascaDecision === "lanjut" ? "offering" : "evaluasi_setelah_wawancara";
+      const nextCandidateVisibleStage =
+        pascaDecision === "lanjut" ? "offering" : "evaluasi_setelah_wawancara";
 
       const updatePayload: any = {
         postInterviewDecision: {
@@ -223,13 +252,15 @@ export function UnifiedInternalDecision({
           decidedAt: serverTimestamp(),
         },
         candidateVisibleStatus: nextCandidateVisibleStatus,
+        candidateVisibleStage: nextCandidateVisibleStage,
         // Only advance candidateStatus to "lolos" for "lanjut"; leave unchanged otherwise
         // so the candidate never sees an internal rejection reflected in their status.
         ...(pascaDecision === "lanjut" ? { candidateStatus: "lolos" } : {}),
         // Lock final decision only when advancing to offering. For hold/reject, leave
         // unlocked so HRD can revise the decision if needed.
         finalDecisionLocked: pascaDecision === "lanjut",
-        status: nextStage,
+        status: nextStatus,
+        stage: nextStage,
         updatedAt: serverTimestamp(),
         // Public timeline only records stage advances. Internal decisions go to
         // internalDecisionLog so they never surface in candidate-facing UIs.
@@ -243,7 +274,7 @@ export function UnifiedInternalDecision({
                   by: userProfile.uid,
                   meta: {
                     from: application.status,
-                    to: nextStage,
+                    to: nextStatus,
                     note: "Kandidat lolos pasca wawancara dan maju ke tahap offering.",
                   },
                 },
@@ -298,13 +329,14 @@ export function UnifiedInternalDecision({
   };
 
   // Visibility Filter
-  if (!isHRD && !existingPra && !existingPasca) return null;
+  if (!isHRD && !existingPra && !existingPasca && !existingHrdEvaluationDecision) return null;
 
   const getStatusLabelPra = (status?: string) => {
-    if (status === "lanjut_ke_tahap_selanjutnya") return "Lanjut Stage";
-    if (status === "pending_internal") return "Pending";
-    if (status === "tidak_dilanjutkan_saat_ini") return "Gugur";
-    return "-";
+    if (existingHrdEvaluationDecisionLabel) return existingHrdEvaluationDecisionLabel;
+    if (status === "lanjut_ke_tahap_selanjutnya") return "Lanjut ke tahap berikutnya";
+    if (status === "pending_internal") return "Butuh diskusi lanjutan";
+    if (status === "tidak_dilanjutkan_saat_ini") return "Tidak dilanjutkan";
+    return "Belum diputuskan";
   };
 
   const getStatusLabelPasca = (status?: string) => {

@@ -1,1240 +1,554 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useDoc, useFirestore, updateDocumentNonBlocking } from "@/firebase";
-import { doc, serverTimestamp, Timestamp, updateDoc } from "firebase/firestore";
+import { doc, serverTimestamp } from "firebase/firestore";
+import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { useAuth } from "@/providers/auth-provider";
 import type { Offering, JobApplication } from "@/lib/types";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import SafeRichText from "@/components/ui/SafeRichText";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import {
   CheckCircle,
-  XCircle,
-  MessageSquare,
-  Download,
   Clock,
-  DollarSign,
   Calendar,
   MapPin,
-  User,
   Eye,
-  Activity,
   FileText,
-  Send,
-  EyeOff,
+  Download,
+  Upload,
+  Phone,
+  ChevronDown,
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, differenceInSeconds } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
+import { Progress } from "@/components/ui/progress";
+import { openOfferingDocument } from "@/lib/offering-file-utils";
+
+const ACCEPTED_TYPES = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+];
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+function useCountdown(deadline: Date) {
+  const calc = () => Math.max(0, differenceInSeconds(deadline, new Date()));
+  const [secs, setSecs] = useState(calc);
+  useEffect(() => {
+    const t = setInterval(() => setSecs(calc()), 1000);
+    return () => clearInterval(t);
+  });
+  return {
+    days: Math.floor(secs / 86400),
+    hours: Math.floor((secs % 86400) / 3600),
+    minutes: Math.floor((secs % 3600) / 60),
+    seconds: secs % 60,
+    expired: secs === 0,
+  };
+}
 
 export default function OfferPage() {
   const params = useParams();
   const offerId = params.offerId as string;
   const firestore = useFirestore();
   const { toast } = useToast();
+  const { userProfile } = useAuth();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const offeringRef = doc(firestore, "offerings", offerId);
-  const { data: offering, isLoading: isLoadingOffering } =
-    useDoc<Offering>(offeringRef);
+  const { data: offering, isLoading: isLoadingOffering } = useDoc<Offering>(offeringRef);
 
-  // Get application data to check if this is the current offering
-  const applicationRef = offering
-    ? doc(firestore, "applications", offering.applicationId)
-    : null;
-  const { data: application, isLoading: isLoadingApplication } =
-    useDoc<JobApplication>(applicationRef);
+  const applicationRef = offering ? doc(firestore, "applications", offering.applicationId) : null;
+  const { data: application, isLoading: isLoadingApplication } = useDoc<JobApplication>(applicationRef);
 
   const isLoading = isLoadingOffering || isLoadingApplication;
-
-  // Check if this offering is valid for the candidate to view
   const isValidOffering =
-    offering &&
-    application &&
+    offering && application &&
     offering.id === application.currentOfferingId &&
     offering.isActive === true;
 
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const [isAccepting, setIsAccepting] = useState(false);
-  const [isRejecting, setIsRejecting] = useState(false);
-  const [rejectionReason, setRejectionReason] = useState("");
-  const [question, setQuestion] = useState("");
-  const [isSubmittingQuestion, setIsSubmittingQuestion] = useState(false);
-  const [isHiding, setIsHiding] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  // Negotiation states
-  const [isNegotiationDialogOpen, setIsNegotiationDialogOpen] = useState(false);
-  const [negotiationAreas, setNegotiationAreas] = useState<string[]>([]);
-  const [negotiationStartDate, setNegotiationStartDate] = useState("");
-  const [negotiationWorkModel, setNegotiationWorkModel] = useState("");
-  const [negotiationWorkDays, setNegotiationWorkDays] = useState("");
-  const [negotiationWorkTime, setNegotiationWorkTime] = useState("");
-  const [negotiationEntryLocation, setNegotiationEntryLocation] = useState("");
-  const [negotiationLocation, setNegotiationLocation] = useState("");
-  const [negotiationContractDuration, setNegotiationContractDuration] =
-    useState<number | null>(null);
-  const [negotiationBenefitNotes, setNegotiationBenefitNotes] = useState("");
-  const [negotiationScopeNotes, setNegotiationScopeNotes] = useState("");
-  const [negotiationOtherNotes, setNegotiationOtherNotes] = useState("");
-  const [negotiationReason, setNegotiationReason] = useState("");
-  const [isNegotiating, setIsNegotiating] = useState(false);
+  // Must be called unconditionally before any early return
+  const deadlineForHook = offering?.responseDeadline?.toDate?.() ?? new Date(Date.now() + 86400000);
+  const countdown = useCountdown(deadlineForHook);
 
-  const { userProfile } = useAuth();
-
+  // Mark as viewed
   useEffect(() => {
-    if (offering && isValidOffering) {
-      // Check if offering is active - if not, don't proceed with any updates
-      if (!offering.isActive) {
-        return;
-      }
-
-      const now = new Date();
-      const deadline = offering.responseDeadline.toDate();
-      const isExpired = deadline < now;
-
-      // Auto-expire if deadline passed and status is not final
-      if (
-        isExpired &&
-        !["accepted", "rejected", "expired"].includes(offering.status) &&
-        applicationRef
-      ) {
-        // We only update status in applications
-        updateDocumentNonBlocking(applicationRef, {
-          offerStatus: "expired",
-          updatedAt: serverTimestamp(),
-        });
-      } else if (
-        offering.status === "sent" &&
-        applicationRef &&
-        application.offerStatus === "sent"
-      ) {
-        // Mark as viewed in applications
-        updateDocumentNonBlocking(applicationRef, {
-          offerStatus: "viewed",
-          offerViewedAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      }
+    if (!offering || !isValidOffering || !applicationRef) return;
+    if (offering.status === "sent" && application?.offerStatus === "sent") {
+      updateDocumentNonBlocking(applicationRef, {
+        offerStatus: "viewed",
+        offerViewedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
     }
   }, [offering, application, applicationRef, isValidOffering]);
 
   const handleAccept = async () => {
-    if (!offering) return;
+    if (!applicationRef) return;
     setIsAccepting(true);
     try {
-      if (applicationRef) {
-        await updateDocumentNonBlocking(applicationRef, {
-          offerStatus: "accepted",
-          candidateOfferDecisionAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      }
-      toast({
-        title: "Penawaran Diterima",
-        description:
-          "Terima kasih telah menerima penawaran. HR akan segera menghubungi Anda.",
+      await updateDocumentNonBlocking(applicationRef, {
+        offerStatus: "accepted_pending_document",
+        candidateVisibleStatus: "offering_document_upload",
+        candidateOfferDecisionAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       });
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message,
-      });
+      toast({ title: "Penawaran Diterima", description: "Silakan unggah dokumen penerimaan yang telah ditandatangani." });
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Gagal", description: e.message });
     } finally {
       setIsAccepting(false);
     }
   };
 
-  const handleReject = async () => {
-    if (!offering || !rejectionReason.trim()) return;
-    setIsRejecting(true);
-    try {
-      if (applicationRef) {
-        await updateDocumentNonBlocking(applicationRef, {
-          status: "rejected",
-          offerStatus: "rejected",
-          offerRejectionReason: rejectionReason.trim(),
-          candidateOfferDecisionAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      }
-      toast({
-        title: "Penawaran Ditolak",
-        description: "Keputusan Anda telah dicatat.",
-      });
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message,
-      });
-    } finally {
-      setIsRejecting(false);
-      setRejectionReason("");
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!ACCEPTED_TYPES.includes(file.type)) {
+      toast({ variant: "destructive", title: "Format tidak didukung", description: "Unggah PDF, JPG, PNG, DOC, atau DOCX." });
+      return;
     }
+    if (file.size > MAX_FILE_SIZE) {
+      toast({ variant: "destructive", title: "File terlalu besar", description: "Maksimal 10 MB." });
+      return;
+    }
+    setSelectedFile(file);
   };
 
-  const handleAskQuestion = async () => {
-    if (!offering || !question.trim()) return;
-    setIsSubmittingQuestion(true);
+  const handleUploadSubmit = async () => {
+    if (!selectedFile || !offering || !applicationRef) return;
+    setIsUploading(true);
+    setUploadProgress(0);
     try {
-      if (applicationRef) {
-        await updateDocumentNonBlocking(applicationRef, {
-          offerInteractions: [
-            ...((application as any).offerInteractions || []),
-            {
-              type: "question",
-              message: question,
-              timestamp: Timestamp.now(),
-            },
-          ],
-          updatedAt: serverTimestamp(),
-        });
-      }
-      toast({
-        title: "Pertanyaan Terkirim",
-        description: "Pertanyaan Anda telah dikirim ke Tim HRD.",
+      const storage = getStorage();
+      const filePath = `acceptance_documents/${offering.applicationId}/${Date.now()}_${selectedFile.name}`;
+      const storageRef = ref(storage, filePath);
+      const task = uploadBytesResumable(storageRef, selectedFile);
+      await new Promise<void>((resolve, reject) => {
+        task.on("state_changed",
+          (snap) => setUploadProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
+          reject, resolve);
       });
-      setQuestion("");
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message,
-      });
-    } finally {
-      setIsSubmittingQuestion(false);
-    }
-  };
-
-  const handleNegotiationSubmit = async () => {
-    if (!offering || !application || !applicationRef) return;
-    if (negotiationAreas.length === 0 || !negotiationReason.trim()) return;
-
-    setIsNegotiating(true);
-    try {
+      const downloadUrl = await getDownloadURL(task.snapshot.ref);
       await updateDocumentNonBlocking(applicationRef, {
-        offerStatus: "negotiation_requested" as const,
-        candidateNegotiationUsed: true,
-        candidateCounterOffer: {
-          requestedAreas: negotiationAreas,
-          requestedStartDate: negotiationAreas.includes("tanggal_mulai")
-            ? negotiationStartDate
-            : null,
-          requestedWorkModel: negotiationAreas.includes("sistem_kerja")
-            ? [
-                negotiationWorkModel,
-                negotiationWorkDays,
-                negotiationWorkTime,
-                negotiationEntryLocation,
-              ]
-                .filter(Boolean)
-                .join(" • ")
-            : null,
-          requestedLocation: negotiationAreas.includes("lokasi")
-            ? negotiationLocation
-            : null,
-          requestedContractDurationMonths: negotiationAreas.includes(
-            "durasi_kontrak",
-          )
-            ? negotiationContractDuration
-            : null,
-          requestedBenefitNotes: negotiationAreas.includes("benefit")
-            ? negotiationBenefitNotes
-            : null,
-          requestedScopeNotes: negotiationAreas.includes("peran")
-            ? negotiationScopeNotes
-            : null,
-          requestedOtherNotes: negotiationAreas.includes("lainnya")
-            ? negotiationOtherNotes
-            : null,
-          reason: negotiationReason,
-          submittedAt: Timestamp.now(),
-        },
+        offerStatus: "document_uploaded",
+        offerDocumentStatus: "submitted",
+        candidateVisibleStatus: "offering_document_submitted",
+        acceptanceDocumentUrl: downloadUrl,
+        acceptanceDocumentName: selectedFile.name,
+        acceptanceDocumentUploadedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
-
-      toast({
-        title: "Negosiasi Terkirim",
-        description: "Permintaan diskusi Anda telah terkirim ke Tim HRD.",
-      });
-      setIsNegotiationDialogOpen(false);
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message,
-      });
+      toast({ title: "Dokumen Berhasil Dikirim", description: "Tim Human Capital akan meninjau dokumen Anda segera." });
+      setSelectedFile(null);
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Gagal Mengunggah", description: err.message });
     } finally {
-      setIsNegotiating(false);
+      setIsUploading(false);
+      setUploadProgress(null);
     }
   };
 
-  const handleHideOffering = async () => {
-    if (!offering || !userProfile) return;
-    setIsHiding(true);
-    try {
-      const userRef = doc(firestore, "users", userProfile.uid);
-      const hiddenIds = userProfile.hiddenOfferingIds || [];
-
-      // Only add if not already in the list
-      if (!hiddenIds.includes(offerId)) {
-        hiddenIds.push(offerId);
-      }
-
-      await updateDoc(userRef, {
-        hiddenOfferingIds: hiddenIds,
-        updatedAt: serverTimestamp(),
-      });
-
-      toast({
-        title: "Offering Disembunyikan",
-        description: "Penawaran ini telah disembunyikan dari tampilan Anda.",
-      });
-
-      // Redirect after hiding
-      setTimeout(() => {
-        window.location.href = "/careers/portal/applications";
-      }, 1000);
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Gagal Menyembunyikan",
-        description: error.message,
-      });
-    } finally {
-      setIsHiding(false);
-    }
-  };
-
+  // ── loading / error states ─────────────────────────────────────────────────
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
       </div>
     );
   }
 
-  if (!offering) {
+  if (!offering || !isValidOffering || !offering.isActive) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
-          <CardContent className="pt-6">
-            <p className="text-center text-muted-foreground">
-              Offering not found or expired.
-            </p>
+          <CardContent className="pt-6 text-center text-muted-foreground">
+            Penawaran ini sudah tidak berlaku atau belum tersedia. Silakan periksa penawaran terbaru Anda.
           </CardContent>
         </Card>
       </div>
     );
   }
 
-  if (!isValidOffering) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Card className="w-full max-w-md">
-          <CardContent className="pt-6">
-            <p className="text-center text-muted-foreground">
-              Penawaran ini sudah tidak berlaku. Silakan periksa penawaran
-              terbaru Anda.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  // ── derived data ───────────────────────────────────────────────────────────
+  const deadline = offering.responseDeadline.toDate();
+  const { days, hours, minutes, seconds, expired } = countdown;
+  const currentStatus = application?.offerStatus || offering.status;
+  const isPendingDocument = currentStatus === "accepted_pending_document";
+  const isDocumentUploaded = currentStatus === "document_uploaded" || !!application?.acceptanceDocumentUrl;
+  const isStep1 = !isPendingDocument && !isDocumentUploaded;
 
-  if (!offering.isActive) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Card className="w-full max-w-md">
-          <CardContent className="pt-6">
-            <p className="text-center text-muted-foreground">
-              Saat ini belum ada penawaran kerja aktif.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  const details = offering.offeringDetails;
+  const jobPosition = application?.jobPosition || "";
+  const brandName = application?.brandName || "";
+  const candidateName = offering.candidateName || "";
 
-  if (userProfile?.hiddenOfferingIds?.includes(offerId)) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Card className="w-full max-w-md">
-          <CardContent className="pt-6">
-            <p className="text-center text-muted-foreground">
-              Penawaran ini telah Anda sembunyikan. Hubungi HRD jika Anda ingin
-              membuka kembali.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  const hcContact = details
+    ? [details.humanCapitalContactName, details.humanCapitalContactPhone].filter(Boolean).join(" · ")
+      || details.humanCapitalContact || details.hrContact
+    : null;
 
-  const isExpired = offering.responseDeadline.toDate() < new Date();
-  const statusColors: Record<string, string> = {
-    draft: "bg-gray-500",
-    sent: "bg-blue-500",
-    viewed: "bg-yellow-500",
-    responded: "bg-purple-500",
-    accepted: "bg-green-500",
-    rejected: "bg-red-500",
-    withdrawn: "bg-orange-500",
-    expired: "bg-gray-500",
-    negotiation_requested: "bg-blue-600",
-    negotiation_approved: "bg-emerald-600",
-    negotiation_rejected: "bg-orange-600",
-    offered_final: "bg-indigo-600",
-  };
+  const deadlineDateLabel = format(deadline, "EEEE, dd MMMM yyyy", { locale: idLocale });
+  const deadlineTimeLabel = format(deadline, "HH:mm");
 
-  const getActivityIcon = (type: string) => {
-    switch (type) {
-      case "draft_created":
-      case "draft_updated":
-        return <FileText className="h-4 w-4" />;
-      case "document_uploaded":
-        return <Download className="h-4 w-4" />;
-      case "details_updated":
-      case "deadline_updated":
-        return <Clock className="h-4 w-4" />;
-      case "notes_updated":
-        return <MessageSquare className="h-4 w-4" />;
-      case "sent":
-        return <Send className="h-4 w-4" />;
-      case "cancelled":
-        return <XCircle className="h-4 w-4" />;
-      case "viewed":
-        return <Eye className="h-4 w-4" />;
-      case "accepted":
-        return <CheckCircle className="h-4 w-4" />;
-      case "rejected":
-        return <XCircle className="h-4 w-4" />;
-      case "expired":
-        return <Clock className="h-4 w-4" />;
-      default:
-        return <Activity className="h-4 w-4" />;
-    }
-  };
+  const infoItems = [
+    { label: "Batas Konfirmasi", value: `${deadlineDateLabel}, pukul ${deadlineTimeLabel} WIB` },
+    details?.startDate && {
+      label: "Tanggal Mulai Kerja / Program",
+      value: (() => { try { return format(new Date(details.startDate!), "dd MMMM yyyy", { locale: idLocale }); } catch { return String(details.startDate); } })(),
+    },
+    details?.contractDurationMonths && { label: "Durasi Kontrak / Program", value: `${details.contractDurationMonths} bulan` },
+    details?.firstDayTime && { label: "Jam Hadir Hari Pertama", value: `${details.firstDayTime} WIB` },
+    details?.firstDayLocation && { label: "Lokasi Hari Pertama", value: details.firstDayLocation },
+    hcContact && { label: "Kontak Human Capital", value: hcContact },
+  ].filter(Boolean) as { label: string; value: string }[];
 
-  const getActivityLabel = (type: string): string => {
-    switch (type) {
-      case "draft_created":
-        return "Draft Dibuat";
-      case "draft_updated":
-        return "Draft Diperbarui";
-      case "document_uploaded":
-        return "Dokumen Diunggah";
-      case "details_updated":
-        return "Detail Penawaran Diubah";
-      case "notes_updated":
-        return "Catatan Diubah";
-      case "deadline_updated":
-        return "Batas Waktu Diubah";
-      case "sent":
-        return "Penawaran Dikirim";
-      case "cancelled":
-        return "Pengiriman Dibatalkan";
-      case "viewed":
-        return "Penawaran Dibuka";
-      case "accepted":
-        return "Penawaran Diterima";
-      case "rejected":
-        return "Penawaran Ditolak";
-      case "expired":
-        return "Penawaran Kedaluwarsa";
-      default:
-        return type;
-    }
-  };
+  const offeringMessage = [
+    `Dear ${candidateName},`,
+    "",
+    `Terimalah salam hangat dari kami ${brandName || "[brandName]"}.`,
+    "",
+    `Berdasarkan hasil proses seleksi dan wawancara yang telah Saudara ikuti bersama tim kami, dengan senang hati kami sampaikan bahwa Saudara telah sesuai dengan kualifikasi yang dibutuhkan oleh perusahaan untuk posisi ${jobPosition || "[posisi]"}.`,
+    "",
+    `Berikut kami kirimkan Surat Penawaran Kerja yang dapat Saudara pertimbangkan. Apabila Saudara menyetujui penawaran tersebut, silakan membubuhkan tanda tangan pada Lembar Penerimaan Posisi, kemudian mengunggah kembali dokumen yang telah ditandatangani melalui portal ini maksimal ${deadlineDateLabel} pukul ${deadlineTimeLabel} WIB untuk melanjutkan tahap berikutnya, yaitu penandatanganan kontrak.`,
+    "",
+    `Kami sangat berharap Saudara dapat mempertimbangkan dan bergabung dengan perusahaan kami.${hcContact ? ` Apabila terdapat hal-hal yang perlu didiskusikan lebih lanjut, mohon jangan ragu untuk menghubungi tim Human Capital melalui ${hcContact}.` : ""}`,
+    "",
+    "Demikian surat penawaran ini kami sampaikan. Atas perhatian dan kerja sama yang baik, kami ucapkan terima kasih.",
+    "",
+    "Regards,",
+    "Human Capital",
+    brandName || "[brandName]",
+  ].join("\n");
 
-  const getActivityColor = (type: string): string => {
-    switch (type) {
-      case "draft_created":
-      case "draft_updated":
-        return "text-gray-600";
-      case "document_uploaded":
-        return "text-blue-600";
-      case "details_updated":
-      case "deadline_updated":
-        return "text-purple-600";
-      case "notes_updated":
-        return "text-indigo-600";
-      case "sent":
-        return "text-blue-600";
-      case "cancelled":
-        return "text-orange-600";
-      case "viewed":
-        return "text-yellow-600";
-      case "accepted":
-        return "text-green-600";
-      case "rejected":
-        return "text-red-600";
-      case "expired":
-        return "text-gray-600";
-      default:
-        return "text-gray-600";
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
-      <div className="container mx-auto px-4 max-w-4xl">
-        <div className="space-y-6">
-          {/* Header */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-2xl">Job Offer</CardTitle>
-                <Badge
-                  className={`${statusColors[application?.offerStatus || offering.status]} text-white`}
-                >
-                  {(application?.offerStatus || offering.status)
-                    .toUpperCase()
-                    .replace("_", " ")}
-                </Badge>
-              </div>
-              <div className="space-y-2">
-                <p className="text-lg font-medium">{offering.candidateName}</p>
-                <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Clock className="h-4 w-4" />
-                    Deadline:{" "}
-                    {format(
-                      offering.responseDeadline.toDate(),
-                      "dd MMM yyyy HH:mm",
-                      { locale: idLocale },
-                    )}
-                  </span>
-                  {offering.viewCount && offering.viewCount > 0 && (
-                    <span className="flex items-center gap-1">
-                      <Eye className="h-4 w-4" />
-                      Viewed {offering.viewCount} time
-                      {offering.viewCount > 1 ? "s" : ""}
-                    </span>
-                  )}
-                  {isExpired && <Badge variant="destructive">EXPIRED</Badge>}
-                </div>
-              </div>
-            </CardHeader>
-          </Card>
-
-          {/* Offering Details */}
-          {offering.offeringDetails && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="h-5 w-5" />
-                  Offer Details
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {offering.offeringDetails.salary && (
-                    <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                      <DollarSign className="h-5 w-5 text-green-600" />
-                      <div>
-                        <p className="text-sm font-medium">Salary</p>
-                        <p className="text-sm text-muted-foreground">
-                          {offering.offeringDetails.salary}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {offering.offeringDetails.startDate && (
-                    <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                      <Calendar className="h-5 w-5 text-blue-600" />
-                      <div>
-                        <p className="text-sm font-medium">Start Date</p>
-                        <p className="text-sm text-muted-foreground">
-                          {format(
-                            new Date(offering.offeringDetails.startDate),
-                            "dd MMMM yyyy",
-                            { locale: idLocale },
-                          )}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {offering.offeringDetails.firstDayTime && (
-                    <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                      <Clock className="h-5 w-5 text-orange-600" />
-                      <div>
-                        <p className="text-sm font-medium">First Day Time</p>
-                        <p className="text-sm text-muted-foreground">
-                          {offering.offeringDetails.firstDayTime}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {offering.offeringDetails.firstDayLocation && (
-                    <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                      <MapPin className="h-5 w-5 text-red-600" />
-                      <div>
-                        <p className="text-sm font-medium">
-                          First Day Location
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          {offering.offeringDetails.firstDayLocation}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {offering.offeringDetails.hrContact && (
-                    <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg md:col-span-2">
-                      <User className="h-5 w-5 text-purple-600" />
-                      <div>
-                        <p className="text-sm font-medium">HR Contact</p>
-                        <p className="text-sm text-muted-foreground">
-                          {offering.offeringDetails.hrContact}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* PDF Viewer */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Official Offer Letter</CardTitle>
-                <Button variant="outline" size="sm" asChild>
-                  <a
-                    href={offering.documentUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    Download Dokumen
-                  </a>
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="w-full h-[600px] border rounded-lg overflow-hidden">
-                <iframe
-                  src={offering.documentUrl}
-                  className="w-full h-full"
-                  title="Dokumen Penawaran"
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Additional Notes */}
-          {offering.additionalNotes && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Informasi Tambahan</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <SafeRichText html={offering.additionalNotes} />
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Activity Timeline */}
-          {offering.history && offering.history.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Activity className="h-5 w-5" />
-                  Riwayat Aktivitas
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {offering.history
-                    .sort((a, b) => b.at.toMillis() - a.at.toMillis())
-                    .map((activity, index) => (
-                      <div key={index} className="flex items-start gap-3">
-                        <div
-                          className={`mt-1 ${getActivityColor(activity.type)}`}
-                        >
-                          {getActivityIcon(activity.type)}
-                        </div>
-                        <div className="flex-1 space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">
-                              {getActivityLabel(activity.type)}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              {format(
-                                activity.at.toDate(),
-                                "dd MMM yyyy HH:mm",
-                                { locale: idLocale },
-                              )}
-                            </span>
-                          </div>
-                          {activity.description && (
-                            <p className="text-sm text-muted-foreground">
-                              {activity.description}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Actions */}
-          {!isExpired &&
-            application?.offerStatus !== "accepted" &&
-            application?.offerStatus !== "accepted_pending_document" &&
-            application?.offerStatus !== "document_uploaded" &&
-            application?.offerStatus !== "rejected" &&
-            application?.offerStatus !== "negotiation_requested" && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Respons Anda</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex flex-col gap-2">
-                    <div className="flex gap-4">
-                      <Button
-                        onClick={handleAccept}
-                        disabled={isAccepting}
-                        className="flex-1"
-                        size="lg"
-                      >
-                        <CheckCircle className="h-4 w-4 mr-2" />
-                        {isAccepting ? "Menerima..." : "Terima Penawaran"}
-                      </Button>
-
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <Button
-                            variant="destructive"
-                            className="flex-1"
-                            size="lg"
-                          >
-                            <XCircle className="h-4 w-4 mr-2" />
-                            Tolak Penawaran
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Tolak Penawaran</DialogTitle>
-                          </DialogHeader>
-                          <div className="space-y-4">
-                            <Textarea
-                              placeholder="Berikan alasan penolakan (opsional)"
-                              value={rejectionReason}
-                              onChange={(e: any) =>
-                                setRejectionReason(e.target.value)
-                              }
-                            />
-                            <div className="flex gap-2">
-                              <Button
-                                onClick={handleReject}
-                                disabled={
-                                  isRejecting || !rejectionReason.trim()
-                                }
-                                variant="destructive"
-                                className="flex-1"
-                              >
-                                {isRejecting
-                                  ? "Menolak..."
-                                  : "Konfirmasi Penolakan"}
-                              </Button>
-                            </div>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
-
-                      {!application?.candidateNegotiationUsed && (
-                        <Dialog
-                          open={isNegotiationDialogOpen}
-                          onOpenChange={setIsNegotiationDialogOpen}
-                        >
-                          <DialogTrigger asChild>
-                            <Button
-                              variant="outline"
-                              className="flex-1"
-                              size="lg"
-                            >
-                              <MessageSquare className="h-4 w-4 mr-2" />
-                              Diskusi Penawaran
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl border border-slate-800 bg-slate-950 p-6 text-slate-100 shadow-2xl">
-                            <DialogHeader>
-                              <DialogTitle>
-                                Ajukan Diskusi Penawaran
-                              </DialogTitle>
-                              <p className="mt-2 text-sm leading-7 text-slate-400">
-                                Ajukan diskusi untuk menyelaraskan detail kerja
-                                yang penting, bukan untuk mengubah keseluruhan
-                                tawaran.
-                              </p>
-                            </DialogHeader>
-                            <div className="space-y-8 py-4">
-                              <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-4 text-sm text-slate-300">
-                                <p className="font-semibold text-slate-100 mb-2">
-                                  Fokus diskusi
-                                </p>
-                                <ul className="list-disc pl-5 space-y-2">
-                                  <li>
-                                    Detail tanggal mulai, sistem kerja, lokasi /
-                                    penempatan, dan durasi kontrak.
-                                  </li>
-                                  <li>
-                                    Benefit / fasilitas, lingkup peran, dan
-                                    penyesuaian kerja sehari-hari.
-                                  </li>
-                                  <li>
-                                    Diskusi ini bukan untuk meminta revisi gaji
-                                    atau perubahan total kompensasi.
-                                  </li>
-                                </ul>
-                              </div>
-
-                              <div className="space-y-4">
-                                <div>
-                                  <p className="text-base font-semibold text-slate-100">
-                                    Pilih Area Diskusi
-                                  </p>
-                                  <p className="text-sm text-slate-400 mt-1">
-                                    Pilih area yang paling penting bagi
-                                    kebutuhan kerja Anda.
-                                  </p>
-                                </div>
-                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                  {[
-                                    {
-                                      id: "tanggal_mulai",
-                                      label: "Tanggal Mulai",
-                                    },
-                                    {
-                                      id: "sistem_kerja",
-                                      label: "Sistem Kerja",
-                                    },
-                                    {
-                                      id: "lokasi",
-                                      label: "Lokasi / Penempatan",
-                                    },
-                                    {
-                                      id: "durasi_kontrak",
-                                      label: "Durasi Kontrak",
-                                    },
-                                    {
-                                      id: "benefit",
-                                      label: "Benefit / Fasilitas",
-                                    },
-                                    { id: "peran", label: "Lingkup Peran" },
-                                    { id: "lainnya", label: "Lainnya" },
-                                  ].map((area) => (
-                                    <label
-                                      key={area.id}
-                                      htmlFor={`g-area-${area.id}`}
-                                      className="flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/90 px-4 py-3 text-sm transition hover:border-slate-700"
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        id={`g-area-${area.id}`}
-                                        checked={negotiationAreas.includes(
-                                          area.id,
-                                        )}
-                                        onChange={(e) => {
-                                          if (e.target.checked)
-                                            setNegotiationAreas([
-                                              ...negotiationAreas,
-                                              area.id,
-                                            ]);
-                                          else
-                                            setNegotiationAreas(
-                                              negotiationAreas.filter(
-                                                (a) => a !== area.id,
-                                              ),
-                                            );
-                                        }}
-                                        className="h-4 w-4 accent-slate-400 text-slate-100"
-                                      />
-                                      <span className="text-slate-100">
-                                        {area.label}
-                                      </span>
-                                    </label>
-                                  ))}
-                                </div>
-                              </div>
-
-                              <div className="space-y-5">
-                                {negotiationAreas.includes("tanggal_mulai") && (
-                                  <div className="space-y-2">
-                                    <label className="block text-sm font-semibold text-slate-100">
-                                      Usulan Tanggal Mulai
-                                    </label>
-                                    <Input
-                                      type="date"
-                                      value={negotiationStartDate}
-                                      onChange={(e) =>
-                                        setNegotiationStartDate(e.target.value)
-                                      }
-                                      className="bg-slate-900 border-slate-800 text-slate-100"
-                                    />
-                                  </div>
-                                )}
-
-                                {negotiationAreas.includes("sistem_kerja") && (
-                                  <div className="space-y-4 rounded-3xl border border-slate-800 bg-slate-900/80 p-4">
-                                    <div className="flex flex-col gap-2">
-                                      <p className="text-sm font-semibold text-slate-100">
-                                        Sistem Kerja
-                                      </p>
-                                      <p className="text-sm text-slate-400">
-                                        Jelaskan model kerja yang Anda harapkan,
-                                        beserta hari kerja, jam kerja, dan
-                                        lokasi masuk jika perlu.
-                                      </p>
-                                    </div>
-                                    <div className="space-y-4">
-                                      <div className="space-y-2">
-                                        <label className="text-sm font-semibold text-slate-100">
-                                          Model Kerja
-                                        </label>
-                                        <select
-                                          className="w-full rounded-xl border border-slate-800 bg-slate-950 p-3 text-sm text-slate-100 outline-none focus:border-slate-600"
-                                          value={negotiationWorkModel}
-                                          onChange={(e) =>
-                                            setNegotiationWorkModel(
-                                              e.target.value,
-                                            )
-                                          }
-                                        >
-                                          <option
-                                            value=""
-                                            className="text-slate-500"
-                                          >
-                                            Pilih model kerja
-                                          </option>
-                                          <option value="Onsite">Onsite</option>
-                                          <option value="Hybrid">Hybrid</option>
-                                          <option value="Remote">Remote</option>
-                                        </select>
-                                      </div>
-                                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                        <div className="space-y-2">
-                                          <label className="text-sm font-semibold text-slate-100">
-                                            Hari Kerja
-                                          </label>
-                                          <Input
-                                            placeholder="Contoh: Senin - Jumat atau fleksibel"
-                                            value={negotiationWorkDays}
-                                            onChange={(e) =>
-                                              setNegotiationWorkDays(
-                                                e.target.value,
-                                              )
-                                            }
-                                            className="bg-slate-900 border-slate-800 text-slate-100"
-                                          />
-                                        </div>
-                                        <div className="space-y-2">
-                                          <label className="text-sm font-semibold text-slate-100">
-                                            Jam Kerja
-                                          </label>
-                                          <Input
-                                            placeholder="Contoh: 09:00 - 18:00 atau fleksibel"
-                                            value={negotiationWorkTime}
-                                            onChange={(e) =>
-                                              setNegotiationWorkTime(
-                                                e.target.value,
-                                              )
-                                            }
-                                            className="bg-slate-900 border-slate-800 text-slate-100"
-                                          />
-                                        </div>
-                                      </div>
-                                      <div className="space-y-2">
-                                        <label className="text-sm font-semibold text-slate-100">
-                                          Lokasi Masuk
-                                        </label>
-                                        <Input
-                                          placeholder="Contoh: Kantor pusat / coworking / remote"
-                                          value={negotiationEntryLocation}
-                                          onChange={(e) =>
-                                            setNegotiationEntryLocation(
-                                              e.target.value,
-                                            )
-                                          }
-                                          className="bg-slate-900 border-slate-800 text-slate-100"
-                                        />
-                                      </div>
-                                    </div>
-                                  </div>
-                                )}
-
-                                {negotiationAreas.includes("lokasi") && (
-                                  <div className="space-y-2">
-                                    <label className="text-sm font-semibold text-slate-100">
-                                      Lokasi / Penempatan
-                                    </label>
-                                    <Input
-                                      placeholder="Contoh: Jakarta Selatan / remote sepenuhnya"
-                                      value={negotiationLocation}
-                                      onChange={(e) =>
-                                        setNegotiationLocation(e.target.value)
-                                      }
-                                      className="bg-slate-900 border-slate-800 text-slate-100"
-                                    />
-                                  </div>
-                                )}
-
-                                {negotiationAreas.includes(
-                                  "durasi_kontrak",
-                                ) && (
-                                  <div className="space-y-2">
-                                    <label className="text-sm font-semibold text-slate-100">
-                                      Durasi Kontrak
-                                    </label>
-                                    <Input
-                                      type="number"
-                                      min={1}
-                                      placeholder="Contoh: 12 (bulan)"
-                                      value={negotiationContractDuration || ""}
-                                      onChange={(e) =>
-                                        setNegotiationContractDuration(
-                                          e.target.value
-                                            ? parseInt(e.target.value)
-                                            : null,
-                                        )
-                                      }
-                                      className="bg-slate-900 border-slate-800 text-slate-100"
-                                    />
-                                  </div>
-                                )}
-
-                                {negotiationAreas.includes("benefit") && (
-                                  <div className="space-y-2">
-                                    <label className="text-sm font-semibold text-slate-100">
-                                      Benefit / Fasilitas
-                                    </label>
-                                    <Textarea
-                                      placeholder="Jelaskan benefit atau fasilitas tambahan yang Anda butuhkan."
-                                      value={negotiationBenefitNotes}
-                                      onChange={(e) =>
-                                        setNegotiationBenefitNotes(
-                                          e.target.value,
-                                        )
-                                      }
-                                      className="min-h-[120px] bg-slate-900 border-slate-800 text-slate-100"
-                                    />
-                                  </div>
-                                )}
-
-                                {negotiationAreas.includes("peran") && (
-                                  <div className="space-y-2">
-                                    <label className="text-sm font-semibold text-slate-100">
-                                      Lingkup Peran
-                                    </label>
-                                    <Textarea
-                                      placeholder="Ungkapkan harapan Anda terkait tugas utama dan tanggung jawab."
-                                      value={negotiationScopeNotes}
-                                      onChange={(e) =>
-                                        setNegotiationScopeNotes(e.target.value)
-                                      }
-                                      className="min-h-[120px] bg-slate-900 border-slate-800 text-slate-100"
-                                    />
-                                  </div>
-                                )}
-
-                                {negotiationAreas.includes("lainnya") && (
-                                  <div className="space-y-2">
-                                    <label className="text-sm font-semibold text-slate-100">
-                                      Lainnya
-                                    </label>
-                                    <Textarea
-                                      placeholder="Detail lain yang ingin Anda diskusikan."
-                                      value={negotiationOtherNotes}
-                                      onChange={(e) =>
-                                        setNegotiationOtherNotes(e.target.value)
-                                      }
-                                      className="min-h-[120px] bg-slate-900 border-slate-800 text-slate-100"
-                                    />
-                                  </div>
-                                )}
-
-                                <div className="space-y-2">
-                                  <label className="text-sm font-semibold text-slate-100">
-                                    Alasan & Penjelasan Profesional (Wajib)
-                                  </label>
-                                  <Textarea
-                                    placeholder="Jelaskan dasar usulan Anda secara singkat dan profesional..."
-                                    value={negotiationReason}
-                                    onChange={(e) =>
-                                      setNegotiationReason(e.target.value)
-                                    }
-                                    className="min-h-[140px] bg-slate-900 border-slate-800 text-slate-100"
-                                  />
-                                </div>
-                              </div>
-
-                              <Button
-                                onClick={handleNegotiationSubmit}
-                                disabled={
-                                  isNegotiating ||
-                                  negotiationAreas.length === 0 ||
-                                  !negotiationReason.trim()
-                                }
-                                className="w-full py-3"
-                              >
-                                {isNegotiating
-                                  ? "Mengirim..."
-                                  : "Kirim Permintaan Diskusi"}
-                              </Button>
-                            </div>
-                          </DialogContent>
-                        </Dialog>
-                      )}
-                    </div>
-                    <Button
-                      onClick={handleHideOffering}
-                      disabled={isHiding}
-                      variant="outline"
-                      size="sm"
-                      className="w-full"
-                    >
-                      <EyeOff className="h-4 w-4 mr-2" />
-                      {isHiding
-                        ? "Menyembunyikan..."
-                        : "Sembunyikan Offering Ini"}
-                    </Button>
-                  </div>
-
-                  <Separator />
-
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button variant="outline" className="w-full">
-                        <MessageSquare className="h-4 w-4 mr-2" />
-                        Ajukan Pertanyaan
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Ajukan Pertanyaan</DialogTitle>
-                      </DialogHeader>
-                      <div className="space-y-4">
-                        <Textarea
-                          placeholder="Ketik pertanyaan Anda di sini..."
-                          value={question}
-                          onChange={(e: any) => setQuestion(e.target.value)}
-                        />
-                        <Button
-                          onClick={handleAskQuestion}
-                          disabled={isSubmittingQuestion || !question.trim()}
-                          className="w-full"
-                        >
-                          {isSubmittingQuestion
-                            ? "Mengirim..."
-                            : "Kirim Pertanyaan"}
-                        </Button>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
-                </CardContent>
-              </Card>
-            )}
-
-          {/* Status Message */}
-          {offering.status === "accepted" && (
-            <Card className="border-green-200 bg-green-50 dark:bg-green-950/10">
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
-                  <CheckCircle className="h-5 w-5" />
-                  <p className="font-medium">You have accepted this offer.</p>
-                </div>
-                <p className="text-sm text-green-600 dark:text-green-500 mt-1">
-                  HR will contact you soon with next steps.
-                </p>
-              </CardContent>
-            </Card>
-          )}
-
-          {offering.status === "rejected" && (
-            <Card className="border-red-200 bg-red-50 dark:bg-red-950/10">
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-2 text-red-700 dark:text-red-400">
-                  <XCircle className="h-5 w-5" />
-                  <p className="font-medium">You have rejected this offer.</p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {isExpired && (
-            <Card className="border-gray-200 bg-gray-50 dark:bg-gray-950/10">
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-2 text-gray-700 dark:text-gray-400">
-                  <Clock className="h-5 w-5" />
-                  <p className="font-medium">This offer has expired.</p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {application?.offerStatus === "negotiation_requested" && (
-            <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950/10">
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-2 text-blue-700 dark:text-blue-400">
-                  <Activity className="h-5 w-5 animate-pulse" />
-                  <p className="font-medium">Negosiasi Sedang Ditinjau</p>
-                </div>
-                <p className="text-sm text-blue-600 dark:text-blue-500 mt-1">
-                  Permintaan diskusi Anda telah diterima oleh Tim HRD dan sedang
-                  dalam tahap peninjauan. Mohon menunggu informasi selanjutnya.
-                </p>
-              </CardContent>
-            </Card>
-          )}
-
-          {application?.offerStatus === "negotiation_rejected" &&
-            application?.candidateNegotiationResponse && (
-              <Card className="border-orange-200 bg-orange-50 dark:bg-orange-950/10">
-                <CardContent className="pt-6">
-                  <div className="flex items-start gap-3">
-                    <XCircle className="h-5 w-5 text-orange-600 mt-1" />
-                    <div>
-                      <p className="font-bold text-orange-800">
-                        Negosiasi Tidak Disetujui
-                      </p>
-                      <div className="mt-2 text-sm text-orange-700 bg-white/40 p-3 rounded-lg border border-orange-200">
-                        {application.candidateNegotiationResponse.note}
-                      </div>
-                      <p className="mt-3 text-xs text-orange-500 italic">
-                        — Tim HRD •{" "}
-                        {format(
-                          application.candidateNegotiationResponse.respondedAt.toDate(),
-                          "dd MMM yyyy",
-                          { locale: idLocale },
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+  const InfoGrid = () => (
+    <div className="divide-y divide-slate-100 dark:divide-slate-800">
+      {infoItems.map(({ label, value }) => (
+        <div key={label} className="flex justify-between items-baseline gap-4 py-2.5">
+          <p className="text-xs text-slate-500 dark:text-slate-400 shrink-0">{label}</p>
+          <p className="text-sm font-medium text-slate-800 dark:text-slate-200 text-right">{value}</p>
         </div>
+      ))}
+    </div>
+  );
+
+  const CountdownStrip = () => (
+    <div className={cn(
+      "rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3",
+      expired
+        ? "bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300"
+        : "bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400"
+    )}>
+      <div>
+        <p className="text-[10px] font-bold uppercase tracking-wider mb-1 opacity-70">Batas Waktu Konfirmasi</p>
+        {expired ? (
+          <p className="text-sm font-semibold">Batas waktu telah berakhir</p>
+        ) : (
+          <p className="text-sm font-semibold tabular-nums">
+            {days}h {String(hours).padStart(2, "0")}j {String(minutes).padStart(2, "0")}m {String(seconds).padStart(2, "0")}d
+          </p>
+        )}
+      </div>
+      <p className="text-xs opacity-80">s/d {deadlineDateLabel} pukul {deadlineTimeLabel} WIB</p>
+    </div>
+  );
+
+  // ── RENDER ─────────────────────────────────────────────────────────────────
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 py-8 pb-16">
+      <div className="container mx-auto px-4 max-w-2xl space-y-4">
+
+        {/* ── STEP 3: dokumen sudah dikirim ────────────────────────────────── */}
+        {isDocumentUploaded && (
+          <>
+            <Card className="border-0 shadow-sm">
+              <CardHeader className="pb-3">
+                <Badge className="w-fit mb-1 bg-emerald-100 text-emerald-700 border-0 dark:bg-emerald-950/50 dark:text-emerald-300">
+                  Dokumen Penerimaan Telah Dikirim
+                </Badge>
+                <CardTitle className="text-xl">Surat Penawaran Kerja: {jobPosition}</CardTitle>
+              </CardHeader>
+            </Card>
+
+            <Card className="border border-emerald-200 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-950/20">
+              <CardContent className="pt-5 pb-5 flex items-start gap-3">
+                <CheckCircle className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-emerald-800 dark:text-emerald-300">
+                    Dokumen Penerimaan Telah Dikirim
+                  </p>
+                  {application?.acceptanceDocumentName && (
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">
+                      File: {application.acceptanceDocumentName}
+                    </p>
+                  )}
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                    Tim Human Capital akan meninjau dokumen Anda dan menghubungi Anda untuk tahap berikutnya.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {infoItems.length > 0 && (
+              <Card className="border-0 shadow-sm bg-slate-50/50 dark:bg-slate-900/30">
+                <CardContent className="pt-4 pb-4"><InfoGrid /></CardContent>
+              </Card>
+            )}
+          </>
+        )}
+
+        {/* ── STEP 2: accepted_pending_document → upload ────────────────────── */}
+        {isPendingDocument && (
+          <>
+            <Card className="border-0 shadow-sm">
+              <CardHeader className="pb-3">
+                <Badge className="w-fit mb-1 bg-blue-100 text-blue-700 border-0 dark:bg-blue-950/50 dark:text-blue-300">
+                  Menunggu Dokumen Penerimaan
+                </Badge>
+                <CardTitle className="text-xl">Surat Penawaran Kerja: {jobPosition}</CardTitle>
+                <CardDescription>
+                  Anda telah menerima penawaran ini. Silakan unggah dokumen penerimaan posisi yang telah ditandatangani.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-0 pb-4 space-y-4">
+                <CountdownStrip />
+
+                {/* Upload area */}
+                <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3">
+                  <p className="text-sm font-semibold">Unggah Dokumen Penerimaan Posisi</p>
+                  <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                    Apabila Saudara menyetujui penawaran ini, silakan membubuhkan tanda tangan pada{" "}
+                    <strong>Lembar Penerimaan Posisi</strong>. Jika pada dokumen terdapat kolom materai,
+                    Saudara dapat menggunakan materai elektronik atau materai tempel fisik sesuai ketentuan
+                    yang berlaku. Setelah dokumen ditandatangani dan dibubuhi materai, silakan unggah kembali
+                    dokumen tersebut melalui portal ini sebelum batas waktu konfirmasi offering.
+                  </p>
+                  <p className="text-xs text-slate-400 dark:text-slate-500">
+                    Pastikan tanda tangan, nama, tanggal, dan materai terlihat jelas sebelum dokumen diunggah.
+                    Format: PDF, DOC, DOCX, JPG, PNG · maks. 10 MB.
+                  </p>
+
+                  {offering.documentUrl && (
+                    <Button variant="outline" size="sm" className="w-full"
+                      onClick={() => openOfferingDocument({ offeringId: offering.id, documentUrl: offering.documentUrl, documentPath: offering.documentPath, documentName: offering.documentName }, "download").catch((e) => toast({ variant: "destructive", title: "Gagal Mengunduh", description: e.message }))}>
+                      <Download className="h-3.5 w-3.5 mr-1.5" />
+                      Download Surat Penawaran
+                    </Button>
+                  )}
+
+                  <input ref={fileInputRef} type="file"
+                    accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                    className="hidden" onChange={handleFileChange} />
+
+                  {selectedFile ? (
+                    <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-3 py-2">
+                      <span className="text-sm truncate">{selectedFile.name}</span>
+                      <button type="button" onClick={() => setSelectedFile(null)}
+                        className="text-xs text-slate-400 hover:text-red-500 shrink-0">Ganti</button>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => fileInputRef.current?.click()}
+                      className="w-full rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 py-6 flex flex-col items-center gap-1.5 text-slate-400 hover:border-primary hover:text-primary transition-colors">
+                      <Upload className="h-5 w-5" />
+                      <span className="text-sm font-medium">Klik untuk memilih file</span>
+                    </button>
+                  )}
+
+                  {uploadProgress !== null && (
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-xs text-slate-500">
+                        <span>Mengunggah...</span><span>{uploadProgress}%</span>
+                      </div>
+                      <Progress value={uploadProgress} className="h-1.5" />
+                    </div>
+                  )}
+
+                  <Button type="button" className="w-full" size="lg"
+                    disabled={!selectedFile || isUploading}
+                    onClick={handleUploadSubmit}>
+                    <Upload className="h-4 w-4 mr-2" />
+                    {isUploading ? "Mengunggah..." : "Kirim Dokumen Penerimaan"}
+                  </Button>
+                </div>
+
+                {/* Ringkasan info */}
+                {infoItems.length > 0 && (
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2">
+                    <InfoGrid />
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </>
+        )}
+
+        {/* ── STEP 1: penawaran tersedia, belum diterima ────────────────────── */}
+        {isStep1 && (
+          <>
+            {/* 1. Header */}
+            <Card className="border-0 shadow-sm">
+              <CardHeader className="pb-3">
+                <Badge className="w-fit mb-1 bg-green-100 text-green-700 border-0 dark:bg-green-950/50 dark:text-green-300">
+                  Penawaran Tersedia
+                </Badge>
+                <CardTitle className="text-xl">Surat Penawaran Kerja: {jobPosition}</CardTitle>
+                <CardDescription className="text-sm leading-relaxed">
+                  Selamat, Anda telah lolos tahap wawancara untuk posisi{" "}
+                  <strong>{jobPosition}</strong>. Silakan baca pesan dari Human
+                  Capital dan tinjau Surat Penawaran Kerja yang tersedia pada
+                  halaman ini.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+
+            {/* 2. Pesan dari Human Capital — terbuka by default */}
+            <Card className="border-0 shadow-sm">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-slate-400" />
+                  Pesan dari Human Capital
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0 pb-4">
+                <pre className="whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300 font-sans leading-relaxed bg-slate-50/60 dark:bg-slate-900/40 rounded-xl p-4 border border-slate-100 dark:border-slate-800">
+                  {offeringMessage}
+                </pre>
+              </CardContent>
+            </Card>
+
+            {/* Catatan tambahan */}
+            {offering.additionalNotes && (
+              <Card className="border-0 shadow-sm">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Informasi Tambahan</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0 pb-4">
+                  <SafeRichText html={offering.additionalNotes} />
+                </CardContent>
+              </Card>
+            )}
+
+            {/* 3. Batas Waktu Konfirmasi */}
+            <Card className={cn(
+              "border-0 shadow-sm",
+              expired ? "bg-red-50 dark:bg-red-950/20" : "bg-amber-50 dark:bg-amber-950/20"
+            )}>
+              <CardContent className="pt-4 pb-4">
+                <p className={cn(
+                  "text-[10px] font-bold uppercase tracking-wider mb-2",
+                  expired ? "text-red-500" : "text-amber-600 dark:text-amber-400"
+                )}>
+                  Batas Waktu Konfirmasi Offering
+                </p>
+                {expired ? (
+                  <p className="text-sm font-semibold text-red-600 dark:text-red-400">
+                    Batas waktu konfirmasi telah berakhir.
+                    {hcContact && ` Hubungi Tim Human Capital melalui ${hcContact}.`}
+                  </p>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-3 mb-2">
+                      {[
+                        { v: days, label: "Hari" },
+                        { v: hours, label: "Jam" },
+                        { v: minutes, label: "Menit" },
+                        { v: seconds, label: "Detik" },
+                      ].map(({ v, label }) => (
+                        <div key={label} className="flex flex-col items-center">
+                          <span className="text-2xl font-bold tabular-nums text-slate-800 dark:text-slate-100">
+                            {String(v).padStart(2, "0")}
+                          </span>
+                          <span className="text-[10px] uppercase tracking-wider text-slate-400">{label}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Anda memiliki waktu sampai{" "}
+                      <strong>{deadlineDateLabel}</strong> pukul{" "}
+                      <strong>{deadlineTimeLabel} WIB</strong> untuk mengunggah
+                      dokumen penerimaan posisi yang telah ditandatangani.
+                    </p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* 4. Dokumen Penawaran Resmi */}
+            {offering.documentUrl && (
+              <Card className="border-0 shadow-sm">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Dokumen Penawaran Resmi</CardTitle>
+                  <CardDescription className="text-xs">
+                    Buka Surat Penawaran Kerja untuk membaca detail penawaran secara lengkap.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-0 pb-4 space-y-2">
+                  <Button variant="outline" size="sm" className="w-full"
+                    onClick={() => openOfferingDocument({ offeringId: offering.id, documentUrl: offering.documentUrl, documentPath: offering.documentPath, documentName: offering.documentName }, "preview").catch((e) => toast({ variant: "destructive", title: "Gagal Membuka", description: e.message }))}>
+                    <Eye className="h-3.5 w-3.5 mr-1.5" />
+                    Preview Surat Penawaran
+                  </Button>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 text-center">
+                    Anda dapat mengunduh dokumen melalui tombol download yang tersedia pada tampilan preview PDF.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* 5. Informasi Offering */}
+            {infoItems.length > 0 && (
+              <Card className="border-0 shadow-sm">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Informasi Offering</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0 pb-4">
+                  <InfoGrid />
+                </CardContent>
+              </Card>
+            )}
+
+            {/* 6. Aksi Kandidat */}
+            <Card className="border-0 shadow-sm">
+              <CardContent className="pt-4 pb-4 space-y-3">
+                {expired ? (
+                  <div className="rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-4 text-sm text-red-700 dark:text-red-300">
+                    Batas waktu konfirmasi telah berakhir.
+                    {hcContact && ` Hubungi Tim Human Capital melalui ${hcContact} untuk informasi lebih lanjut.`}
+                  </div>
+                ) : (
+                  <>
+                    <Button type="button" size="lg" className="w-full"
+                      disabled={isAccepting}
+                      onClick={handleAccept}>
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      {isAccepting ? "Memproses..." : "Saya Menerima Penawaran"}
+                    </Button>
+                    <p className="text-xs text-center text-slate-400 leading-relaxed px-2">
+                      Dengan mengklik tombol di atas, Anda menyatakan telah membaca
+                      dan menyetujui Surat Penawaran Kerja yang diberikan oleh{" "}
+                      <strong>{brandName}</strong>. Langkah selanjutnya: unggah
+                      dokumen penerimaan posisi yang telah ditandatangani.
+                    </p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </>
+        )}
+
       </div>
     </div>
   );

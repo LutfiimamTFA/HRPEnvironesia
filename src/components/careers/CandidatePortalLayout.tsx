@@ -286,14 +286,28 @@ export function CandidatePortalLayout({ children }: { children: ReactNode }) {
         className="bg-sidebar text-sidebar-foreground border-r border-sidebar-border"
       >
         <SidebarHeader className="border-b border-sidebar-border p-0">
-          <div className="flex items-center justify-center px-[18px] py-6">
+          {/* Expanded */}
+          <div className="group-data-[state=collapsed]:hidden flex items-center justify-center px-[18px] py-6">
             <Link href="/careers/portal" className="flex items-center justify-center w-full">
               <Image
                 src="/images/Environesia Vacancies.png"
                 alt="Environesia Vacancies"
                 width={200}
                 height={62}
-                className="h-12 w-auto object-contain group-data-[state=collapsed]:h-8 group-data-[state=collapsed]:w-auto"
+                className="h-12 w-auto object-contain"
+                priority
+              />
+            </Link>
+          </div>
+          {/* Collapsed */}
+          <div className="hidden group-data-[state=collapsed]:flex items-center justify-center py-4">
+            <Link href="/careers/portal">
+              <Image
+                src="/images/logo.png"
+                alt="Environesia"
+                width={32}
+                height={32}
+                className="object-contain"
                 priority
               />
             </Link>

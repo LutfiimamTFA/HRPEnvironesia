@@ -63,7 +63,17 @@ import {
   MapPin,
   Eye,
   ExternalLink,
+  ChevronDown,
+  CheckCircle2,
+  Send,
+  RotateCcw,
 } from "lucide-react";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import {
   Card,
   CardContent,
@@ -158,6 +168,7 @@ export default function ApplicationDetailPage() {
   const [isSendingOffer, setIsSendingOffer] = useState(false);
   const [isDeletingDraft, setIsDeletingDraft] = useState(false);
   const [isWithdrawingOfferings, setIsWithdrawingOfferings] = useState(false);
+  const [isOfferEditMode, setIsOfferEditMode] = useState(false);
   const [isUpdatingDecision, setIsUpdatingDecision] = useState(false);
   const [isActivating, setIsActivating] = useState(false);
   const [isNegotiationResponseOpen, setIsNegotiationResponseOpen] =
@@ -288,8 +299,37 @@ export default function ApplicationDetailPage() {
       application ? doc(firestore, "profiles", application.candidateUid) : null,
     [firestore, application],
   );
-  const { data: profile, isLoading: isLoadingProfile } =
+  const { data: liveProfile, isLoading: isLoadingProfile } =
     useDoc<Profile>(profileRef);
+
+  // Prefer candidateProfileSnapshot (stable data at submit time) over live profile.
+  // Falls back to live profile for applications submitted before snapshot feature was added.
+  const profile = useMemo((): Profile | undefined => {
+    if (!liveProfile) return undefined;
+    const snap = application?.candidateProfileSnapshot;
+    if (!snap) return liveProfile;
+    return {
+      ...liveProfile,
+      fullName: snap.fullName || liveProfile.fullName,
+      phone: snap.phone || liveProfile.phone,
+      nickname: snap.nickname || liveProfile.nickname,
+      gender: (snap.gender as any) || liveProfile.gender,
+      birthPlace: snap.birthPlace || liveProfile.birthPlace,
+      birthDate: (snap.birthDate as any) || liveProfile.birthDate,
+      education: snap.education?.length ? (snap.education as any) : liveProfile.education,
+      workExperience: snap.workExperience?.length ? (snap.workExperience as any) : liveProfile.workExperience,
+      organizationalExperience: snap.organizationExperience?.length ? (snap.organizationExperience as any) : liveProfile.organizationalExperience,
+      certifications: snap.certifications?.length ? (snap.certifications as any) : liveProfile.certifications,
+      skills: snap.skills?.length ? snap.skills : liveProfile.skills,
+      selfDescription: snap.selfDescription || liveProfile.selfDescription,
+      cvUrl: snap.cvUrl || liveProfile.cvUrl,
+      cvFileId: snap.cvFileId || liveProfile.cvFileId,
+      ijazahUrl: snap.ijazahUrl || liveProfile.ijazahUrl,
+      ijazahFileId: snap.ijazahFileId || liveProfile.ijazahFileId,
+    };
+  }, [liveProfile, application?.candidateProfileSnapshot]);
+
+  const hasProfileSnapshot = !!application?.candidateProfileSnapshot;
 
   const candidateTestRef = useMemoFirebase(
     () =>
@@ -535,10 +575,12 @@ export default function ApplicationDetailPage() {
         offeringDetails: {
           salary: offerData.salary || "",
           startDate: offerData.startDate || "",
-          contractDurationMonths: offerData.contractDurationMonths || "",
+          contractDurationMonths: offerData.contractDurationMonths ? Number(offerData.contractDurationMonths) : null,
           firstDayTime: offerData.firstDayTime || "",
           firstDayLocation: offerData.firstDayLocation || "",
-          hrContact: offerData.hrContact || "",
+          humanCapitalContactName: offerData.humanCapitalContactName || "",
+          humanCapitalContactPhone: offerData.humanCapitalContactPhone || "",
+          humanCapitalContact: [offerData.humanCapitalContactName, offerData.humanCapitalContactPhone].filter(Boolean).join(" - ") || offerData.humanCapitalContact || offerData.hrContact || "",
         },
         additionalNotes: offerData.additionalNotes || "",
         updatedAt: serverTimestamp(),
@@ -606,10 +648,12 @@ export default function ApplicationDetailPage() {
         offeringDetails: {
           salary: offerData.salary || "",
           startDate: offerData.startDate || "",
-          contractDurationMonths: offerData.contractDurationMonths || "",
+          contractDurationMonths: offerData.contractDurationMonths ? Number(offerData.contractDurationMonths) : null,
           firstDayTime: offerData.firstDayTime || "",
           firstDayLocation: offerData.firstDayLocation || "",
-          hrContact: offerData.hrContact || "",
+          humanCapitalContactName: offerData.humanCapitalContactName || "",
+          humanCapitalContactPhone: offerData.humanCapitalContactPhone || "",
+          humanCapitalContact: [offerData.humanCapitalContactName, offerData.humanCapitalContactPhone].filter(Boolean).join(" - ") || offerData.humanCapitalContact || offerData.hrContact || "",
         },
         additionalNotes: offerData.additionalNotes || "",
         sentAt: Timestamp.now(),
@@ -919,6 +963,20 @@ export default function ApplicationDetailPage() {
   // HRD-only decision overlay badge — replaces the raw candidateStatus secondary badge.
   const adminDecisionBadge = useMemo(() => {
     if (!application) return null;
+    const hrdDecisionLabel = (application as any).hrdEvaluationDecisionLabel;
+    const hrdDecision = (application as any).hrdEvaluationDecision;
+    if (hrdDecisionLabel || hrdDecision) {
+      const cls =
+        hrdDecision === "continue"
+          ? "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
+          : hrdDecision === "needs_discussion"
+            ? "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
+            : "bg-red-100 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800";
+      return {
+        text: `Internal: ${hrdDecisionLabel || "Belum diputuskan"}`,
+        cls,
+      };
+    }
     const pasca = application.postInterviewDecision?.status;
     const pra = application.recruitmentInternalDecision?.status;
     if (pasca === "tidak_lanjut")
@@ -927,12 +985,14 @@ export default function ApplicationDetailPage() {
       return { text: "Butuh Diskusi Lanjutan", cls: "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800" };
     if (pasca === "lanjut")
       return { text: "Lanjut ke Offering", cls: "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800" };
-    if (pra === "tidak_dilanjutkan_saat_ini")
-      return { text: "Tidak Dilanjutkan", cls: "bg-red-100 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800" };
     if (pra === "pending_internal")
-      return { text: "Pending Internal", cls: "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800" };
+      return { text: "Internal: Butuh diskusi lanjutan", cls: "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800" };
     if (pra === "lanjut_ke_tahap_selanjutnya")
-      return { text: "Lanjut Stage", cls: "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800" };
+      return { text: "Internal: Lanjut ke tahap berikutnya", cls: "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800" };
+    if (pra === "tidak_dilanjutkan_saat_ini")
+      return { text: "Internal: Tidak dilanjutkan", cls: "bg-red-100 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800" };
+    if (application.status === "screening")
+      return { text: "Internal: Belum diputuskan", cls: "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700" };
     return null;
   }, [application]);
 
@@ -1106,12 +1166,27 @@ export default function ApplicationDetailPage() {
                       status={displayStage?.displayStage || displayStatus}
                       className="text-base px-4 py-1"
                     />
-                    {application.offerStatus && (
+                    {activeOffering?.status && (
                       <Badge
                         variant="outline"
-                        className="uppercase text-[10px] tracking-wider px-2 py-1 border-blue-500/30 text-blue-600 bg-blue-50/50"
+                        className={cn("text-[10px] tracking-wide px-2 py-1 border-0", {
+                          "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300": activeOffering.status === "draft",
+                          "bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-300": activeOffering.status === "sent",
+                          "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300": activeOffering.status === "viewed",
+                          "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300": activeOffering.status === "accepted",
+                          "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300": activeOffering.status === "rejected",
+                          "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400": activeOffering.status === "withdrawn",
+                        })}
                       >
-                        Offer: {application.offerStatus.replaceAll("_", " ")}
+                        {{
+                          draft:     "Draft Penawaran",
+                          sent:      "Menunggu respons kandidat",
+                          viewed:    "Kandidat telah melihat penawaran",
+                          responded: "Kandidat telah merespons",
+                          accepted:  "Kandidat menerima penawaran",
+                          rejected:  "Kandidat menolak penawaran",
+                          withdrawn: "Penawaran ditarik",
+                        }[activeOffering.status] ?? activeOffering.status}
                       </Badge>
                     )}
                     {adminDecisionBadge ? (
@@ -1256,6 +1331,17 @@ export default function ApplicationDetailPage() {
               </div>
 
               <div className="space-y-6">
+                {hasProfileSnapshot ? (
+                  <div className="flex items-center gap-2 px-1 text-xs text-blue-600 dark:text-blue-400">
+                    <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+                    <span>Data profil berdasarkan snapshot saat kandidat melamar.</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 px-1 text-xs text-amber-600 dark:text-amber-400">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                    <span>Menampilkan profil terkini (snapshot belum tersedia untuk lamaran ini).</span>
+                  </div>
+                )}
                 <Card className="shadow-2xl border-none p-4 sm:p-8 md:p-12 rounded-[2.5rem] bg-card/60 backdrop-blur-md border-t-8 border-t-primary min-h-[700px]">
                   <CandidateStepContent
                     profile={profile}
@@ -1512,246 +1598,267 @@ export default function ApplicationDetailPage() {
                           </Dialog>
                         </Card>
                       )})()}
-                      <Card className="border border-slate-200 dark:border-slate-700">
-                        <CardHeader className="pb-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <CardTitle className="text-lg flex items-center gap-2">
-                              <FileText className="h-5 w-5 text-primary" />
-                              Penawaran Kerja
-                            </CardTitle>
-                            {activeOffering && (
-                              <Badge
-                                variant={
-                                  activeOffering.status === "draft"
-                                    ? "secondary"
-                                    : "default"
-                                }
-                                className="uppercase text-xs"
-                              >
-                                {activeOffering.status}
-                              </Badge>
-                            )}
-                          </div>
-                        </CardHeader>
+                      {(() => {
+                        const ofStatus = activeOffering?.status;
+                        const isSent = ofStatus && ["sent", "viewed", "responded", "accepted", "rejected", "withdrawn"].includes(ofStatus);
+                        const showSummary = isSent && !isOfferEditMode;
 
-                        <CardContent className="space-y-4">
-                          {!hasOfferData ? (
-                            <div className="py-6 text-center text-slate-500">
-                              <p className="text-sm">
-                                Belum ada penawaran kerja. Buat dan kelola
-                                penawaran di bawah ini.
-                              </p>
-                            </div>
-                          ) : (
-                            <div className="grid gap-3 sm:grid-cols-2">
-                              {/* Row 1: Status & Last Updated */}
-                              <div className="space-y-1">
-                                <p className="text-xs font-medium text-slate-500">
-                                  Status
-                                </p>
-                                <p className="text-sm font-semibold capitalize">
-                                  {activeOffering?.status ||
-                                    application.offerStatus ||
-                                    "draft"}
-                                </p>
-                              </div>
-                              <div className="space-y-1">
-                                <p className="text-xs font-medium text-slate-500">
-                                  Diperbarui
-                                </p>
-                                <p className="text-sm font-semibold">
-                                  {activeOffering
-                                    ? format(
-                                        activeOffering.updatedAt?.toDate?.() ||
-                                          activeOffering.createdAt?.toDate?.() ||
-                                          new Date(),
-                                        "dd MMM yyyy HH:mm",
-                                      )
-                                    : "-"}
-                                </p>
-                              </div>
+                        const offerStatusConfig: Record<string, { label: string; cls: string }> = {
+                          draft:     { label: "Draft",               cls: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300" },
+                          sent:      { label: "Penawaran Dikirim",   cls: "bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-300" },
+                          viewed:    { label: "Dilihat Kandidat",    cls: "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300" },
+                          responded: { label: "Kandidat Merespons",  cls: "bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300" },
+                          accepted:  { label: "Diterima Kandidat",   cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300" },
+                          rejected:  { label: "Ditolak Kandidat",    cls: "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300" },
+                          withdrawn: { label: "Ditarik",             cls: "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400" },
+                        };
+                        const statusCfg = ofStatus ? (offerStatusConfig[ofStatus] ?? offerStatusConfig.sent) : null;
 
-                              {/* Row 2: Dokumen & Kompensasi */}
-                              <div className="space-y-1">
-                                <p className="text-xs font-medium text-slate-500">
-                                  Dokumen
-                                </p>
-                                <p className="text-sm font-semibold truncate">
-                                  {activeOffering?.documentName ?? "-"}
-                                </p>
-                              </div>
-                              <div className="space-y-1">
-                                <p className="text-xs font-medium text-slate-500">
-                                  Kompensasi
-                                </p>
-                                <p className="text-sm font-semibold">
-                                  {activeOffering?.offeringDetails?.salary
-                                    ? `Rp ${activeOffering.offeringDetails.salary}`
-                                    : application.offeredSalary
-                                      ? `Rp ${formatSalary(application.offeredSalary)}`
-                                      : "-"}
-                                </p>
-                              </div>
+                        const progressSteps = [
+                          { key: "draft",    label: "Draft Dibuat",          done: !!ofStatus },
+                          { key: "sent",     label: "Penawaran Dikirim",     done: ofStatus ? ["sent","viewed","responded","accepted","rejected"].includes(ofStatus) : false },
+                          { key: "viewed",   label: "Kandidat Melihat",      done: ofStatus ? ["viewed","responded","accepted","rejected"].includes(ofStatus) : false },
+                          { key: "responded",label: "Kandidat Merespons",    done: ofStatus ? ["responded","accepted","rejected"].includes(ofStatus) : false },
+                          { key: "done",     label: "Selesai",               done: ofStatus ? ["accepted","rejected","withdrawn"].includes(ofStatus) : false },
+                        ];
+                        const activeStep = progressSteps.findLastIndex(s => s.done);
 
-                              {/* Row 3: Tanggal Mulai & Durasi */}
-                              <div className="space-y-1">
-                                <p className="text-xs font-medium text-slate-500">
-                                  Tanggal Mulai
-                                </p>
-                                <p className="text-sm font-semibold">
-                                  {activeOffering?.offeringDetails?.startDate ||
-                                    (application.contractStartDate
-                                      ? format(
-                                          application.contractStartDate.toDate(),
-                                          "dd MMM yyyy",
-                                        )
-                                      : "-")}
-                                </p>
-                              </div>
-                              <div className="space-y-1">
-                                <p className="text-xs font-medium text-slate-500">
-                                  Durasi Kontrak
-                                </p>
-                                <p className="text-sm font-semibold">
-                                  {activeOffering?.offeringDetails
-                                    ?.contractDurationMonths
-                                    ? `${activeOffering.offeringDetails.contractDurationMonths} bulan`
-                                    : application.contractDurationMonths
-                                      ? `${application.contractDurationMonths} bulan`
-                                      : "-"}
-                                </p>
-                              </div>
+                        const hcContact = [
+                          activeOffering?.offeringDetails?.humanCapitalContactName,
+                          activeOffering?.offeringDetails?.humanCapitalContactPhone,
+                        ].filter(Boolean).join(" - ") || activeOffering?.offeringDetails?.humanCapitalContact || activeOffering?.offeringDetails?.hrContact || "-";
 
-                              {/* Row 4: Lokasi & Catatan */}
-                              <div className="space-y-1 sm:col-span-2">
-                                <p className="text-xs font-medium text-slate-500">
-                                  Lokasi Hari Pertama
-                                </p>
-                                <p className="text-sm font-semibold">
-                                  {activeOffering?.offeringDetails
-                                    ?.firstDayLocation || "-"}
-                                </p>
-                              </div>
-                              {(activeOffering?.additionalNotes ||
-                                application.offerNotes) && (
-                                <div className="space-y-1 sm:col-span-2">
-                                  <p className="text-xs font-medium text-slate-500">
-                                    Catatan
-                                  </p>
-                                  <p className="text-sm text-slate-600 line-clamp-2">
-                                    {activeOffering?.additionalNotes ||
-                                      application.offerNotes ||
-                                      "-"}
-                                  </p>
+                        return showSummary ? (
+                          /* ── MODE RINGKASAN (penawaran aktif / sudah dikirim) ── */
+                          <div className="space-y-4">
+                            {/* Header Card — Status + Aksi Cepat */}
+                            <Card className="border border-slate-200 dark:border-slate-700">
+                              <CardHeader className="pb-3">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div>
+                                    <CardTitle className="text-lg flex items-center gap-2">
+                                      <Send className="h-5 w-5 text-green-600" />
+                                      Ringkasan Penawaran Aktif
+                                    </CardTitle>
+                                    <CardDescription className="mt-0.5">
+                                      {activeOffering?.documentName || "Surat Penawaran Kerja"}
+                                    </CardDescription>
+                                  </div>
+                                  {statusCfg && (
+                                    <Badge className={cn("text-xs font-semibold border-0", statusCfg.cls)}>
+                                      {statusCfg.label}
+                                    </Badge>
+                                  )}
                                 </div>
-                              )}
-                            </div>
-                          )}
-                        </CardContent>
+                              </CardHeader>
 
-                        {/* Actions Footer */}
-                        <CardFooter className="flex flex-wrap gap-2 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 px-4 py-3">
-                          {!hasOfferData ? (
-                            <p className="text-xs text-slate-500">
-                              Scroll ke bawah untuk membuat penawaran
-                            </p>
-                          ) : activeOffering?.status === "draft" ? (
-                            <>
-                              {activeOffering?.documentUrl && (
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => {
-                                    const fileId = extractFileIdFromUrl(activeOffering.documentUrl);
-                                    openSecureFile(fileId, activeOffering.documentName || "Offering.pdf");
-                                  }}
-                                >
-                                  <Eye className="h-4 w-4 mr-1.5" />
-                                  Preview
-                                </Button>
-                              )}
-                              <Button
-                                type="button"
-                                variant="secondary"
-                                size="sm"
-                                onClick={() =>
-                                  document
-                                    .getElementById("offering")
-                                    ?.scrollIntoView({
-                                      behavior: "smooth",
-                                      block: "start",
-                                    })
-                                }
-                              >
-                                <Edit className="h-4 w-4 mr-1.5" />
-                                Lanjutkan Edit
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="destructive"
-                                size="sm"
-                                onClick={handleDeleteDraft}
-                                disabled={isDeletingDraft}
-                              >
-                                <X className="h-4 w-4 mr-1.5" />
-                                {isDeletingDraft
-                                  ? "Menghapus..."
-                                  : "Hapus Draft"}
-                              </Button>
-                              {offeringsList && offeringsList.length > 0 && (
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={handleWithdrawAllOfferings}
-                                  disabled={isWithdrawingOfferings}
-                                >
-                                  <RefreshCw className="h-4 w-4 mr-1.5" />
-                                  {isWithdrawingOfferings
-                                    ? "Menarik..."
-                                    : "Tarik Offering"}
-                                </Button>
-                              )}
-                            </>
-                          ) : activeOffering?.status === "sent" ? (
-                            <>
-                              {activeOffering?.documentUrl && (
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => {
-                                    const fileId = extractFileIdFromUrl(activeOffering.documentUrl);
-                                    openSecureFile(fileId, activeOffering.documentName || "Offering.pdf");
-                                  }}
-                                >
-                                  <Eye className="h-4 w-4 mr-1.5" />
-                                  Lihat Dokumen
-                                </Button>
-                              )}
-                              <span className="text-xs text-slate-500">
-                                Penawaran telah dikirim ke kandidat
-                              </span>
-                            </>
-                          ) : null}
-                        </CardFooter>
-                      </Card>
+                              <CardContent className="space-y-5">
+                                {/* Progress timeline */}
+                                <div className="relative pt-1 pb-3">
+                                  <div className="absolute top-5 left-4 right-4 h-0.5 bg-slate-200 dark:bg-slate-700" />
+                                  <div
+                                    className="absolute top-5 left-4 h-0.5 bg-teal-500 transition-all duration-500"
+                                    style={{ width: activeStep < 0 ? "0%" : `${(activeStep / (progressSteps.length - 1)) * (100 - (8 / progressSteps.length))}%` }}
+                                  />
+                                  <div className="relative flex justify-between">
+                                    {progressSteps.map((step, i) => (
+                                      <div key={step.key} className="flex flex-col items-center gap-1.5 z-10" style={{ width: `${100 / progressSteps.length}%` }}>
+                                        <div className={cn(
+                                          "h-8 w-8 rounded-full border-2 flex items-center justify-center transition-all",
+                                          step.done
+                                            ? "bg-teal-500 border-teal-500 text-white"
+                                            : i === activeStep + 1
+                                              ? "bg-white dark:bg-slate-900 border-teal-400 text-teal-500 ring-3 ring-teal-100 dark:ring-teal-900"
+                                              : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-400"
+                                        )}>
+                                          {step.done ? <CheckCircle2 className="h-4 w-4" /> : <span className="text-[10px] font-bold">{i + 1}</span>}
+                                        </div>
+                                        <span className={cn(
+                                          "text-[9px] text-center leading-tight max-w-[56px]",
+                                          step.done ? "text-teal-600 dark:text-teal-400 font-semibold" : "text-slate-400 dark:text-slate-600"
+                                        )}>
+                                          {step.label}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
 
-                      <OfferEditor
-                        id="offering"
-                        application={application}
-                        job={job}
-                        candidateName={profile.fullName}
-                        onSaveDraft={handleSaveOfferDraft}
-                        onSendOffer={handleSendOffer}
-                        isSavingDraft={isSavingDraft}
-                        isSendingOffer={isSendingOffer}
-                        currentOfferingId={activeOffering?.id}
-                        currentOfferingStatus={activeOffering?.status as any}
-                        offering={activeOffering || undefined}
-                        allOfferings={offeringsList || []}
-                      />
+                                {/* Info grid */}
+                                <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2 text-sm">
+                                  {[
+                                    { label: "Tanggal Dikirim", value: activeOffering?.sentAt ? format(activeOffering.sentAt.toDate(), "dd MMM yyyy, HH:mm", { locale: idLocale }) : "-" },
+                                    { label: "Batas Konfirmasi Kandidat", value: activeOffering?.responseDeadline ? format(activeOffering.responseDeadline.toDate(), "dd MMM yyyy, HH:mm", { locale: idLocale }) + " WIB" : "-" },
+                                    { label: "Tanggal Mulai Kerja", value: activeOffering?.offeringDetails?.startDate || "-" },
+                                    { label: "Durasi Kontrak", value: activeOffering?.offeringDetails?.contractDurationMonths ? `${activeOffering.offeringDetails.contractDurationMonths} bulan` : "-" },
+                                    { label: "Lokasi Hari Pertama", value: activeOffering?.offeringDetails?.firstDayLocation || "-" },
+                                    { label: "Jam Hadir Hari Pertama", value: activeOffering?.offeringDetails?.firstDayTime ? `${activeOffering.offeringDetails.firstDayTime} WIB` : "-" },
+                                    { label: "Kontak Human Capital", value: hcContact, span: true },
+                                  ].map(({ label, value, span }) => (
+                                    <div key={label} className={cn("space-y-0.5", span && "sm:col-span-2")}>
+                                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">{label}</p>
+                                      <p className="font-semibold text-slate-800 dark:text-slate-200">{value}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              </CardContent>
+
+                              {/* Aksi Cepat */}
+                              <CardFooter className="flex flex-wrap gap-2 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 px-4 py-3">
+                                {activeOffering?.documentUrl && (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      const fileId = extractFileIdFromUrl(activeOffering.documentUrl);
+                                      openSecureFile(fileId, activeOffering.documentName || "Offering.pdf");
+                                    }}
+                                  >
+                                    <Eye className="h-4 w-4 mr-1.5" />
+                                    Lihat Dokumen
+                                  </Button>
+                                )}
+                                {ofStatus !== "accepted" && ofStatus !== "rejected" && ofStatus !== "withdrawn" && (
+                                  <Button
+                                    type="button"
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => setIsOfferEditMode(true)}
+                                  >
+                                    <Edit className="h-4 w-4 mr-1.5" />
+                                    Edit Penawaran
+                                  </Button>
+                                )}
+                                {ofStatus !== "withdrawn" && offeringsList && offeringsList.length > 0 && (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="text-red-600 border-red-200 hover:bg-red-50 dark:text-red-400 dark:border-red-900 dark:hover:bg-red-950/30"
+                                    onClick={handleWithdrawAllOfferings}
+                                    disabled={isWithdrawingOfferings}
+                                  >
+                                    <RotateCcw className="h-4 w-4 mr-1.5" />
+                                    {isWithdrawingOfferings ? "Menarik..." : "Tarik Penawaran"}
+                                  </Button>
+                                )}
+                              </CardFooter>
+                            </Card>
+
+                            {/* Accordion: Detail tersembunyi */}
+                            <Accordion type="multiple" className="space-y-3">
+                              <AccordionItem value="detail-form" className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                                <AccordionTrigger className="px-4 py-3 text-sm font-semibold hover:no-underline hover:bg-slate-50 dark:hover:bg-slate-900/40 [&[data-state=open]>svg]:rotate-180">
+                                  <span className="flex items-center gap-2">
+                                    <FileText className="h-4 w-4 text-slate-500" />
+                                    Detail &amp; Edit Penawaran
+                                  </span>
+                                </AccordionTrigger>
+                                <AccordionContent className="px-0 pb-0">
+                                  <div className="border-t border-slate-200 dark:border-slate-700">
+                                    <OfferEditor
+                                      id="offering"
+                                      application={application}
+                                      job={job}
+                                      candidateName={profile.fullName}
+                                      onSaveDraft={async (d) => { await handleSaveOfferDraft(d); setIsOfferEditMode(false); }}
+                                      onSendOffer={async (d) => { await handleSendOffer(d); setIsOfferEditMode(false); }}
+                                      isSavingDraft={isSavingDraft}
+                                      isSendingOffer={isSendingOffer}
+                                      currentOfferingId={activeOffering?.id}
+                                      currentOfferingStatus={activeOffering?.status as any}
+                                      offering={activeOffering || undefined}
+                                      allOfferings={offeringsList || []}
+                                    />
+                                  </div>
+                                </AccordionContent>
+                              </AccordionItem>
+
+                              {activeOffering?.history && activeOffering.history.length > 0 && (
+                                <AccordionItem value="history" className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                                  <AccordionTrigger className="px-4 py-3 text-sm font-semibold hover:no-underline hover:bg-slate-50 dark:hover:bg-slate-900/40 [&[data-state=open]>svg]:rotate-180">
+                                    <span className="flex items-center gap-2">
+                                      <Clock className="h-4 w-4 text-slate-500" />
+                                      Riwayat Penawaran ({activeOffering.history.length})
+                                    </span>
+                                  </AccordionTrigger>
+                                  <AccordionContent className="px-4 pb-4">
+                                    <div className="space-y-2 pt-3">
+                                      {[...activeOffering.history].reverse().map((h: any, i: number) => (
+                                        <div key={i} className="flex items-start gap-3 text-sm border-l-2 border-slate-200 dark:border-slate-700 pl-3 py-1">
+                                          <div className="flex-1 min-w-0">
+                                            <p className="font-medium text-slate-800 dark:text-slate-200">{h.description || h.type}</p>
+                                            {h.at && (
+                                              <p className="text-xs text-slate-400 mt-0.5">
+                                                {format(h.at.toDate?.() || new Date(h.at), "dd MMM yyyy, HH:mm", { locale: idLocale })}
+                                              </p>
+                                            )}
+                                          </div>
+                                          <Badge variant="outline" className="text-[10px] shrink-0 capitalize">
+                                            {h.type?.replace(/_/g, " ")}
+                                          </Badge>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </AccordionContent>
+                                </AccordionItem>
+                              )}
+                            </Accordion>
+                          </div>
+                        ) : (
+                          /* ── MODE FORM (draft / belum ada / mode edit) ── */
+                          <div className="space-y-4">
+                            {isOfferEditMode && (
+                              <div className="flex items-center justify-between p-3 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
+                                <span className="text-sm font-medium text-amber-800 dark:text-amber-300 flex items-center gap-2">
+                                  <Edit className="h-4 w-4" />
+                                  Mode Edit Penawaran — perubahan akan diterapkan ke penawaran aktif
+                                </span>
+                                <Button variant="ghost" size="sm" onClick={() => setIsOfferEditMode(false)} className="text-amber-700 dark:text-amber-300">
+                                  Batal
+                                </Button>
+                              </div>
+                            )}
+                            {activeOffering?.status === "draft" && !isOfferEditMode && (
+                              <div className="flex flex-wrap gap-2">
+                                {activeOffering?.documentUrl && (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      const fileId = extractFileIdFromUrl(activeOffering.documentUrl);
+                                      openSecureFile(fileId, activeOffering.documentName || "Offering.pdf");
+                                    }}
+                                  >
+                                    <Eye className="h-4 w-4 mr-1.5" />
+                                    Preview Dokumen
+                                  </Button>
+                                )}
+                                <Button type="button" variant="destructive" size="sm" onClick={handleDeleteDraft} disabled={isDeletingDraft}>
+                                  <X className="h-4 w-4 mr-1.5" />
+                                  {isDeletingDraft ? "Menghapus..." : "Hapus Draft"}
+                                </Button>
+                              </div>
+                            )}
+                            <OfferEditor
+                              id="offering"
+                              application={application}
+                              job={job}
+                              candidateName={profile.fullName}
+                              onSaveDraft={handleSaveOfferDraft}
+                              onSendOffer={async (d) => { await handleSendOffer(d); setIsOfferEditMode(false); }}
+                              isSavingDraft={isSavingDraft}
+                              isSendingOffer={isSendingOffer}
+                              currentOfferingId={activeOffering?.id}
+                              currentOfferingStatus={activeOffering?.status as any}
+                              offering={activeOffering || undefined}
+                              allOfferings={offeringsList || []}
+                            />
+                          </div>
+                        );
+                      })()}
                     </>
                   )}
                 </div>

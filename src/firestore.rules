@@ -140,6 +140,13 @@ service cloud.firestore {
       allow write: if isOwner(userId);
     }
 
+    match /candidate_personality_tests/{candidateUid} {
+      allow get: if isOwner(candidateUid) || isInternal() || isHrd() || isSuperAdmin();
+      allow list: if isInternal() || isHrd() || isSuperAdmin();
+      allow create, update: if isOwner(candidateUid) || isInternal() || isHrd() || isSuperAdmin();
+      allow delete: if isHrd() || isSuperAdmin();
+    }
+
     /**
      * /employee_profiles/{uid} (Intern/Employee Profile)
      * - An employee can read/write their own profile.
@@ -263,7 +270,7 @@ service cloud.firestore {
 
         // CREATE: A user can create an application only if they are the owner.
         // Candidates may create a new application directly in the initial assessment stage.
-        allow create: if isCreatingOwn() && (request.resource.data.status == "draft" || request.resource.data.status == "submitted" || request.resource.data.status == "tes_kepribadian");
+        allow create: if isCreatingOwn() && (request.resource.data.status == "draft" || request.resource.data.status == "submitted" || request.resource.data.status == "tes_kepribadian" || request.resource.data.status == "screening");
         
         // UPDATE: A candidate can update their own DRAFT or mark an active offer as viewed. Internal users can update any. candidateUid cannot be changed.
         allow update: if (
@@ -335,8 +342,14 @@ service cloud.firestore {
         function isInternalStatusUpdate() {
             let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
             let allowedKeys = [
-              'status', 'candidateStatus', 'finalDecisionLocked', 'decisionAt', 'updatedAt',
-              'personalityTestAssignedAt', 'cvVerified', 'ijazahVerified',
+              'status', 'stage', 'stageEnteredAt', 'candidateStatus', 'finalDecisionLocked', 'decisionAt', 'updatedAt',
+              'personalityTestAssignedAt', 'personalityTestCompleted', 'personalityTestRequired',
+              'personalityTestStatus', 'personalityTestResultId', 'personalityTestSource',
+              'personalityTestCompletedAt',
+              'hrdEvaluationDecision', 'hrdEvaluationDecisionLabel',
+              'hrdEvaluationDecisionAt', 'hrdEvaluationDecisionBy',
+              'hrdEvaluationDecisionByName', 'hrdEvaluationDecisionNote',
+              'cvVerified', 'ijazahVerified',
               'timeline', 'interviews', 'allPanelistIds',
               'offerStatus', 'offeredSalary', 'probationDurationMonths',
               'contractStartDate', 'contractDurationMonths', 'contractEndDate',
@@ -348,7 +361,7 @@ service cloud.firestore {
               'recruitmentDecisionAt', 'recruitmentDecisionBy', 'recruitmentDecisionByName',
               // Interview completion fields
               'interviewCompleted', 'interviewCompletedAt', 'interviewCompletionSource',
-              'postInterviewEvaluation', 'postInterviewDecision'
+              'postInterviewEvaluation', 'postInterviewDecision', 'internalDecisionLog'
             ];
             let hrdOnlyKeys = ['internalReviewConfig', 'recruitmentInternalDecision'];
 

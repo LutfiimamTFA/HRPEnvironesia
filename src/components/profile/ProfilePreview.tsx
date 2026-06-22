@@ -25,6 +25,7 @@ import {
   Banknote,
   GraduationCap,
   Lock,
+  Info,
   Loader2,
   Link2 as LinkIcon,
   X,
@@ -243,16 +244,23 @@ export function ProfilePreview({
   const { data: applications, isLoading: isLoadingApps } =
     useCollection<JobApplication>(applicationsQuery);
 
-  const isProfileLocked = React.useMemo(() => {
+  // Check if there are any active applications in processing stages
+  const hasActiveApplications = React.useMemo(() => {
     if (!applications) return false;
-    const lockStages: JobApplicationStatus[] = [
+    const activeStages: JobApplicationStatus[] = [
+      "screening",
       "verification",
+      "document_submission",
       "interview",
       "offered",
       "hired",
     ];
-    return applications.some((app) => lockStages.includes(app.status));
+    return applications.some((app) => activeStages.includes(app.status));
   }, [applications]);
+
+  // Profile is never fully locked — candidates can always edit.
+  // The snapshot saved at submit time protects HRD from seeing changed data.
+  const isProfileLocked = false;
 
   const isProfileComplete = profile.profileStatus === "completed";
   const nextStep = profile.profileStep || 1;
@@ -280,18 +288,17 @@ export function ProfilePreview({
 
   return (
     <div className="space-y-6">
-      {isProfileLocked && (
+      {hasActiveApplications && (
         <Alert
           variant="default"
-          className="bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-800"
+          className="bg-blue-50 border-blue-200 dark:bg-blue-950/20 dark:border-blue-800"
         >
-          <Lock className="h-4 w-4 text-amber-600" />
-          <AlertTitle className="text-amber-800 dark:text-amber-200">
-            Profil Dikunci
+          <Info className="h-4 w-4 text-blue-600" />
+          <AlertTitle className="text-blue-800 dark:text-blue-200">
+            Profil Dapat Diperbarui
           </AlertTitle>
-          <AlertDescription className="text-amber-700 dark:text-amber-300">
-            Profil Anda telah dikunci karena sedang dalam tahap seleksi
-            lanjutan. Perubahan data tidak dapat dilakukan saat ini.
+          <AlertDescription className="text-blue-700 dark:text-blue-300">
+            Profil utama tetap dapat diperbarui kapan saja. Namun perubahan profil hanya berlaku untuk lamaran baru. Lamaran yang sedang diproses menggunakan data profil saat Anda melamar.
           </AlertDescription>
         </Alert>
       )}

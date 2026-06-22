@@ -1089,6 +1089,8 @@ export default function KaryawanDataPage() {
         pendingBankRequest: pendingBankRequests?.find((r) => r.employeeUid === uid),
         userRole: user?.role || "",
         managementScopes: user?.managementScopes || (profile as any)?.managementScopes || [],
+        source: (user as any)?.source || null,
+        inviteBatchId: (user as any)?.inviteBatchId || null,
       });
     });
 
@@ -1146,6 +1148,8 @@ export default function KaryawanDataPage() {
         pendingBankRequest: pendingBankRequests?.find((r) => r.employeeUid === u.uid),
         userRole: u.role || "",
         managementScopes: u.managementScopes || [],
+        source: (u as any).source || null,
+        inviteBatchId: (u as any).inviteBatchId || null,
       });
     });
 
@@ -1857,6 +1861,11 @@ export default function KaryawanDataPage() {
                                           <span className="text-sm text-slate-500 dark:text-slate-400 font-medium">
                                             {emp.email}
                                           </span>
+                                          {(emp as any).source === 'employee_invite' && (
+                                            <Badge className="w-fit border-0 bg-sky-100 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300 text-[10px] px-1.5 h-4 mt-0.5">
+                                              Employee Invite
+                                            </Badge>
+                                          )}
                                         </div>
                                       </TableCell>
                                       <TableCell className="py-6 align-middle">

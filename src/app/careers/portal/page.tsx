@@ -18,7 +18,7 @@ import type { JobApplication, AssessmentSession, Job } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { format, isPast, differenceInDays } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
-import { getApplicationDisplayStage, getApplicationFilterStage } from '@/lib/recruitment/application-stage';
+import { getApplicationFilterStage } from '@/lib/recruitment/application-stage';
 
 // Unified status labels — same source of truth as Lamaran Saya
 const STATUS_LABEL: Record<string, string> = {
@@ -199,13 +199,18 @@ export default function CandidateDashboardPage() {
   const firstName = userProfile?.fullName?.split(' ')[0] || 'Kandidat';
   const isRejected = highestStatusApp?.status === 'rejected';
 
-  // Map application status → 5-stage timeline index (0-4), -1 = rejected/none
-  // Uses effectiveAppStatus so tes_kepribadian+done → screening → index 1
+  // Single canonical stage for the highest-ranked application — drives timeline,
+  // badge, stats, and "Evaluasi & Status" section. Uses status (not stage) as
+  // primary via getApplicationFilterStage so stale `stage` fields are ignored.
+  const effectiveHighestStage = useMemo(() => {
+    if (!highestStatusApp) return null;
+    return effectiveAppStatus(highestStatusApp, hasFinishedTest);
+  }, [highestStatusApp, hasFinishedTest]);
+
   const timelineIndex = useMemo(() => {
-    if (!highestStatusApp || isRejected) return -1;
-    const effective = effectiveAppStatus(highestStatusApp, hasFinishedTest);
-    return Math.max(statusToTimelineIndex(effective), 0);
-  }, [highestStatusApp, isRejected, hasFinishedTest]);
+    if (!highestStatusApp || isRejected || !effectiveHighestStage) return -1;
+    return Math.max(statusToTimelineIndex(effectiveHighestStage), 0);
+  }, [highestStatusApp, isRejected, effectiveHighestStage]);
 
   return (
     <div className="space-y-6 pb-8">
@@ -284,11 +289,10 @@ export default function CandidateDashboardPage() {
                           {app.jobPosition}
                         </p>
                         {(() => {
-                          const display = getApplicationDisplayStage(app, candidateTestDoc);
-                          const es = display.displayStage === 'evaluasi_hrd' ? 'screening' : display.displayStage;
+                          const es = effectiveAppStatus(app, hasFinishedTest);
                           return (
                             <Badge className={cn('shrink-0 text-xs border-0', STATUS_COLOR[es] || STATUS_COLOR[app.status])}>
-                              {display.candidateVisibleStatus || STATUS_LABEL[es] || STATUS_LABEL[app.status] || app.status}
+                              {STATUS_LABEL[es] || STATUS_LABEL[app.status] || app.status}
                             </Badge>
                           );
                         })()}
@@ -515,59 +519,108 @@ export default function CandidateDashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {[
-                {
-                  label: 'Profil Pelamar',
-                  status: isProfileComplete ? 'Lengkap' : 'Belum Lengkap',
-                  done: isProfileComplete,
-                  href: '/careers/portal/profile',
-                },
-                {
-                  label: 'Tes Kepribadian',
-                  status: hasFinishedTest ? 'Selesai' :
-                    (candidateTestDoc != null && !hasFinishedTest) ? 'Sedang Dikerjakan' : 'Belum Dikerjakan',
-                  done: hasFinishedTest,
-                  href: '/careers/portal/assessment/personality',
-                },
-                {
-                  label: 'Analisis CV',
-                  status: isProfileComplete && stats.total > 0 ? 'Dalam Review HRD' : 'Menunggu Lamaran',
-                  done: false,
-                  neutral: true,
-                },
-                {
-                  label: 'Kesesuaian Posisi',
-                  status: stats.active > 0 ? 'Dalam Review HRD' : stats.total === 0 ? 'Belum Ada Lamaran' : 'Selesai',
-                  done: false,
-                  neutral: true,
-                },
-              ].map(({ label, status, done, neutral, href }) => (
-                <div key={label} className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    {done ? (
-                      <CheckCircle2 className="h-4 w-4 text-teal-500 shrink-0" />
-                    ) : neutral ? (
-                      <AlertCircle className="h-4 w-4 text-blue-400 shrink-0" />
+              {(() => {
+                const atOffering  = ['offered', 'hired'].includes(effectiveHighestStage || '');
+                const atInterview = effectiveHighestStage === 'interview';
+                const atScreening = ['screening', 'verification', 'document_submission'].includes(effectiveHighestStage || '');
+
+                type EvalItem = {
+                  label: string;
+                  status: string;
+                  done: boolean;
+                  neutral?: boolean;
+                  href?: string;
+                };
+
+                const items: EvalItem[] = [
+                  {
+                    label: 'Profil Pelamar',
+                    status: isProfileComplete ? 'Lengkap' : 'Belum Lengkap',
+                    done: isProfileComplete,
+                    href: '/careers/portal/profile',
+                  },
+                  {
+                    label: 'Tes Kepribadian',
+                    status: hasFinishedTest ? 'Selesai' :
+                      (candidateTestDoc != null && !hasFinishedTest) ? 'Sedang Dikerjakan' : 'Belum Dikerjakan',
+                    done: hasFinishedTest,
+                    href: '/careers/portal/assessment/personality',
+                  },
+                ];
+
+                if (atOffering) {
+                  items.push(
+                    { label: 'Wawancara', status: 'Selesai', done: true },
+                    {
+                      label: 'Offering',
+                      status: effectiveHighestStage === 'hired'
+                        ? 'Diterima'
+                        : highestStatusApp?.offerStatus === 'sent' || highestStatusApp?.offerStatus === 'viewed'
+                          ? 'Penawaran Dikirim'
+                          : 'Menyiapkan Penawaran',
+                      done: effectiveHighestStage === 'hired',
+                      neutral: effectiveHighestStage !== 'hired',
+                    },
+                  );
+                } else if (atInterview) {
+                  items.push(
+                    {
+                      label: 'Wawancara',
+                      status: 'Sedang Berlangsung',
+                      done: false,
+                      neutral: true,
+                    },
+                  );
+                } else {
+                  items.push(
+                    {
+                      label: 'Analisis CV',
+                      status: isProfileComplete && stats.total > 0 && atScreening
+                        ? 'Dalam Review HRD'
+                        : stats.total > 0 ? 'Menunggu Evaluasi' : 'Menunggu Lamaran',
+                      done: false,
+                      neutral: atScreening,
+                    },
+                    {
+                      label: 'Kesesuaian Posisi',
+                      status: atScreening ? 'Dalam Review HRD'
+                        : stats.total === 0 ? 'Belum Ada Lamaran' : 'Menunggu Evaluasi',
+                      done: false,
+                      neutral: atScreening,
+                    },
+                  );
+                }
+
+                return items.map(({ label, status, done, neutral, href }) => (
+                  <div key={label} className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      {done ? (
+                        <CheckCircle2 className="h-4 w-4 text-teal-500 shrink-0" />
+                      ) : neutral ? (
+                        <AlertCircle className="h-4 w-4 text-blue-400 shrink-0" />
+                      ) : (
+                        <Circle className="h-4 w-4 text-slate-300 dark:text-slate-600 shrink-0" />
+                      )}
+                      <span className="text-sm text-slate-700 dark:text-slate-300">{label}</span>
+                    </div>
+                    {href ? (
+                      <Link href={href} className={cn('text-xs font-medium shrink-0',
+                        done ? 'text-teal-600 dark:text-teal-400' : 'text-orange-500 dark:text-orange-400 underline underline-offset-2'
+                      )}>
+                        {status}
+                      </Link>
                     ) : (
-                      <Circle className="h-4 w-4 text-slate-300 dark:text-slate-600 shrink-0" />
+                      <span className={cn('text-xs font-medium shrink-0',
+                        done ? 'text-teal-600 dark:text-teal-400' :
+                        neutral ? 'text-blue-600 dark:text-blue-400' :
+                        'text-slate-500 dark:text-slate-400'
+                      )}>
+                        {status}
+                      </span>
                     )}
-                    <span className="text-sm text-slate-700 dark:text-slate-300">{label}</span>
                   </div>
-                  {href ? (
-                    <Link href={href} className={cn('text-xs font-medium shrink-0',
-                      done ? 'text-teal-600 dark:text-teal-400' : 'text-orange-500 dark:text-orange-400 underline underline-offset-2'
-                    )}>
-                      {status}
-                    </Link>
-                  ) : (
-                    <span className={cn('text-xs font-medium shrink-0',
-                      neutral ? 'text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400'
-                    )}>
-                      {status}
-                    </span>
-                  )}
-                </div>
-              ))}
+                ));
+              })()}
             </CardContent>
           </Card>
 

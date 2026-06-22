@@ -6,7 +6,8 @@ import { z } from 'zod';
 export const runtime = 'nodejs';
 
 const patchSchema = z.object({
-  additionalQuantity: z.coerce.number().int().min(1, 'Jumlah minimal 1.').max(100, 'Jumlah maksimal 100.'),
+  additionalQuantity: z.coerce.number().int().min(1).max(500).optional(),
+  isActive: z.boolean().optional(),
 });
 
 // Helper to verify user role
@@ -54,24 +55,20 @@ export async function PATCH(
       return NextResponse.json({ error: 'Invalid request body.', details: parseResult.error.flatten() }, { status: 400 });
     }
 
-    const { additionalQuantity } = parseResult.data;
+    const { additionalQuantity, isActive } = parseResult.data;
     const db = admin.firestore();
     const batchRef = db.collection('invite_batches').doc(batchId);
 
-    // Use a transaction to safely read and update
     await db.runTransaction(async (transaction) => {
-        const batchDoc = await transaction.get(batchRef);
-        if (!batchDoc.exists) {
-            throw new Error('Batch not found.');
-        }
-
-        transaction.update(batchRef, {
-            totalSlots: FieldValue.increment(additionalQuantity),
-            updatedAt: Timestamp.now(),
-        });
+      const batchDoc = await transaction.get(batchRef);
+      if (!batchDoc.exists) throw new Error('Batch not found.');
+      const updates: Record<string, any> = { updatedAt: Timestamp.now() };
+      if (additionalQuantity !== undefined) updates.totalSlots = FieldValue.increment(additionalQuantity);
+      if (isActive !== undefined) updates.isActive = isActive;
+      transaction.update(batchRef, updates);
     });
 
-    return NextResponse.json({ message: 'Quota added successfully.' });
+    return NextResponse.json({ message: 'Batch updated successfully.' });
 
   } catch (error: any) {
     console.error('Error adding quota to batch:', error);

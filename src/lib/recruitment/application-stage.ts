@@ -52,7 +52,7 @@ export function getApplicationDisplayStage(
   application: Partial<JobApplication> & { status?: string; stage?: string },
   personalityTest?: PersonalityTestLike | null,
 ): ApplicationDisplayStage {
-  const rawStage = String(application.stage || application.status || "screening");
+  const rawStage = String(application.status || application.stage || "screening");
   const completed = isPersonalityTestCompleted(application, personalityTest);
 
   if (PERSONALITY_TEST_STAGES.has(rawStage) && completed) {

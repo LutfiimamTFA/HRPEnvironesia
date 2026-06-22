@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useMemo, useState, useEffect } from "react";
 import {
@@ -61,7 +61,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { extractFileIdFromUrl, openSecureFile } from "@/lib/candidate-docs-utils";
+import { openOfferingDocument } from "@/lib/offering-file-utils";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -87,6 +87,7 @@ import {
   Info,
   CheckCircle2,
   ChevronDown,
+  Eye,
 } from "lucide-react";
 import { generateOfferingPDF } from "@/lib/recruitment/pdf-generator";
 import { cn } from "@/lib/utils";
@@ -192,7 +193,9 @@ function ApplicationCard({
   const offerStartDate = offerDetails.startDate
     ? new Date(offerDetails.startDate)
     : null;
-  const offerContractDuration = offerDetails.contractDurationMonths || "-";
+  const offerContractDuration = offerDetails.contractDurationMonths
+    ? `${offerDetails.contractDurationMonths} bulan`
+    : "-";
   const offerFirstDayTime = offerDetails.firstDayTime || "-";
   const offerFirstDayLocation = offerDetails.firstDayLocation || "-";
   const offerWorkModel = (offerDetails as any)?.workModel || "-";
@@ -202,8 +205,14 @@ function ApplicationCard({
   const offerRoleScope = (offerDetails as any)?.roleScope || "-";
   const offerAdditionalNotes = activeOffering?.additionalNotes || "";
   const offerOtherNotes = offerAdditionalNotes || "-";
-  const offerHrContact = offerDetails.hrContact || "-";
+  const offerHrContact = (() => {
+    const name = offerDetails.humanCapitalContactName;
+    const phone = offerDetails.humanCapitalContactPhone;
+    if (name || phone) return [name, phone].filter(Boolean).join(" - ");
+    return offerDetails.humanCapitalContact || offerDetails.hrContact || "-";
+  })();
   const offerDocumentUrl = activeOffering?.documentUrl;
+  const offerDocumentPath = activeOffering?.documentPath;
   const offerDocumentName =
     activeOffering?.documentName ||
     `Offering_${application.jobPosition.replace(/\s+/g, "_")}.pdf`;
@@ -337,10 +346,7 @@ function ApplicationCard({
 
   const offerContractEndDate =
     offerStartDate && offerDetails.contractDurationMonths
-      ? addMonths(
-          offerStartDate,
-          parseInt(offerDetails.contractDurationMonths, 10),
-        )
+      ? addMonths(offerStartDate, Number(offerDetails.contractDurationMonths))
       : null;
 
   useEffect(() => {
@@ -721,8 +727,21 @@ function ApplicationCard({
     application.status === "hired" &&
     application.internalAccessEnabled === true;
   const isOffered = application.status === "offered";
-  // Include the HRD-internally-rejected case so we fall into the interview display path.
-  const isInterviewStage = application.status === "interview" || isHRDInternalRejection;
+  const hasPostInterviewEvaluation =
+    !!application.postInterviewEvaluation &&
+    ((application.postInterviewEvaluation.submissions ?? 0) > 0 ||
+      (((application.postInterviewEvaluation as any).evaluatorSubmissions?.length ?? 0) > 0));
+  const isPostInterviewEvaluationState =
+    !!application.postInterviewDecision ||
+    application.candidateVisibleStatus === "evaluasi_setelah_wawancara" ||
+    application.interviewCompleted === true ||
+    !!application.interviewCompletedAt ||
+    hasPostInterviewEvaluation;
+  // Include neutral post-interview states so they render before any interview schedule card.
+  const isInterviewStage =
+    application.status === "interview" ||
+    isHRDInternalRejection ||
+    isPostInterviewEvaluationState;
   const isAssessmentStage = application.status === "tes_kepribadian";
   const isProcessing = [
     "submitted",
@@ -734,16 +753,11 @@ function ApplicationCard({
 
   // True when the interview is physically complete from the candidate's viewpoint.
   // Internal "tidak_lanjut" decision always triggers this so the candidate sees the
-  // neutral "Menunggu Keputusan Akhir" state rather than an active interview card.
+  // neutral post-interview state rather than an active interview card.
   // Note: !!postInterviewDecision alone is intentionally NOT used — only "lanjut" or
   // an explicit internal rejection should transition this flag.
   const isInterviewActuallyDone =
-    isHRDInternalRejection ||
-    application.interviewCompleted === true ||
-    !!application.interviewCompletedAt ||
-    !!application.interviewCompletionSource ||
-    (application.postInterviewEvaluation?.submissions ?? 0) > 0 ||
-    application.postInterviewDecision?.status === "lanjut";
+    isPostInterviewEvaluationState || !!application.interviewCompletionSource;
 
   // Status shown to candidate — uses helper that never exposes HRD internal decisions
   const displayStatus = useMemo(
@@ -752,19 +766,22 @@ function ApplicationCard({
   );
 
   if (isOffered) {
-    const salaryLabel =
-      application.jobType === "internship" ? "Uang Saku" : "Gaji";
+    // ── menyiapkan penawaran (belum ada offering aktif) ───────────────────────
     const renderMissingOfferDetails = () => (
       <Card className="flex flex-col border-primary/50">
         <CardHeader>
           <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4">
             <div>
               <CardTitle className="text-xl">
-                Penawaran Kerja: {application.jobPosition}
+                Surat Penawaran Kerja: {application.jobPosition}
               </CardTitle>
               <CardDescription>
-                Detail penawaran untuk posisi ini sedang disiapkan oleh Tim HRD.
-                Mohon tunggu sampai detail penawaran dipublikasikan untuk Anda.
+                Selamat, Anda telah lolos tahap wawancara untuk posisi{" "}
+                <strong>{application.jobPosition}</strong>. Saat ini tim Human
+                Capital <strong>{application.brandName}</strong> sedang
+                menyiapkan dokumen penawaran kerja resmi untuk Anda. Mohon
+                pantau halaman ini secara berkala hingga detail penawaran
+                tersedia.
               </CardDescription>
             </div>
             <Badge className="w-fit bg-slate-500/80">
@@ -784,1183 +801,416 @@ function ApplicationCard({
       </Card>
     );
 
-    if (
-      application.offerStatus === "sent" ||
-      application.offerStatus === "viewed" ||
-      application.offerStatus === "negotiation_requested" ||
-      application.offerStatus === "negotiation_rejected" ||
-      application.offerStatus === "offered_final" ||
-      !application.offerStatus
-    ) {
-      if (isActuallyLoading) {
-        return (
-          <Card className="flex flex-col border-primary/20 animate-pulse">
-            <CardHeader>
-              <Skeleton className="h-8 w-3/4 mb-2" />
-              <Skeleton className="h-4 w-1/2" />
+    // ── status yang tampilkan form utama (belum upload / baru dikirim / dilihat) ──
+    const isActiveOfferStatus =
+      !application.offerStatus ||
+      ["sent", "viewed"].includes(application.offerStatus);
+    const isDocumentUploadedStatus = ["accepted", "accepted_pending_document", "document_uploaded"].includes(application.offerStatus || "");
+
+    if (isActuallyLoading) {
+      return (
+        <Card className="flex flex-col border-primary/20 animate-pulse">
+          <CardHeader>
+            <Skeleton className="h-8 w-3/4 mb-2" />
+            <Skeleton className="h-4 w-1/2" />
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Skeleton className="h-24 w-full" />
+            <div className="grid grid-cols-2 gap-4">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    if (!activeOfferIsAvailable && isActiveOfferStatus) {
+      return renderMissingOfferDetails();
+    }
+
+    // ── data derivasi ─────────────────────────────────────────────────────────
+    const brandName = application.brandName || "";
+    const candidateName = application.candidateName || "";
+    const jobPosition = application.jobPosition || "";
+    const deadline = offerResponseDeadline;
+    const deadlineDateLabel = deadline
+      ? format(deadline, "EEEE, dd MMMM yyyy", { locale: id })
+      : "-";
+    const deadlineTimeLabel = deadline ? format(deadline, "HH:mm") : "-";
+    const hcName = offerDetails.humanCapitalContactName || "";
+    const hcPhone = offerDetails.humanCapitalContactPhone || "";
+    const hcContact = [hcName, hcPhone].filter(Boolean).join(" - ") || offerDetails.humanCapitalContact || offerDetails.hrContact || "";
+
+    const offeringMessage = [
+      `Dear ${candidateName},`,
+      "",
+      `Terimalah salam hangat dari kami ${brandName || "[brandName]"}.`,
+      "",
+      `Berdasarkan hasil proses seleksi dan wawancara yang telah Saudara ikuti bersama tim kami, dengan senang hati kami sampaikan bahwa Saudara telah sesuai dengan kualifikasi yang dibutuhkan oleh perusahaan untuk posisi ${jobPosition || "[posisi]"}.`,
+      "",
+      `Berikut kami kirimkan Surat Penawaran Kerja yang dapat Saudara pertimbangkan. Apabila Saudara menyetujui penawaran tersebut, silakan membubuhkan tanda tangan pada Lembar Penerimaan Posisi, kemudian mengunggah kembali dokumen yang telah ditandatangani melalui portal ini maksimal ${deadlineDateLabel} pukul ${deadlineTimeLabel} WIB untuk melanjutkan tahap berikutnya, yaitu penandatanganan kontrak.`,
+      "",
+      `Kami sangat berharap Saudara dapat mempertimbangkan dan bergabung dengan perusahaan kami.${hcContact ? ` Apabila terdapat hal-hal yang perlu didiskusikan lebih lanjut, mohon jangan ragu untuk menghubungi tim Human Capital melalui ${hcContact}.` : ""}`,
+      "",
+      "Demikian surat penawaran ini kami sampaikan. Atas perhatian dan kerja sama yang baik, kami ucapkan terima kasih.",
+      "",
+      "Regards,",
+      "Human Capital",
+      brandName || "[brandName]",
+    ].join("\n");
+
+    const infoItems = [
+      deadline && {
+        label: "Batas Konfirmasi",
+        value: `${deadlineDateLabel}, pukul ${deadlineTimeLabel} WIB`,
+      },
+      offerDetails.startDate && {
+        label: "Tanggal Mulai Kerja / Program",
+        value: (() => {
+          try { return format(new Date(offerDetails.startDate!), "dd MMMM yyyy", { locale: id }); }
+          catch { return String(offerDetails.startDate); }
+        })(),
+      },
+      offerDetails.contractDurationMonths && {
+        label: "Durasi Kontrak / Program",
+        value: `${offerDetails.contractDurationMonths} bulan`,
+      },
+      offerDetails.firstDayTime && {
+        label: "Jam Hadir Hari Pertama",
+        value: `${offerDetails.firstDayTime} WIB`,
+      },
+      offerDetails.firstDayLocation && {
+        label: "Lokasi Hari Pertama",
+        value: offerDetails.firstDayLocation,
+      },
+      hcContact && {
+        label: "Kontak Human Capital",
+        value: hcContact,
+      },
+    ].filter(Boolean) as { label: string; value: string }[];
+
+    // ── helper: InfoItem grid ─────────────────────────────────────────────────
+    const InfoGrid = () => infoItems.length > 0 ? (
+      <div className="divide-y divide-slate-100 dark:divide-slate-800">
+        {infoItems.map(({ label, value }) => (
+          <div key={label} className="flex justify-between items-baseline gap-4 py-2.5">
+            <p className="text-xs text-slate-500 dark:text-slate-400 shrink-0">{label}</p>
+            <p className="text-sm font-medium text-slate-800 dark:text-slate-200 text-right">{value}</p>
+          </div>
+        ))}
+      </div>
+    ) : null;
+
+    // ── helper: Countdown strip ───────────────────────────────────────────────
+    const CountdownStrip = () => !deadline ? null : (
+      <div className={cn(
+        "rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3",
+        hasExpired
+          ? "bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300"
+          : "bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400"
+      )}>
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider mb-1 opacity-70">
+            Batas Waktu Konfirmasi
+          </p>
+          {hasExpired ? (
+            <p className="text-sm font-semibold">Batas waktu telah berakhir</p>
+          ) : countdownParts ? (
+            <p className="text-sm font-semibold tabular-nums">
+              {countdownParts.days}h {String(countdownParts.hours).padStart(2,"0")}j{" "}
+              {String(countdownParts.minutes).padStart(2,"0")}m{" "}
+              {String(countdownParts.seconds).padStart(2,"0")}d
+            </p>
+          ) : null}
+        </div>
+        <p className="text-xs opacity-80">
+          s/d {deadlineDateLabel} pukul {deadlineTimeLabel} WIB
+        </p>
+      </div>
+    );
+
+    // ── STEP 2: sudah accept, menunggu / sudah upload dokumen ─────────────────
+    if (isDocumentUploadedStatus) {
+      const isUploaded = application.offerStatus === "document_uploaded" || !!(application as any).signedOfferUrl;
+      return (
+        <div className="space-y-4">
+          {/* Header */}
+          <Card className="border-0 shadow-sm">
+            <CardHeader className="pb-3">
+              <Badge className={cn(
+                "w-fit mb-1 border-0",
+                isUploaded
+                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+                  : "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300"
+              )}>
+                {isUploaded ? "Dokumen Penerimaan Telah Dikirim" : "Menunggu Dokumen Penerimaan"}
+              </Badge>
+              <CardTitle className="text-xl">Surat Penawaran Kerja: {jobPosition}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <Skeleton className="h-24 w-full" />
-              <div className="grid grid-cols-2 gap-4">
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-              </div>
+          </Card>
+
+          {/* Status selesai */}
+          {isUploaded ? (
+            <Card className="border border-emerald-200 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-950/20">
+              <CardContent className="pt-5 pb-5 flex items-start gap-3">
+                <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-emerald-800 dark:text-emerald-300">
+                    Dokumen Penerimaan Telah Dikirim
+                  </p>
+                  {(application as any).signedOfferFileName && (
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">
+                      File: {(application as any).signedOfferFileName}
+                    </p>
+                  )}
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                    Tim Human Capital akan meninjau dokumen Anda dan menghubungi Anda untuk tahap berikutnya.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            /* Upload dokumen */
+            <Card className="border-0 shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <FileUp className="h-4 w-4 text-primary" />
+                  Unggah Dokumen Penerimaan Posisi
+                </CardTitle>
+                <CardDescription className="text-sm">
+                  Apabila Saudara menyetujui penawaran ini, silakan membubuhkan tanda tangan pada{" "}
+                  <strong>Lembar Penerimaan Posisi</strong>. Jika pada dokumen terdapat kolom materai,
+                  Saudara dapat menggunakan materai elektronik atau materai tempel fisik sesuai ketentuan
+                  yang berlaku. Setelah dokumen ditandatangani dan dibubuhi materai, silakan unggah kembali
+                  dokumen tersebut melalui portal ini sebelum batas waktu konfirmasi offering.
+                  <br /><br />
+                  <span className="text-slate-500 dark:text-slate-400">
+                    Format: PDF, DOC, DOCX, JPG, PNG.
+                  </span>
+                </CardDescription>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                  Pastikan tanda tangan, nama, tanggal, dan materai terlihat jelas sebelum dokumen diunggah.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {offerDocumentUrl && (
+                  <Button variant="outline" size="sm" className="w-full" onClick={() =>
+                    openOfferingDocument({ offeringId: activeOffering?.id, documentUrl: offerDocumentUrl, documentPath: offerDocumentPath, documentName: offerDocumentName }, "download")
+                      .catch((e) => toast({ variant: "destructive", title: "Gagal Mengunduh", description: e.message }))
+                  }>
+                    <Download className="h-3.5 w-3.5 mr-1.5" />
+                    Download Surat Penawaran
+                  </Button>
+                )}
+                <input
+                  type="file"
+                  accept="application/pdf,image/*,.doc,.docx"
+                  onChange={(e) => setSignedFile(e.target.files?.[0] || null)}
+                  disabled={isUploading}
+                  className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-white hover:file:bg-primary/90"
+                />
+                {isUploading && (
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-xs text-slate-500">
+                      <span>Mengunggah...</span><span>{uploadProgress}%</span>
+                    </div>
+                    <Progress value={uploadProgress} className="h-1.5" />
+                  </div>
+                )}
+                <Button type="button" className="w-full" size="lg"
+                  disabled={!signedFile || isUploading}
+                  onClick={handleSignedDocumentUpload}>
+                  <FileUp className="h-4 w-4 mr-2" />
+                  {isUploading ? "Mengunggah..." : "Kirim Dokumen Penerimaan"}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Ringkasan info (compact) */}
+          {infoItems.length > 0 && (
+            <Card className="border-0 shadow-sm bg-slate-50/50 dark:bg-slate-900/30">
+              <CardContent className="pt-4 pb-4">
+                <InfoGrid />
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      );
+    }
+
+    // ── STEP 1: penawaran aktif, belum diterima kandidat ─────────────────────
+    if (isActiveOfferStatus && activeOfferIsAvailable) {
+      const offeringDocRef = { offeringId: activeOffering?.id, documentUrl: offerDocumentUrl, documentPath: offerDocumentPath, documentName: offerDocumentName };
+      const handlePreview = () => openOfferingDocument(offeringDocRef, "preview").catch((e) => toast({ variant: "destructive", title: "Gagal Membuka", description: e.message }));
+      const handleDownload = () => openOfferingDocument(offeringDocRef, "download").catch((e) => toast({ variant: "destructive", title: "Gagal Mengunduh", description: e.message }));
+
+      return (
+        <div className="space-y-4">
+
+          {/* 1. Header */}
+          <Card className="border-0 shadow-sm">
+            <CardHeader className="pb-3">
+              <Badge className="w-fit mb-1 bg-green-100 text-green-700 border-0 dark:bg-green-950/50 dark:text-green-300">
+                Penawaran Tersedia
+              </Badge>
+              <CardTitle className="text-xl">
+                Surat Penawaran Kerja: {jobPosition}
+              </CardTitle>
+              <CardDescription className="text-sm leading-relaxed">
+                Selamat, Anda telah lolos tahap wawancara untuk posisi{" "}
+                <strong>{jobPosition}</strong>. Silakan baca pesan dari Human
+                Capital dan tinjau Surat Penawaran Kerja yang tersedia pada
+                halaman ini.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+
+          {/* 2. Pesan dari Human Capital — terbuka by default */}
+          <Card className="border-0 shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <FileText className="h-4 w-4 text-slate-400" />
+                Pesan dari Human Capital
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0 pb-4">
+              <pre className="whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300 font-sans leading-relaxed bg-slate-50/60 dark:bg-slate-900/40 rounded-xl p-4 border border-slate-100 dark:border-slate-800">
+                {offeringMessage}
+              </pre>
             </CardContent>
           </Card>
-        );
-      }
 
-      if (!activeOfferIsAvailable) {
-        return renderMissingOfferDetails();
-      }
-
-      const offerStatusLabel = hasExpired
-        ? "Kedaluwarsa"
-        : application.offerStatus === "viewed"
-          ? "Sudah Dilihat"
-          : "Baru";
-
-      const offerViewStatus = activeOffering?.viewCount
-        ? `Dibuka ${activeOffering.viewCount} kali`
-        : "Belum dibuka";
-
-      const offerFirstViewed = parseDateValue(activeOffering?.viewedAtFirst);
-      const offerLastViewed = parseDateValue(activeOffering?.viewedAtLast);
-
-      const offerViewSubtitle = activeOffering?.viewCount
-        ? "Penawaran ini telah Anda akses."
-        : "Anda belum membuka detail penawaran ini.";
-
-      return (
-        <Card className="flex flex-col border-primary/50">
-          <CardHeader>
-            <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4">
-              <div>
-                <CardTitle className="text-xl">
-                  Penawaran Kerja: {application.jobPosition}
-                </CardTitle>
-                <CardDescription>
-                  Berdasarkan hasil seleksi Anda, kami mengirimkan penawaran
-                  kerja resmi untuk posisi ini. Mohon baca dokumen penawaran
-                  dengan teliti dan ambil keputusan sebelum batas waktu.
-                </CardDescription>
-              </div>
-              <div className="flex flex-col gap-2">
-                <Badge
-                  className={cn(
-                    "w-fit",
-                    hasExpired
-                      ? "bg-red-600"
-                      : application.offerStatus === "viewed"
-                        ? "bg-blue-600"
-                        : "bg-primary/80",
-                  )}
-                >
-                  {offerStatusLabel}
-                </Badge>
-              </div>
-            </div>
-          </CardHeader>
-
-          <CardContent className="space-y-6">
-            {secondsLeft !== null && (
-              <div
-                className={cn(
-                  "rounded-3xl border p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.75)] backdrop-blur-xl",
-                  hasExpired
-                    ? "border-red-500/30 bg-red-950/70 text-red-100"
-                    : isVeryUrgent
-                      ? "border-red-500/30 bg-red-950/70 text-red-100"
-                      : isUrgent
-                        ? "border-orange-500/30 bg-orange-950/70 text-orange-100"
-                        : isWarning
-                          ? "border-amber-500/30 bg-amber-950/70 text-amber-100"
-                          : "border-slate-700/60 bg-slate-950/80 text-slate-100",
-                )}
-              >
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                      Hitung Mundur Respons
-                    </p>
-                    <p className="mt-2 text-2xl font-semibold text-white">
-                      {countdownLabel}
-                    </p>
-                  </div>
-                  <Badge
-                    className={cn(
-                      "w-fit rounded-full px-3 py-1 text-sm border backdrop-blur-md bg-white/10 shadow-sm",
-                      candidateStatusBadgeClass,
-                    )}
-                  >
-                    {candidateOfferStatusLabel}
-                  </Badge>
-                </div>
-                <p className="mt-3 text-sm text-slate-400">{offerActionHint}</p>
-                {isVeryUrgent ? (
-                  <div className="mt-4 rounded-2xl border border-red-500/20 bg-red-950/60 px-4 py-3 text-sm font-semibold text-red-100 shadow-sm animate-pulse">
-                    Waktu Hampir Habis — segera ambil keputusan sebelum
-                    penawaran kedaluwarsa.
-                  </div>
-                ) : isUrgent ? (
-                  <div className="mt-4 rounded-2xl border border-orange-500/20 bg-orange-950/60 px-4 py-3 text-sm font-semibold text-orange-100 shadow-sm">
-                    Waktu tersisa kurang dari 1 jam.
-                  </div>
-                ) : isWarning ? (
-                  <div className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-950/60 px-4 py-3 text-sm font-semibold text-amber-100 shadow-sm">
-                    Penawaran hampir habis dalam 24 jam.
-                  </div>
-                ) : null}
-              </div>
-            )}
-
-            {application.offerStatus === "negotiation_rejected" &&
-              application.candidateNegotiationResponse && (
-                <div className="rounded-2xl border border-orange-200 bg-orange-50/50 p-5">
-                  <div className="flex items-start gap-4">
-                    <div className="rounded-full bg-orange-100 p-2 shadow-sm">
-                      <Clock className="h-5 w-5 text-orange-600" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-bold text-orange-950 uppercase tracking-wider">
-                        Negosiasi Tidak Dapat Disetujui
-                      </p>
-                      <div className="mt-2 text-sm text-orange-800 bg-white/40 p-3 rounded-xl border border-orange-200/50">
-                        {application.candidateNegotiationResponse.note}
-                      </div>
-                      <p className="mt-3 text-[10px] font-black uppercase text-orange-500/80">
-                        — Tim HRD •{" "}
-                        {format(
-                          application.candidateNegotiationResponse.respondedAt.toDate(),
-                          "dd MMM yyyy",
-                          { locale: id },
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-            <div className="grid gap-6 lg:grid-cols-[0.95fr_0.85fr]">
-              <div className="space-y-6">
-                <div className="rounded-3xl border border-muted/70 bg-background p-5">
-                  <p className="text-sm font-semibold text-foreground">
-                    Dokumen Penawaran
+          {/* 3. Batas Waktu Konfirmasi */}
+          {deadline && (
+            <Card className={cn(
+              "border-0 shadow-sm",
+              hasExpired ? "bg-red-50 dark:bg-red-950/20" : "bg-amber-50 dark:bg-amber-950/20"
+            )}>
+              <CardContent className="pt-4 pb-4">
+                <p className={cn(
+                  "text-[10px] font-bold uppercase tracking-wider mb-2",
+                  hasExpired ? "text-red-500" : "text-amber-600 dark:text-amber-400"
+                )}>
+                  Batas Waktu Konfirmasi Offering
+                </p>
+                {hasExpired ? (
+                  <p className="text-sm font-semibold text-red-600 dark:text-red-400">
+                    Batas waktu konfirmasi telah berakhir.
+                    {hcContact && ` Hubungi Tim Human Capital melalui ${hcContact}.`}
                   </p>
-                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-                    Buka dokumen resmi atau unduh file untuk melihat semua
-                    detail lengkap yang harus Anda tinjau.
-                  </p>
-                  <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-                    <Button
-                      variant="outline"
-                      className="w-full sm:w-auto"
-                      onClick={() => {
-                        if (offerDocumentUrl) {
-                          const fileId = extractFileIdFromUrl(offerDocumentUrl);
-                          openSecureFile(fileId, offerDocumentName || "Offering.pdf");
-                        } else if (offerAdditionalNotes) {
-                          generateOfferingPDF(
-                            offerAdditionalNotes,
-                            offerDocumentName,
-                          );
-                        }
-                      }}
-                    >
-                      <FileSignature className="mr-2 h-4 w-4" /> Preview
-                      Offering
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      className="w-full sm:w-auto"
-                      onClick={() => {
-                        if (offerDocumentUrl) {
-                          const fileId = extractFileIdFromUrl(offerDocumentUrl);
-                          openSecureFile(fileId, offerDocumentName || "Offering.pdf");
-                        } else {
-                          generateOfferingPDF(
-                            offerAdditionalNotes,
-                            offerDocumentName,
-                          );
-                        }
-                      }}
-                    >
-                      <Download className="mr-2 h-4 w-4" /> Download PDF
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="rounded-3xl border border-muted/70 bg-slate-50/80 dark:bg-slate-950/80 p-5">
-                  <p className="text-sm font-semibold text-foreground">
-                    Informasi Penting
-                  </p>
-                  <ul className="mt-4 list-disc space-y-3 pl-5 text-sm text-slate-900 dark:text-slate-100">
-                    <li>
-                      Pastikan Anda telah membaca dokumen penawaran sebelum
-                      mengambil keputusan.
-                    </li>
-                    <li>
-                      Keputusan diterima atau ditolak akan memengaruhi proses
-                      rekrutmen selanjutnya.
-                    </li>
-                    <li>
-                      Jika Anda menerima, silakan lanjutkan ke pengumpulan
-                      dokumen onboarding.
-                    </li>
-                  </ul>
-                </div>
-              </div>
-
-              <div className="space-y-6">
-                <div className="rounded-3xl border border-muted/70 bg-muted/50 p-5">
-                  <p className="text-sm font-semibold text-foreground">
-                    Ringkasan Penawaran
-                  </p>
-                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <p className="text-muted-foreground">{salaryLabel}</p>
-                      <p className="font-semibold">{offerSalary} / bulan</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Durasi Kontrak</p>
-                      <p className="font-semibold">
-                        {offerContractDuration} bulan
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Tanggal Mulai</p>
-                      <p className="font-semibold">
-                        {offerStartDate
-                          ? format(offerStartDate, "dd MMMM yyyy", {
-                              locale: id,
-                            })
-                          : "-"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Tanggal Selesai</p>
-                      <p className="font-semibold">
-                        {offerContractEndDate
-                          ? format(offerContractEndDate, "dd MMMM yyyy", {
-                              locale: id,
-                            })
-                          : "-"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Hari Pertama</p>
-                      <p className="font-semibold">
-                        {offerFirstDayTime || "-"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">
-                        Lokasi Hari Pertama
-                      </p>
-                      <p className="font-semibold">
-                        {offerFirstDayLocation || "-"}
-                      </p>
-                    </div>
-                    <div className="sm:col-span-2">
-                      <p className="text-muted-foreground">Kontak HRD</p>
-                      <p className="font-semibold">{offerHrContact || "-"}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-3xl border border-muted/70 bg-background p-5">
-                  <div className="flex items-center justify-between gap-4">
-                    <p className="text-sm font-semibold text-foreground">
-                      Detail Penawaran
-                    </p>
-                    <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                      {offerAdditionalNotes
-                        ? "Ringkas"
-                        : "Tidak ada informasi tambahan"}
-                    </p>
-                  </div>
-                  <details className="mt-4 rounded-3xl border border-muted/80 bg-slate-50/60 p-4 text-sm text-slate-700 dark:bg-slate-950/80 dark:text-slate-300">
-                    <summary className="cursor-pointer font-semibold">
-                      Lihat Selengkapnya
-                    </summary>
-                    <div className="mt-3 space-y-3">
-                      <SafeRichText
-                        html={
-                          offerAdditionalNotes ||
-                          "Tidak ada informasi penawaran tambahan."
-                        }
-                      />
-                    </div>
-                  </details>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-
-          <CardFooter className="bg-muted/50 p-4 border-t flex flex-col sm:flex-row justify-between items-center gap-3">
-            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-              <Button
-                variant="outline"
-                onClick={() => setIsRejectDialogOpen(true)}
-                disabled={isDeciding || isOfferDisabled}
-                className="w-full sm:w-auto"
-              >
-                Tolak Penawaran
-              </Button>
-              {application.offerStatus !== "negotiation_requested" &&
-                !application.candidateNegotiationUsed && (
-                  <Button
-                    variant="outline"
-                    onClick={() => setIsNegotiationDialogOpen(true)}
-                    disabled={isDeciding || isOfferDisabled}
-                    className="w-full sm:w-auto border-blue-200 hover:border-blue-400 hover:bg-blue-50/50"
-                  >
-                    Ajukan Negosiasi
-                  </Button>
-                )}
-            </div>
-            <Button
-              onClick={() => setIsAcceptConfirmOpen(true)}
-              disabled={isDeciding || isOfferDisabled}
-              className="w-full sm:w-auto"
-            >
-              {isDeciding && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Setujui & Lanjutkan
-            </Button>
-          </CardFooter>
-
-          <Dialog
-            open={isAcceptConfirmOpen}
-            onOpenChange={setIsAcceptConfirmOpen}
-          >
-            <DialogContent className="w-full max-w-2xl h-[90vh] max-h-[90vh] flex flex-col overflow-hidden">
-              <DialogHeader>
-                <DialogTitle>Konfirmasi Persetujuan Penawaran</DialogTitle>
-                <DialogDescription>
-                  Silakan tinjau kembali ringkasan ini agar status dan langkah
-                  berikutnya jelas sebelum melanjutkan.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="flex-1 overflow-y-auto px-6 py-4 sm:px-8 sm:py-6 space-y-6">
-                <section className="space-y-3">
-                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                    Konteks Penawaran
-                  </p>
-                  <div className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
-                    <p>
-                      Penawaran ini diberikan untuk posisi{" "}
-                      <strong>{application.jobPosition}</strong> di{" "}
-                      <strong>{application.brandName}</strong>.
-                    </p>
-                    <p>
-                      Penawaran diterbitkan berdasarkan hasil seleksi dan
-                      kesepakatan tim rekrutmen.
-                    </p>
-                  </div>
-                </section>
-
-                <section className="space-y-3">
-                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                    Arti Persetujuan
-                  </p>
-                  <ul className="list-disc space-y-2 pl-5 text-sm text-slate-700 dark:text-slate-300">
-                    <li>Anda menyetujui penawaran ini secara prinsip.</li>
-                    <li>
-                      Ini bukan titik akhir; masih ada langkah administrasi
-                      lanjutan.
-                    </li>
-                    <li>
-                      Setelah menyetujui, Anda harus mengunggah dokumen yang
-                      sudah ditandatangani.
-                    </li>
-                  </ul>
-                </section>
-
-                <section className="space-y-3">
-                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                    Apa yang terjadi setelah ini
-                  </p>
-                  <ul className="list-disc space-y-2 pl-5 text-sm text-slate-700 dark:text-slate-300">
-                    <li>
-                      Status akan berubah menjadi{" "}
-                      <strong>Menunggu Upload Dokumen</strong>.
-                    </li>
-                    <li>
-                      Anda akan diminta untuk mengunggah dokumen penawaran yang
-                      sudah ditandatangani.
-                    </li>
-                    <li>
-                      HRD akan memverifikasi dokumen setelah upload selesai.
-                    </li>
-                    <li>
-                      Proses baru selesai setelah dokumen diverifikasi oleh HRD.
-                    </li>
-                  </ul>
-                </section>
-              </div>
-              <DialogFooter className="border-t px-6 py-4 sm:px-8 bg-background">
-                <Button
-                  variant="secondary"
-                  type="button"
-                  onClick={() => setIsAcceptConfirmOpen(false)}
-                  disabled={isDeciding}
-                >
-                  Tinjau Kembali
-                </Button>
-                <Button
-                  type="button"
-                  onClick={async () => {
-                    setIsAcceptConfirmOpen(false);
-                    await handleDecision("accepted");
-                  }}
-                  disabled={isDeciding}
-                >
-                  {isDeciding ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : null}
-                  Ya, Saya Setuju &amp; Lanjutkan
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          <Dialog
-            open={isRejectDialogOpen}
-            onOpenChange={setIsRejectDialogOpen}
-          >
-            <DialogContent className="w-full max-w-5xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Tolak Penawaran</DialogTitle>
-                <DialogDescription>
-                  Pilih satu alasan utama untuk penolakan, lalu jelaskan
-                  pertimbangan Anda secara profesional agar tim HR dapat
-                  memahami keputusan ini.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-8 p-6 sm:p-8">
-                <div className="rounded-3xl border border-slate-700/80 bg-slate-950/90 p-6 shadow-xl shadow-slate-950/40">
-                  <div className="flex flex-col gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-100">
-                        Alasan / Pertimbangan Penolakan
-                      </p>
-                      <p className="mt-2 text-sm leading-6 text-slate-400">
-                        Pilih satu alasan utama dan lengkapi dengan penjelasan
-                        profesional sesuai pilihan Anda.
-                      </p>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
+                ) : countdownParts ? (
+                  <>
+                    <div className="flex items-center gap-3 mb-2">
                       {[
-                        "Kompensasi dan paket belum sesuai",
-                        "Lokasi atau model kerja tidak cocok",
-                        "Kesempatan lain lebih sesuai dengan rencana saya",
-                        "Jadwal mulai tidak selaras dengan situasi saya",
-                        "Ruang lingkup peran tidak sejalan dengan keahlian saya",
-                        "Kesesuaian peran belum sesuai dengan harapan",
-                        "Benefit dan fasilitas belum memenuhi kebutuhan",
-                        "Saya membutuhkan pertimbangan pribadi lebih lanjut",
-                        "Perubahan rencana pribadi",
-                        "Alasan lain",
-                      ].map((option) => (
-                        <button
-                          type="button"
-                          key={option}
-                          onClick={() => setRejectReason(option)}
-                          className={cn(
-                            "text-left rounded-3xl border px-5 py-4 transition duration-200 focus:outline-none focus:ring-2 focus:ring-slate-500/50",
-                            rejectReason === option
-                              ? "border-slate-400/80 bg-slate-900/80 shadow-[0_15px_35px_-25px_rgba(15,23,42,0.85)]"
-                              : "border-slate-700/80 bg-slate-950/80 hover:border-slate-500/70 hover:bg-slate-900/80",
-                          )}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="text-sm font-semibold text-slate-100">
-                              {option}
-                            </p>
-                            {rejectReason === option ? (
-                              <span className="rounded-full border border-slate-400/50 bg-slate-800/90 px-2 py-1 text-[11px] uppercase tracking-[0.24em] text-slate-100">
-                                Dipilih
-                              </span>
-                            ) : null}
-                          </div>
-                        </button>
+                        { v: countdownParts.days, label: "Hari" },
+                        { v: countdownParts.hours, label: "Jam" },
+                        { v: countdownParts.minutes, label: "Menit" },
+                        { v: countdownParts.seconds, label: "Detik" },
+                      ].map(({ v, label }) => (
+                        <div key={label} className="flex flex-col items-center">
+                          <span className="text-2xl font-bold tabular-nums text-slate-800 dark:text-slate-100">
+                            {String(v).padStart(2, "0")}
+                          </span>
+                          <span className="text-[10px] uppercase tracking-wider text-slate-400">{label}</span>
+                        </div>
                       ))}
                     </div>
-                  </div>
-                  <p className="mt-4 text-xs text-slate-400">
-                    Masukan Anda membantu tim HR memahami pertimbangan kandidat
-                    dengan lebih baik.
-                  </p>
-                </div>
-
-                {rejectReason ? (
-                  <div className="rounded-3xl border border-slate-700/80 bg-slate-950/90 p-5">
-                    <label className="text-sm font-semibold text-slate-100">
-                      Penjelasan Wajib
-                    </label>
-                    <p className="mt-2 text-sm text-slate-400">
-                      {rejectReason === "Kompensasi dan paket belum sesuai" ||
-                      rejectReason ===
-                        "Benefit dan fasilitas belum memenuhi kebutuhan"
-                        ? "Jelaskan bagian kompensasi atau benefit yang menurut Anda belum sesuai, serta faktor lain yang memengaruhi keputusan Anda."
-                        : "Jelaskan secara profesional alasan utama Anda memilih penolakan ini."}
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Anda memiliki waktu sampai{" "}
+                      <strong>{deadlineDateLabel}</strong> pukul{" "}
+                      <strong>{deadlineTimeLabel} WIB</strong> untuk mengunggah
+                      dokumen penerimaan posisi yang telah ditandatangani.
                     </p>
-                    <Textarea
-                      value={customRejectReason}
-                      onChange={(event) =>
-                        setCustomRejectReason(event.target.value)
-                      }
-                      placeholder={
-                        rejectReason === "Kompensasi dan paket belum sesuai"
-                          ? "Misalnya: gaji yang diharapkan, benefit tambahan, atau paket kompensasi ideal"
-                          : rejectReason ===
-                              "Benefit dan fasilitas belum memenuhi kebutuhan"
-                            ? "Misalnya: fasilitas yang dibutuhkan atau benefit yang menurut Anda kurang"
-                            : "Jelaskan pertimbangan utama Anda secara profesional"
-                      }
-                      rows={5}
-                      className="mt-3 bg-slate-950/90 text-slate-100 placeholder:text-slate-600"
-                    />
-                    <p className="mt-2 text-xs text-slate-500">
-                      Mohon jelaskan pertimbangan Anda secara profesional agar
-                      tim HR dapat memahami keputusan Anda.
-                    </p>
-                  </div>
+                  </>
                 ) : null}
+              </CardContent>
+            </Card>
+          )}
 
-                <div className="rounded-3xl border border-slate-700/80 bg-slate-950/90 p-5">
-                  <label className="text-sm font-semibold text-slate-100">
-                    Catatan Tambahan (opsional)
-                  </label>
-                  <p className="mt-2 text-sm text-slate-400">
-                    Jika ada detail lain yang perlu disampaikan, tuliskan di
-                    sini.
-                  </p>
-                  <Textarea
-                    value={rejectionNotes}
-                    onChange={(event) => setRejectionNotes(event.target.value)}
-                    placeholder="Tambahkan catatan singkat kepada HRD"
-                    rows={4}
-                    className="mt-3 bg-slate-950/90 text-slate-100 placeholder:text-slate-600"
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button
-                  variant="secondary"
-                  type="button"
-                  onClick={() => setIsRejectDialogOpen(false)}
-                  disabled={isDeciding}
-                >
-                  Batal
-                </Button>
-                <Button
-                  type="button"
-                  onClick={() => {
-                    const finalReason =
-                      rejectReason === "Alasan lain"
-                        ? customRejectReason.trim() || rejectReason
-                        : rejectReason;
-                    handleDecision(
-                      "rejected",
-                      `${finalReason}${rejectionNotes.trim() ? `: ${rejectionNotes.trim()}` : ""}`,
-                    );
-                  }}
-                  disabled={
-                    isDeciding ||
-                    !rejectReason ||
-                    customRejectReason.trim().length === 0
-                  }
-                >
-                  {isDeciding ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : null}
-                  Konfirmasi Tolak
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          <Dialog
-            open={isNegotiationDialogOpen}
-            onOpenChange={setIsNegotiationDialogOpen}
-          >
-            <DialogContent className="w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 text-slate-100 shadow-2xl">
-              <DialogHeader className="px-6 pt-6">
-                <DialogTitle className="text-3xl">
-                  Ajukan Diskusi Penawaran
-                </DialogTitle>
-                <DialogDescription className="mt-2 text-base leading-7 text-slate-400">
-                  Ajukan permintaan dengan konteks yang jelas agar HRD dapat
-                  memahami kebutuhan Anda dan menyiapkan respons yang tepat.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
-                <div className="rounded-3xl border border-slate-800 bg-slate-900/90 p-5 text-sm text-slate-300">
-                  <p className="font-semibold text-slate-100">Fokus diskusi</p>
-                  <p className="mt-2 text-slate-400">
-                    Pilih area yang ingin Anda bahas agar HRD dapat merespons
-                    dengan cepat dan relevan.
-                  </p>
-                  <ul className="mt-4 list-disc space-y-2 pl-5 text-slate-300">
-                    <li>Tanggal mulai</li>
-                    <li>Sistem kerja dan jadwal kerja</li>
-                    <li>Lokasi kerja / penempatan</li>
-                    <li>Durasi kontrak</li>
-                    <li>Benefit / fasilitas</li>
-                    <li>Lingkup peran</li>
-                    <li>Lainnya</li>
-                  </ul>
-                </div>
-
-                <div className="rounded-3xl border border-slate-800 bg-slate-900/95 p-5">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-100">
-                        Ringkas Perbandingan
-                      </p>
-                      <p className="mt-2 text-sm text-slate-400">
-                        Bandingkan penawaran saat ini dengan permintaan Anda
-                        untuk area yang dipilih sebelum mengirim permintaan.
-                      </p>
-                    </div>
-                    <span className="inline-flex rounded-full border border-slate-700 bg-slate-950/80 px-3 py-1 text-xs uppercase tracking-[0.24em] text-slate-400">
-                      {negotiationAreas.length} area dipilih
-                    </span>
-                  </div>
-                  <div className="mt-5 grid gap-4">
-                    {negotiationAreas.length === 0 ? (
-                      <div className="rounded-3xl border border-slate-800 bg-slate-950/90 p-4 text-sm text-slate-400">
-                        Pilih area diskusi terlebih dahulu untuk melihat
-                        pembanding isi penawaran saat ini dan permintaan Anda.
-                      </div>
-                    ) : (
-                      negotiationAreas.map((area) => {
-                        const label =
-                          area === "tanggal_mulai"
-                            ? "Tanggal Mulai"
-                            : area === "sistem_kerja"
-                              ? "Sistem Kerja"
-                              : area === "lokasi"
-                                ? "Lokasi Kerja / Penempatan"
-                                : area === "durasi_kontrak"
-                                  ? "Durasi Kontrak"
-                                  : area === "benefit"
-                                    ? "Benefit / Fasilitas"
-                                    : area === "peran"
-                                      ? "Lingkup Peran"
-                                      : "Lainnya";
-                        const currentValue =
-                          area === "tanggal_mulai"
-                            ? offerStartDate
-                              ? format(offerStartDate, "dd MMMM yyyy", {
-                                  locale: id,
-                                })
-                              : "-"
-                            : area === "sistem_kerja"
-                              ? offerWorkModel
-                              : area === "lokasi"
-                                ? offerJobLocation
-                                : area === "durasi_kontrak"
-                                  ? `${offerContractDuration} bulan`
-                                  : area === "benefit"
-                                    ? offerBenefits
-                                    : area === "peran"
-                                      ? offerRoleScope
-                                      : offerOtherNotes;
-                        const requestedValue =
-                          area === "tanggal_mulai"
-                            ? requestedStartDateLabel
-                            : area === "sistem_kerja"
-                              ? requestedWorkModelLabel
-                              : area === "lokasi"
-                                ? requestedLocationLabel
-                                : area === "durasi_kontrak"
-                                  ? requestedContractDurationLabel
-                                  : area === "benefit"
-                                    ? requestedBenefitLabel
-                                    : area === "peran"
-                                      ? requestedScopeLabel
-                                      : requestedOtherLabel;
-                        return (
-                          <div
-                            key={area}
-                            className="grid gap-4 lg:grid-cols-[1fr_1fr]"
-                          >
-                            <div className="rounded-3xl border border-slate-800 bg-slate-950/90 p-4">
-                              <p className="text-sm font-semibold text-slate-100">
-                                {label}
-                              </p>
-                              <p className="mt-2 text-xs uppercase tracking-[0.24em] text-slate-500">
-                                Saat ini
-                              </p>
-                              <p className="mt-3 min-h-[52px] text-sm font-semibold text-white">
-                                {currentValue}
-                              </p>
-                            </div>
-                            <div className="rounded-3xl border border-slate-800 bg-slate-950/90 p-4">
-                              <p className="text-sm font-semibold text-slate-100">
-                                Permintaan Anda
-                              </p>
-                              <p className="mt-2 text-xs uppercase tracking-[0.24em] text-slate-500">
-                                Isi sesuai kebutuhan Anda
-                              </p>
-                              <p className="mt-3 min-h-[52px] text-sm font-semibold text-white">
-                                {requestedValue}
-                              </p>
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-100">
-                      Area yang ingin didiskusikan
-                    </p>
-                    <p className="text-sm text-slate-400 mt-1">
-                      Pilih area yang paling penting bagi kebutuhan kerja Anda.
-                    </p>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {[
-                      { id: "tanggal_mulai", label: "Tanggal Mulai" },
-                      { id: "sistem_kerja", label: "Sistem Kerja" },
-                      { id: "lokasi", label: "Lokasi Kerja / Penempatan" },
-                      { id: "durasi_kontrak", label: "Durasi Kontrak" },
-                      { id: "benefit", label: "Benefit / Fasilitas" },
-                      { id: "peran", label: "Lingkup Peran" },
-                      { id: "lainnya", label: "Lainnya" },
-                    ].map((area) => (
-                      <label
-                        key={area.id}
-                        htmlFor={`area-${area.id}`}
-                        className="flex cursor-pointer items-center gap-3 rounded-3xl border border-slate-800 bg-slate-900/90 px-4 py-3 text-sm transition hover:border-slate-700"
-                      >
-                        <input
-                          type="checkbox"
-                          id={`area-${area.id}`}
-                          checked={negotiationAreas.includes(area.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setNegotiationAreas([
-                                ...negotiationAreas,
-                                area.id,
-                              ]);
-                            } else {
-                              setNegotiationAreas(
-                                negotiationAreas.filter((a) => a !== area.id),
-                              );
-                            }
-                          }}
-                          className="h-4 w-4 accent-slate-400 text-slate-100"
-                        />
-                        <span className="text-slate-100">{area.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-5">
-                  {negotiationAreas.includes("tanggal_mulai") && (
-                    <div className="space-y-3">
-                      <label className="block text-sm font-semibold text-slate-100">
-                        Usulan Tanggal Mulai
-                      </label>
-                      <Input
-                        type="date"
-                        value={negotiationStartDate}
-                        onChange={(e) =>
-                          setNegotiationStartDate(e.target.value)
-                        }
-                        className="bg-slate-950 border-slate-800 text-slate-100"
-                      />
-                    </div>
-                  )}
-
-                  {negotiationAreas.includes("sistem_kerja") && (
-                    <div className="space-y-4 rounded-3xl border border-slate-800 bg-slate-900/90 p-4">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-100">
-                          Sistem Kerja
-                        </p>
-                        <p className="text-sm text-slate-400 mt-1">
-                          Sebutkan model kerja, hari kerja, jam masuk, dan
-                          lokasi masuk / penempatan jika perlu.
-                        </p>
-                      </div>
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div className="space-y-2">
-                          <label className="block text-sm font-semibold text-slate-100">
-                            Model Kerja
-                          </label>
-                          <select
-                            className="w-full rounded-2xl border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-slate-600"
-                            value={negotiationWorkModel}
-                            onChange={(e) =>
-                              setNegotiationWorkModel(e.target.value)
-                            }
-                          >
-                            <option value="" className="text-slate-500">
-                              Pilih sistem kerja
-                            </option>
-                            <option value="Onsite">Onsite</option>
-                            <option value="Hybrid">Hybrid</option>
-                            <option value="Remote">Remote</option>
-                          </select>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="block text-sm font-semibold text-slate-100">
-                            Hari Kerja
-                          </label>
-                          <Input
-                            placeholder="Contoh: Senin - Jumat"
-                            value={negotiationWorkDays}
-                            onChange={(e) =>
-                              setNegotiationWorkDays(e.target.value)
-                            }
-                            className="bg-slate-950 border-slate-800 text-slate-100"
-                          />
-                        </div>
-                      </div>
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div className="space-y-2">
-                          <label className="block text-sm font-semibold text-slate-100">
-                            Jam Kerja
-                          </label>
-                          <Input
-                            placeholder="Contoh: 09:00 - 18:00"
-                            value={negotiationWorkTime}
-                            onChange={(e) =>
-                              setNegotiationWorkTime(e.target.value)
-                            }
-                            className="bg-slate-950 border-slate-800 text-slate-100"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="block text-sm font-semibold text-slate-100">
-                            Lokasi Masuk / Penempatan
-                          </label>
-                          <Input
-                            placeholder="Contoh: Kantor pusat / remote sepenuhnya"
-                            value={negotiationEntryLocation}
-                            onChange={(e) =>
-                              setNegotiationEntryLocation(e.target.value)
-                            }
-                            className="bg-slate-950 border-slate-800 text-slate-100"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {negotiationAreas.includes("lokasi") && (
-                    <div className="space-y-3">
-                      <label className="block text-sm font-semibold text-slate-100">
-                        Lokasi Kerja / Penempatan
-                      </label>
-                      <Input
-                        placeholder="Contoh: Jakarta Selatan / Remote"
-                        value={negotiationLocation}
-                        onChange={(e) => setNegotiationLocation(e.target.value)}
-                        className="bg-slate-950 border-slate-800 text-slate-100"
-                      />
-                    </div>
-                  )}
-
-                  {negotiationAreas.includes("durasi_kontrak") && (
-                    <div className="space-y-3">
-                      <label className="block text-sm font-semibold text-slate-100">
-                        Durasi Kontrak (bulan)
-                      </label>
-                      <Input
-                        type="number"
-                        min={1}
-                        placeholder="Contoh: 12"
-                        value={negotiationContractDuration || ""}
-                        onChange={(e) =>
-                          setNegotiationContractDuration(
-                            e.target.value ? parseInt(e.target.value) : null,
-                          )
-                        }
-                        className="bg-slate-950 border-slate-800 text-slate-100"
-                      />
-                    </div>
-                  )}
-
-                  {negotiationAreas.includes("benefit") && (
-                    <div className="space-y-3">
-                      <label className="block text-sm font-semibold text-slate-100">
-                        Benefit / Fasilitas
-                      </label>
-                      <Textarea
-                        placeholder="Jelaskan benefit atau fasilitas yang penting bagi Anda"
-                        value={negotiationBenefitNotes}
-                        onChange={(e) =>
-                          setNegotiationBenefitNotes(e.target.value)
-                        }
-                        className="min-h-[120px] bg-slate-950 border-slate-800 text-slate-100"
-                      />
-                    </div>
-                  )}
-
-                  {negotiationAreas.includes("peran") && (
-                    <div className="space-y-3">
-                      <label className="block text-sm font-semibold text-slate-100">
-                        Lingkup Peran
-                      </label>
-                      <Textarea
-                        placeholder="Jelaskan penyesuaian tugas atau tanggung jawab yang Anda harapkan"
-                        value={negotiationScopeNotes}
-                        onChange={(e) =>
-                          setNegotiationScopeNotes(e.target.value)
-                        }
-                        className="min-h-[120px] bg-slate-950 border-slate-800 text-slate-100"
-                      />
-                    </div>
-                  )}
-
-                  {negotiationAreas.includes("lainnya") && (
-                    <div className="space-y-3">
-                      <label className="block text-sm font-semibold text-slate-100">
-                        Lainnya
-                      </label>
-                      <Textarea
-                        placeholder="Sebutkan hal lain yang ingin Anda diskusikan"
-                        value={negotiationOtherNotes}
-                        onChange={(e) =>
-                          setNegotiationOtherNotes(e.target.value)
-                        }
-                        className="min-h-[120px] bg-slate-950 border-slate-800 text-slate-100"
-                      />
-                    </div>
-                  )}
-
-                  <div className="space-y-3">
-                    <label className="block text-sm font-semibold text-slate-100">
-                      Alasan & Penjelasan Profesional (Wajib)
-                    </label>
-                    <Textarea
-                      placeholder="Jelaskan mengapa area ini penting bagi Anda dan bagaimana ini mendukung kesiapan kerja Anda"
-                      value={negotiationReason}
-                      onChange={(e) => setNegotiationReason(e.target.value)}
-                      className="min-h-[140px] bg-slate-950 border-slate-800 text-slate-100"
-                    />
-                  </div>
-                </div>
-              </div>
-              <DialogFooter className="border-t border-slate-800 bg-slate-950/90 px-6 py-4">
-                <Button
-                  variant="ghost"
-                  onClick={() => setIsNegotiationDialogOpen(false)}
-                  disabled={isDeciding}
-                >
-                  Batal
-                </Button>
-                <Button
-                  onClick={handleNegotiationSubmit}
-                  disabled={
-                    isDeciding ||
-                    negotiationAreas.length === 0 ||
-                    !negotiationReason.trim()
-                  }
-                  className="py-3"
-                >
-                  {isDeciding && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  )}
-                  Kirim Permintaan Diskusi
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </Card>
-      );
-    }
-
-    if (
-      application.offerStatus === "accepted" ||
-      application.offerStatus === "accepted_pending_document" ||
-      application.offerStatus === "document_uploaded"
-    ) {
-      const isDocumentUploaded = !!activeOffering?.signedDocumentUrl;
-      const showReturnToOfferButton =
-        application.offerStatus === "accepted_pending_document" &&
-        !isDocumentUploaded;
-      const documentStatus = activeOffering?.signedDocumentStatus;
-      const currentStatusLabel = isDocumentUploaded
-        ? documentStatus === "pending_verification"
-          ? "Menunggu Verifikasi HRD"
-          : documentStatus === "verified"
-            ? "Dokumen Sudah Diverifikasi"
-            : documentStatus === "rejected"
-              ? "Dokumen Ditolak, unggah ulang"
-              : "Dokumen telah diunggah"
-        : "Menunggu Upload Dokumen";
-      const statusDetails = isDocumentUploaded
-        ? documentStatus === "pending_verification"
-          ? "Dokumen Anda telah dikirim dan sedang diverifikasi oleh tim HRD. Tunggu konfirmasi selanjutnya."
-          : documentStatus === "verified"
-            ? "Dokumen Anda sudah diverifikasi. Proses penawaran telah selesai."
-            : documentStatus === "rejected"
-              ? "Dokumen sebelumnya tidak lolos verifikasi. Silakan unggah kembali setelah Anda memperbaiki tanda tangan atau isi dokumen."
-              : "Dokumen telah diunggah. Tim HRD akan segera memeriksa dokumen tersebut."
-        : "Dokumen penawaran belum diunggah. Silakan download, tanda tangani, lalu upload kembali ke portal.";
-
-      return (
-        <Card className="flex flex-col bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800">
-          <CardHeader>
-            <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4">
-              <div>
-                <CardTitle className="text-xl text-blue-800 dark:text-blue-200">
-                  {application.jobPosition}
-                </CardTitle>
-                <CardDescription className="flex items-center gap-2 pt-1 text-blue-700 dark:text-blue-300">
-                  <Building className="h-4 w-4" /> {application.brandName}
+          {/* 4. Dokumen Penawaran Resmi */}
+          {offerDocumentUrl && (
+            <Card className="border-0 shadow-sm">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Dokumen Penawaran Resmi</CardTitle>
+                <CardDescription className="text-xs">
+                  Buka Surat Penawaran Kerja untuk membaca detail penawaran secara lengkap.
                 </CardDescription>
-              </div>
-              <Badge className="w-fit bg-blue-600 hover:bg-blue-700">
-                {currentStatusLabel}
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="flex-grow space-y-4">
-            <div className="p-4 rounded-md border border-blue-500/20 bg-slate-950 text-blue-100">
-              <h3 className="font-bold text-lg mb-2 flex items-center gap-2 text-white">
-                <FileClock className="h-5 w-5 text-blue-300" /> Anda telah
-                menyetujui penawaran ini secara prinsip.
-              </h3>
-              <p className="text-sm text-slate-300">
-                Penerimaan ini belum final sampai dokumen penawaran
-                ditandatangani dan diunggah kembali ke portal. Setelah itu, tim
-                HRD akan memverifikasi dokumen Anda.
-              </p>
-            </div>
-            <div className="rounded-3xl border border-blue-500/20 bg-slate-900 p-5 shadow-sm space-y-5">
-              <div className="space-y-2">
-                <p className="text-sm font-semibold text-blue-300">
-                  Status Saat Ini
+              </CardHeader>
+              <CardContent className="pt-0 pb-4 space-y-2">
+                <Button variant="outline" size="sm" className="w-full" onClick={handlePreview}>
+                  <Eye className="h-3.5 w-3.5 mr-1.5" />
+                  Preview Surat Penawaran
+                </Button>
+                <p className="text-xs text-slate-400 dark:text-slate-500 text-center">
+                  Anda dapat mengunduh dokumen melalui tombol download yang tersedia pada tampilan preview PDF.
                 </p>
-                <p className="text-base font-semibold text-white">
-                  {currentStatusLabel}
-                </p>
-                <p className="text-sm text-slate-300">{statusDetails}</p>
-              </div>
-              <div className="rounded-2xl border border-blue-500/20 bg-slate-800 p-4 text-slate-300">
-                <p className="text-sm font-semibold text-blue-300">
-                  Langkah Selanjutnya
-                </p>
-                <ul className="mt-3 space-y-3 text-sm text-slate-300">
-                  <li className="flex items-start gap-2">
-                    <Check className="mt-1 h-4 w-4 text-emerald-500" />
-                    <span>
-                      <strong>Penawaran Disetujui.</strong> Ini adalah
-                      persetujuan awal secara prinsip.
-                    </span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-700 text-slate-100">
-                      2
-                    </span>
-                    <span>
-                      Upload dokumen penawaran yang sudah Anda tanda tangani.
-                      (Sebelumnya download dan tanda tangan dokumen.)
-                    </span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-700 text-slate-100">
-                      3
-                    </span>
-                    <span>Verifikasi HRD setelah dokumen diunggah.</span>
-                  </li>
-                </ul>
-              </div>
-              <div className="grid gap-3">
-                <label className="grid gap-2 text-sm">
-                  <span className="font-medium text-white">
-                    File Dokumen Penawaran
-                  </span>
-                  <input
-                    type="file"
-                    accept="application/pdf,image/*"
-                    onChange={(event) => {
-                      setUploadError(null);
-                      setSignedFile(event.target.files?.[0] || null);
-                    }}
-                    disabled={isUploading}
-                    className="file:border-0 file:bg-blue-600 file:text-white file:px-4 file:py-2 file:rounded-md file:font-medium file:hover:bg-blue-700"
-                  />
-                </label>
-                {uploadError ? (
-                  <p className="text-sm text-red-500">{uploadError}</p>
-                ) : null}
-                {isUploading ? (
-                  <div className="space-y-2">
-                    <Progress value={uploadProgress} className="h-2" />
-                    <p className="text-sm text-slate-600 dark:text-slate-400">
-                      Mengunggah {uploadProgress}%
-                    </p>
-                  </div>
-                ) : null}
-                {isDocumentUploaded && activeOffering?.signedDocumentName ? (
-                  <div className="rounded-2xl border border-blue-500/20 bg-slate-800 p-4 text-sm text-slate-300">
-                    <p className="font-semibold text-white">
-                      Dokumen tersimpan:
-                    </p>
-                    <p>{activeOffering.signedDocumentName}</p>
-                  </div>
-                ) : null}
-                <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 5. Informasi Offering */}
+          {infoItems.length > 0 && (
+            <Card className="border-0 shadow-sm">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Informasi Offering</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0 pb-4">
+                <InfoGrid />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 6. Aksi Kandidat */}
+          <Card className="border-0 shadow-sm">
+            <CardContent className="pt-4 pb-4 space-y-3">
+              {hasExpired ? (
+                <div className="rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-4 text-sm text-red-700 dark:text-red-300">
+                  Batas waktu konfirmasi telah berakhir. Hubungi Tim Human Capital
+                  {hcContact ? ` melalui ${hcContact}` : ""} untuk informasi lebih lanjut.
+                </div>
+              ) : (
+                <>
                   <Button
                     type="button"
-                    onClick={handleSignedDocumentUpload}
-                    disabled={isUploading || !signedFile}
-                    className="bg-emerald-600 hover:bg-emerald-500"
+                    size="lg"
+                    className="w-full"
+                    onClick={async () => {
+                      if (!firebaseUser || !application.id) return;
+                      try {
+                        const appRef = doc(firestore, "applications", application.id);
+                        await updateDocumentNonBlocking(appRef, {
+                          offerStatus: "accepted_pending_document",
+                          candidateVisibleStatus: "offering_document_upload",
+                          candidateOfferDecisionAt: serverTimestamp(),
+                          updatedAt: serverTimestamp(),
+                        });
+                        toast({ title: "Penawaran Diterima", description: "Silakan unggah dokumen penerimaan yang telah ditandatangani." });
+                      } catch (e: any) {
+                        toast({ variant: "destructive", title: "Gagal", description: e.message });
+                      }
+                    }}
                   >
-                    {isUploading ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : null}
-                    {isDocumentUploaded
-                      ? "Unggah Ulang Dokumen"
-                      : "Kirim Dokumen"}
+                    <CheckCircle2 className="h-4 w-4 mr-2" />
+                    Saya Menerima Penawaran
                   </Button>
-                  {showReturnToOfferButton ? (
-                    <Button
-                      variant="secondary"
-                      type="button"
-                      onClick={handleReturnToOfferReview}
-                      disabled={isDeciding || isUploading}
-                      className="border border-slate-700 bg-slate-950/70 text-slate-100 hover:bg-slate-900"
-                    >
-                      Kembali ke Penawaran
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+                  <p className="text-xs text-center text-slate-400 leading-relaxed px-2">
+                    Dengan mengklik tombol di atas, Anda menyatakan telah membaca
+                    dan menyetujui Surat Penawaran Kerja yang diberikan oleh{" "}
+                    <strong>{brandName}</strong>. Langkah selanjutnya: unggah
+                    dokumen penerimaan posisi yang telah ditandatangani.
+                  </p>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+        </div>
       );
     }
 
-    return (
-      <Card className="p-8 text-center border-dashed">
-        <CardContent className="space-y-4 pt-6">
-          <div className="mx-auto w-12 h-12 rounded-full bg-muted flex items-center justify-center">
-            <FileClock className="text-muted-foreground h-6 w-6" />
-          </div>
-          <div className="space-y-2">
-            <CardTitle className="text-lg">Penawaran Kerja</CardTitle>
-            <CardDescription>
-              Saat ini belum ada penawaran kerja aktif.
-            </CardDescription>
-          </div>
-        </CardContent>
-      </Card>
-    );
+    return renderMissingOfferDetails();
   }
 
   if (isHired) {
@@ -2319,19 +1569,16 @@ function ApplicationCard({
                   <CheckCircle2 className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
                 </div>
                 <p className="font-bold text-indigo-900 dark:text-indigo-100 text-base">
-                  Wawancara Telah Selesai
+                  Evaluasi Setelah Wawancara
                 </p>
               </div>
               <Badge className="bg-indigo-600 hover:bg-indigo-600 text-white text-xs font-semibold px-3 py-1">
-                Menunggu Keputusan Akhir
+                Dalam Evaluasi
               </Badge>
             </div>
             <div className="px-5 py-4">
               <p className="text-sm text-indigo-800 dark:text-indigo-300 leading-relaxed">
-                Terima kasih, Anda telah menyelesaikan tahap wawancara. Saat ini tim rekrutmen
-                sedang melakukan peninjauan akhir terhadap hasil wawancara Anda. Seluruh
-                pembaruan status seleksi akan ditampilkan melalui portal ini. Silakan pantau
-                halaman ini secara berkala.
+                Terima kasih telah mengikuti proses wawancara. Saat ini hasil wawancara Anda sedang dalam proses evaluasi oleh tim rekrutmen. Silakan pantau halaman ini secara berkala.
               </p>
             </div>
           </div>
@@ -2347,7 +1594,7 @@ function ApplicationCard({
               </div>
               <div className="space-y-1">
                 <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                  Status saat ini: Menunggu hasil evaluasi akhir.
+                  Status saat ini: Evaluasi Setelah Wawancara.
                 </p>
                 <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
                   Seluruh informasi lanjutan akan ditampilkan melalui portal ini. Anda tidak perlu
@@ -2366,7 +1613,7 @@ function ApplicationCard({
       const interviewEnd = scheduledInterview.endAt.toDate();
       const twoHoursInMs = 2 * 60 * 60 * 1000;
       const isActuallyCompleted =
-        (application.postInterviewEvaluation?.submissions ?? 0) > 0 ||
+        isPostInterviewEvaluationState ||
         now.getTime() > interviewEnd.getTime() + twoHoursInMs;
 
       if (isActuallyCompleted) {
@@ -2379,19 +1626,16 @@ function ApplicationCard({
                     <CheckCircle2 className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
                   </div>
                   <p className="font-bold text-indigo-900 dark:text-indigo-100 text-base">
-                    Wawancara Telah Selesai
+                    Evaluasi Setelah Wawancara
                   </p>
                 </div>
                 <Badge className="bg-indigo-600 hover:bg-indigo-600 text-white text-xs font-semibold px-3 py-1">
-                  Menunggu Keputusan Akhir
+                  Dalam Evaluasi
                 </Badge>
               </div>
               <div className="px-5 py-4">
                 <p className="text-sm text-indigo-800 dark:text-indigo-300 leading-relaxed">
-                  Terima kasih, Anda telah menyelesaikan tahap wawancara. Saat ini tim rekrutmen
-                  sedang melakukan peninjauan akhir terhadap hasil wawancara Anda. Seluruh
-                  pembaruan status seleksi akan ditampilkan melalui portal ini. Silakan pantau
-                  halaman ini secara berkala.
+                  Terima kasih telah mengikuti proses wawancara. Saat ini hasil wawancara Anda sedang dalam proses evaluasi oleh tim rekrutmen. Silakan pantau halaman ini secara berkala.
                 </p>
               </div>
             </div>
@@ -2403,7 +1647,7 @@ function ApplicationCard({
                 </div>
                 <div className="space-y-1">
                   <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                    Status saat ini: Menunggu hasil evaluasi akhir.
+                    Status saat ini: Evaluasi Setelah Wawancara.
                   </p>
                   <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
                     Seluruh informasi lanjutan akan ditampilkan melalui portal ini. Anda tidak perlu

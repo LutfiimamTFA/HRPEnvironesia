@@ -68,6 +68,10 @@ export type UserProfile = {
   photoUrl?: string;
   photoPath?: string;
   inviteBatchId?: string;
+  inviteCode?: string;
+  registeredAt?: Timestamp | { seconds: number; nanoseconds: number };
+  source?: string;
+  contractType?: string;
 
   // Division Manager fields
   isDivisionManager?: boolean;
@@ -741,16 +745,23 @@ export type NavigationSetting = {
   visibleMenuItems: string[];
 };
 
+export type InviteContractType = "Magang" | "Probation" | "Kontrak" | "Tetap";
+
 export type InviteBatch = {
   id?: string; // The unique batch code
   brandId: string;
   brandName: string;
-  employmentType: "karyawan" | "magang" | "training";
+  contractType: InviteContractType;
+  /** @deprecated use contractType */
+  employmentType?: string;
   totalSlots: number;
   claimedSlots: number;
+  isActive: boolean;
   createdBy: string; // UID of HRD/SuperAdmin
   createdAt: Timestamp;
   updatedAt: Timestamp;
+  expiresAt?: Timestamp | null;
+  notes?: string | null;
 };
 
 export type JobDeadlineExtension = {
@@ -998,6 +1009,9 @@ export type JobApplication = {
   offerViewedAt?: Timestamp | null;
   offerRejectionReason?: string | null;
   candidateOfferDecisionAt?: Timestamp | null;
+  acceptanceDocumentUrl?: string | null;
+  acceptanceDocumentName?: string | null;
+  acceptanceDocumentUploadedAt?: Timestamp | null;
   internalAccessEnabled?: boolean;
   finalOfferingUrl?: string | null;
   currentOfferingId?: string | null; // Single source of truth for current active offering
@@ -1070,6 +1084,35 @@ export type JobApplication = {
   interviewCompleted?: boolean;
   interviewCompletedAt?: Timestamp;
   interviewCompletionSource?: "manual" | "auto_time";
+
+  // --- Profile Snapshot (immutable copy captured at submit time) ---
+  // HRD reads this instead of the live profile so data stays stable during selection.
+  candidateProfileSnapshot?: {
+    fullName?: string;
+    email?: string;
+    phone?: string;
+    address?: string;
+    birthPlace?: string;
+    birthDate?: string;
+    gender?: string;
+    nik?: string;
+    religion?: string;
+    maritalStatus?: string;
+    education?: Education[];
+    workExperience?: WorkExperience[];
+    organizationExperience?: OrganizationalExperience[];
+    certifications?: Certification[];
+    skills?: string[];
+    languages?: string[];
+    portfolioUrl?: string;
+    cvUrl?: string;
+    cvFileId?: string;
+    ijazahUrl?: string;
+    ijazahFileId?: string;
+    selfDescription?: string;
+    nickname?: string;
+    snapshotAt?: Timestamp;
+  };
 };
 
 export type Offering = {
@@ -1079,6 +1122,7 @@ export type Offering = {
   candidateEmail: string;
   candidateUid?: string; // Critical for security rules
   documentUrl: string;
+  documentPath?: string;
   documentName?: string;
   documentType?: string;
   responseDeadline: Timestamp;
@@ -1095,10 +1139,13 @@ export type Offering = {
   offeringDetails: {
     salary?: string;
     startDate?: string;
-    contractDurationMonths?: string;
+    contractDurationMonths?: number | string | null; // stored as number; legacy data may be string
     firstDayTime?: string;
     firstDayLocation?: string;
-    hrContact?: string;
+    hrContact?: string; // legacy — use humanCapitalContactName + humanCapitalContactPhone
+    humanCapitalContact?: string; // legacy combined field — use humanCapitalContactName + humanCapitalContactPhone
+    humanCapitalContactName?: string;
+    humanCapitalContactPhone?: string;
   };
   additionalNotes?: string;
   sentAt?: Timestamp;
@@ -1189,6 +1236,7 @@ export type CandidateVisibleStatus =
   | "dalam_evaluasi"
   | "evaluasi_setelah_wawancara"   // post-interview neutral hold — shown regardless of internal decision
   | "lanjut_tahap_berikutnya"
+  | "offering"
   | "wawancara_dijadwalkan"
   | "penawaran_diterima"
   | "diterima"
@@ -1205,6 +1253,9 @@ export function getCandidateDisplayStatus(application: {
   candidateVisibleStatus?: CandidateVisibleStatus;
   internalAccessEnabled?: boolean;
   postInterviewDecision?: { status: string };
+  postInterviewEvaluation?: unknown;
+  interviewCompleted?: boolean;
+  interviewCompletedAt?: Timestamp;
   recruitmentInternalDecision?: { status: string };
 }): { text: string; color: string } {
   // Detect internal HRD rejections — must never surface to candidate.
@@ -1238,14 +1289,20 @@ export function getCandidateDisplayStatus(application: {
   if (application.status === "offered") {
     return { text: "Penawaran Kerja", color: "bg-blue-600" };
   }
-  // Interview stage — actual status always takes priority over candidateVisibleStatus
+  // Post-interview candidate-safe status wins over the raw interview status.
+  if (
+    application.candidateVisibleStatus === "evaluasi_setelah_wawancara" ||
+    !!application.postInterviewDecision ||
+    application.interviewCompleted === true ||
+    !!application.interviewCompletedAt ||
+    !!application.postInterviewEvaluation
+  ) {
+    return { text: "Dalam Evaluasi", color: "bg-indigo-600" };
+  }
   if (application.status === "interview") {
     return { text: "Tahap Wawancara", color: "bg-indigo-600" };
   }
   // Explicit candidateVisibleStatus set by HRD
-  if (application.candidateVisibleStatus === "evaluasi_setelah_wawancara") {
-    return { text: "Dalam Evaluasi", color: "bg-indigo-600" };
-  }
   if (application.candidateVisibleStatus === "lanjut_tahap_berikutnya") {
     return { text: "Lolos ke Tahap Selanjutnya", color: "bg-emerald-600" };
   }

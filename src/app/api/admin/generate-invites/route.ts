@@ -3,110 +3,96 @@ import admin from '@/lib/firebase/admin';
 import { Timestamp } from 'firebase-admin/firestore';
 import { z } from 'zod';
 import { generateUniqueCode } from '@/lib/utils';
-import { type InviteBatch } from '@/lib/types';
-import { firestore } from 'firebase-admin';
+import type { InviteBatch, InviteContractType } from '@/lib/types';
 
 export const runtime = 'nodejs';
 
-const inviteEmploymentTypes = ['karyawan', 'magang', 'training'] as const;
+const CONTRACT_TYPES: InviteContractType[] = ['Magang', 'Probation', 'Kontrak', 'Tetap'];
 
 const generateSchema = z.object({
-  brandId: z.string().min(1, 'Brand is required.'),
-  employmentType: z.enum(inviteEmploymentTypes),
-  quantity: z.coerce.number().int().min(1).max(100),
+  brandId: z.string().min(1, 'Brand wajib dipilih.'),
+  contractType: z.enum(['Magang', 'Probation', 'Kontrak', 'Tetap'] as const),
+  quantity: z.coerce.number().int().min(1).max(500),
+  expiresAt: z.string().datetime({ offset: true }).optional().nullable(),
+  notes: z.string().max(500).optional().nullable(),
 });
 
 async function verifyAdmin(req: NextRequest) {
-    const authorization = req.headers.get('Authorization');
-    if (!authorization?.startsWith('Bearer ')) {
-        return { error: 'Unauthorized: Missing token.', status: 401 };
+  const authorization = req.headers.get('Authorization');
+  if (!authorization?.startsWith('Bearer ')) {
+    return { error: 'Unauthorized: Missing token.', status: 401 };
+  }
+  const idToken = authorization.split('Bearer ')[1];
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const uid = decodedToken.uid;
+    // Check role collections (faster than user doc role field)
+    const [hrdSnap, adminSnap, superSnap, userDoc] = await Promise.all([
+      admin.firestore().collection('roles_hrd').doc(uid).get(),
+      admin.firestore().collection('roles_admin').doc(uid).get(),
+      admin.firestore().collection('roles_superadmin').doc(uid).get(),
+      admin.firestore().collection('users').doc(uid).get(),
+    ]);
+    const role = userDoc.data()?.role || '';
+    const isAuthorized = hrdSnap.exists || adminSnap.exists || superSnap.exists ||
+      ['super-admin', 'hrd', 'admin'].includes(role);
+    if (!isAuthorized) return { error: 'Forbidden.', status: 403 };
+    return { uid };
+  } catch (error: any) {
+    if (error.code === 'auth/id-token-expired') {
+      return { error: 'Sesi Anda telah berakhir, silakan muat ulang halaman dan coba lagi.', status: 401 };
     }
-    const idToken = authorization.split('Bearer ')[1];
-    try {
-        const decodedToken = await admin.auth().verifyIdToken(idToken);
-        const userDoc = await admin.firestore().collection('users').doc(decodedToken.uid).get();
-        if (!userDoc.exists || !['super-admin', 'hrd'].includes(userDoc.data()?.role)) {
-            return { error: 'Forbidden.', status: 403 };
-        }
-        return { uid: decodedToken.uid };
-    } catch (error: any) {
-        if (error.code === 'auth/id-token-expired') {
-            return { error: 'Sesi Anda telah berakhir, silakan muat ulang halaman dan coba lagi.', status: 401 };
-        }
-        return { error: `Verifikasi token gagal: ${error.message}`, status: 401 };
-    }
+    return { error: `Verifikasi token gagal: ${error.message}`, status: 401 };
+  }
 }
 
 export async function POST(req: NextRequest) {
   const authResult = await verifyAdmin(req);
-  if (authResult.error) {
-      return NextResponse.json({ error: authResult.error }, { status: authResult.status });
+  if ('error' in authResult) {
+    return NextResponse.json({ error: authResult.error }, { status: authResult.status });
   }
 
   try {
     const db = admin.firestore();
     const body = await req.json();
-    console.log("Generating invites for body:", body);
-    
     const parseResult = generateSchema.safeParse(body);
     if (!parseResult.success) {
-      return NextResponse.json({ 
-        error: 'Invalid request body.', 
-        details: parseResult.error.flatten() 
-      }, { status: 400 });
+      return NextResponse.json({ error: 'Data tidak valid.', details: parseResult.error.flatten() }, { status: 400 });
     }
-    
-    const { brandId, employmentType, quantity } = parseResult.data;
-    
+
+    const { brandId, contractType, quantity, expiresAt, notes } = parseResult.data;
+
     const brandDoc = await db.collection('brands').doc(brandId).get();
     if (!brandDoc.exists) {
-        return NextResponse.json({ error: `Brand ${brandId} not found.` }, { status: 404 });
+      return NextResponse.json({ error: `Brand tidak ditemukan.` }, { status: 404 });
     }
     const brandName = brandDoc.data()?.name || 'Unknown Brand';
-    
+
     const now = Timestamp.now();
     const batchId = generateUniqueCode(10);
-    const batchRef = db.collection('invite_batches').doc(batchId);
-    
-    const batchData: Omit<InviteBatch, 'id'> = {
-        brandId,
-        brandName,
-        employmentType,
-        totalSlots: quantity,
-        claimedSlots: 0,
-        createdBy: (authResult as any).uid,
-        createdAt: now as any,
-        updatedAt: now as any,
-    };
-    
-    console.log(`Writing batch ${batchId} to Firestore...`);
-    await batchRef.set(batchData);
 
-    const { createdAt, updatedAt, ...restOfData } = batchData;
+    const batchData: Omit<InviteBatch, 'id'> = {
+      brandId,
+      brandName,
+      contractType,
+      totalSlots: quantity,
+      claimedSlots: 0,
+      isActive: true,
+      createdBy: authResult.uid,
+      createdAt: now as any,
+      updatedAt: now as any,
+      expiresAt: expiresAt ? Timestamp.fromDate(new Date(expiresAt)) as any : null,
+      notes: notes || null,
+    };
+
+    await db.collection('invite_batches').doc(batchId).set(batchData);
 
     return NextResponse.json(
-        { 
-            message: 'Invite batch generated successfully.', 
-            id: batchId, 
-            ...restOfData,
-            createdAt: now.toDate().toISOString(),
-            updatedAt: now.toDate().toISOString()
-        },
-        { status: 201 }
+      { message: 'Batch undangan berhasil dibuat.', id: batchId, ...batchData, createdAt: now.toDate().toISOString(), updatedAt: now.toDate().toISOString() },
+      { status: 201 },
     );
   } catch (error: any) {
-    console.error("CRITICAL: Generate invites error:", error);
-    
-    let userFriendlyError = 'Terjadi kesalahan sistem saat mencoba membuat batch undangan.';
-    if (error.message?.includes('The default Firebase app does not exist') || error.message?.includes('projectId')) {
-        userFriendlyError = 'Konfigurasi Firebase Admin SDK belum lengkap atau tidak valid di .env.local.';
-    } else if (error.message?.includes('privateKey')) {
-        userFriendlyError = 'FIREBASE_PRIVATE_KEY tidak valid atau format penulisan (\\n) salah.';
-    }
-
-    return NextResponse.json({ 
-        error: userFriendlyError,
-        message: error.message
-    }, { status: 500 });
+    console.error('[generate-invites] Error:', error);
+    return NextResponse.json({ error: 'Terjadi kesalahan sistem saat membuat batch undangan.', message: error.message }, { status: 500 });
   }
 }

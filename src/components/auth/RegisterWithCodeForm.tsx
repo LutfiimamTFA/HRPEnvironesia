@@ -125,7 +125,7 @@ export function RegisterWithBatchForm() {
         <Card className="w-full max-w-md">
             <CardHeader>
                 <CardTitle>Registrasi Karyawan Baru</CardTitle>
-                <CardDescription>Anda diundang untuk bergabung sebagai {inviteState.data?.employmentType} di {inviteState.data?.brandName}.</CardDescription>
+                <CardDescription>Anda diundang untuk bergabung sebagai <strong>{inviteState.data?.contractType || inviteState.data?.employmentType}</strong> di {inviteState.data?.brandName}.</CardDescription>
             </CardHeader>
             <CardContent>
                  <Form {...form}>

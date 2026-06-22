@@ -35,7 +35,6 @@ import {
   Eye,
   X,
   Calendar,
-  DollarSign,
   Clock,
   MapPin,
   User,
@@ -51,6 +50,8 @@ import {
   collection,
   serverTimestamp,
   doc,
+  getDoc,
+  setDoc,
   writeBatch,
   updateDoc,
   deleteDoc,
@@ -58,15 +59,14 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import { uploadFile } from "@/lib/storage/storage-adapter";
-import { 
-  validateStorageFile, 
-  compressImage, 
-  handleStorageError 
+import {
+  validateStorageFile,
+  compressImage,
 } from "@/lib/storage-utils";
-import { useFirestore, useStorage } from "@/firebase";
-import { extractFileIdFromUrl, openSecureFile } from "@/lib/candidate-docs-utils";
+import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { useFirestore } from "@/firebase";
+import { openOfferingDocument, isGoogleDriveUrl } from "@/lib/offering-file-utils";
 import { useAuth } from "@/providers/auth-provider";
-import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { updateDocumentNonBlocking } from "@/firebase";
 
 import { format } from "date-fns";
@@ -106,18 +106,19 @@ const offerSchema = z.object({
       );
     }, "File harus berupa dokumen (PDF, Word, DOCX) atau gambar (JPG, PNG)"),
   responseDeadline: z.date({
-    required_error: "Batas waktu respons diperlukan",
+    required_error: "Batas konfirmasi kandidat diperlukan",
   }),
   responseDeadlineTime: z
     .string()
     .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Format waktu harus HH:mm"),
-  // Detail penawaran
-  salary: z.string().optional(),
+  // Informasi penawaran (tanpa gaji)
   startDate: z.string().optional(),
-  contractDurationMonths: z.string().optional(),
+  contractDurationMonths: z.coerce.number().int().min(1).max(60).optional(),
   firstDayTime: z.string().optional(),
   firstDayLocation: z.string().optional(),
-  hrContact: z.string().optional(),
+  humanCapitalContactName: z.string().optional(),
+  humanCapitalContactPhone: z.string().optional(),
+  saveContactAsDefault: z.boolean().optional(),
   additionalNotes: z.string().optional(),
 });
 
@@ -136,15 +137,6 @@ interface OfferEditorProps {
   currentOfferingStatus?: "draft" | "sent" | "viewed" | "accepted" | "rejected";
   offering?: Offering;
   allOfferings?: Offering[];
-}
-
-// Helper function to format numbers in Indonesian format (with period separators)
-function formatNumberIDR(value: string): string {
-  if (!value) return "";
-  // Remove all non-numeric characters
-  const numericValue = value.replace(/\D/g, "");
-  // Format with period separators (Indonesian thousands separator)
-  return numericValue.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 }
 
 function getCurrentTimeString(): string {
@@ -189,24 +181,42 @@ export function OfferEditor({
   const [isDragOver, setIsDragOver] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isUndoing, setIsUndoing] = useState(false);
+  const [defaultHcContactName, setDefaultHcContactName] = useState<string>("");
+  const [defaultHcContactPhone, setDefaultHcContactPhone] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const firestore = useFirestore();
   const { userProfile } = useAuth();
   const { toast } = useToast();
 
+  // Fetch default Human Capital contact from recruitment_settings/offering
+  useEffect(() => {
+    const settingsRef = doc(firestore, "recruitment_settings", "offering");
+    getDoc(settingsRef)
+      .then((snap) => {
+        if (snap.exists()) {
+          const d = snap.data();
+          if (d?.defaultHumanCapitalContactName) setDefaultHcContactName(d.defaultHumanCapitalContactName);
+          if (d?.defaultHumanCapitalContactPhone) setDefaultHcContactPhone(d.defaultHumanCapitalContactPhone);
+        }
+      })
+      .catch(() => {});
+  }, [firestore]);
+
   const form = useForm<OfferFormData>({
     resolver: zodResolver(offerSchema),
     defaultValues: {
-      responseDeadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
-      responseDeadlineTime: getCurrentTimeString(),
-      salary: "",
+      responseDeadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      responseDeadlineTime: "17:00",
       startDate: "",
-      contractDurationMonths: "",
-      firstDayTime: "",
+      contractDurationMonths: undefined,
+      firstDayTime: "08:00",
       firstDayLocation: "",
-      hrContact: "",
-      additionalNotes: "",
+      humanCapitalContactName: "",
+      humanCapitalContactPhone: "",
+      saveContactAsDefault: false,
+      additionalNotes:
+        "Apabila Saudara menyetujui penawaran ini, silakan membubuhkan tanda tangan pada Lembar Penerimaan Posisi, kemudian mengunggah kembali dokumen yang telah ditandatangani melalui portal ini sebelum batas waktu yang telah ditentukan.",
     },
   });
 
@@ -234,41 +244,67 @@ export function OfferEditor({
       documentFile: documentMetadata,
       responseDeadline: deadlineDate,
       responseDeadlineTime: deadlineTime,
-      salary: offering.offeringDetails?.salary ?? "",
       startDate: offering.offeringDetails?.startDate ?? "",
-      contractDurationMonths:
-        offering.offeringDetails?.contractDurationMonths ?? "",
+      contractDurationMonths: offering.offeringDetails?.contractDurationMonths
+        ? Number(offering.offeringDetails.contractDurationMonths) || undefined
+        : undefined,
       firstDayTime: offering.offeringDetails?.firstDayTime ?? "",
       firstDayLocation: offering.offeringDetails?.firstDayLocation ?? "",
-      hrContact: offering.offeringDetails?.hrContact ?? "",
-      additionalNotes: offering.additionalNotes ?? "",
+      humanCapitalContactName:
+        offering.offeringDetails?.humanCapitalContactName ||
+        defaultHcContactName ||
+        "",
+      humanCapitalContactPhone:
+        offering.offeringDetails?.humanCapitalContactPhone ||
+        // legacy single-field fallback: if old data had "Name - Phone", try to split
+        (offering.offeringDetails?.humanCapitalContact || offering.offeringDetails?.hrContact
+          ? (offering.offeringDetails?.humanCapitalContact || offering.offeringDetails?.hrContact || "").split(" - ").slice(1).join(" - ") || ""
+          : "") ||
+        defaultHcContactPhone ||
+        "",
+      saveContactAsDefault: false,
+      additionalNotes:
+        offering.additionalNotes ??
+        "Apabila Saudara menyetujui penawaran ini, silakan membubuhkan tanda tangan pada Lembar Penerimaan Posisi, kemudian mengunggah kembali dokumen yang telah ditandatangani melalui portal ini sebelum batas waktu yang telah ditentukan.",
     });
-  }, [offering, form]);
+  }, [offering, defaultHcContactName, defaultHcContactPhone, form]);
+
+  // When no offering exists and defaults load, pre-fill the fields
+  useEffect(() => {
+    if (!offering) {
+      if (defaultHcContactName && !form.getValues("humanCapitalContactName")) {
+        form.setValue("humanCapitalContactName", defaultHcContactName);
+      }
+      if (defaultHcContactPhone && !form.getValues("humanCapitalContactPhone")) {
+        form.setValue("humanCapitalContactPhone", defaultHcContactPhone);
+      }
+    }
+  }, [defaultHcContactName, defaultHcContactPhone, offering, form]);
+
+  // Always uploads to Firebase Storage so candidates can access without Google account.
+  const uploadOfferingToStorage = async (
+    file: File,
+  ): Promise<{ url: string; path: string; name: string; mimeType: string }> => {
+    const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const filePath = `offerings/${application.id}/${Date.now()}-${safeFileName}`;
+    const storage = getStorage();
+    const storageRef = ref(storage, filePath);
+    const task = uploadBytesResumable(storageRef, file, { contentType: file.type });
+    await new Promise<void>((resolve, reject) => {
+      task.on("state_changed", undefined, reject, resolve);
+    });
+    const url = await getDownloadURL(task.snapshot.ref);
+    return { url, path: filePath, name: file.name, mimeType: file.type };
+  };
 
   const uploadDocument = async (
     fileOrMetadata: File | z.infer<typeof fileMetadataSchema>,
-  ): Promise<string> => {
+  ): Promise<{ url: string; path: string; name: string; mimeType: string }> => {
     if (fileOrMetadata instanceof File) {
-      const validation = validateStorageFile(fileOrMetadata);
-      if (!validation.isValid) {
-        throw new Error(validation.message);
-      }
-      
-      const processedFile = await compressImage(fileOrMetadata);
-      const safeFileName = processedFile.name.replace(/[^a-zA-Z0-9.]/g, "_");
-      
-      const filePath = `offerings/${application.id}/${Date.now()}-${safeFileName}`;
-      
-      const result = await uploadFile(processedFile, filePath, userProfile?.uid || 'system', {
-        category: 'job_offering',
-        ownerUid: userProfile?.uid || 'system',
-        applicationId: application.id,
-        compress: false // Already compressed
-      });
-
-      return result.webViewLink || result.downloadUrl || "";
+      return uploadOfferingToStorage(fileOrMetadata);
     }
-    return fileOrMetadata.url;
+    // Legacy metadata object — url only, no path
+    return { url: fileOrMetadata.url, path: "", name: fileOrMetadata.name || "", mimeType: "" };
   };
 
   const handleFileSelect = (file: File | null) => {
@@ -349,17 +385,16 @@ export function OfferEditor({
   };
 
   const previewPDF = () => {
-    const url = selectedFile
-      ? URL.createObjectURL(selectedFile)
-      : filePreview?.url;
-
-    if (url) {
-      if (url.startsWith("blob:")) {
-        window.open(url, "_blank");
-      } else {
-        const fileId = extractFileIdFromUrl(url);
-        openSecureFile(fileId, filePreview?.name || "Offering.pdf");
-      }
+    if (selectedFile) {
+      window.open(URL.createObjectURL(selectedFile), "_blank");
+      return;
+    }
+    if (filePreview?.url) {
+      openOfferingDocument({
+        documentUrl: filePreview.url,
+        documentPath: (offering as any)?.documentPath,
+        documentName: filePreview.name,
+      }).catch((e) => toast({ variant: "destructive", title: "Gagal Membuka", description: e.message }));
     }
   };
 
@@ -368,7 +403,7 @@ export function OfferEditor({
 
     setIsUploading(true);
     try {
-      const documentUrl = await uploadDocument(data.documentFile);
+      const docResult = await uploadDocument(data.documentFile);
       const responseDeadline = combineDateAndTime(
         data.responseDeadline,
         data.responseDeadlineTime,
@@ -378,19 +413,21 @@ export function OfferEditor({
         applicationId: application.id!,
         candidateName,
         candidateEmail: application.candidateEmail,
-        documentUrl,
-        documentName: data.documentFile.name,
-        documentType: data.documentFile.type,
+        documentUrl: docResult.url,
+        documentPath: docResult.path,
+        documentName: data.documentFile instanceof File ? data.documentFile.name : (data.documentFile as any).name || "",
+        documentType: data.documentFile instanceof File ? data.documentFile.type : (data.documentFile as any).type || "",
         responseDeadline,
         status: "draft" as const,
         isActive: true, // Always active if it's the current draft being edited
         offeringDetails: {
-          salary: data.salary,
           startDate: data.startDate,
           contractDurationMonths: data.contractDurationMonths,
           firstDayTime: data.firstDayTime,
           firstDayLocation: data.firstDayLocation,
-          hrContact: data.hrContact,
+          humanCapitalContactName: data.humanCapitalContactName,
+          humanCapitalContactPhone: data.humanCapitalContactPhone,
+          humanCapitalContact: [data.humanCapitalContactName, data.humanCapitalContactPhone].filter(Boolean).join(" - "),
         },
         additionalNotes: data.additionalNotes,
         updatedAt: serverTimestamp(),
@@ -398,6 +435,17 @@ export function OfferEditor({
       };
 
       const batch = writeBatch(firestore);
+
+      // Save contact as default if requested
+      if (data.saveContactAsDefault && (data.humanCapitalContactName || data.humanCapitalContactPhone)) {
+        const settingsRef = doc(firestore, "recruitment_settings", "offering");
+        batch.set(settingsRef, {
+          defaultHumanCapitalContactName: data.humanCapitalContactName || "",
+          defaultHumanCapitalContactPhone: data.humanCapitalContactPhone || "",
+        }, { merge: true });
+        if (data.humanCapitalContactName) setDefaultHcContactName(data.humanCapitalContactName);
+        if (data.humanCapitalContactPhone) setDefaultHcContactPhone(data.humanCapitalContactPhone);
+      }
 
       // 1. Deactivate ALL other offerings for this application
       const otherOfferings =
@@ -617,7 +665,7 @@ export function OfferEditor({
 
     setIsUploading(true);
     try {
-      const documentUrl = await uploadDocument(data.documentFile);
+      const docResult = await uploadDocument(data.documentFile);
       const responseDeadline = combineDateAndTime(
         data.responseDeadline,
         data.responseDeadlineTime,
@@ -627,19 +675,21 @@ export function OfferEditor({
         applicationId: application.id!,
         candidateName,
         candidateEmail: application.candidateEmail,
-        documentUrl,
-        documentName: data.documentFile.name,
-        documentType: data.documentFile.type,
+        documentUrl: docResult.url,
+        documentPath: docResult.path,
+        documentName: data.documentFile instanceof File ? data.documentFile.name : (data.documentFile as any).name || "",
+        documentType: data.documentFile instanceof File ? data.documentFile.type : (data.documentFile as any).type || "",
         responseDeadline,
         status: "sent" as const,
         isActive: true,
         offeringDetails: {
-          salary: data.salary,
           startDate: data.startDate,
           contractDurationMonths: data.contractDurationMonths,
           firstDayTime: data.firstDayTime,
           firstDayLocation: data.firstDayLocation,
-          hrContact: data.hrContact,
+          humanCapitalContactName: data.humanCapitalContactName,
+          humanCapitalContactPhone: data.humanCapitalContactPhone,
+          humanCapitalContact: [data.humanCapitalContactName, data.humanCapitalContactPhone].filter(Boolean).join(" - "),
         },
         additionalNotes: data.additionalNotes,
         sentAt: serverTimestamp(),
@@ -654,6 +704,17 @@ export function OfferEditor({
       };
 
       const batch = writeBatch(firestore);
+
+      // Save contact as default if requested
+      if (data.saveContactAsDefault && (data.humanCapitalContactName || data.humanCapitalContactPhone)) {
+        const settingsRef = doc(firestore, "recruitment_settings", "offering");
+        batch.set(settingsRef, {
+          defaultHumanCapitalContactName: data.humanCapitalContactName || "",
+          defaultHumanCapitalContactPhone: data.humanCapitalContactPhone || "",
+        }, { merge: true });
+        if (data.humanCapitalContactName) setDefaultHcContactName(data.humanCapitalContactName);
+        if (data.humanCapitalContactPhone) setDefaultHcContactPhone(data.humanCapitalContactPhone);
+      }
 
       // 1. Deactivate ALL other offerings for this application
       const otherOfferings =
@@ -906,6 +967,11 @@ export function OfferEditor({
 
                         {selectedFile || filePreview ? (
                           <div className="space-y-3">
+                            {!selectedFile && filePreview?.url && isGoogleDriveUrl(filePreview.url) && (
+                              <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                                Dokumen masih menggunakan Google Drive link. Upload ulang dokumen ke portal agar kandidat dapat membuka file tanpa masalah akses akun.
+                              </div>
+                            )}
                             <div className="flex items-center justify-center gap-2 text-primary">
                               <FileText className="h-8 w-8" />
                               <span className="font-medium">PDF Selected</span>
@@ -975,243 +1041,282 @@ export function OfferEditor({
           </CardContent>
         </Card>
 
-        {/* Detail Penawaran Section */}
+        {/* Informasi Penawaran Section */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5" />
-              Detail Penawaran
+              <FileText className="h-5 w-5" />
+              Informasi Penawaran
             </CardTitle>
             <CardDescription>
-              Ringkasan singkat informasi utama penawaran. Detail lengkap
-              tersedia di dokumen penawaran.
+              Lengkapi informasi penawaran. Detail ini akan ditampilkan kepada
+              kandidat dan digunakan dalam template pesan otomatis.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Gaji yang Ditawarkan */}
-              <FormField
-                control={form.control}
-                name="salary"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="flex items-center gap-2">
-                      <DollarSign className="h-4 w-4" />
-                      Gaji yang Ditawarkan
-                    </FormLabel>
-                    <FormControl>
-                      <div className="flex items-center border rounded-md bg-background">
-                        <span className="px-3 py-2 text-sm font-medium text-muted-foreground">
-                          Rp
-                        </span>
-                        <Input
-                          placeholder="1.000.000"
-                          {...field}
-                          onChange={(e) => {
-                            const formatted = formatNumberIDR(e.target.value);
-                            field.onChange(formatted);
-                          }}
-                          className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+          <CardContent className="space-y-6">
+
+            {/* ── Sub-section 1: Batas Waktu Konfirmasi Offering ── */}
+            <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-950/20 p-4 space-y-3">
+              <div>
+                <p className="text-sm font-semibold text-orange-800 dark:text-orange-300 flex items-center gap-1.5">
+                  <Clock className="h-4 w-4" />
+                  Batas Waktu Konfirmasi Offering
+                </p>
+                <p className="text-xs text-orange-700/80 dark:text-orange-400/80 mt-0.5">
+                  Tanggal dan jam terakhir kandidat dapat mengunggah dokumen penerimaan posisi yang sudah ditandatangani.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-[2fr_1fr]">
+                <FormField
+                  control={form.control}
+                  name="responseDeadline"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs text-muted-foreground">Tanggal Batas Konfirmasi *</FormLabel>
+                      <FormControl>
+                        <GoogleDatePicker
+                          value={field.value}
+                          onChange={field.onChange}
+                          placeholder="contoh: 30 Juni 2026"
                         />
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="responseDeadlineTime"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs text-muted-foreground">Jam Batas Konfirmasi *</FormLabel>
+                      <FormControl>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="time"
+                            step="60"
+                            {...field}
+                            className="flex-1"
+                            placeholder="17:00"
+                          />
+                          <span className="text-sm text-muted-foreground shrink-0">WIB</span>
+                        </div>
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">contoh: 17:00 WIB</p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </div>
 
-              {/* Tanggal Mulai */}
-              <FormField
-                control={form.control}
-                name="startDate"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="flex items-center gap-2">
-                      <Calendar className="h-4 w-4" />
-                      Tanggal Mulai
-                    </FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            {/* ── Sub-section 2: Informasi Hari Pertama ── */}
+            <div className="rounded-lg border border-teal-200 dark:border-teal-800 bg-teal-50/40 dark:bg-teal-950/20 p-4 space-y-3">
+              <div>
+                <p className="text-sm font-semibold text-teal-800 dark:text-teal-300 flex items-center gap-1.5">
+                  <Calendar className="h-4 w-4" />
+                  Informasi Hari Pertama
+                </p>
+                <p className="text-xs text-teal-700/80 dark:text-teal-400/80 mt-0.5">
+                  Jadwal dan lokasi kandidat pada hari pertama kerja/program. Berbeda dari batas konfirmasi offering di atas.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Tanggal Mulai Kerja / Program */}
+                <FormField
+                  control={form.control}
+                  name="startDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4" />
+                        Tanggal Mulai Kerja / Program
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          type="date"
+                          placeholder="contoh: 1 Juli 2026"
+                          {...field}
+                        />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">
+                        Tanggal rencana kandidat mulai bekerja, magang, atau mengikuti program.
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              {/* Durasi Kontrak (bulan) */}
-              <FormField
-                control={form.control}
-                name="contractDurationMonths"
-                render={({ field }) => {
-                  const startDate = form.watch("startDate");
-                  const duration = parseInt(field.value || "0");
-                  let endDateText = "";
-
-                  const startDateStr =
-                    typeof startDate === "string" ? startDate : "";
-
-                  if (
-                    startDateStr &&
-                    startDateStr.includes("-") &&
-                    duration > 0
-                  ) {
-                    try {
-                      // Parse ISO date string (YYYY-MM-DD) to avoid timezone issues
-                      const [year, month, day] = startDateStr
-                        .split("-")
-                        .map(Number);
-                      const start = new Date(year, month - 1, day);
-
-                      // Calculate end date by adding months
-                      const end = new Date(
-                        start.getFullYear(),
-                        start.getMonth() + duration,
-                        start.getDate(),
-                      );
-
-                      // Validate the date is valid
-                      if (!isNaN(end.getTime())) {
-                        const formatter = new Intl.DateTimeFormat("id-ID", {
-                          day: "numeric",
-                          month: "long",
-                          year: "numeric",
-                        });
-                        endDateText = formatter.format(end);
-                      }
-                    } catch (error) {
-                      // Silent fail - invalid date format
-                    }
-                  }
-
-                  return (
+                {/* Durasi Kontrak / Program */}
+                <FormField
+                  control={form.control}
+                  name="contractDurationMonths"
+                  render={({ field }) => (
                     <FormItem>
                       <FormLabel className="flex items-center gap-2">
                         <Clock className="h-4 w-4" />
-                        Durasi Kontrak (bulan)
+                        Durasi Kontrak / Program
                       </FormLabel>
                       <FormControl>
                         <div className="flex items-center gap-2">
                           <Input
                             type="number"
-                            min="0"
-                            placeholder="12"
+                            min={1}
+                            max={60}
+                            placeholder="contoh: 3"
                             {...field}
+                            value={field.value ?? ""}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              field.onChange(v === "" ? undefined : Number(v));
+                            }}
                             className="flex-1"
                           />
-                          <span className="text-sm text-muted-foreground whitespace-nowrap">
-                            {field.value ? "bulan" : ""}
-                          </span>
+                          <span className="text-sm text-muted-foreground shrink-0">bulan</span>
                         </div>
                       </FormControl>
-                      {endDateText && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Berakhir pada:{" "}
-                          <span className="font-semibold">{endDateText}</span>
-                        </p>
-                      )}
                       <FormMessage />
                     </FormItem>
-                  );
-                }}
-              />
+                  )}
+                />
 
-              {/* Jam Masuk Hari Pertama */}
-              <FormField
-                control={form.control}
-                name="firstDayTime"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="flex items-center gap-2">
-                      <Clock className="h-4 w-4" />
-                      Jam Masuk Hari Pertama (HH:mm)
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        type="time"
-                        step="60"
-                        placeholder="08:00"
-                        {...field}
-                        onChange={(e) => field.onChange(e.target.value)}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                {/* Jam Hadir Hari Pertama */}
+                <FormField
+                  control={form.control}
+                  name="firstDayTime"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-2">
+                        <Clock className="h-4 w-4" />
+                        Jam Hadir Hari Pertama
+                      </FormLabel>
+                      <FormControl>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="time"
+                            step="60"
+                            {...field}
+                            onChange={(e) => field.onChange(e.target.value)}
+                            className="flex-1"
+                          />
+                          <span className="text-sm text-muted-foreground shrink-0">WIB</span>
+                        </div>
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">
+                        Jam kedatangan kandidat pada hari pertama kerja/program, bukan jam batas konfirmasi offering.
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              {/* Lokasi Hari Pertama */}
-              <FormField
-                control={form.control}
-                name="firstDayLocation"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="flex items-center gap-2">
-                      <MapPin className="h-4 w-4" />
-                      Lokasi Hari Pertama
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="contoh: Kantor Pusat, Jakarta"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Kontak HRD */}
-              <FormField
-                control={form.control}
-                name="hrContact"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="flex items-center gap-2">
-                      <User className="h-4 w-4" />
-                      Kontak HRD
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="e.g., John Doe - HR Manager (08123456789)"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                {/* Lokasi Hari Pertama */}
+                <FormField
+                  control={form.control}
+                  name="firstDayLocation"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4" />
+                        Lokasi Hari Pertama
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="contoh: Kantor Pusat Yogyakarta / Online / Lokasi sesuai penempatan"
+                          {...field}
+                        />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">
+                        Lokasi kandidat hadir pada hari pertama kerja/program.
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
             </div>
-          </CardContent>
-        </Card>
 
-        {/* Additional Notes Section */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Additional Information</CardTitle>
-            <CardDescription>
-              Rich text information for candidates about company policies,
-              benefits, dress code, onboarding process, etc.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+            {/* Kontak Human Capital */}
+            <div className="space-y-3">
+              <p className="text-sm font-medium flex items-center gap-2">
+                <User className="h-4 w-4" />
+                Kontak Human Capital
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <FormField
+                  control={form.control}
+                  name="humanCapitalContactName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs text-muted-foreground">Nama Kontak</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="contoh: Human Capital / Nama HRD"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="humanCapitalContactPhone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs text-muted-foreground">Nomor Kontak</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="tel"
+                          placeholder="contoh: 08123456789"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Kontak ini akan ditampilkan kepada kandidat jika ada pertanyaan terkait offering.
+              </p>
+            </div>
+            <FormField
+              control={form.control}
+              name="saveContactAsDefault"
+              render={({ field }) => (
+                <FormItem className="flex items-center gap-2 space-y-0 -mt-2">
+                  <FormControl>
+                    <input
+                      type="checkbox"
+                      id="saveContactAsDefault"
+                      checked={!!field.value}
+                      onChange={(e) => field.onChange(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-300 text-primary accent-primary cursor-pointer"
+                    />
+                  </FormControl>
+                  <FormLabel htmlFor="saveContactAsDefault" className="text-sm font-normal cursor-pointer">
+                    Simpan sebagai kontak default untuk offering berikutnya
+                  </FormLabel>
+                </FormItem>
+              )}
+            />
+
+            {/* Instruksi untuk Kandidat */}
             <FormField
               control={form.control}
               name="additionalNotes"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Catatan Tambahan</FormLabel>
+                  <FormLabel className="flex items-center gap-2">
+                    <FileCheck className="h-4 w-4" />
+                    Instruksi untuk Kandidat
+                  </FormLabel>
                   <FormControl>
-                    <RichTextEditor
-                      value={field.value}
-                      onChange={field.onChange}
-                      placeholder="Add information about:
-• Company policies and regulations
-• Benefits and compensation details
-• Dress code and work attire
-• First day procedures and requirements
-• Onboarding process
-• Contact information
-• Any other relevant information"
+                    <Textarea
+                      rows={4}
+                      placeholder="Instruksi kepada kandidat mengenai cara menyetujui penawaran ini..."
+                      {...field}
                     />
                   </FormControl>
                   <FormMessage />
@@ -1221,99 +1326,234 @@ export function OfferEditor({
           </CardContent>
         </Card>
 
-        {/* Response Deadline Section */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Pengaturan Respons</CardTitle>
-            <CardDescription>
-              Tentukan batas waktu kandidat untuk memberikan respons. Penawaran
-              akan otomatis kedaluwarsa jika tidak ada respons.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 sm:grid-cols-[2fr_1fr]">
-              <FormField
-                control={form.control}
-                name="responseDeadline"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Batas Waktu Respons *</FormLabel>
-                    <FormControl>
-                      <GoogleDatePicker
-                        value={field.value}
-                        onChange={field.onChange}
-                        placeholder="Pilih batas waktu"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="responseDeadlineTime"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Jam Batas Respons *</FormLabel>
-                    <FormControl>
-                      <Input type="time" step="60" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-          </CardContent>
-        </Card>
+        {/* Template Pesan Offering */}
+        {(() => {
+          const deadline = form.watch("responseDeadline");
+          const deadlineTime = form.watch("responseDeadlineTime");
+          const humanCapitalContactName = form.watch("humanCapitalContactName");
+          const humanCapitalContactPhone = form.watch("humanCapitalContactPhone");
+          const humanCapitalContact = [humanCapitalContactName, humanCapitalContactPhone].filter(Boolean).join(" - ");
+          const deadlineDate = deadline
+            ? new Intl.DateTimeFormat("id-ID", {
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+              }).format(deadline)
+            : "[tanggal]";
+          const deadlineTimeStr = deadlineTime || "[jam]";
 
-        {/* Action Buttons */}
-        <Card>
-          <CardContent className="pt-6">
-            <form onSubmit={form.handleSubmit(() => {})} className="space-y-4">
-              <div className="flex gap-4 flex-wrap">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={form.handleSubmit(handleSaveDraft)}
-                  disabled={isSavingDraft || isUploading}
-                  className="flex-1 min-w-[150px]"
-                >
-                  <Save className="h-4 w-4 mr-2" />
-                  {isSavingDraft || isUploading
-                    ? "Menyimpan..."
-                    : "Simpan Draft"}
-                </Button>
+          const message = [
+            `Dear ${candidateName},`,
+            "",
+            `Terimalah salam hangat dari kami ${job.brandName || "[brandName]"}.`,
+            "",
+            `Berdasarkan hasil proses seleksi dan wawancara yang telah Saudara ikuti bersama tim kami, dengan senang hati kami sampaikan bahwa Saudara telah sesuai dengan kualifikasi yang dibutuhkan oleh perusahaan untuk posisi ${application.jobPosition || "[posisi]"}.`,
+            "",
+            `Berikut kami kirimkan Surat Penawaran Kerja yang dapat Saudara pertimbangkan. Apabila Saudara menyetujui penawaran tersebut, silakan membubuhkan tanda tangan pada Lembar Penerimaan Posisi, kemudian mengunggah kembali dokumen yang telah ditandatangani melalui portal ini maksimal ${deadlineDate} pukul ${deadlineTimeStr} WIB untuk melanjutkan tahap berikutnya, yaitu penandatanganan kontrak.`,
+            "",
+            `Kami sangat berharap Saudara dapat mempertimbangkan dan bergabung dengan perusahaan kami. Apabila terdapat hal-hal yang perlu didiskusikan lebih lanjut, mohon jangan ragu untuk menghubungi tim Human Capital${humanCapitalContact ? ` melalui ${humanCapitalContact}` : ""}.`,
+            "",
+            "Demikian surat penawaran ini kami sampaikan. Atas perhatian dan kerja sama yang baik, kami ucapkan terima kasih.",
+            "",
+            "Regards,",
+            "Human Capital",
+            job.brandName || "[brandName]",
+          ].join("\n");
 
-                <Button
-                  type="button"
-                  onClick={form.handleSubmit(handleSendOffer)}
-                  disabled={isSendingOffer || isUploading}
-                  className="flex-1 min-w-[150px]"
-                >
-                  <Send className="h-4 w-4 mr-2" />
-                  {isSendingOffer || isUploading
-                    ? "Mengirim..."
-                    : "Kirim Penawaran"}
-                </Button>
+          return (
+            <Card className="border-teal-200 dark:border-teal-800 bg-teal-50/30 dark:bg-teal-950/20">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-teal-700 dark:text-teal-400">
+                  <FileText className="h-5 w-5" />
+                  Template Pesan Offering
+                </CardTitle>
+                <CardDescription>
+                  Pesan ini otomatis dibuat berdasarkan data kandidat, posisi, dan batas konfirmasi di atas.
+                  Isi ini akan ditampilkan kepada kandidat bersama dokumen penawaran.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <pre className="whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 border rounded-lg p-4 leading-relaxed font-sans">
+                  {message}
+                </pre>
+              </CardContent>
+            </Card>
+          );
+        })()}
 
-                {(currentOfferingStatus === "sent" ||
-                  currentOfferingStatus === "viewed") &&
-                  currentOfferingId && (
+        {/* Action Buttons — rendered based on current offering status */}
+        {(() => {
+          const s = currentOfferingStatus;
+          const isDraft  = !s || s === "draft";
+          const isSent   = s === "sent" || s === "viewed";
+          const isAccepted  = s === "accepted";
+          const isRejected  = s === "rejected";
+          const isWithdrawn = s === "withdrawn";
+
+          if (isAccepted) {
+            return (
+              <Card className="border-emerald-200 dark:border-emerald-800 bg-emerald-50/30 dark:bg-emerald-950/10">
+                <CardContent className="pt-5 pb-5 flex flex-wrap gap-3 items-center">
+                  <CheckCircle className="h-5 w-5 text-emerald-600 shrink-0" />
+                  <span className="text-sm font-medium text-emerald-800 dark:text-emerald-300 flex-1">
+                    Kandidat telah menerima penawaran ini.
+                  </span>
+                  {filePreview?.url && (
                     <Button
                       type="button"
-                      variant="destructive"
-                      onClick={() => handleWithdrawOffer(currentOfferingId)}
-                      disabled={isUndoing}
-                      className="flex-1 min-w-[150px]"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        openOfferingDocument({ documentUrl: filePreview.url, documentPath: (offering as any)?.documentPath, documentName: filePreview.name }).catch((e) => toast({ variant: "destructive", title: "Gagal Membuka", description: e.message }));
+                      }}
                     >
-                      <RotateCcw className="h-4 w-4 mr-2" />
-                      {isUndoing ? "Menarik..." : "Tarik Penawaran"}
+                      <Eye className="h-4 w-4 mr-2" />
+                      Lihat Dokumen
                     </Button>
                   )}
-              </div>
-            </form>
-          </CardContent>
-        </Card>
+                </CardContent>
+              </Card>
+            );
+          }
+
+          if (isRejected) {
+            return (
+              <Card className="border-red-200 dark:border-red-900 bg-red-50/30 dark:bg-red-950/10">
+                <CardContent className="pt-5 pb-5 flex flex-wrap gap-3 items-center">
+                  <XCircle className="h-5 w-5 text-red-500 shrink-0" />
+                  <span className="text-sm font-medium text-red-800 dark:text-red-300 flex-1">
+                    Kandidat menolak penawaran ini.
+                  </span>
+                  {filePreview?.url && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        openOfferingDocument({ documentUrl: filePreview.url, documentPath: (offering as any)?.documentPath, documentName: filePreview.name }).catch((e) => toast({ variant: "destructive", title: "Gagal Membuka", description: e.message }));
+                      }}
+                    >
+                      <Eye className="h-4 w-4 mr-2" />
+                      Lihat Dokumen
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    onClick={form.handleSubmit(handleSendOffer)}
+                    disabled={isSendingOffer || isUploading}
+                  >
+                    <Send className="h-4 w-4 mr-2" />
+                    {isSendingOffer || isUploading ? "Mengirim..." : "Buat Penawaran Baru"}
+                  </Button>
+                </CardContent>
+              </Card>
+            );
+          }
+
+          if (isWithdrawn) {
+            return (
+              <Card className="border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/30">
+                <CardContent className="pt-5 pb-5 flex flex-wrap gap-3 items-center">
+                  <RotateCcw className="h-5 w-5 text-slate-400 shrink-0" />
+                  <span className="text-sm font-medium text-slate-600 dark:text-slate-400 flex-1">
+                    Penawaran ini telah ditarik.
+                  </span>
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    onClick={form.handleSubmit(handleSendOffer)}
+                    disabled={isSendingOffer || isUploading}
+                  >
+                    <Send className="h-4 w-4 mr-2" />
+                    {isSendingOffer || isUploading ? "Mengirim..." : "Buat Penawaran Baru"}
+                  </Button>
+                </CardContent>
+              </Card>
+            );
+          }
+
+          if (isSent) {
+            return (
+              <Card>
+                <CardContent className="pt-5 pb-5">
+                  {s === "viewed" && (
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mb-3 flex items-center gap-1.5">
+                      <Eye className="h-3.5 w-3.5" />
+                      Kandidat telah melihat penawaran ini.
+                    </p>
+                  )}
+                  <div className="flex flex-wrap gap-3">
+                    {filePreview?.url && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => openOfferingDocument({ documentUrl: filePreview.url, documentPath: (offering as any)?.documentPath, documentName: filePreview.name }).catch((e) => toast({ variant: "destructive", title: "Gagal Membuka", description: e.message }))}
+                        className="flex-1 min-w-[140px]"
+                      >
+                        <Eye className="h-4 w-4 mr-2" />
+                        Lihat Dokumen
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={form.handleSubmit(handleSaveDraft)}
+                      disabled={isSavingDraft || isUploading}
+                      className="flex-1 min-w-[140px]"
+                    >
+                      <Save className="h-4 w-4 mr-2" />
+                      {isSavingDraft || isUploading ? "Menyimpan..." : "Simpan Perubahan"}
+                    </Button>
+                    {currentOfferingId && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => handleWithdrawOffer(currentOfferingId)}
+                        disabled={isUndoing}
+                        className="flex-1 min-w-[140px] text-red-600 border-red-200 hover:bg-red-50 dark:text-red-400 dark:border-red-900 dark:hover:bg-red-950/30"
+                      >
+                        <RotateCcw className="h-4 w-4 mr-2" />
+                        {isUndoing ? "Menarik..." : "Tarik Penawaran"}
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          }
+
+          // isDraft (default — belum pernah dikirim atau status draft)
+          return (
+            <Card>
+              <CardContent className="pt-5 pb-5">
+                <div className="flex flex-wrap gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={form.handleSubmit(handleSaveDraft)}
+                    disabled={isSavingDraft || isUploading}
+                    className="flex-1 min-w-[140px]"
+                  >
+                    <Save className="h-4 w-4 mr-2" />
+                    {isSavingDraft || isUploading ? "Menyimpan..." : "Simpan Draft"}
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={form.handleSubmit(handleSendOffer)}
+                    disabled={isSendingOffer || isUploading}
+                    className="flex-1 min-w-[140px]"
+                  >
+                    <Send className="h-4 w-4 mr-2" />
+                    {isSendingOffer || isUploading ? "Mengirim..." : "Kirim Penawaran"}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         {/* Offering List Section (Active and History) */}
         {allOfferings && allOfferings.length > 0 && (
@@ -1503,7 +1743,12 @@ function OfferingAuditCard({
               variant="ghost"
               size="sm"
               className="h-8 text-xs gap-1"
-              onClick={() => window.open(offering.documentUrl, "_blank")}
+              onClick={() => openOfferingDocument({
+                offeringId: offering.id,
+                documentUrl: offering.documentUrl,
+                documentPath: (offering as any).documentPath,
+                documentName: offering.documentName,
+              }).catch((e) => toast({ variant: "destructive", title: "Gagal Membuka", description: e.message }))}
             >
               <Eye className="h-3 w-3" />
               Lihat File

@@ -47,61 +47,40 @@ import { UserCheck, Leaf, Globe, GraduationCap } from "lucide-react";
 
 const OFFER_TEMPLATES = {
   internship: `
-    <p>Halo [Nama Kandidat],</p>
-    <p>Kami sangat berkesan dengan kualifikasi dan pengalaman Anda di bidang <strong>[Posisi]</strong>. Oleh karena itu, kami dengan senang hati menawarkan posisi <strong>Magang (Internship)</strong> di [Nama Perusahaan].</p>
-    <p><strong>Ketentuan Umum:</strong></p>
-    <ul>
-      <li>Durasi Magang: [Durasi] bulan.</li>
-      <li>Lokasi: [Lokasi].</li>
-      <li>Jam Kerja: [Jam Kerja].</li>
-    </ul>
-    <p><strong>Uang Saku & Fasilitas:</strong></p>
-    <ul>
-      <li>Uang saku bulanan sebesar Rp [Gaji].</li>
-      <li>Surat keterangan magang (setelah periode selesai).</li>
-      <li>Akses ke training internal.</li>
-    </ul>
-    <p>Silakan tinjau penawaran ini dan berikan respons Anda melalui portal ini.</p>
+    <p>Dear <strong>[Nama Kandidat]</strong>,</p>
+    <p>Terimalah salam hangat dari kami <strong>[Nama Perusahaan]</strong>.</p>
+    <p>Berdasarkan hasil proses seleksi dan wawancara yang telah Saudara ikuti bersama tim kami, dengan senang hati kami sampaikan bahwa Saudara telah sesuai dengan kualifikasi yang dibutuhkan oleh perusahaan untuk posisi <strong>[Posisi]</strong>.</p>
+    <p>Berikut kami kirimkan Surat Penawaran Kerja yang dapat Saudara pertimbangkan. Apabila Saudara menyetujui penawaran tersebut, silakan membubuhkan tanda tangan pada Lembar Penerimaan Posisi, kemudian mengunggah kembali dokumen yang telah ditandatangani melalui portal ini untuk melanjutkan tahap berikutnya, yaitu penandatanganan kontrak.</p>
+    <p>Kami sangat berharap Saudara dapat mempertimbangkan dan bergabung dengan perusahaan kami. Apabila terdapat hal-hal yang perlu didiskusikan lebih lanjut, mohon jangan ragu untuk menghubungi tim Human Capital.</p>
+    <p>Demikian surat penawaran ini kami sampaikan. Atas perhatian dan kerja sama yang baik, kami ucapkan terima kasih.</p>
+    <p>Regards,<br><strong>Human Capital</strong><br>[Nama Perusahaan]</p>
   `,
   fulltime: `
-    <p>Halo [Nama Kandidat],</p>
-    <p>Selamat! Kami senang dapat menawarkan posisi <strong>Karyawan Full-time</strong> sebagai <strong>[Posisi]</strong> di [Nama Perusahaan]. Kami percaya kontribusi Anda akan menjadi aset berharga bagi tim kami.</p>
-    <p><strong>Ketentuan Pekerjaan:</strong></p>
-    <ul>
-      <li>Tanggal Mulai: [Tanggal].</li>
-      <li>Masa Percobaan: [Masa Probation] bulan.</li>
-      <li>Waktu Kerja: [Hari Kerja], [Jam Kerja].</li>
-    </ul>
-    <p><strong>Kompensasi & Benefit:</strong></p>
-    <ul>
-      <li>Gaji bulanan: Rp [Gaji] (Gross/Nett).</li>
-      <li>BPJS Kesehatan & Ketenagakerjaan.</li>
-      <li>Tunjangan Hari Raya (THR).</li>
-      <li>Cuti Tahunan sesuai kebijakan perusahaan.</li>
-    </ul>
-    <p>Kami sangat menantikan kehadiran Anda sebagai bagian dari tim kami.</p>
+    <p>Dear <strong>[Nama Kandidat]</strong>,</p>
+    <p>Terimalah salam hangat dari kami <strong>[Nama Perusahaan]</strong>.</p>
+    <p>Berdasarkan hasil proses seleksi dan wawancara yang telah Saudara ikuti bersama tim kami, dengan senang hati kami sampaikan bahwa Saudara telah sesuai dengan kualifikasi yang dibutuhkan oleh perusahaan untuk posisi <strong>[Posisi]</strong>.</p>
+    <p>Berikut kami kirimkan Surat Penawaran Kerja yang dapat Saudara pertimbangkan. Apabila Saudara menyetujui penawaran tersebut, silakan membubuhkan tanda tangan pada Lembar Penerimaan Posisi, kemudian mengunggah kembali dokumen yang telah ditandatangani melalui portal ini untuk melanjutkan tahap berikutnya, yaitu penandatanganan kontrak.</p>
+    <p>Kami sangat berharap Saudara dapat mempertimbangkan dan bergabung dengan perusahaan kami. Apabila terdapat hal-hal yang perlu didiskusikan lebih lanjut, mohon jangan ragu untuk menghubungi tim Human Capital.</p>
+    <p>Demikian surat penawaran ini kami sampaikan. Atas perhatian dan kerja sama yang baik, kami ucapkan terima kasih.</p>
+    <p>Regards,<br><strong>Human Capital</strong><br>[Nama Perusahaan]</p>
   `,
   greenskills: `
-    <p>Halo [Nama Kandidat],</p>
-    <p>Kami dengan senang hati mengajak Anda bergabung dalam inisiatif <strong>GreenSkill Program</strong> sebagai <strong>[Posisi]</strong>. Program ini bertujuan untuk mengembangkan kompetensi di bidang lingkungan dan keberlanjutan.</p>
-    <p><strong>Detail Program:</strong></p>
-    <ul>
-      <li>Fokus: Keberlanjutan Lingkungan.</li>
-      <li>Kompensasi: Rp [Gaji].</li>
-      <li>Sertifikasi: Sertifikat Kompetensi GreenSkill.</li>
-    </ul>
-    <p>Mari berkontribusi untuk masa depan yang lebih hijau.</p>
+    <p>Dear <strong>[Nama Kandidat]</strong>,</p>
+    <p>Terimalah salam hangat dari kami <strong>[Nama Perusahaan]</strong>.</p>
+    <p>Berdasarkan hasil proses seleksi dan wawancara yang telah Saudara ikuti bersama tim kami, dengan senang hati kami sampaikan bahwa Saudara telah sesuai dengan kualifikasi yang dibutuhkan oleh perusahaan untuk posisi <strong>[Posisi]</strong> dalam program GreenSkill.</p>
+    <p>Berikut kami kirimkan Surat Penawaran Kerja yang dapat Saudara pertimbangkan. Apabila Saudara menyetujui penawaran tersebut, silakan membubuhkan tanda tangan pada Lembar Penerimaan Posisi, kemudian mengunggah kembali dokumen yang telah ditandatangani melalui portal ini untuk melanjutkan tahap berikutnya, yaitu penandatanganan kontrak.</p>
+    <p>Kami sangat berharap Saudara dapat mempertimbangkan dan bergabung dengan perusahaan kami. Apabila terdapat hal-hal yang perlu didiskusikan lebih lanjut, mohon jangan ragu untuk menghubungi tim Human Capital.</p>
+    <p>Demikian surat penawaran ini kami sampaikan. Atas perhatian dan kerja sama yang baik, kami ucapkan terima kasih.</p>
+    <p>Regards,<br><strong>Human Capital</strong><br>[Nama Perusahaan]</p>
   `,
   egs: `
-    <p>Halo [Nama Kandidat],</p>
-    <p>Terkait dengan evaluasi yang telah dilakukan, kami menawarkan posisi dalam tim <strong>EGS (Environmental, Global, Social)</strong> sebagai <strong>[Posisi]</strong>.</p>
-    <p><strong>Ketentuan Utama:</strong></p>
-    <ul>
-      <li>Gaji: Rp [Gaji].</li>
-      <li>Cakupan Kerja: Global & Social Impact.</li>
-      <li>Lokasi: [Lokasi].</li>
-    </ul>
-    <p>Kami yakin passion Anda sejalan dengan nilai-nilai EGS kami.</p>
+    <p>Dear <strong>[Nama Kandidat]</strong>,</p>
+    <p>Terimalah salam hangat dari kami <strong>[Nama Perusahaan]</strong>.</p>
+    <p>Berdasarkan hasil proses seleksi dan wawancara yang telah Saudara ikuti bersama tim kami, dengan senang hati kami sampaikan bahwa Saudara telah sesuai dengan kualifikasi yang dibutuhkan oleh perusahaan untuk posisi <strong>[Posisi]</strong>.</p>
+    <p>Berikut kami kirimkan Surat Penawaran Kerja yang dapat Saudara pertimbangkan. Apabila Saudara menyetujui penawaran tersebut, silakan membubuhkan tanda tangan pada Lembar Penerimaan Posisi, kemudian mengunggah kembali dokumen yang telah ditandatangani melalui portal ini untuk melanjutkan tahap berikutnya, yaitu penandatanganan kontrak.</p>
+    <p>Kami sangat berharap Saudara dapat mempertimbangkan dan bergabung dengan perusahaan kami. Apabila terdapat hal-hal yang perlu didiskusikan lebih lanjut, mohon jangan ragu untuk menghubungi tim Human Capital.</p>
+    <p>Demikian surat penawaran ini kami sampaikan. Atas perhatian dan kerja sama yang baik, kami ucapkan terima kasih.</p>
+    <p>Regards,<br><strong>Human Capital</strong><br>[Nama Perusahaan]</p>
   `,
 };
 
