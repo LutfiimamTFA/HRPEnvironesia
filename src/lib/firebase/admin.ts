@@ -42,7 +42,7 @@ if (!admin.apps.length) {
                     privateKey,
                 }),
             });
-            console.log('[Firebase Admin] Local SDK initialized successfully.');
+            console.log('[Firebase Admin] SDK initialized. projectId:', projectId);
         } catch (error: any) {
             console.error('[Firebase Admin] Initialization failed:', error.message);
             // We don't throw here to avoid crashing the whole process, 

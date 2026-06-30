@@ -360,8 +360,8 @@ async function writeFailedBackupLog(params: {
       errors: [params.error],
       createdAt: Timestamp.fromDate(finishedAt),
     });
-  } catch {
-    // Best effort: failure logs must not mask the original API error.
+  } catch (err: any) {
+    console.error('[backup_logs] Gagal menulis log backup gagal:', err?.message ?? err);
   }
 }
 
@@ -472,9 +472,15 @@ export async function POST(req: NextRequest) {
   const month = String(startedAt.getMonth() + 1).padStart(2, '0');
   const day   = String(startedAt.getDate()).padStart(2, '0');
 
-  const backupRootId = process.env.GOOGLE_DRIVE_BACKUP_FOLDER_ID;
+  // Folder ID: Firestore settings lebih prioritas dari env
+  let backupRootId = process.env.GOOGLE_DRIVE_BACKUP_FOLDER_ID ?? '';
+  try {
+    const settingsSnap = await admin.firestore().collection('system_settings').doc('backup_export').get();
+    const firestoreFolderId = settingsSnap.data()?.googleDriveBackupFolderId as string | undefined;
+    if (firestoreFolderId) backupRootId = firestoreFolderId;
+  } catch { /* gunakan env fallback */ }
   if (!backupRootId) {
-    const error = 'GOOGLE_DRIVE_BACKUP_FOLDER_ID is not configured.';
+    const error = 'GOOGLE_DRIVE_BACKUP_FOLDER_ID belum dikonfigurasi. Set di halaman Backup & Export atau di environment variables server.';
     await updateProgress({ status: 'failed', step: 'failed', stepLabel: 'Backup gagal', progressPercent: 0, error }, error);
     await writeFailedBackupLog({ backupId, actor, reason, formats: requestedFormats, startedAt, error });
     return errorResponse('Backup gagal', 500, error);
@@ -834,7 +840,8 @@ export async function POST(req: NextRequest) {
     error: errors[0] ?? null,
   }, 'Menyimpan backup_logs dan audit_logs');
 
-  // â”€â”€ backup_logs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── backup_logs ────────────────────────────────────────────────────────────
+  try {
   await admin.firestore().collection('backup_logs').doc(backupId).set({
     backupId,
     backupType: 'manual',
@@ -867,8 +874,11 @@ export async function POST(req: NextRequest) {
     errors: errors.length ? errors : [],
     createdAt: Timestamp.fromDate(finishedAt),
   });
+  } catch (err: any) {
+    console.error('[backup_logs] Gagal menulis log backup berhasil:', err?.message ?? err);
+  }
 
-  // â”€â”€ audit_logs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── audit_logs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   try {
     await admin.firestore().collection('audit_logs').add({
       actorUid: actor.uid,

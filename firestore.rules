@@ -39,11 +39,15 @@ service cloud.firestore {
     }
 
     /**
-     * Checks if the user is a 'super_admin' via a performant existence check.
-     * This is safe for list queries when checking against the requesting user's UID.
+     * Checks if the user is a 'super_admin'.
+     * Primary: existence check on roles_admin/{uid} (fast, safe for list queries).
+     * Fallback: read users/{uid}.role (covers case where sync-my-role hasn't run yet).
      */
     function isSuperAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super-admin'
+      );
     }
     
     /**
@@ -203,22 +207,32 @@ service cloud.firestore {
     
     /**
      * /roles_admin/{userId}
-     * - This is a private lookup table for super admin checks.
-     * - Only other super admins can manage this collection.
+     * - Lookup table used by isSuperAdmin() for fast existence checks.
+     * - A user can read their own doc (to verify their own admin status).
+     * - Only super admins (by user doc role) can create/update/delete entries.
      */
     match /roles_admin/{userId} {
-      allow read, write: if request.auth.token.email == 'super_admin@gmail.com' || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super-admin';
+      allow get: if isSignedIn() && (
+        request.auth.uid == userId ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super-admin'
+      );
+      allow list: if isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super-admin';
+      allow create, update, delete: if isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super-admin';
     }
     
     /**
      * /roles_hrd/{userId}
-     * - This is a private lookup table for HRD checks.
-     * - The logged-in user must be able to verify their own HRD role document.
+     * - Lookup table used by isHrd() for fast existence checks.
+     * - A user can read their own doc.
+     * - Only super admins can manage entries.
      */
     match /roles_hrd/{userId} {
-      allow get: if request.auth.uid == userId || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super-admin';
-      allow list: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super-admin';
-      allow create, update, delete: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super-admin';
+      allow get: if isSignedIn() && (
+        request.auth.uid == userId ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super-admin'
+      );
+      allow list: if isSuperAdmin();
+      allow create, update, delete: if isSuperAdmin();
     }
 
     /**

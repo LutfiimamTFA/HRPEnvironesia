@@ -81,10 +81,12 @@ import {
   AlertCircle,
   Info,
   Link,
-  LinkOff,
+  Unlink,
   CheckCircle,
   WifiOff,
   TestTube2,
+  ChevronDown,
+  ExternalLink,
 } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -126,8 +128,14 @@ interface ExportLog {
   filters?: Record<string, any>;
   format?: string;
   status?: 'success' | 'failed';
+  delivery?: 'google_drive' | 'local_download';
   fileName?: string;
+  driveFileId?: string;
+  driveWebViewLink?: string;
+  driveFolderLink?: string;
   rowCount?: number;
+  totalDocuments?: number;
+  error?: string;
   createdAt?: any;
 }
 
@@ -430,66 +438,99 @@ function ExportCard({
   filters,
   onExport,
   loadingId,
+  exportDestination = 'download',
+  disabled = false,
+  searchQuery = '',
 }: {
   category: ExportCategory;
   filters: ExportFilters;
   onExport: (item: ExportItem, format: 'json' | 'csv' | 'xlsx') => void;
   loadingId: string | null;
+  exportDestination?: 'drive' | 'download';
+  disabled?: boolean;
+  searchQuery?: string;
 }) {
   const Icon = category.icon;
-  // Determine which format buttons to show
   const visibleFormats: ('json' | 'csv' | 'xlsx')[] =
     filters.format === 'all' ? ['json', 'csv', 'xlsx'] : [filters.format as 'json' | 'csv' | 'xlsx'];
 
+  const driveFormatLabel = (fmt: string) =>
+    fmt === 'csv' ? 'CSV ke Drive' : fmt === 'xlsx' ? 'XLSX ke Drive' : 'JSON ke Drive';
+  const downloadFormatLabel = (fmt: string) =>
+    fmt === 'csv' ? 'Download CSV' : fmt === 'xlsx' ? 'Download XLSX' : 'Download JSON';
+
+  const q = searchQuery.toLowerCase().trim();
+  const filteredItems = q
+    ? category.items.filter(item =>
+        item.label.toLowerCase().includes(q) || item.description.toLowerCase().includes(q)
+      )
+    : category.items;
+
   return (
-    <Card className="border-slate-200 shadow-sm">
+    <Card className={cn('border-slate-200 shadow-sm', disabled && 'opacity-60')}>
       <CardHeader className="pb-3">
         <div className="flex items-center gap-2.5">
-          <div className="flex items-center gap-2.5">
-            <div className={cn('flex h-8 w-8 items-center justify-center rounded-lg', category.iconBg)}>
-              <Icon className={cn('h-4 w-4', category.iconColor)} />
-            </div>
-            <CardTitle className="text-sm font-semibold">{category.title}</CardTitle>
+          <div className={cn('flex h-8 w-8 items-center justify-center rounded-lg', category.iconBg)}>
+            <Icon className={cn('h-4 w-4', category.iconColor)} />
           </div>
+          <CardTitle className="text-sm font-semibold">{category.title}</CardTitle>
+          <Badge variant="outline" className="ml-auto text-[11px] border-slate-200 text-slate-400">
+            {filteredItems.length} item
+          </Badge>
         </div>
       </CardHeader>
       <Separator />
-      <CardContent className="pt-4 space-y-3">
-        {category.items.map(item => {
-          const isAnyLoading = visibleFormats.some(f => loadingId === `${item.id}_${f}`);
-          return (
-            <div
-              key={item.id}
-              className="rounded-lg border border-slate-100 bg-white p-3 transition-colors hover:bg-slate-50/60"
-            >
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-slate-700">{item.label}</p>
-                <p className="mt-0.5 text-[11px] text-slate-400">{item.description}</p>
-              </div>
-              {/* Format buttons */}
-              <div className="mt-2.5 flex flex-wrap gap-1.5">
-                {visibleFormats.map(fmt => {
-                  const meta = FORMAT_META[fmt];
-                  const FmtIcon = meta.icon;
-                  const isLoading = loadingId === `${item.id}_${fmt}`;
-                  return (
-                    <Button
-                      key={fmt}
-                      size="sm"
-                      variant="outline"
-                      disabled={isAnyLoading}
-                      onClick={() => onExport(item, fmt)}
-                      className={cn('h-7 gap-1.5 text-xs disabled:opacity-50', meta.cls)}
-                    >
-                      {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <FmtIcon className="h-3 w-3" />}
-                      {meta.label}
-                    </Button>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
+      <CardContent className="pt-4">
+        {filteredItems.length === 0 ? (
+          <p className="py-6 text-center text-xs text-slate-400">Tidak ada data yang cocok dengan pencarian.</p>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+            {filteredItems.map(item => {
+              const isAnyLoading = visibleFormats.some(f => loadingId === `${item.id}_${f}`);
+              return (
+                <div
+                  key={item.id}
+                  className="flex flex-col rounded-lg border border-slate-100 bg-white p-3 transition-colors hover:bg-slate-50/60"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-slate-700">{item.label}</p>
+                    <p className="mt-0.5 text-[11px] text-slate-400">{item.description}</p>
+                  </div>
+                  <div className="mt-2.5 flex flex-wrap gap-1.5">
+                    {visibleFormats.map(fmt => {
+                      const meta = FORMAT_META[fmt];
+                      const FmtIcon = meta.icon;
+                      const isLoading = loadingId === `${item.id}_${fmt}`;
+                      const label = exportDestination === 'drive' ? driveFormatLabel(fmt) : downloadFormatLabel(fmt);
+                      const driveStyle = 'border-blue-200 text-blue-700 hover:bg-blue-50 hover:border-blue-300';
+                      return (
+                        <Button
+                          key={fmt}
+                          size="sm"
+                          variant="outline"
+                          disabled={disabled || isAnyLoading}
+                          onClick={() => onExport(item, fmt)}
+                          className={cn(
+                            'h-7 gap-1.5 text-xs disabled:opacity-50',
+                            exportDestination === 'drive' ? driveStyle : meta.cls,
+                          )}
+                        >
+                          {isLoading
+                            ? <Loader2 className="h-3 w-3 animate-spin" />
+                            : exportDestination === 'drive'
+                              ? <CloudUpload className="h-3 w-3" />
+                              : <FmtIcon className="h-3 w-3" />
+                          }
+                          {label}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -617,6 +658,16 @@ export function BackupExportClient() {
   // ── Last export info ──────────────────────────────────────────────────────
   const lastExport = exportLogs[0] ?? null;
 
+  // ── Export destination & category tab ────────────────────────────────────
+  const [exportDestination, setExportDestination] = useState<'drive' | 'download'>('drive');
+  const [activeExportCategoryId, setActiveExportCategoryId] = useState<string>(EXPORT_CATEGORIES[0].id);
+  const [exportSearch, setExportSearch] = useState('');
+
+  // ── Accordion open states (default closed to keep page short) ─────────────
+  const [autoSettingsOpen, setAutoSettingsOpen] = useState(false);
+  const [backupHistoryOpen, setBackupHistoryOpen] = useState(false);
+  const [exportHistoryOpen, setExportHistoryOpen] = useState(false);
+
   // ── Export handler ────────────────────────────────────────────────────────
   const [loadingId, setLoadingId] = useState<string | null>(null);
 
@@ -633,6 +684,8 @@ export function BackupExportClient() {
     if (filters.division) activeFilters.division = filters.division;
     if (filters.status) activeFilters.status = filters.status;
 
+    const mode = exportDestination === 'drive' ? 'drive' : 'download';
+
     try {
       const auth = getAuth();
       const idToken = await auth.currentUser?.getIdToken(true);
@@ -645,7 +698,7 @@ export function BackupExportClient() {
           Authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify({
-          mode: 'download',
+          mode,
           exportKey: item.id,
           collectionName: item.collection,
           format,
@@ -658,14 +711,37 @@ export function BackupExportClient() {
         }),
       });
 
+      if (mode === 'drive') {
+        let data: any = {};
+        try { data = await res.json(); } catch { }
+        if (!res.ok) throw new Error(data.message ?? data.error ?? `Server error (HTTP ${res.status})`);
+        const totalDocs = data.totalDocuments ?? 0;
+        const desc = data.exportDataStatus === 'not_found'
+          ? 'Collection belum memiliki data.'
+          : data.exportDataStatus === 'empty'
+            ? `File ${format.toUpperCase()} tersimpan di Drive, tetapi data kosong.`
+            : `${format.toUpperCase()} tersimpan di Drive${Number.isFinite(totalDocs) ? `: ${Number(totalDocs).toLocaleString('id-ID')} dokumen` : ''}.`;
+        toast({
+          title: `${format.toUpperCase()} berhasil disimpan ke Google Drive.`,
+          description: (
+            <span>
+              {desc}
+              {data.webViewLink && (
+                <> · <a href={data.webViewLink} target="_blank" rel="noopener noreferrer" className="underline">Buka file</a></>
+              )}
+            </span>
+          ) as any,
+        });
+        return;
+      }
+
+      // mode === download
       if (!res.ok) {
         let message = 'Export gagal. Silakan coba lagi.';
         try {
           const errorJson = await res.json();
           message = errorJson.message ?? errorJson.error ?? message;
-        } catch {
-          // Keep the friendly fallback message.
-        }
+        } catch { }
         throw new Error(message);
       }
 
@@ -680,7 +756,7 @@ export function BackupExportClient() {
         ? 'Collection belum memiliki data.'
         : dataStatus === 'empty'
           ? `Export ${format.toUpperCase()} berhasil diunduh ke laptop, tetapi data kosong.`
-          : `Export ${format.toUpperCase()} berhasil diunduh ke laptop${Number.isFinite(totalDocuments) ? `: ${totalDocuments.toLocaleString('id-ID')} dokumen` : ''}.`;
+          : `${format.toUpperCase()} berhasil diunduh ke laptop${Number.isFinite(totalDocuments) ? `: ${totalDocuments.toLocaleString('id-ID')} dokumen` : ''}.`;
       toast({
         title: 'Export berhasil diunduh ke laptop.',
         description: emptyDescription,
@@ -694,7 +770,7 @@ export function BackupExportClient() {
     } finally {
       setLoadingId(null);
     }
-  }, [firebaseUser, userProfile, filters, toast]);
+  }, [firebaseUser, userProfile, filters, exportDestination, toast]);
 
   // ── Backup logs (live) ────────────────────────────────────────────────────
   const [backupLogs, setBackupLogs] = useState<BackupLog[]>([]);
@@ -719,7 +795,8 @@ export function BackupExportClient() {
 
   // ── Backup modal state & handler ──────────────────────────────────────────
   type BackupFormat = 'json' | 'csv' | 'xlsx';
-  const ALL_FORMATS: BackupFormat[] = ['json', 'csv', 'xlsx'];
+
+  const [selectedBackupFormat, setSelectedBackupFormat] = useState<BackupFormat>('xlsx');
 
   const [backupModalOpen, setBackupModalOpen] = useState(false);
   const [backupReason, setBackupReason] = useState('');
@@ -727,7 +804,6 @@ export function BackupExportClient() {
     scope: 'all',
     title: 'Semua Data HRP',
   });
-  const [selectedFormats, setSelectedFormats] = useState<BackupFormat[]>(ALL_FORMATS);
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [backupRunId, setBackupRunId] = useState<string | null>(null);
   const [backupProgress, setBackupProgress] = useState<BackupProgress | null>(null);
@@ -752,14 +828,6 @@ export function BackupExportClient() {
     summaryWebViewLink?: string;
     errors?: string[];
   } | null>(null);
-
-  const toggleFormat = useCallback((fmt: BackupFormat) => {
-    setSelectedFormats(prev =>
-      prev.includes(fmt)
-        ? prev.length > 1 ? prev.filter(f => f !== fmt) : prev  // jaga minimal 1
-        : [...prev, fmt],
-    );
-  }, []);
 
   useEffect(() => {
     if (!backupRunId) return;
@@ -802,13 +870,14 @@ export function BackupExportClient() {
     reason?: string;
     scope?: 'all' | 'category';
     categoryKey?: string;
-    formats?: ('json' | 'csv' | 'xlsx')[];
+    format?: BackupFormat;
   }) => {
     if (!firebaseUser) return;
     const runReason = override?.reason ?? backupReason.trim();
     const runScope = override?.scope ?? backupScope.scope;
     const runCategoryKey = override?.categoryKey ?? backupScope.categoryKey;
-    const runFormats = override?.formats ?? selectedFormats;
+    const runFormat = override?.format ?? selectedBackupFormat;
+    const runFormats = [runFormat]; // API still accepts array; we send single-element
     const runId = `backup_${Date.now()}_${firebaseUser.uid.slice(0, 8)}`;
 
     setBackupRunId(runId);
@@ -875,12 +944,11 @@ export function BackupExportClient() {
     } finally {
       setIsBackingUp(false);
     }
-  }, [firebaseUser, backupReason, selectedFormats, backupScope, toast]);
+  }, [firebaseUser, backupReason, selectedBackupFormat, backupScope, toast]);
 
   const openBackupModal = useCallback((scope: 'all' | 'category' = 'all', categoryKey?: string, title = 'Semua Data HRP') => {
     setBackupReason('');
     setBackupScope({ scope, categoryKey, title });
-    setSelectedFormats(ALL_FORMATS);
     setBackupResult(null);
     setBackupRunId(null);
     setBackupProgress(null);
@@ -957,23 +1025,26 @@ export function BackupExportClient() {
     folderId?: string;
   } | null>(null);
   const [driveStatusLoading, setDriveStatusLoading] = useState(false);
+  const [driveStatusRefreshKey, setDriveStatusRefreshKey] = useState(0);
   const [oauthConfigModalOpen, setOauthConfigModalOpen] = useState(false);
   const oauthHandledRef = useRef(false);
 
-  // Fetch drive status dari server (mengetahui apakah ENV OAuth sudah lengkap)
+  // Fetch drive status dari server
   useEffect(() => {
     if (!firebaseUser) return;
     setDriveStatusLoading(true);
-    getAuth().currentUser?.getIdToken()
+    getAuth().currentUser?.getIdToken(true)
       .then(token => {
         if (!token) return;
         return fetch('/api/admin/google-drive/status', { headers: { Authorization: `Bearer ${token}` } })
           .then(r => r.json())
-          .then(data => { if (!data.error) setDriveApiStatus(data); });
+          .then(data => {
+            if (!data.error) setDriveApiStatus(data);
+          });
       })
       .catch(() => {})
       .finally(() => setDriveStatusLoading(false));
-  }, [firebaseUser, backupSettings?.driveConnected]);
+  }, [firebaseUser, driveStatusRefreshKey]);
 
   // Baca URL params saat mount — menangani redirect balik dari Google OAuth
   useEffect(() => {
@@ -985,15 +1056,25 @@ export function BackupExportClient() {
     const driveErr  = params.get('driveError');
     if (connected || driveErr) {
       oauthHandledRef.current = true;
-      // Bersihkan URL params
-      const cleanUrl = window.location.pathname;
-      window.history.replaceState({}, '', cleanUrl);
+      // Bersihkan URL params setelah baca
+      window.history.replaceState({}, '', window.location.pathname);
       if (connected === 'true') {
-        toast({ title: 'Google Drive Terhubung', description: `Akun ${email ?? ''} berhasil terhubung ke Google Drive Backup.` });
+        // Re-fetch status Drive dari server supaya UI langsung update
+        setDriveStatusRefreshKey(k => k + 1);
+        toast({
+          title: 'Google Drive Terhubung',
+          description: `Akun ${email ?? 'Google'} berhasil terhubung ke Google Drive Backup.`,
+        });
       } else if (driveErr === 'no_refresh_token') {
-        toast({ variant: 'destructive', title: 'Koneksi Gagal', description: 'Refresh token tidak diterima. Coba putuskan izin di myaccount.google.com/permissions lalu hubungkan ulang.' });
+        toast({
+          variant: 'destructive',
+          title: 'Koneksi Gagal: Refresh Token Tidak Ada',
+          description: 'Google tidak mengirim refresh_token. Hapus akses HRP di myaccount.google.com/permissions lalu coba hubungkan ulang.',
+        });
+      } else if (driveErr === 'missing_code') {
+        toast({ variant: 'destructive', title: 'Koneksi Gagal', description: 'Kode otorisasi tidak diterima dari Google.' });
       } else if (driveErr === 'access_denied') {
-        toast({ variant: 'destructive', title: 'Akses Ditolak', description: 'Pengguna tidak memberikan izin akses Google Drive.' });
+        toast({ variant: 'destructive', title: 'Akses Ditolak', description: 'Izin akses Google Drive tidak diberikan.' });
       } else if (driveErr === 'server_misconfigured') {
         toast({ variant: 'destructive', title: 'Konfigurasi Server Salah', description: 'GOOGLE_OAUTH_CLIENT_ID/SECRET/REDIRECT_URI belum dikonfigurasi di server.' });
       } else if (driveErr) {
@@ -1004,34 +1085,37 @@ export function BackupExportClient() {
 
   const handleConnectDrive = useCallback(async () => {
     if (!firebaseUser) return;
-    // Jika ENV OAuth belum lengkap, tampilkan modal info — jangan redirect
-    if (driveApiStatus && !driveApiStatus.oauthConfigured) {
-      setOauthConfigModalOpen(true);
-      return;
-    }
     setDriveConnecting(true);
     try {
       const idToken = await getAuth().currentUser?.getIdToken(true);
-      if (!idToken) throw new Error('Token tidak tersedia.');
+      if (!idToken) throw new Error('Sesi tidak valid, silakan muat ulang halaman.');
       const returnUrl = window.location.pathname + window.location.search;
       const res = await fetch(`/api/admin/google-drive/auth-url?returnUrl=${encodeURIComponent(returnUrl)}`, {
         headers: { Authorization: `Bearer ${idToken}` },
       });
-      const data = await res.json();
+      let data: any = {};
+      try { data = await res.json(); } catch { /* non-JSON response */ }
       if (!res.ok) {
-        // ENV belum lengkap — tampilkan modal bukan toast
-        if (data.error?.includes('belum dikonfigurasi')) {
+        const errMsg = data.error ?? `Server error (HTTP ${res.status})`;
+        // ENV belum lengkap — tampilkan modal detail
+        if (errMsg.includes('belum dikonfigurasi') || errMsg.includes('CLIENT_ID') || errMsg.includes('CLIENT_SECRET')) {
           setOauthConfigModalOpen(true);
+          setDriveConnecting(false);
           return;
         }
-        throw new Error(data.error ?? `HTTP ${res.status}`);
+        throw new Error(errMsg);
       }
+      if (!data.authUrl) throw new Error('Server tidak mengembalikan URL OAuth. Periksa log server.');
       window.location.href = data.authUrl;
     } catch (err: any) {
-      toast({ variant: 'destructive', title: 'Gagal memulai OAuth', description: 'Konfigurasi OAuth belum lengkap.' });
+      toast({
+        variant: 'destructive',
+        title: 'Gagal memulai OAuth Google Drive',
+        description: String(err.message ?? err),
+      });
       setDriveConnecting(false);
     }
-  }, [firebaseUser, driveApiStatus, toast]);
+  }, [firebaseUser, toast]);
 
   const handleDisconnectDrive = useCallback(async () => {
     if (!firebaseUser || !confirm('Yakin ingin memutus koneksi Google Drive? Backup otomatis tidak akan berjalan setelah ini.')) return;
@@ -1179,10 +1263,9 @@ export function BackupExportClient() {
     const reason = 'Test backup manual dari Pengaturan Backup Otomatis';
     setBackupReason(reason);
     setBackupScope({ scope: 'all', title: 'Test Backup Manual' });
-    setSelectedFormats(ALL_FORMATS);
     setBackupResult(null);
-    void handleRunBackup({ reason, scope: 'all', formats: ALL_FORMATS });
-  }, [handleRunBackup]);
+    void handleRunBackup({ reason, scope: 'all', format: selectedBackupFormat });
+  }, [handleRunBackup, selectedBackupFormat]);
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -1209,7 +1292,7 @@ export function BackupExportClient() {
         </CardHeader>
         <Separator />
         <CardContent className="pt-4">
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
             {statusItems.map(item => {
               const dot = item.status === 'green'  ? 'bg-emerald-500'
                         : item.status === 'red'    ? 'bg-red-500'
@@ -1394,7 +1477,7 @@ export function BackupExportClient() {
                             </Button>
                             <Button size="sm" variant="outline" onClick={handleDisconnectDrive} disabled={driveDisconnecting}
                               className="h-7 gap-1 text-xs border-red-200 text-red-700 hover:bg-red-50">
-                              {driveDisconnecting ? <Loader2 className="h-3 w-3 animate-spin" /> : <LinkOff className="h-3 w-3" />}
+                              {driveDisconnecting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unlink className="h-3 w-3" />}
                               Putus
                             </Button>
                           </div>
@@ -1407,8 +1490,7 @@ export function BackupExportClient() {
                           </p>
                           <Button
                             onClick={handleConnectDrive}
-                            disabled={driveConnecting || (!oauthReady && !driveStatusLoading)}
-                            title={!oauthReady ? 'Lengkapi konfigurasi OAuth di server terlebih dahulu.' : undefined}
+                            disabled={driveConnecting}
                             className="gap-2 bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-60"
                           >
                             {driveConnecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link className="h-4 w-4" />}
@@ -1416,7 +1498,7 @@ export function BackupExportClient() {
                           </Button>
                           {!oauthReady && !driveStatusLoading && (
                             <p className="text-[11px] text-amber-600">
-                              Lengkapi prasyarat OAuth di atas terlebih dahulu.
+                              Peringatan: Beberapa ENV OAuth belum dikonfigurasi. Proses akan gagal jika ENV tidak lengkap.
                             </p>
                           )}
                         </div>
@@ -1472,7 +1554,7 @@ export function BackupExportClient() {
 
       {/* ── Auto Backup Settings ─────────────────────────────────────────────── */}
       <Card className="border-violet-200 shadow-sm">
-        <CardHeader className="pb-3">
+        <CardHeader className="cursor-pointer select-none pb-3" onClick={() => setAutoSettingsOpen(o => !o)}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50">
@@ -1486,6 +1568,7 @@ export function BackupExportClient() {
               </div>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
+              <ChevronDown className={cn('h-4 w-4 text-slate-400 transition-transform', autoSettingsOpen && 'rotate-180')} />
               {settingsLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
               ) : (
@@ -1505,6 +1588,8 @@ export function BackupExportClient() {
             </div>
           </div>
         </CardHeader>
+        {autoSettingsOpen && (
+          <>
         <Separator />
         <CardContent className="pt-5">
           {settingsLoading ? (
@@ -1779,6 +1864,8 @@ export function BackupExportClient() {
             </div>
           )}
         </CardContent>
+          </>
+        )}
       </Card>
 
       <Dialog open={schedulerGuideOpen} onOpenChange={setSchedulerGuideOpen}>
@@ -1838,10 +1925,31 @@ export function BackupExportClient() {
                 </CardDescription>
               </div>
             </div>
-            <Button onClick={() => openBackupModal()} className="gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm">
-              <CloudUpload className="h-4 w-4" />
-              Backup Semua Data ke Drive
-            </Button>
+            <div className="flex items-center gap-2">
+              {/* Format selector — single choice */}
+              <div className="flex items-center gap-0.5 rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                {(['json', 'csv', 'xlsx'] as BackupFormat[]).map(fmt => (
+                  <button
+                    key={fmt}
+                    type="button"
+                    onClick={() => setSelectedBackupFormat(fmt)}
+                    disabled={isBackingUp}
+                    className={cn(
+                      'rounded-md px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide transition-colors disabled:pointer-events-none',
+                      selectedBackupFormat === fmt
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'text-slate-400 hover:text-slate-600',
+                    )}
+                  >
+                    {fmt}
+                  </button>
+                ))}
+              </div>
+              <Button onClick={() => openBackupModal()} disabled={isBackingUp} className="gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm">
+                <CloudUpload className="h-4 w-4" />
+                Backup Semua Data (.{selectedBackupFormat.toUpperCase()})
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <Separator />
@@ -1888,11 +1996,15 @@ export function BackupExportClient() {
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-slate-800">Backup per Kategori ke Google Drive</p>
-                <p className="mt-0.5 text-xs text-slate-500">Backup di sini selalu masuk Drive dan tidak mendownload file ke laptop.</p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Format aktif: <span className="font-semibold text-blue-700">.{selectedBackupFormat.toUpperCase()}</span> · Ganti format di atas.
+                </p>
               </div>
-              <Badge variant="outline" className="border-blue-200 bg-white text-blue-700">Drive</Badge>
+              <Badge variant="outline" className="border-blue-200 bg-white text-blue-700 text-[11px]">
+                Drive · {selectedBackupFormat.toUpperCase()}
+              </Badge>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               {BACKUP_CATEGORY_ACTIONS.map(category => {
                 const Icon = category.icon;
                 return (
@@ -1902,12 +2014,15 @@ export function BackupExportClient() {
                     variant="outline"
                     onClick={() => openBackupModal('category', category.key, category.title)}
                     disabled={isBackingUp}
-                    className={cn('h-auto justify-start gap-3 rounded-xl border-2 bg-white p-4 text-left text-sm font-semibold shadow-sm hover:bg-white disabled:opacity-50', category.className)}
+                    className={cn('h-auto justify-start gap-3 rounded-xl border-2 bg-white p-4 text-left shadow-sm hover:bg-white disabled:opacity-50', category.className)}
                   >
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/80">
                       <Icon className="h-5 w-5" />
                     </span>
-                    <span>Backup {category.title}</span>
+                    <span className="flex flex-col items-start gap-0.5">
+                      <span className="text-sm font-semibold">{category.title}</span>
+                      <span className="text-[10px] font-normal opacity-60">Backup ke Drive (.{selectedBackupFormat.toUpperCase()})</span>
+                    </span>
                   </Button>
                 );
               })}
@@ -1916,7 +2031,24 @@ export function BackupExportClient() {
 
           {/* Riwayat Backup table */}
           <div id="backup-history">
-            <p className="mb-3 text-sm font-semibold text-slate-700">Riwayat Backup</p>
+            <button
+              type="button"
+              onClick={() => setBackupHistoryOpen(o => !o)}
+              className="mb-3 flex w-full items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition-colors"
+            >
+              <span className="flex items-center gap-2">
+                <History className="h-3.5 w-3.5 text-slate-400" />
+                Riwayat Backup
+              </span>
+              <span className="flex items-center gap-2">
+                <Badge variant="outline" className="text-xs border-slate-200 text-slate-500">
+                  {backupLogsLoading ? '—' : `${backupLogs.length} entri`}
+                </Badge>
+                <ChevronDown className={cn('h-4 w-4 text-slate-400 transition-transform', backupHistoryOpen && 'rotate-180')} />
+              </span>
+            </button>
+            {backupHistoryOpen && (
+            <>
             {backupLogsLoading ? (
               <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
             ) : backupLogs.length === 0 ? (
@@ -2053,6 +2185,8 @@ export function BackupExportClient() {
                 </div>
               </div>
             )}
+            </>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -2090,362 +2224,471 @@ export function BackupExportClient() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Backup Confirmation Modal ────────────────────────────────────────── */}
-      <Dialog open={backupModalOpen} onOpenChange={open => { if (!isBackingUp) setBackupModalOpen(open); }}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <HardDrive className="h-5 w-5 text-blue-600" />
-              Backup ke Google Drive?
-            </DialogTitle>
-            <DialogDescription>
-              File backup akan disimpan ke folder Google Drive backup dan tidak akan diunduh ke laptop.
-            </DialogDescription>
-          </DialogHeader>
+      {/* ── Backup Modal ─────────────────────────────────────────────────────── */}
+      <Dialog open={backupModalOpen} onOpenChange={open => { if (!open && !isBackingUp) setBackupModalOpen(false); }}>
+        <DialogContent className="w-full max-w-2xl overflow-hidden p-0 gap-0">
 
-          {!backupResult ? (
-            isBackingUp ? (
+          {/* ── Modal Header (status-aware) ──────────────────────────────────── */}
+          <div className={cn(
+            'flex items-center gap-3 border-b px-5 py-4',
+            isBackingUp                              ? 'bg-blue-50 border-blue-100'
+            : backupResult?.success                  ? 'bg-emerald-50 border-emerald-100'
+            : backupResult && !backupResult.success  ? 'bg-red-50 border-red-100'
+            :                                          'bg-slate-50 border-slate-100',
+          )}>
+            <div className={cn(
+              'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+              isBackingUp                              ? 'bg-blue-100'
+              : backupResult?.success                  ? 'bg-emerald-100'
+              : backupResult && !backupResult.success  ? 'bg-red-100'
+              :                                          'bg-slate-100',
+            )}>
+              {isBackingUp
+                ? <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+                : backupResult?.success
+                  ? <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                  : backupResult && !backupResult.success
+                    ? <XCircle className="h-5 w-5 text-red-600" />
+                    : <CloudUpload className="h-5 w-5 text-slate-600" />}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-slate-900">
+                {isBackingUp                             ? 'Backup Sedang Berjalan'
+                 : backupResult?.success                 ? 'Backup Berhasil'
+                 : backupResult && !backupResult.success ? 'Backup Gagal'
+                 :                                         'Backup ke Google Drive'}
+              </p>
+              <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                {isBackingUp
+                  ? `${backupScope.title} · Server sedang memproses, jangan tutup halaman`
+                  : backupResult?.success
+                    ? `${(backupResult.totalDocuments ?? 0).toLocaleString('id-ID')} dokumen berhasil tersimpan ke Google Drive`
+                    : backupResult && !backupResult.success
+                      ? 'Proses gagal — periksa konfigurasi Drive dan coba lagi'
+                      : `Target: ${backupScope.title} · Semua file dikirim ke Google Drive`}
+              </p>
+            </div>
+          </div>
+
+          {/* ── Modal Body ────────────────────────────────────────────────────── */}
+          <div className="max-h-[calc(85vh-128px)] overflow-y-auto px-5 py-4 space-y-4">
+
+            {/* ── Phase A: Confirmation form ──────────────────────────────── */}
+            {!backupResult && !isBackingUp && (
               <>
-                <div className="space-y-4 py-2">
-                  <Alert className="border-blue-200 bg-blue-50">
-                    <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-                    <AlertDescription className="text-blue-800 text-xs">
-                      Backup sedang berjalan di server. Jika modal tertutup atau koneksi browser terputus, proses server tetap berjalan dan hasilnya dicatat di Riwayat Backup.
-                    </AlertDescription>
-                  </Alert>
-
-                  <div className="rounded-xl border border-slate-200 bg-white p-4">
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-800">{backupProgress?.stepLabel ?? 'Menyiapkan data'}</p>
-                        <p className="mt-0.5 text-xs text-slate-500">
-                          {backupProgress?.currentCategoryLabel ? `Kategori aktif: ${backupProgress.currentCategoryLabel}` : 'Menunggu progress dari server...'}
-                        </p>
-                      </div>
-                      <span className="text-lg font-bold text-blue-700">{backupProgressView.percent}%</span>
-                    </div>
-                    <div className="h-3 overflow-hidden rounded-full bg-slate-100">
-                      <div
-                        className="h-full rounded-full bg-blue-600 transition-all duration-500"
-                        style={{ width: `${backupProgressView.percent}%` }}
-                      />
-                    </div>
-                    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                      <div className="rounded-lg bg-slate-50 p-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Kategori</p>
-                        <p className="mt-1 text-sm font-semibold text-slate-800">
-                          {backupProgress?.completedCategories ?? 0} dari {backupProgress?.totalCategories ?? (backupScope.scope === 'category' ? 1 : 9)}
-                        </p>
-                      </div>
-                      <div className="rounded-lg bg-slate-50 p-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Dokumen</p>
-                        <p className="mt-1 text-sm font-semibold text-slate-800">
-                          {(backupProgress?.totalDocumentsProcessed ?? 0).toLocaleString('id-ID')}
-                        </p>
-                      </div>
-                      <div className="rounded-lg bg-slate-50 p-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Durasi</p>
-                        <p className="mt-1 text-sm font-semibold text-slate-800">{formatDuration(backupProgressView.elapsedSeconds)}</p>
-                      </div>
-                      <div className="rounded-lg bg-slate-50 p-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Estimasi sisa</p>
-                        <p className="mt-1 text-sm font-semibold text-slate-800">
-                          {backupProgressView.etaSeconds != null ? formatDuration(backupProgressView.etaSeconds) : 'Menghitung'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <p className="text-xs font-semibold text-slate-600">File terupload ke Drive</p>
-                      <p className="mt-1 text-xl font-bold text-slate-900">{backupProgress?.totalFilesUploaded ?? 0}</p>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <p className="text-xs font-semibold text-slate-600">Kategori gagal</p>
-                      <p className={cn('mt-1 text-xl font-bold', (backupProgress?.failedCategories ?? []).length > 0 ? 'text-red-600' : 'text-slate-900')}>
-                        {(backupProgress?.failedCategories ?? []).length}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-slate-200 bg-white p-3">
-                    <p className="mb-2 text-xs font-semibold text-slate-600">Activity Log</p>
-                    <div className="max-h-40 space-y-1 overflow-y-auto pr-1">
-                      {backupProgressView.activity.length > 0 ? (
-                        backupProgressView.activity.map((item, index) => (
-                          <div key={`${item}-${index}`} className="flex items-start gap-2 rounded-md bg-slate-50 px-2 py-1.5 text-xs text-slate-600">
-                            <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" />
-                            <span>{item}</span>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-xs text-slate-400">Menunggu aktivitas dari server...</p>
-                      )}
-                    </div>
-                  </div>
+                {/* Security info */}
+                <div className="flex items-start gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2.5 text-xs text-blue-800">
+                  <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-500" />
+                  <span>Backup berjalan di server. Semua file dikirim langsung ke Google Drive — tidak ada file yang diunduh ke laptop.</span>
                 </div>
-                <DialogFooter>
-                  <Button variant="outline" disabled className="cursor-not-allowed opacity-70">Tutup dinonaktifkan saat backup berjalan</Button>
-                  <Button disabled className="gap-2 bg-blue-600 text-white opacity-80">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Backup sedang diproses
-                  </Button>
-                </DialogFooter>
-              </>
-            ) : (
-            <>
-              <div className="space-y-4 py-2">
-                <Alert className="border-blue-200 bg-blue-50">
-                  <AlertTriangle className="h-4 w-4 text-blue-600" />
-                  <AlertDescription className="text-blue-800 text-xs">
-                    Backup berjalan di server dan hasilnya hanya dikirim ke Google Drive. Private key tidak pernah dikirim ke client.
-                  </AlertDescription>
-                </Alert>
 
-                {/* Format selector */}
+                {/* Format selector — single choice (radio) */}
                 <div className="space-y-2">
-                  <Label className="text-sm font-medium">Format Output</Label>
-                  <div className="flex flex-wrap gap-2">
+                  <p className="text-xs font-semibold text-slate-700">Format Backup</p>
+                  <div className="grid grid-cols-3 gap-2">
                     {([
-                      { key: 'json' as const, label: 'JSON', desc: 'Semua collection', color: 'blue' },
-                      { key: 'csv'  as const, label: 'CSV',  desc: 'Per collection',  color: 'amber' },
-                      { key: 'xlsx' as const, label: 'Excel / XLSX', desc: 'Per kategori (multi-sheet)', color: 'emerald' },
-                    ]).map(({ key, label, desc, color }) => {
-                      const active = selectedFormats.includes(key);
+                      { key: 'json' as const, label: 'JSON',  desc: 'Semua collection dalam 1 file',  icon: '{ }' },
+                      { key: 'csv'  as const, label: 'CSV',   desc: 'Per collection, mudah dibuka Excel', icon: ',' },
+                      { key: 'xlsx' as const, label: 'XLSX',  desc: 'Per kategori, multi-sheet Excel', icon: '⊞' },
+                    ]).map(({ key, label, desc, icon }) => {
+                      const active = selectedBackupFormat === key;
                       return (
                         <button
                           key={key}
                           type="button"
-                          onClick={() => toggleFormat(key)}
-                          disabled={isBackingUp}
+                          onClick={() => setSelectedBackupFormat(key)}
                           className={cn(
-                            'flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors',
+                            'relative flex flex-col items-start rounded-xl border-2 px-3 py-2.5 text-left transition-all',
                             active
-                              ? color === 'blue'    ? 'border-blue-300 bg-blue-50 text-blue-700'
-                              : color === 'amber'   ? 'border-amber-300 bg-amber-50 text-amber-700'
-                              :                       'border-emerald-300 bg-emerald-50 text-emerald-700'
-                              : 'border-slate-200 bg-white text-slate-400 hover:border-slate-300',
+                              ? 'border-blue-500 bg-blue-50 shadow-sm'
+                              : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50',
                           )}
                         >
-                          <span className={cn(
-                            'flex h-4 w-4 items-center justify-center rounded border',
-                            active
-                              ? color === 'blue'  ? 'border-blue-400 bg-blue-500 text-white'
-                              : color === 'amber' ? 'border-amber-400 bg-amber-500 text-white'
-                              :                     'border-emerald-400 bg-emerald-500 text-white'
-                              : 'border-slate-300 bg-white',
-                          )}>
-                            {active && <CheckCircle2 className="h-3 w-3" />}
-                          </span>
-                          <div className="text-left">
-                            <div>{label}</div>
-                            <div className="text-[10px] font-normal opacity-70">{desc}</div>
-                          </div>
+                          {active && (
+                            <span className="absolute right-2 top-2 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500">
+                              <CheckCircle2 className="h-3 w-3 text-white" />
+                            </span>
+                          )}
+                          <span className={cn('mb-1 font-mono text-lg leading-none', active ? 'text-blue-600' : 'text-slate-400')}>{icon}</span>
+                          <span className={cn('text-xs font-bold', active ? 'text-blue-700' : 'text-slate-700')}>.{label}</span>
+                          <span className="mt-0.5 text-[10px] leading-tight text-slate-400">{desc}</span>
                         </button>
                       );
                     })}
                   </div>
-                  <p className="text-xs text-slate-400">
-                    Format aktif: <span className="font-medium text-slate-600">{selectedFormats.map(f => f.toUpperCase()).join(' + ')}</span>
-                  </p>
                 </div>
 
+                {/* Reason */}
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">
+                  <Label className="text-xs font-semibold text-slate-700">
                     Alasan Backup <span className="text-red-500">*</span>
                   </Label>
                   <Textarea
                     value={backupReason}
                     onChange={e => setBackupReason(e.target.value)}
-                    placeholder="Wajib diisi. Contoh: Backup mingguan rutin, sebelum update sistem, dll."
+                    placeholder="Contoh: Backup mingguan rutin, sebelum update sistem, dll."
                     rows={2}
-                    disabled={isBackingUp}
-                    className={!backupReason.trim() ? 'border-slate-200' : 'border-emerald-300'}
+                    className={cn('text-sm resize-none', backupReason.trim() ? 'border-emerald-300 focus-visible:ring-emerald-400' : 'border-slate-200')}
                   />
                   {!backupReason.trim() && (
-                    <p className="text-xs text-slate-400">Alasan wajib diisi sebelum memulai backup.</p>
+                    <p className="text-[11px] text-amber-600">Alasan wajib diisi sebelum memulai backup.</p>
                   )}
                 </div>
+
+                {/* Scope summary */}
                 {backupScope.scope === 'all' ? (
-                  <div className="rounded-xl border border-slate-100 bg-slate-50 p-3 space-y-1.5">
-                    <p className="text-xs font-semibold text-slate-600">9 kategori yang akan di-backup:</p>
-                    <ul className="grid grid-cols-2 gap-1">
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">9 Kategori yang di-backup</p>
+                    <ul className="grid grid-cols-3 gap-x-3 gap-y-1">
                       {['Karyawan & User','Organisasi & Master','Absensi & Payroll','Izin & Cuti','Lembur','Perjalanan Dinas','Rekrutmen','Keamanan Sistem','File Metadata'].map(cat => (
-                        <li key={cat} className="flex items-center gap-1.5 text-xs text-slate-600">
-                          <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
+                        <li key={cat} className="flex items-center gap-1 text-[11px] text-slate-600">
+                          <CheckCircle2 className="h-2.5 w-2.5 shrink-0 text-emerald-500" />
                           {cat}
                         </li>
                       ))}
                     </ul>
                   </div>
                 ) : (
-                  <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">
-                    Backup hanya untuk kategori <span className="font-semibold">{backupScope.title}</span> dan hasilnya akan diupload ke Google Drive.
+                  <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                    Backup hanya kategori <span className="font-semibold">{backupScope.title}</span> → dikirim ke Google Drive.
                   </div>
                 )}
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setBackupModalOpen(false)} disabled={isBackingUp}>Batal</Button>
-                <Button onClick={() => handleRunBackup()} disabled={isBackingUp || !backupReason.trim()} className="gap-2 bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50">
-                  {isBackingUp ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Backup sedang diproses... Jangan tutup halaman ini.
-                    </>
-                  ) : (
-                    <>
-                      <CloudUpload className="h-4 w-4" />
-                      Jalankan Backup
-                    </>
+              </>
+            )}
+
+            {/* ── Phase B: In progress ────────────────────────────────────── */}
+            {isBackingUp && !backupResult && (
+              <>
+                {/* Info banner */}
+                <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs text-blue-800">
+                  <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-blue-600" />
+                  <span>Proses berjalan di server. Jika modal tertutup atau koneksi terputus, proses tetap berjalan dan hasilnya tercatat di Riwayat Backup.</span>
+                </div>
+
+                {/* Progress card */}
+                <div className="rounded-xl border border-blue-100 bg-white p-4">
+                  {/* Step info + percentage */}
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-800 leading-tight">
+                        {backupProgress?.stepLabel ?? 'Menyiapkan data...'}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-slate-400">
+                        {backupProgress?.currentCategoryLabel
+                          ? `Kategori: ${backupProgress.currentCategoryLabel}`
+                          : 'Menunggu respons server...'}
+                      </p>
+                    </div>
+                    <span className={cn(
+                      'shrink-0 text-2xl font-bold tabular-nums',
+                      backupProgressView.percent < 30  ? 'text-blue-500'
+                      : backupProgressView.percent < 70 ? 'text-blue-600'
+                      :                                   'text-emerald-600',
+                    )}>
+                      {backupProgressView.percent}%
+                    </span>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className={cn(
+                        'h-full rounded-full transition-all duration-700',
+                        backupProgressView.percent < 100 ? 'bg-blue-500' : 'bg-emerald-500',
+                      )}
+                      style={{ width: `${backupProgressView.percent}%` }}
+                    />
+                  </div>
+
+                  {/* Format badge */}
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <span className="text-[10px] text-slate-400">Format:</span>
+                    <span className="rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 font-mono text-[11px] font-semibold text-blue-700">
+                      .{selectedBackupFormat.toUpperCase()}
+                    </span>
+                  </div>
+
+                  {/* 4-col compact stats */}
+                  <div className="mt-3 grid grid-cols-4 gap-2">
+                    {[
+                      {
+                        label: 'Kategori',
+                        value: `${backupProgress?.completedCategories ?? 0}/${backupProgress?.totalCategories ?? (backupScope.scope === 'category' ? 1 : 9)}`,
+                        color: 'text-slate-800',
+                      },
+                      {
+                        label: 'Dokumen',
+                        value: (backupProgress?.totalDocumentsProcessed ?? 0).toLocaleString('id-ID'),
+                        color: 'text-slate-800',
+                      },
+                      {
+                        label: 'File Drive',
+                        value: String(backupProgress?.totalFilesUploaded ?? 0),
+                        color: 'text-slate-800',
+                      },
+                      {
+                        label: 'Gagal',
+                        value: String((backupProgress?.failedCategories ?? []).length),
+                        color: (backupProgress?.failedCategories ?? []).length > 0 ? 'text-red-600' : 'text-slate-800',
+                      },
+                    ].map(({ label, value, color }) => (
+                      <div key={label} className="rounded-lg bg-slate-50 px-2 py-1.5 text-center">
+                        <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">{label}</p>
+                        <p className={cn('mt-0.5 text-xs font-bold tabular-nums', color)}>{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Duration + ETA row */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                    <Clock className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <div>
+                      <p className="text-[10px] text-slate-400">Berjalan</p>
+                      <p className="text-xs font-semibold text-slate-700 tabular-nums">{formatDuration(backupProgressView.elapsedSeconds)}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                    <Timer className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <div>
+                      <p className="text-[10px] text-slate-400">Estimasi sisa</p>
+                      <p className="text-xs font-semibold text-slate-700 tabular-nums">
+                        {backupProgressView.etaSeconds != null ? formatDuration(backupProgressView.etaSeconds) : 'Menghitung...'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Activity log */}
+                <div className="rounded-xl border border-slate-100 bg-slate-50">
+                  <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Activity Log</p>
+                    <span className="text-[10px] text-slate-400">{backupProgressView.activity.length} entri</span>
+                  </div>
+                  <div className="max-h-40 space-y-0.5 overflow-y-auto p-2">
+                    {backupProgressView.activity.length > 0 ? (
+                      backupProgressView.activity.map((item, i) => (
+                        <div key={`${item}-${i}`} className="flex items-start gap-2 rounded-md px-2 py-1.5 text-[11px] text-slate-600 hover:bg-white">
+                          <span className={cn(
+                            'mt-1 h-1.5 w-1.5 shrink-0 rounded-full',
+                            i === 0 ? 'bg-blue-500' : 'bg-slate-300',
+                          )} />
+                          <span className="leading-relaxed">{item}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="px-2 py-3 text-center text-[11px] text-slate-400">Menunggu aktivitas dari server...</p>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* ── Phase C: Success ─────────────────────────────────────────── */}
+            {backupResult?.success && (
+              <>
+                {/* Summary stats */}
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {[
+                    { label: 'Kategori Selesai', value: String(backupProgress?.completedCategories ?? backupResult.totalCollections ?? 0) },
+                    { label: 'Dokumen',           value: (backupResult.totalDocuments ?? 0).toLocaleString('id-ID') },
+                    { label: 'File di Drive',     value: String(backupResult.totalUploadedFiles ?? backupResult.totalFiles ?? backupProgress?.totalFilesUploaded ?? 0) },
+                    { label: 'Durasi',            value: backupResult.durationSeconds != null ? formatDuration(backupResult.durationSeconds) : '—' },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-center">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-600">{label}</p>
+                      <p className="mt-1 text-base font-bold text-emerald-800">{value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Format chips */}
+                <div className="flex flex-wrap gap-2">
+                  {(backupResult.formats ?? []).includes('json') && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                      JSON · {backupResult.totalJsonFiles ?? 0} file
+                    </span>
                   )}
-                </Button>
-              </DialogFooter>
-            </>
-            )
-          ) : (
-            <>
-              <div className="py-2 space-y-4">
-                {backupResult.success ? (
-                  <div className="flex flex-col items-center gap-3 py-4 text-center">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100">
-                      <CheckCircle2 className="h-7 w-7 text-emerald-600" />
-                    </div>
-                    <div>
-                      <p className="text-base font-semibold text-slate-800">Backup berhasil disimpan ke Google Drive.</p>
-                      <p className="mt-1 text-sm text-slate-500">
-                        {(backupResult.totalDocuments ?? 0).toLocaleString('id-ID')} dokumen berhasil dibackup ke folder Google Drive.
-                      </p>
-                      <p className="sr-only">
-                        {backupResult.totalCollections ?? 0} collection · {(backupResult.totalDocuments ?? 0).toLocaleString('id-ID')} dokumen
-                        {backupResult.durationSeconds != null && ` · ${backupResult.durationSeconds}s`}
-                      </p>
-                    </div>
-                    <div className="grid w-full grid-cols-2 gap-2 text-left sm:grid-cols-4">
-                      <div className="rounded-lg border border-slate-100 bg-slate-50 p-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Kategori selesai</p>
-                        <p className="mt-1 text-sm font-bold text-slate-800">{backupProgress?.completedCategories ?? backupResult.totalCollections ?? 0}</p>
-                      </div>
-                      <div className="rounded-lg border border-slate-100 bg-slate-50 p-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Dokumen</p>
-                        <p className="mt-1 text-sm font-bold text-slate-800">{(backupResult.totalDocuments ?? 0).toLocaleString('id-ID')}</p>
-                      </div>
-                      <div className="rounded-lg border border-slate-100 bg-slate-50 p-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">File Drive</p>
-                        <p className="mt-1 text-sm font-bold text-slate-800">{backupResult.totalUploadedFiles ?? backupResult.totalFiles ?? backupProgress?.totalFilesUploaded ?? 0}</p>
-                      </div>
-                      <div className="rounded-lg border border-slate-100 bg-slate-50 p-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Selesai</p>
-                        <p className="mt-1 text-xs font-bold text-slate-800">{backupResult.finishedAt ? formatDateTime(backupResult.finishedAt) : '—'}</p>
-                      </div>
-                    </div>
-                    {/* File breakdown per format */}
-                    <div className="flex flex-wrap justify-center gap-2">
-                      {(backupResult.formats ?? []).includes('json') && (
-                        <span className="flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
-                          JSON · {backupResult.totalJsonFiles ?? 0} file
-                        </span>
-                      )}
-                      {(backupResult.formats ?? []).includes('csv') && (
-                        <span className="flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
-                          CSV · {backupResult.totalCsvFiles ?? 0} file
-                        </span>
-                      )}
-                      {(backupResult.formats ?? []).includes('xlsx') && (
-                        <span className="flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
-                          XLSX · {backupResult.totalXlsxFiles ?? 0} workbook
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap justify-center gap-2">
-                      {backupResult.googleDriveBackupFolderLink && (
-                        <a
-                          href={backupResult.googleDriveBackupFolderLink}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100"
-                        >
-                          <FolderOpen className="h-4 w-4" />
-                          Buka Folder Drive
-                        </a>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setBackupModalOpen(false);
-                          window.setTimeout(() => document.getElementById('backup-history')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
-                        }}
-                        className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100"
-                      >
-                        <FileSpreadsheet className="h-4 w-4" />
-                        Lihat Riwayat Backup
-                      </button>
-                      {backupResult.manifestWebViewLink && (
-                        <a
-                          href={backupResult.manifestWebViewLink}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
-                        >
-                          <FileText className="h-4 w-4" />
-                          Lihat Manifest
-                        </a>
-                      )}
+                  {(backupResult.formats ?? []).includes('csv') && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+                      CSV · {backupResult.totalCsvFiles ?? 0} file
+                    </span>
+                  )}
+                  {(backupResult.formats ?? []).includes('xlsx') && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+                      XLSX · {backupResult.totalXlsxFiles ?? 0} workbook
+                    </span>
+                  )}
+                  {backupResult.finishedAt && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-500">
+                      <Clock className="h-3 w-3" />
+                      {formatDateTime(backupResult.finishedAt)}
+                    </span>
+                  )}
+                </div>
+
+                {/* Drive links */}
+                <div className="flex flex-wrap gap-2">
+                  {backupResult.googleDriveBackupFolderLink && (
+                    <a
+                      href={backupResult.googleDriveBackupFolderLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors"
+                    >
+                      <FolderOpen className="h-3.5 w-3.5" />
+                      Buka Folder Drive
+                    </a>
+                  )}
+                  {backupResult.manifestWebViewLink && (
+                    <a
+                      href={backupResult.manifestWebViewLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors"
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      Lihat Manifest
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBackupModalOpen(false);
+                      window.setTimeout(() => document.getElementById('backup-history')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+                    }}
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                  >
+                    <FileSpreadsheet className="h-3.5 w-3.5" />
+                    Lihat Riwayat Backup
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* ── Phase D: Failed ──────────────────────────────────────────── */}
+            {backupResult && !backupResult.success && (
+              <>
+                <div className="rounded-xl border border-red-100 bg-red-50 p-4">
+                  <div className="flex items-start gap-3">
+                    <XCircle className="h-5 w-5 shrink-0 text-red-500 mt-0.5" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-red-800">Proses backup tidak berhasil diselesaikan.</p>
+                      <p className="mt-0.5 text-xs text-red-600">Periksa konfigurasi folder Drive atau akses service account, lalu coba lagi.</p>
                     </div>
                   </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-3 py-4 text-center">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-100">
-                      <XCircle className="h-7 w-7 text-red-600" />
-                    </div>
-                    <div>
-                      <p className="text-base font-semibold text-slate-800">Backup ke Google Drive gagal.</p>
-                      <p className="mt-1 text-sm text-slate-500">
-                        Periksa akses service account atau konfigurasi folder backup.
-                      </p>
-                      <div className="mt-3 grid grid-cols-2 gap-2 text-left">
-                        <div className="rounded-lg border border-red-100 bg-red-50 p-2">
-                          <p className="text-[10px] font-semibold uppercase tracking-wide text-red-400">Progress terakhir</p>
-                          <p className="mt-1 text-sm font-bold text-red-700">{backupProgress?.progressPercent ?? 0}%</p>
-                        </div>
-                        <div className="rounded-lg border border-red-100 bg-red-50 p-2">
-                          <p className="text-[10px] font-semibold uppercase tracking-wide text-red-400">Kategori gagal</p>
-                          <p className="mt-1 text-sm font-bold text-red-700">{(backupProgress?.failedCategories ?? []).length}</p>
-                        </div>
-                      </div>
-                      {(backupProgress?.failedCategories ?? []).length > 0 && (
-                        <div className="mt-3 rounded-lg border border-red-100 bg-red-50 p-2 text-left">
-                          <p className="text-xs font-semibold text-red-700">Kategori yang gagal</p>
-                          <p className="mt-1 text-xs text-red-600">{(backupProgress?.failedCategories ?? []).join(', ')}</p>
-                        </div>
-                      )}
-                      {backupProgress?.error && (
-                        <p className="mt-2 rounded-lg border border-red-100 bg-red-50 px-2 py-1.5 text-left text-xs text-red-700">
-                          {backupProgress.error}
-                        </p>
-                      )}
-                      {backupResult.errors?.length ? (
-                        <ul className="mt-2 space-y-1 text-left">
-                          {backupResult.errors.slice(0, 5).map((e, i) => (
-                            <li key={i} className="text-xs text-red-600">{e}</li>
-                          ))}
-                        </ul>
-                      ) : null}
-                    </div>
+                </div>
+
+                {/* Error stats */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-lg border border-red-100 bg-red-50 p-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-red-400">Progress tercatat</p>
+                    <p className="mt-1 text-base font-bold text-red-700">{backupProgress?.progressPercent ?? 0}%</p>
+                  </div>
+                  <div className="rounded-lg border border-red-100 bg-red-50 p-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-red-400">Kategori gagal</p>
+                    <p className="mt-1 text-base font-bold text-red-700">{(backupProgress?.failedCategories ?? []).length}</p>
+                  </div>
+                </div>
+
+                {/* Failed category names */}
+                {(backupProgress?.failedCategories ?? []).length > 0 && (
+                  <div className="rounded-lg border border-red-100 bg-white p-3">
+                    <p className="mb-1.5 text-xs font-semibold text-red-700">Kategori yang gagal:</p>
+                    <p className="text-xs text-red-600">{(backupProgress?.failedCategories ?? []).join(', ')}</p>
                   </div>
                 )}
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setBackupModalOpen(false)}>Tutup</Button>
-                {!backupResult.success && (
-                  <Button onClick={() => { setBackupResult(null); setBackupProgress(null); setBackupRunId(null); }} className="gap-2">
-                    <RefreshCw className="h-4 w-4" />
+
+                {/* Error message */}
+                {(backupProgress?.error || (backupResult.errors ?? []).length > 0) && (
+                  <div className="rounded-lg border border-red-100 bg-white p-3">
+                    <p className="mb-1.5 text-xs font-semibold text-red-700">Detail error:</p>
+                    {backupProgress?.error && (
+                      <p className="text-xs text-red-600 leading-relaxed">{backupProgress.error}</p>
+                    )}
+                    {(backupResult.errors ?? []).slice(0, 4).map((e, i) => (
+                      <p key={i} className="mt-1 text-xs text-red-500 leading-relaxed">{e}</p>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* ── Modal Footer (always visible) ────────────────────────────────── */}
+          <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/60 px-5 py-3">
+            {/* Left: status hint */}
+            <p className="text-[11px] text-slate-400">
+              {isBackingUp
+                ? 'Jangan tutup tab browser saat backup berjalan.'
+                : backupResult?.success
+                  ? 'Data tersimpan di Google Drive.'
+                  : backupResult && !backupResult.success
+                    ? 'Perbaiki konfigurasi sebelum mencoba lagi.'
+                    : 'File dikirim ke Google Drive, tidak ke laptop.'}
+            </p>
+
+            {/* Right: action buttons */}
+            <div className="flex shrink-0 items-center gap-2">
+              {/* Phase A — Confirmation */}
+              {!isBackingUp && !backupResult && (
+                <>
+                  <Button variant="outline" size="sm" onClick={() => setBackupModalOpen(false)}>
+                    Batal
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => handleRunBackup()}
+                    disabled={!backupReason.trim()}
+                    className="gap-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    <CloudUpload className="h-3.5 w-3.5" />
+                    Backup (.{selectedBackupFormat.toUpperCase()})
+                  </Button>
+                </>
+              )}
+
+              {/* Phase B — In progress */}
+              {isBackingUp && !backupResult && (
+                <>
+                  <Button variant="outline" size="sm" disabled className="cursor-not-allowed opacity-50">
+                    Tutup
+                  </Button>
+                  <Button size="sm" disabled className="gap-2 bg-blue-600 text-white opacity-80">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Memproses...
+                  </Button>
+                </>
+              )}
+
+              {/* Phase C — Success */}
+              {backupResult?.success && (
+                <Button size="sm" onClick={() => setBackupModalOpen(false)} className="gap-2 bg-emerald-600 text-white hover:bg-emerald-700">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Tutup
+                </Button>
+              )}
+
+              {/* Phase D — Failed */}
+              {backupResult && !backupResult.success && (
+                <>
+                  <Button variant="outline" size="sm" onClick={() => setBackupModalOpen(false)}>
+                    Tutup
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => { setBackupResult(null); setBackupProgress(null); setBackupRunId(null); }}
+                    className="gap-2"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
                     Coba Lagi
                   </Button>
-                )}
-              </DialogFooter>
-            </>
-          )}
+                </>
+              )}
+            </div>
+          </div>
+
         </DialogContent>
       </Dialog>
 
@@ -2595,28 +2838,122 @@ export function BackupExportClient() {
         </CardContent>
       </Card>
 
-      {/* ── Export Categories ────────────────────────────────────────────────── */}
-      <div>
-        <div className="mb-4">
-          <h2 className="text-base font-semibold text-slate-800">Export ke Laptop</h2>
-          <p className="mt-1 text-sm text-slate-500">Download data tertentu ke laptop dalam format JSON, CSV, atau XLSX.</p>
+      {/* ── Export Section ───────────────────────────────────────────────────── */}
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-slate-800">Export Data</h2>
+            <p className="mt-0.5 text-sm text-slate-500">Export koleksi data HRP ke Google Drive atau unduh ke laptop.</p>
+          </div>
+
+          {/* Destination segmented control */}
+          <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
+            <button
+              type="button"
+              onClick={() => setExportDestination('drive')}
+              className={cn(
+                'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                exportDestination === 'drive'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700',
+              )}
+            >
+              <CloudUpload className="h-3.5 w-3.5" />
+              Simpan ke Google Drive
+            </button>
+            <button
+              type="button"
+              onClick={() => setExportDestination('download')}
+              className={cn(
+                'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                exportDestination === 'download'
+                  ? 'bg-slate-700 text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700',
+              )}
+            >
+              <Download className="h-3.5 w-3.5" />
+              Download ke Laptop
+            </button>
+          </div>
         </div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {EXPORT_CATEGORIES.map(cat => (
+
+        {/* Drive not-connected guard */}
+        {exportDestination === 'drive' && backupSettings?.driveAuthMode === 'oauth_user' && !backupSettings?.driveConnected && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+            <div className="flex items-center gap-2.5 text-sm text-amber-800">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
+              Google Drive belum terhubung. Hubungkan terlebih dahulu agar file dapat disimpan ke Drive.
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleConnectDrive}
+              disabled={driveConnecting}
+              className="h-8 shrink-0 gap-1.5 border-amber-300 text-xs text-amber-700 hover:bg-amber-100"
+            >
+              {driveConnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link className="h-3.5 w-3.5" />}
+              Hubungkan Google Drive
+            </Button>
+          </div>
+        )}
+
+        {/* Search + category tabs row */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative flex-1 max-w-xs">
+            <Database className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <Input
+              placeholder="Cari data export..."
+              value={exportSearch}
+              onChange={e => setExportSearch(e.target.value)}
+              className="h-8 pl-8 text-xs"
+            />
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+          {EXPORT_CATEGORIES.map(cat => {
+            const Icon = cat.icon;
+            const active = activeExportCategoryId === cat.id;
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setActiveExportCategoryId(cat.id)}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                  active
+                    ? 'border-blue-300 bg-blue-600 text-white'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50',
+                )}
+              >
+                <Icon className="h-3 w-3" />
+                {cat.title}
+              </button>
+            );
+          })}
+          </div>
+        </div>
+
+        {/* Active category card */}
+        {(() => {
+          const cat = EXPORT_CATEGORIES.find(c => c.id === activeExportCategoryId) ?? EXPORT_CATEGORIES[0];
+          const driveBlocked = exportDestination === 'drive' && backupSettings?.driveAuthMode === 'oauth_user' && !backupSettings?.driveConnected;
+          return (
             <ExportCard
               key={cat.id}
               category={cat}
               filters={filters}
-              onExport={handleServerExport}
+              onExport={driveBlocked ? () => {} : handleServerExport}
               loadingId={loadingId}
+              exportDestination={exportDestination}
+              disabled={driveBlocked}
+              searchQuery={exportSearch}
             />
-          ))}
-        </div>
+          );
+        })()}
       </div>
 
       {/* ── Export History ────────────────────────────────────────────────────── */}
       <Card className="border-slate-200 shadow-sm">
-        <CardHeader className="pb-3">
+        <CardHeader className="cursor-pointer select-none pb-3" onClick={() => setExportHistoryOpen(o => !o)}>
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-50">
@@ -2627,11 +2964,16 @@ export function BackupExportClient() {
                 <CardDescription className="mt-0.5 text-xs">50 aktivitas export terbaru</CardDescription>
               </div>
             </div>
-            <Badge variant="outline" className="text-xs border-slate-200 text-slate-500">
-              {logsLoading ? '—' : `${exportLogs.length} entri`}
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="text-xs border-slate-200 text-slate-500">
+                {logsLoading ? '—' : `${exportLogs.length} entri`}
+              </Badge>
+              <ChevronDown className={cn('h-4 w-4 text-slate-400 transition-transform', exportHistoryOpen && 'rotate-180')} />
+            </div>
           </div>
         </CardHeader>
+        {exportHistoryOpen && (
+        <>
         <Separator />
         <CardContent className="p-0">
           {logsLoading ? (
@@ -2653,13 +2995,14 @@ export function BackupExportClient() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-slate-50/80 hover:bg-slate-50/80">
-                    <TableHead className="min-w-[160px] pl-6 font-semibold text-slate-600">Waktu</TableHead>
-                    <TableHead className="min-w-[160px] font-semibold text-slate-600">Diexport Oleh</TableHead>
-                    <TableHead className="min-w-[180px] font-semibold text-slate-600">Jenis Data</TableHead>
-                    <TableHead className="hidden min-w-[80px] lg:table-cell font-semibold text-slate-600">Format</TableHead>
-                    <TableHead className="hidden min-w-[80px] lg:table-cell font-semibold text-slate-600">Baris</TableHead>
-                    <TableHead className="min-w-[100px] font-semibold text-slate-600">Status</TableHead>
-                    <TableHead className="hidden min-w-[160px] xl:table-cell pr-6 font-semibold text-slate-600">File</TableHead>
+                    <TableHead className="min-w-[140px] pl-6 font-semibold text-slate-600">Waktu</TableHead>
+                    <TableHead className="min-w-[150px] font-semibold text-slate-600">Diexport Oleh</TableHead>
+                    <TableHead className="min-w-[160px] font-semibold text-slate-600">Jenis Data</TableHead>
+                    <TableHead className="hidden min-w-[70px] lg:table-cell font-semibold text-slate-600">Format</TableHead>
+                    <TableHead className="hidden min-w-[70px] lg:table-cell font-semibold text-slate-600">Baris</TableHead>
+                    <TableHead className="min-w-[90px] font-semibold text-slate-600">Status</TableHead>
+                    <TableHead className="hidden min-w-[130px] xl:table-cell font-semibold text-slate-600">Tujuan</TableHead>
+                    <TableHead className="hidden min-w-[120px] xl:table-cell pr-6 font-semibold text-slate-600">File / Link</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -2673,7 +3016,7 @@ export function BackupExportClient() {
                         <p className="text-[11px] text-slate-400">{log.exportedByEmail ?? '—'}</p>
                       </TableCell>
                       <TableCell>
-                        <p className="text-sm text-slate-700">{log.exportType ?? '—'}</p>
+                        <p className="text-sm text-slate-700">{log.exportType ?? log.collectionName ?? '—'}</p>
                         <p className="text-[11px] text-slate-400">{log.collectionName ?? '—'}</p>
                       </TableCell>
                       <TableCell className="hidden lg:table-cell">
@@ -2686,11 +3029,13 @@ export function BackupExportClient() {
                             :                        'border-teal-200 text-teal-700 bg-teal-50',
                           )}
                         >
-                          {log.format ?? 'csv'}
+                          {(log.format ?? 'csv').toUpperCase()}
                         </Badge>
                       </TableCell>
                       <TableCell className="hidden text-sm text-slate-600 lg:table-cell">
-                        {log.rowCount != null ? log.rowCount.toLocaleString() : '—'}
+                        {(log.rowCount ?? log.totalDocuments) != null
+                          ? (log.rowCount ?? log.totalDocuments)!.toLocaleString('id-ID')
+                          : '—'}
                       </TableCell>
                       <TableCell>
                         {log.status === 'success' ? (
@@ -2699,7 +3044,7 @@ export function BackupExportClient() {
                             Berhasil
                           </span>
                         ) : log.status === 'failed' ? (
-                          <span className="flex items-center gap-1 text-xs text-red-600">
+                          <span className="flex items-center gap-1 text-xs text-red-600" title={log.error ?? ''}>
                             <AlertTriangle className="h-3.5 w-3.5" />
                             Gagal
                           </span>
@@ -2707,8 +3052,33 @@ export function BackupExportClient() {
                           <span className="text-xs text-slate-400">—</span>
                         )}
                       </TableCell>
+                      <TableCell className="hidden xl:table-cell">
+                        {log.delivery === 'google_drive' ? (
+                          <span className="flex items-center gap-1 text-xs text-blue-600">
+                            <CloudUpload className="h-3.5 w-3.5" />
+                            Google Drive
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1 text-xs text-slate-500">
+                            <Download className="h-3.5 w-3.5" />
+                            Download
+                          </span>
+                        )}
+                      </TableCell>
                       <TableCell className="hidden xl:table-cell pr-6">
-                        <p className="truncate text-xs text-slate-400 max-w-[200px]">{log.fileName ?? '—'}</p>
+                        {log.driveWebViewLink ? (
+                          <a
+                            href={log.driveWebViewLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 hover:underline"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                            Buka di Drive
+                          </a>
+                        ) : (
+                          <p className="truncate text-xs text-slate-400 max-w-[180px]">{log.fileName ?? '—'}</p>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -2717,6 +3087,8 @@ export function BackupExportClient() {
             </div>
           )}
         </CardContent>
+        </>
+        )}
       </Card>
     </div>
   );

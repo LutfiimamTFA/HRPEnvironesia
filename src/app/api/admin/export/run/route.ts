@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { google, drive_v3 } from 'googleapis';
+import { Readable } from 'stream';
 import admin from '@/lib/firebase/admin';
 import { Timestamp } from 'firebase-admin/firestore';
 import * as XLSX from 'xlsx';
+import { formatRows, COLLECTION_DISPLAY_NAMES } from '@/lib/server/export-formatter';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -107,47 +110,60 @@ function serializeValue(value: unknown): unknown {
   return value;
 }
 
-function flattenDoc(doc: Record<string, unknown>, prefix = ''): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(doc)) {
-    const path = prefix ? `${prefix}.${key}` : key;
-    if (value === null || value === undefined) {
-      out[path] = '';
-    } else if (typeof value === 'object' && !Array.isArray(value)) {
-      Object.assign(out, flattenDoc(value as Record<string, unknown>, path));
-    } else if (Array.isArray(value)) {
-      out[path] = JSON.stringify(value);
-    } else {
-      out[path] = String(value);
-    }
-  }
-  return out;
-}
-
-function buildCsv(rows: Record<string, unknown>[]): Buffer {
-  const flat = rows.map(row => flattenDoc(row));
-  const headers = Array.from(new Set(flat.flatMap(row => Object.keys(row))));
-  const escape = (value: string) => `"${(value ?? '').replace(/"/g, '""')}"`;
+function buildCsv(formatted: Record<string, string>[]): Buffer {
+  const headers = Array.from(new Set(formatted.flatMap(row => Object.keys(row))));
+  const escape = (v: string) => `"${(v ?? '').replace(/"/g, '""')}"`;
   const lines = [
     headers.map(escape).join(','),
-    ...flat.map(row => headers.map(header => escape(row[header] ?? '')).join(',')),
+    ...formatted.map(row => headers.map(h => escape(row[h] ?? '')).join(',')),
   ];
-  return Buffer.from(lines.join('\n'), 'utf-8');
+  return Buffer.from('﻿' + lines.join('\n'), 'utf-8'); // BOM for Excel UTF-8 detection
 }
 
-function buildXlsx(rows: Record<string, unknown>[], sheetName: string): Buffer {
-  const flat = rows.map(row => flattenDoc(row));
-  const headers = Array.from(new Set(flat.flatMap(row => Object.keys(row))));
-  const worksheet = XLSX.utils.aoa_to_sheet([
-    headers,
-    ...flat.map(row => headers.map(header => row[header] ?? '')),
-  ]);
-  worksheet['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft', state: 'frozen' };
-  worksheet['!cols'] = headers.map(header => ({ wch: Math.min(Math.max(header.length, 10), 50) }));
+function buildXlsx(formatted: Record<string, string>[], displayName: string): Buffer {
+  const headers = Array.from(new Set(formatted.flatMap(row => Object.keys(row))));
+  const dataRows = formatted.map(row => headers.map(h => row[h] ?? ''));
 
+  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+
+  // Bold + background for header row
+  for (let c = 0; c < headers.length; c++) {
+    const cellRef = XLSX.utils.encode_cell({ r: 0, c });
+    if (!worksheet[cellRef]) worksheet[cellRef] = { t: 's', v: headers[c] };
+    worksheet[cellRef].s = {
+      font: { bold: true, color: { rgb: '1E3A5F' } },
+      fill: { patternType: 'solid', fgColor: { rgb: 'DBEAFE' } },
+      alignment: { wrapText: false, vertical: 'center', horizontal: 'center' },
+    };
+  }
+
+  // Wrap text + top-align for data rows
+  for (let r = 1; r <= dataRows.length; r++) {
+    for (let c = 0; c < headers.length; c++) {
+      const cellRef = XLSX.utils.encode_cell({ r, c });
+      if (!worksheet[cellRef]) continue;
+      worksheet[cellRef].s = {
+        alignment: { wrapText: true, vertical: 'top' },
+      };
+    }
+  }
+
+  // Auto column width: scan header + data
+  worksheet['!cols'] = headers.map((h, i) => {
+    const maxLen = Math.max(
+      h.length,
+      ...dataRows.map(row => String(row[i] ?? '').length),
+    );
+    return { wch: Math.min(Math.max(maxLen + 2, 12), 60) };
+  });
+
+  // Freeze first row
+  worksheet['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft', state: 'frozen' };
+
+  const sheetName = displayName.replace(/[\\/*?:[\]]/g, '_').slice(0, 31);
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName.replace(/[\\/*?:[\]]/g, '_').slice(0, 31));
-  return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx', compression: true }) as Buffer;
+  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+  return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx', compression: true, cellStyles: true }) as Buffer;
 }
 
 function makeMetadataRow(status: 'empty' | 'not_found', collectionName: string, exportedAt: string, filters: Record<string, unknown>) {
@@ -171,6 +187,83 @@ function toTimestampEnd(value: string) {
   return Timestamp.fromDate(date);
 }
 
+// ── Google Drive helpers (export) ─────────────────────────────────────────────
+async function buildOAuthDriveClient(): Promise<drive_v3.Drive> {
+  const clientId     = process.env.GOOGLE_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+  const redirectUri  = process.env.GOOGLE_OAUTH_REDIRECT_URI;
+  if (!clientId || !clientSecret || !redirectUri) {
+    throw new Error('GOOGLE_OAUTH_CLIENT_ID/SECRET/REDIRECT_URI belum dikonfigurasi di server.');
+  }
+  const oauthDoc = await admin.firestore().collection('system_settings').doc('google_drive_oauth').get();
+  const refreshToken = oauthDoc.data()?.refreshToken as string | undefined;
+  if (!refreshToken) {
+    throw new Error('Google Drive belum terhubung. Hubungkan akun Google Drive terlebih dahulu di halaman Backup & Export.');
+  }
+  const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+  oauth2Client.setCredentials({ refresh_token: refreshToken });
+  return google.drive({ version: 'v3', auth: oauth2Client });
+}
+
+function buildServiceAccountDriveClient(): drive_v3.Drive {
+  const email  = process.env.FIREBASE_CLIENT_EMAIL;
+  const rawKey = process.env.FIREBASE_PRIVATE_KEY;
+  if (!email || !rawKey) throw new Error('FIREBASE_CLIENT_EMAIL atau FIREBASE_PRIVATE_KEY belum dikonfigurasi.');
+  const auth = new google.auth.JWT({ email, key: rawKey.replace(/\\n/g, '\n'), scopes: ['https://www.googleapis.com/auth/drive'] });
+  return google.drive({ version: 'v3', auth });
+}
+
+async function getExportDriveClient(): Promise<drive_v3.Drive> {
+  try {
+    const snap = await admin.firestore().collection('system_settings').doc('backup_export').get();
+    const mode = snap.data()?.driveAuthMode as string | undefined;
+    if (mode === 'oauth_user') return buildOAuthDriveClient();
+    return buildServiceAccountDriveClient();
+  } catch {
+    return buildServiceAccountDriveClient();
+  }
+}
+
+async function getOrCreateExportFolder(drive: drive_v3.Drive, parentId: string, name: string): Promise<string> {
+  const q = `mimeType='application/vnd.google-apps.folder' and name='${name.replace(/'/g, "\\'")}' and '${parentId}' in parents and trashed=false`;
+  const res = await drive.files.list({ q, fields: 'files(id)', spaces: 'drive', supportsAllDrives: true, includeItemsFromAllDrives: true });
+  if (res.data.files?.length) return res.data.files[0].id!;
+  const created = await drive.files.create({
+    requestBody: { name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] },
+    fields: 'id',
+    supportsAllDrives: true,
+  });
+  return created.data.id!;
+}
+
+async function uploadExportBuffer(
+  drive: drive_v3.Drive,
+  folderId: string,
+  fileName: string,
+  buffer: Buffer,
+  mimeType: string,
+): Promise<{ fileId: string; webViewLink: string }> {
+  const stream = new Readable();
+  stream.push(buffer);
+  stream.push(null);
+  const res = await drive.files.create({
+    requestBody: { name: fileName, mimeType, parents: [folderId] },
+    media: { mimeType, body: stream },
+    fields: 'id, webViewLink',
+    supportsAllDrives: true,
+  });
+  return { fileId: res.data.id!, webViewLink: res.data.webViewLink ?? '' };
+}
+
+async function getExportFolderLink(drive: drive_v3.Drive, folderId: string): Promise<string> {
+  try {
+    const res = await drive.files.get({ fileId: folderId, fields: 'webViewLink', supportsAllDrives: true });
+    return res.data.webViewLink ?? `https://drive.google.com/drive/folders/${folderId}`;
+  } catch { return `https://drive.google.com/drive/folders/${folderId}`; }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 async function writeExportLog(params: {
   actor: { uid: string; email: string; name: string; role: string };
   exportKey: string;
@@ -179,52 +272,66 @@ async function writeExportLog(params: {
   filters: Record<string, unknown>;
   status: 'success' | 'failed';
   totalDocuments: number;
+  delivery?: 'google_drive' | 'local_download';
+  fileName?: string;
+  driveFileId?: string;
+  driveWebViewLink?: string;
+  driveFolderLink?: string;
   error?: string;
 }) {
   const db = admin.firestore();
   const createdAt = Timestamp.now();
 
+  // Sanitize filters: strip undefined values so Firestore doesn't reject the write
+  const safeFilters = JSON.parse(JSON.stringify(params.filters ?? {}));
+
   try {
     await db.collection('export_logs').add({
-      exportedByUid: params.actor.uid,
-      exportedByName: params.actor.name,
+      exportedByUid:   params.actor.uid,
+      exportedByName:  params.actor.name,
       exportedByEmail: params.actor.email,
-      exportKey: params.exportKey,
-      exportType: params.exportKey,
-      collectionName: params.collectionName,
-      format: params.format,
-      filters: params.filters,
-      status: params.status,
-      totalDocuments: params.totalDocuments,
-      rowCount: params.totalDocuments,
+      exportKey:       params.exportKey,
+      exportType:      params.exportKey,
+      collectionName:  params.collectionName,
+      format:          params.format,
+      filters:         safeFilters,
+      status:          params.status,
+      totalDocuments:  params.totalDocuments,
+      rowCount:        params.totalDocuments,
+      delivery:        params.delivery ?? 'local_download',
+      fileName:        params.fileName ?? null,
+      driveFileId:     params.driveFileId ?? null,
+      driveWebViewLink:params.driveWebViewLink ?? null,
+      driveFolderLink: params.driveFolderLink ?? null,
       createdAt,
-      error: params.error ?? null,
+      error:           params.error ?? null,
     });
-  } catch {
-    // Logging is best effort so export failures stay visible to the caller.
+  } catch (err: any) {
+    console.error('[export_logs] Gagal menulis log export:', err?.message ?? err);
   }
 
   try {
     await db.collection('audit_logs').add({
-      actorUid: params.actor.uid,
-      actorName: params.actor.name,
+      actorUid:   params.actor.uid,
+      actorName:  params.actor.name,
       actorEmail: params.actor.email,
-      actorRole: params.actor.role,
-      action: 'export_data',
-      category: 'backup_export',
+      actorRole:  params.actor.role,
+      action:     'export_data',
+      category:   'backup_export',
       targetType: 'collection',
       targetName: params.collectionName,
-      reason: `Export ${params.collectionName} (${params.format.toUpperCase()})`,
+      reason:     `Export ${params.collectionName} (${params.format.toUpperCase()})`,
       after: {
-        format: params.format,
-        collectionName: params.collectionName,
-        totalDocuments: params.totalDocuments,
-        status: params.status,
+        format:          params.format,
+        collectionName:  params.collectionName,
+        totalDocuments:  params.totalDocuments,
+        status:          params.status,
+        delivery:        params.delivery ?? 'local_download',
       },
       createdAt,
     });
-  } catch {
-    // Best effort.
+  } catch (err: any) {
+    console.error('[audit_logs] Gagal menulis audit log:', err?.message ?? err);
   }
 }
 
@@ -253,7 +360,7 @@ export async function POST(req: NextRequest) {
   const filters = body.filters ?? {};
   const mode = body.mode ?? 'download';
 
-  if (mode !== 'download') {
+  if (!['download', 'drive'].includes(mode)) {
     return errorResponse('Mode export tidak didukung.', 400);
   }
   if (!collectionName || !EXPORTABLE_COLLECTIONS.has(collectionName)) {
@@ -319,16 +426,89 @@ export async function POST(req: NextRequest) {
       ? 'text/csv; charset=utf-8'
       : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
+  const displayName = COLLECTION_DISPLAY_NAMES[collectionName] ?? collectionName;
+  const formattedRows = formatRows(rows, collectionName);
+
   let fileBuffer: Buffer;
   if (format === 'json') {
-    fileBuffer = Buffer.from(JSON.stringify(rows, null, 2), 'utf-8');
+    const jsonOut = {
+      namaLaporan: displayName,
+      waktuExport: exportedAt,
+      totalData: totalDocuments,
+      data: formattedRows,
+    };
+    fileBuffer = Buffer.from(JSON.stringify(jsonOut, null, 2), 'utf-8');
   } else if (format === 'csv') {
-    fileBuffer = buildCsv(rows);
+    fileBuffer = buildCsv(formattedRows);
   } else {
-    fileBuffer = buildXlsx(rows, collectionName);
+    fileBuffer = buildXlsx(formattedRows, displayName);
   }
 
-  await writeExportLog({ actor, exportKey, collectionName, format, filters, status: 'success', totalDocuments });
+  if (mode === 'drive') {
+    // Upload to Google Drive
+    let drive: drive_v3.Drive;
+    try {
+      drive = await getExportDriveClient();
+    } catch (err: any) {
+      await writeExportLog({ actor, exportKey, collectionName, format, filters, status: 'failed', totalDocuments, delivery: 'google_drive', error: err.message });
+      return errorResponse(err.message, 503);
+    }
+
+    // Resolve root folder from Firestore then env
+    let rootFolderId = process.env.GOOGLE_DRIVE_BACKUP_FOLDER_ID ?? '';
+    try {
+      const settingsSnap = await admin.firestore().collection('system_settings').doc('backup_export').get();
+      const fsFolder = settingsSnap.data()?.googleDriveBackupFolderId as string | undefined;
+      if (fsFolder) rootFolderId = fsFolder;
+    } catch { /* use env fallback */ }
+
+    if (!rootFolderId) {
+      await writeExportLog({ actor, exportKey, collectionName, format, filters, status: 'failed', totalDocuments, delivery: 'google_drive', error: 'Folder ID belum dikonfigurasi.' });
+      return errorResponse('Folder backup Google Drive belum dikonfigurasi. Isi GOOGLE_DRIVE_BACKUP_FOLDER_ID atau simpan folder ID di Pengaturan Backup.', 503);
+    }
+
+    try {
+      const now = new Date();
+      const yyyy = String(now.getUTCFullYear());
+      const mm   = String(now.getUTCMonth() + 1).padStart(2, '0');
+      const dd   = String(now.getUTCDate()).padStart(2, '0');
+
+      const exportRootId = await getOrCreateExportFolder(drive, rootFolderId, 'HRP Export');
+      const yearId       = await getOrCreateExportFolder(drive, exportRootId, yyyy);
+      const monthId      = await getOrCreateExportFolder(drive, yearId, mm);
+      const dayId        = await getOrCreateExportFolder(drive, monthId, dd);
+
+      const { fileId, webViewLink } = await uploadExportBuffer(drive, dayId, fileName, fileBuffer, mimeType);
+      const folderLink = await getExportFolderLink(drive, dayId);
+
+      await writeExportLog({
+        actor, exportKey, collectionName, format, filters,
+        status: 'success', totalDocuments,
+        delivery: 'google_drive',
+        fileName,
+        driveFileId: fileId,
+        driveWebViewLink: webViewLink,
+        driveFolderLink: folderLink,
+      });
+
+      return NextResponse.json({
+        success: true,
+        fileName,
+        totalDocuments,
+        webViewLink,
+        fileId,
+        folderLink,
+        exportDataStatus,
+      });
+    } catch (err: any) {
+      const error = err.message ?? 'Upload ke Google Drive gagal.';
+      await writeExportLog({ actor, exportKey, collectionName, format, filters, status: 'failed', totalDocuments, delivery: 'google_drive', error });
+      return errorResponse(`Upload ke Google Drive gagal: ${error}`, 500);
+    }
+  }
+
+  // mode === 'download'
+  await writeExportLog({ actor, exportKey, collectionName, format, filters, status: 'success', totalDocuments, delivery: 'local_download', fileName });
 
   return new NextResponse(new Uint8Array(fileBuffer), {
     status: 200,
