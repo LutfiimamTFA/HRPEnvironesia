@@ -912,5 +912,62 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow create, update, delete: if false;
     }
+
+    /**
+     * /system_settings/{docId}
+     * - backup_export and session_security are readable by Super Admin only.
+     * - Other settings (idle timeout, forceLogoutAllAt, menu_visibility) are readable by all signed-in users.
+     * - Only Super Admin can write any setting.
+     */
+    match /system_settings/{docId} {
+      allow read: if isSignedIn() && (
+        !(docId in ['backup_export']) || isSuperAdmin()
+      );
+      allow write: if isSuperAdmin();
+    }
+
+    /**
+     * /session_logs/{logId}
+     * - Any authenticated user can create a log entry for their own session.
+     * - Only Super Admin can read or list all logs.
+     */
+    match /session_logs/{logId} {
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow read, list: if isSuperAdmin();
+      allow update, delete: if false;
+    }
+
+    /**
+     * /audit_logs/{logId}
+     * - Super Admin can create and read audit logs.
+     * - Immutable: no update or delete allowed.
+     */
+    match /audit_logs/{logId} {
+      allow read, list: if isSuperAdmin();
+      allow create: if isSignedIn() && isSuperAdmin();
+      allow update, delete: if false;
+    }
+
+    /**
+     * /export_logs/{logId}
+     * - Super Admin only can create and read export logs.
+     * - Immutable: no update or delete allowed.
+     */
+    match /export_logs/{logId} {
+      allow read, list: if isSuperAdmin();
+      allow create: if isSignedIn() && isSuperAdmin();
+      allow update, delete: if false;
+    }
+
+    /**
+     * /backup_logs/{logId}
+     * - Super Admin only can create and read backup logs.
+     * - Immutable.
+     */
+    match /backup_logs/{logId} {
+      allow read, list: if isSuperAdmin();
+      allow create: if isSignedIn() && isSuperAdmin();
+      allow update, delete: if false;
+    }
   }
 }

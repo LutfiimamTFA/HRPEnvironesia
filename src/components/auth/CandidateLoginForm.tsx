@@ -24,6 +24,7 @@ import { Loader2, LogIn, Eye, EyeOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { UserProfile, ROLES_INTERNAL } from '@/lib/types';
 import Link from 'next/link';
+import { markLoginSession } from '@/lib/session-tracking';
 
 
 const formSchema = z.object({
@@ -101,6 +102,7 @@ export function CandidateLoginForm({ onSwitchToRegister }: { onSwitchToRegister?
 
       await batch.commit();
     }
+    await markLoginSession(firestore, user.uid);
     // On successful candidate login/creation, layout will redirect to /careers/portal
     toast({ title: 'Success', description: 'Logged in successfully.' });
   };

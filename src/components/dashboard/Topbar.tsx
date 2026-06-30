@@ -31,6 +31,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { NotificationPanel } from "./NotificationPanel";
 import { collection, query, where, doc } from "firebase/firestore";
 import type { Notification } from "@/lib/types";
+import { signOutWithSessionStatus } from "@/lib/session-tracking";
 
 function getDisplayName(
   userProfile: NonNullable<ReturnType<typeof useAuth>["userProfile"]>,
@@ -105,7 +106,13 @@ function UserNav() {
   const { data: employeeProfile } = useDoc<any>(profileDocRef);
 
   const handleLogout = async () => {
-    await auth.signOut();
+    await signOutWithSessionStatus(
+      auth,
+      firestore,
+      userProfile?.uid,
+      "manual_logout",
+      "offline",
+    );
     router.push("/");
   };
 

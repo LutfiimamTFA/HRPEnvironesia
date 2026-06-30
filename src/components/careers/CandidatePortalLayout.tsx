@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
@@ -48,6 +48,14 @@ import type {
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "../ui/ThemeToggle";
+import { useIdleSessionTimeout } from "@/hooks/useIdleSessionTimeout";
+import { IdleTimeoutModal } from "@/components/IdleTimeoutModal";
+import { useSessionTracking } from "@/hooks/useSessionTracking";
+import {
+  FORCE_LOGOUT_STORAGE_KEY,
+  markIdleSession,
+  signOutWithSessionStatus,
+} from "@/lib/session-tracking";
 import { Separator } from "../ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { ORDERED_RECRUITMENT_STAGES } from "@/lib/types";
@@ -61,11 +69,18 @@ import { CandidateNotificationPanel } from "./CandidateNotificationPanel";
 function UserNav() {
   const { userProfile } = useAuth();
   const auth = useFirebaseAuth();
+  const firestore = useFirestore();
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
 
   const handleLogout = async () => {
-    await auth.signOut();
+    await signOutWithSessionStatus(
+      auth,
+      firestore,
+      userProfile?.uid,
+      "manual_logout",
+      "offline",
+    );
     router.push("/careers");
   };
 
@@ -149,8 +164,10 @@ function UserNav() {
 
 export function CandidatePortalLayout({ children }: { children: ReactNode }) {
   const { userProfile } = useAuth();
+  const auth = useFirebaseAuth();
   const firestore = useFirestore();
   const pathname = usePathname();
+  const router = useRouter();
 
   const settingsDocRef = useMemoFirebase(
     () =>
@@ -275,11 +292,49 @@ export function CandidatePortalLayout({ children }: { children: ReactNode }) {
     return roleConfig;
   }, [userProfile, navSettings, isLoadingSettings]);
 
+  const handleIdleTimeout = useCallback(async () => {
+    try {
+      await signOutWithSessionStatus(
+        auth,
+        firestore,
+        userProfile?.uid,
+        "idle_timeout",
+        "auto_logged_out",
+      );
+    } catch { /* still redirect */ }
+    try { localStorage.removeItem(FORCE_LOGOUT_STORAGE_KEY); } catch { /* ignore */ }
+    router.replace('/careers/login');
+  }, [auth, firestore, router, userProfile?.uid]);
+
+  const handleIdleWarning = useCallback(async () => {
+    if (!userProfile?.uid) return;
+    try {
+      await markIdleSession(firestore, userProfile.uid);
+    } catch {
+      // Session status should not block the idle warning UI.
+    }
+  }, [firestore, userProfile?.uid]);
+
+  useSessionTracking({
+    enabled: !!userProfile,
+    userProfile,
+    auth,
+    firestore,
+    loginPath: "/careers/login",
+  });
+
+  const { showWarning, secondsRemaining, keepAlive } = useIdleSessionTimeout({
+    enabled: !!userProfile,
+    onTimeout: handleIdleTimeout,
+    onWarning: handleIdleWarning,
+  });
+
   if (!userProfile) {
     return null; // Should be handled by the parent layout's guard
   }
 
   return (
+    <>
     <SidebarProvider defaultOpen>
       <Sidebar
         collapsible="icon"
@@ -441,5 +496,13 @@ export function CandidatePortalLayout({ children }: { children: ReactNode }) {
         <main className="flex-1 p-4 sm:px-6 sm:py-6 md:gap-8">{children}</main>
       </SidebarInset>
     </SidebarProvider>
+    {showWarning && (
+      <IdleTimeoutModal
+        secondsRemaining={secondsRemaining}
+        onKeepAlive={keepAlive}
+        onLogoutNow={handleIdleTimeout}
+      />
+    )}
+    </>
   );
 }

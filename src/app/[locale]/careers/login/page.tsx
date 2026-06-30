@@ -25,14 +25,14 @@ function CandidateLoginContent() {
 
   if (loading || (userProfile && userProfile.role === 'kandidat')) {
     return (
-      <div className="flex h-screen w-full items-center justify-center">
+      <div className="flex min-h-[100dvh] w-full items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center bg-secondary p-4">
+    <div className="flex min-min-h-[100dvh] w-full items-center justify-center bg-secondary p-4">
       <div className="w-full max-w-md space-y-6 rounded-xl bg-background p-8 shadow-lg">
         <div className="text-center">
           <Link href="/careers" className="inline-block">
@@ -68,7 +68,7 @@ function CandidateLoginContent() {
 
 export default function CandidateLoginPage() {
   return (
-    <Suspense fallback={<div className="flex h-screen w-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
+    <Suspense fallback={<div className="flex min-h-[100dvh] w-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
       <CandidateLoginContent />
     </Suspense>
   )

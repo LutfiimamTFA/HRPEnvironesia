@@ -343,6 +343,35 @@ export const ALL_MENU_GROUPS: MenuGroup[] = [
     ],
   },
   {
+    title: "Keamanan & Sistem",
+    items: [
+      {
+        key: "admin.session-security",
+        href: "/admin/super-admin/session-security",
+        label: "Session & Security",
+        icon: createElement(ShieldCheck),
+      },
+      {
+        key: "admin.audit-log",
+        href: "/admin/super-admin/audit-log",
+        label: "Audit Log",
+        icon: createElement(History),
+      },
+      {
+        key: "admin.backup-export",
+        href: "/admin/super-admin/backup-export",
+        label: "Backup & Export",
+        icon: createElement(Database),
+      },
+      {
+        key: "admin.announcements",
+        href: "/admin/super-admin/announcements",
+        label: "Pengumuman Sistem",
+        icon: createElement(Settings),
+      },
+    ],
+  },
+  {
     title: "Personal",
     items: [
       {
@@ -547,6 +576,35 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
       ],
     },
     {
+      title: "Keamanan & Sistem",
+      items: [
+        {
+          key: "admin.session-security",
+          href: "/admin/super-admin/session-security",
+          label: "Session & Security",
+          icon: createElement(ShieldCheck),
+        },
+        {
+          key: "admin.audit-log",
+          href: "/admin/super-admin/audit-log",
+          label: "Audit Log",
+          icon: createElement(History),
+        },
+        {
+          key: "admin.backup-export",
+          href: "/admin/super-admin/backup-export",
+          label: "Backup & Export",
+          icon: createElement(Database),
+        },
+        {
+          key: "admin.announcements",
+          href: "/admin/super-admin/announcements",
+          label: "Pengumuman Sistem",
+          icon: createElement(Settings),
+        },
+      ],
+    },
+    {
       title: "Personal",
       items: [
         {
@@ -566,26 +624,16 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
     DEVELOPER_MENU_ITEMS,
   ],
   hrd: [
+    // ── A. REKRUTMEN ──────────────────────────────────────
     {
-      title: "BERANDA",
+      title: "Rekrutmen",
       items: [
-        {
-          key: "hrd.dashboard.karyawan",
-          href: "/admin/hrd/dashboard-karyawan",
-          label: "Dashboard Karyawan",
-          icon: createElement(LayoutDashboard),
-        },
         {
           key: "hrd.dashboard.rekrutmen",
           href: "/admin/hrd/dashboard-rekrutmen",
           label: "Dashboard Rekrutmen",
-          icon: createElement(Users),
+          icon: createElement(LayoutDashboard),
         },
-      ],
-    },
-    {
-      title: "REKRUTMEN",
-      items: [
         {
           key: "recruitment.jobs",
           href: "/admin/jobs",
@@ -624,8 +672,10 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
         },
       ],
     },
+
+    // ── B. DATA & ADMINISTRASI KARYAWAN ──────────────────
     {
-      title: "DATA KARYAWAN",
+      title: "Data Karyawan",
       items: [
         {
           key: "employee.data.karyawan",
@@ -647,14 +697,28 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
         },
       ],
     },
+
+    // ── C. ABSENSI & KEHADIRAN ────────────────────────────
     {
-      title: "KEHADIRAN & ABSENSI",
+      title: "Absensi & Kehadiran",
       items: [
+        {
+          key: "hrd.dashboard.karyawan",
+          href: "/admin/hrd/dashboard-karyawan",
+          label: "Dashboard Karyawan",
+          icon: createElement(LayoutDashboard),
+        },
         {
           key: "monitoring.attendance",
           href: "/admin/hrd/monitoring/absen",
           label: "Monitoring Absen",
           icon: createElement(FileClock),
+        },
+        {
+          key: "monitoring.attendance-payroll-recap",
+          href: "/admin/hrd/attendance-payroll-recap",
+          label: "Rekap Absensi Payroll",
+          icon: createElement(CalendarClock),
         },
         {
           key: "monitoring.settings",
@@ -664,8 +728,10 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
         },
       ],
     },
+
+    // ── D. LEMBUR ─────────────────────────────────────────
     {
-      title: "LEMBUR & PAYROLL",
+      title: "Lembur",
       items: [
         {
           key: "hrd.overtime_approval",
@@ -681,8 +747,10 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
         },
       ],
     },
+
+    // ── E. IZIN, CUTI & PERJALANAN DINAS ─────────────────
     {
-      title: "IZIN & CUTI",
+      title: "Izin, Cuti & Dinas",
       items: [
         {
           key: "hrd.permission_approval",
@@ -702,15 +770,10 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
           label: "Manajemen Cuti",
           icon: createElement(Calendar),
         },
-      ],
-    },
-    {
-      title: "PERJALANAN DINAS",
-      items: [
         {
           key: "hrd.dinas.monitoring",
           href: "/admin/hrd/monitoring/dinas",
-          label: "Monitoring Dinas",
+          label: "Dinas (Tracking)",
           icon: createElement(MapPin),
         },
         {
@@ -727,8 +790,10 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
         },
       ],
     },
+
+    // ── F. PENGEMBANGAN SDM ───────────────────────────────
     {
-      title: "PENGEMBANGAN SDM",
+      title: "Pengembangan SDM",
       items: [
         {
           key: "monitoring.training",
@@ -738,8 +803,10 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
         },
       ],
     },
+
+    // ── G. FITUR PRIBADI ──────────────────────────────────
     {
-      title: "FITUR PRIBADI",
+      title: "Fitur Pribadi",
       items: [
         {
           key: "hrd.personal.profile",

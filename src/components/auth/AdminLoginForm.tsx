@@ -31,6 +31,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { UserProfile, ROLES_INTERNAL } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { markLoginSession } from '@/lib/session-tracking';
 
 const formSchema = z.object({
   email: z.string().email({ message: 'Masukkan email yang valid.' }),
@@ -104,7 +105,7 @@ export function AdminLoginForm() {
         return;
       }
 
-      if (!ROLES_INTERNAL.includes(userProfile.role)) {
+      if (!ROLES_INTERNAL.includes(userProfile.role as any)) {
         await auth.signOut();
         toast({
           variant: 'destructive',
@@ -114,6 +115,8 @@ export function AdminLoginForm() {
         router.push('/careers/login');
         return;
       }
+
+      await markLoginSession(firestore, user.uid);
 
       // Update remember me preference
       if (values.rememberMe) {

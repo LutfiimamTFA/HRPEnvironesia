@@ -1,21 +1,19 @@
 "use client";
 
 import * as React from "react";
-import { useState, useEffect } from "react";
-import { collection, doc } from "firebase/firestore";
+import { useState, useEffect, useCallback } from "react";
+import { collection, doc, setDoc, serverTimestamp } from "firebase/firestore";
 import {
   useCollection,
   useFirestore,
   useMemoFirebase,
-  setDocumentNonBlocking,
 } from "@/firebase";
-import { UserRole, ROLES, EMPLOYMENT_TYPES } from "@/lib/types";
 import {
   ALL_MENU_GROUPS,
   MENU_CONFIG,
-  normalizeMenuKey,
   normalizeMenuVisibilityKeys,
 } from "@/lib/menu-config";
+import { useAuth } from "@/providers/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -33,13 +31,23 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Save } from "lucide-react";
+import { Loader2, Save, AlertCircle, CheckCircle2, Lock } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 type NavigationSettings = {
-  id: string; // role name
-  visibleMenuItems: string[]; // Stores menu item keys
+  id: string;
+  visibleMenuItems: string[];
+  updatedAt?: any;
+  updatedByUid?: string;
+  updatedByName?: string;
 };
 
 type DisplayRole = {
@@ -57,117 +65,207 @@ const rolesToDisplay: DisplayRole[] = [
   { id: "kandidat", label: "Kandidat" },
 ];
 
+// Keys that must always be checked for Super Admin — cannot be unchecked
+const SUPER_ADMIN_REQUIRED_KEYS = new Set([
+  "admin.users",
+  "admin.structure",
+  "admin.master",
+  "admin.access",
+  "admin.session-security",
+  "admin.audit-log",
+]);
+
+// New menu keys that should be auto-added to Super Admin if not already saved
+const SUPER_ADMIN_NEW_KEYS = [
+  "admin.session-security",
+  "admin.audit-log",
+  "admin.backup-export",
+  "admin.announcements",
+];
+
+function getDefaultMenuKeys(roleId: string): string[] {
+  const groups = MENU_CONFIG[roleId] || [];
+  return groups.flatMap((g) => g.items.map((i) => i.key));
+}
+
+function formatTimestamp(ts: any): string | null {
+  if (!ts) return null;
+  try {
+    const d = typeof ts.toDate === "function" ? ts.toDate() : new Date(ts);
+    return d.toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
+  } catch {
+    return null;
+  }
+}
+
 export function MenuSettingsClient() {
   const firestore = useFirestore();
+  const { firebaseUser, userProfile } = useAuth();
   const { toast } = useToast();
-  const [loading, setLoading] = useState(false);
+
   const [settings, setSettings] = useState<Record<string, string[]>>({});
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [hasUnsaved, setHasUnsaved] = useState(false);
+  const [savedMeta, setSavedMeta] = useState<{
+    updatedAt: any;
+    updatedByName: string | null;
+    isDefault: boolean;
+  } | null>(null);
 
   const settingsCollectionRef = useMemoFirebase(
     () => collection(firestore, "navigation_settings"),
     [firestore],
   );
-  const { data: initialSettings, isLoading: isLoadingSettings } =
+  const { data: firestoreSettings, isLoading: isLoadingSettings } =
     useCollection<NavigationSettings>(settingsCollectionRef);
 
   useEffect(() => {
-    if (isLoadingSettings || isInitialized) {
-      return;
-    }
+    if (isLoadingSettings || isInitialized) return;
 
     const newSettings: Record<string, string[]> = {};
+    let anyDocExists = false;
+    let latestUpdatedAt: any = null;
+    let latestUpdatedByName: string | null = null;
 
     rolesToDisplay.forEach((role) => {
-      const savedSetting = initialSettings?.find((s) => s.id === role.id);
-      if (savedSetting) {
-        let items = normalizeMenuVisibilityKeys(savedSetting.visibleMenuItems);
-        // Ensure overtime_payroll_recap defaults
-        if (
-          (role.id === "super-admin" || role.id === "hrd") &&
-          !items.includes("overtime_payroll_recap")
-        ) {
+      const saved = firestoreSettings?.find((s) => s.id === role.id);
+      if (saved) {
+        anyDocExists = true;
+        let items = normalizeMenuVisibilityKeys(saved.visibleMenuItems);
+
+        // Back-fill required and new Super Admin keys if missing from old saved data
+        if (role.id === "super-admin") {
+          for (const key of SUPER_ADMIN_REQUIRED_KEYS) {
+            if (!items.includes(key)) items.push(key);
+          }
+          for (const key of SUPER_ADMIN_NEW_KEYS) {
+            if (!items.includes(key)) items.push(key);
+          }
+        }
+        // Legacy back-fills for other roles
+        if ((role.id === "super-admin" || role.id === "hrd") && !items.includes("overtime_payroll_recap")) {
           items.push("overtime_payroll_recap");
         }
-        // Ensure attendance-payroll-recap defaults
-        if (
-          (role.id === "super-admin" || role.id === "hrd") &&
-          !items.includes("monitoring.attendance-payroll-recap")
-        ) {
+        if ((role.id === "super-admin" || role.id === "hrd") && !items.includes("monitoring.attendance-payroll-recap")) {
           items.push("monitoring.attendance-payroll-recap");
         }
-        // Ensure new leave management menu keys default
         if (role.id === "super-admin") {
-          if (!items.includes("hrd.leave_approval"))
-            items.push("hrd.leave_approval");
-          if (!items.includes("manager.leave_approval"))
-            items.push("manager.leave_approval");
+          if (!items.includes("hrd.leave_approval")) items.push("hrd.leave_approval");
+          if (!items.includes("manager.leave_approval")) items.push("manager.leave_approval");
           if (!items.includes("employee.leave")) items.push("employee.leave");
         } else if (role.id === "hrd") {
-          if (!items.includes("hrd.leave_approval"))
-            items.push("hrd.leave_approval");
+          if (!items.includes("hrd.leave_approval")) items.push("hrd.leave_approval");
         } else if (role.id === "manager") {
-          if (!items.includes("manager.leave_approval"))
-            items.push("manager.leave_approval");
+          if (!items.includes("manager.leave_approval")) items.push("manager.leave_approval");
         } else if (role.id === "karyawan") {
           if (!items.includes("employee.leave")) items.push("employee.leave");
         }
+
         newSettings[role.id] = items;
+
+        const ts = saved.updatedAt?.seconds ?? 0;
+        if (saved.updatedAt && ts > (latestUpdatedAt?.seconds ?? 0)) {
+          latestUpdatedAt = saved.updatedAt;
+          latestUpdatedByName = saved.updatedByName ?? null;
+        }
       } else {
-        // Default to all menus defined for that specific role/sub-role in MENU_CONFIG
-        const defaultMenus = MENU_CONFIG[role.id] || [];
-        newSettings[role.id] = defaultMenus.flatMap((group) =>
-          group.items.map((item) => item.key),
-        );
+        newSettings[role.id] = getDefaultMenuKeys(role.id);
       }
     });
 
-    setSettings(newSettings);
-    setIsInitialized(true);
-  }, [initialSettings, isLoadingSettings, isInitialized]);
-
-  const handleCheckboxChange = (
-    roleId: string,
-    menuItemKey: string,
-    checked: boolean,
-  ) => {
-    setSettings((prevSettings) => {
-      const currentItems = prevSettings[roleId] || [];
-      const newItems = checked
-        ? [...currentItems, menuItemKey]
-        : currentItems.filter((key) => key !== menuItemKey);
-      return { ...prevSettings, [roleId]: newItems };
+    setSavedMeta({
+      updatedAt: latestUpdatedAt,
+      updatedByName: latestUpdatedByName,
+      isDefault: !anyDocExists,
     });
-  };
+    setSettings(newSettings);
+    setHasUnsaved(false);
+    setIsInitialized(true);
+  }, [firestoreSettings, isLoadingSettings, isInitialized]);
 
-  const handleSave = async () => {
-    setLoading(true);
-    const promises = Object.entries(settings).map(
-      ([roleId, visibleMenuItems]) => {
-        const normalizedVisibleMenuItems =
-          normalizeMenuVisibilityKeys(visibleMenuItems);
+  const handleCheckboxChange = useCallback(
+    (roleId: string, menuItemKey: string, checked: boolean) => {
+      if (roleId === "super-admin" && !checked && SUPER_ADMIN_REQUIRED_KEYS.has(menuItemKey)) {
+        toast({
+          variant: "destructive",
+          title: "Menu wajib aktif",
+          description: "Menu ini harus selalu aktif untuk Super Admin demi keamanan sistem.",
+        });
+        return;
+      }
+      setSettings((prev) => {
+        const current = prev[roleId] || [];
+        const updated = checked
+          ? [...current, menuItemKey]
+          : current.filter((k) => k !== menuItemKey);
+        return { ...prev, [roleId]: updated };
+      });
+      setHasUnsaved(true);
+    },
+    [toast],
+  );
+
+  const handleSave = useCallback(async () => {
+    if (!firebaseUser) {
+      toast({ variant: "destructive", title: "Tidak terautentikasi", description: "Silakan login ulang." });
+      return;
+    }
+
+    setIsSaving(true);
+    const actorName = userProfile?.fullName || firebaseUser.email || firebaseUser.uid;
+    const now = serverTimestamp();
+
+    try {
+      const promises = Object.entries(settings).map(([roleId, visibleMenuItems]) => {
+        const normalized = normalizeMenuVisibilityKeys(visibleMenuItems);
         const docRef = doc(firestore, "navigation_settings", roleId);
-        return setDocumentNonBlocking(
+        return setDoc(
           docRef,
-          { role: roleId, visibleMenuItems: normalizedVisibleMenuItems },
+          {
+            role: roleId,
+            visibleMenuItems: normalized,
+            updatedAt: now,
+            updatedByUid: firebaseUser.uid,
+            updatedByName: actorName,
+          },
           { merge: true },
         );
-      },
-    );
+      });
 
-    await Promise.all(promises);
+      await Promise.all(promises);
 
-    toast({
-      title: "Settings Saved",
-      description: "Navigation menu settings have been updated.",
-    });
-    setLoading(false);
-  };
+      setSavedMeta({
+        updatedAt: { toDate: () => new Date() },
+        updatedByName: actorName,
+        isDefault: false,
+      });
+      setHasUnsaved(false);
+
+      toast({
+        title: "Pengaturan disimpan",
+        description: "Visibilitas menu berhasil diperbarui.",
+      });
+    } catch (err: any) {
+      console.error("MenuSettings save error:", err);
+      const isPermission = err?.code === "permission-denied";
+      toast({
+        variant: "destructive",
+        title: isPermission ? "Akses ditolak" : "Gagal menyimpan",
+        description: isPermission
+          ? "Anda tidak memiliki izin untuk mengubah pengaturan menu."
+          : `Terjadi kesalahan: ${err?.message ?? "Unknown error"}`,
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  }, [settings, firebaseUser, userProfile, firestore, toast]);
 
   if (!isInitialized) {
     return (
       <div className="space-y-4">
-        <Skeleton className="h-48 w-full" />
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-96 w-full" />
         <div className="flex justify-end">
           <Skeleton className="h-10 w-32" />
         </div>
@@ -175,97 +273,161 @@ export function MenuSettingsClient() {
     );
   }
 
+  const savedAtText = savedMeta?.updatedAt ? formatTimestamp(savedMeta.updatedAt) : null;
+
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Menu Visibility Settings</CardTitle>
-          <CardDescription>
-            Configure which navigation menu items are visible for each user role
-            and type.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="font-semibold">Menu Item</TableHead>
-                  {rolesToDisplay.map((role) => (
-                    <TableHead
-                      key={role.id}
-                      className="text-center font-semibold capitalize"
-                    >
-                      {role.label}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {ALL_MENU_GROUPS.map((group, groupIndex) => (
-                  <React.Fragment key={group.title || `group-${groupIndex}`}>
-                    {group.title && (
-                      <TableRow className="bg-muted/50 hover:bg-muted/50">
-                        <TableCell
-                          colSpan={rolesToDisplay.length + 1}
-                          className="py-2 px-4"
-                        >
-                          <h4 className="font-semibold text-sm">
-                            {group.title}
-                          </h4>
-                        </TableCell>
-                      </TableRow>
-                    )}
-                    {group.items.map((menuItem) => {
-                      return (
-                        <TableRow key={menuItem.key}>
-                          <TableCell className="font-medium pl-8">
-                            {menuItem.label}
-                          </TableCell>
-                          {rolesToDisplay.map((role) => {
-                            const isVisible = (
-                              settings[role.id] || []
-                            ).includes(menuItem.key);
-                            return (
-                              <TableCell
-                                key={`${role.id}-${menuItem.key}`}
-                                className="text-center"
-                              >
-                                <Checkbox
-                                  checked={isVisible}
-                                  onCheckedChange={(checked) =>
-                                    handleCheckboxChange(
-                                      role.id,
-                                      menuItem.key,
-                                      !!checked,
-                                    )
-                                  }
-                                  id={`${role.id}-${menuItem.key}`}
-                                  aria-label={`Toggle ${menuItem.label} for ${role.label}`}
-                                />
-                              </TableCell>
-                            );
-                          })}
-                        </TableRow>
-                      );
-                    })}
-                  </React.Fragment>
-                ))}
-              </TableBody>
-            </Table>
+    <TooltipProvider>
+      <div className="space-y-6">
+        {/* Status indicator */}
+        {hasUnsaved ? (
+          <div className="flex items-center gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>Ada perubahan yang belum disimpan</span>
           </div>
-        </CardContent>
-      </Card>
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={loading}>
-          {loading ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Save className="mr-2 h-4 w-4" />
-          )}
-          Save Changes
-        </Button>
+        ) : savedMeta?.isDefault ? (
+          <div className="flex items-center gap-2 rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-sm text-blue-800">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>Belum ada konfigurasi tersimpan — menggunakan default</span>
+          </div>
+        ) : savedAtText ? (
+          <div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-800">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <span>
+              Konfigurasi terakhir disimpan pada <strong>{savedAtText}</strong>
+              {savedMeta?.updatedByName && (
+                <> oleh <strong>{savedMeta.updatedByName}</strong></>
+              )}
+            </span>
+          </div>
+        ) : null}
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Access & Roles — Menu Visibility</CardTitle>
+            <CardDescription>
+              Atur menu mana yang terlihat untuk setiap role. Perubahan disimpan permanen ke Firestore.
+              Menu bertanda <Lock className="inline h-3 w-3 mx-0.5 text-muted-foreground" /> wajib aktif untuk Super Admin.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-md border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="font-semibold min-w-[180px]">Menu Item</TableHead>
+                    {rolesToDisplay.map((role) => (
+                      <TableHead
+                        key={role.id}
+                        className="text-center font-semibold capitalize min-w-[100px]"
+                      >
+                        {role.label}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {ALL_MENU_GROUPS.map((group, groupIndex) => (
+                    <React.Fragment key={group.title || `group-${groupIndex}`}>
+                      {group.title && (
+                        <TableRow className="bg-muted/50 hover:bg-muted/50">
+                          <TableCell
+                            colSpan={rolesToDisplay.length + 1}
+                            className="py-2 px-4"
+                          >
+                            <h4 className="font-semibold text-sm">{group.title}</h4>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      {group.items.map((menuItem) => {
+                        const isRequiredForSuperAdmin = SUPER_ADMIN_REQUIRED_KEYS.has(menuItem.key);
+                        return (
+                          <TableRow key={menuItem.key}>
+                            <TableCell className="pl-8 font-medium">
+                              <span className="flex items-center gap-1.5">
+                                {menuItem.label}
+                                {isRequiredForSuperAdmin && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Lock className="h-3 w-3 text-muted-foreground cursor-help shrink-0" />
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>Menu wajib aktif untuk Super Admin</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                )}
+                              </span>
+                            </TableCell>
+                            {rolesToDisplay.map((role) => {
+                              const isVisible = (settings[role.id] || []).includes(menuItem.key);
+                              const isLocked = role.id === "super-admin" && isRequiredForSuperAdmin;
+
+                              return (
+                                <TableCell
+                                  key={`${role.id}-${menuItem.key}`}
+                                  className="text-center"
+                                >
+                                  {isLocked ? (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="inline-flex items-center justify-center">
+                                          <Checkbox
+                                            checked={true}
+                                            disabled
+                                            className="opacity-60 cursor-not-allowed data-[state=checked]:bg-teal-600 data-[state=checked]:border-teal-600"
+                                            aria-label={`${menuItem.label} wajib aktif untuk ${role.label}`}
+                                          />
+                                        </span>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>Menu wajib aktif untuk Super Admin</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  ) : (
+                                    <Checkbox
+                                      checked={isVisible}
+                                      onCheckedChange={(checked) =>
+                                        handleCheckboxChange(role.id, menuItem.key, !!checked)
+                                      }
+                                      id={`${role.id}-${menuItem.key}`}
+                                      aria-label={`Toggle ${menuItem.label} for ${role.label}`}
+                                    />
+                                  )}
+                                </TableCell>
+                              );
+                            })}
+                          </TableRow>
+                        );
+                      })}
+                    </React.Fragment>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="flex items-center justify-between">
+          <div>
+            {hasUnsaved && (
+              <Badge variant="outline" className="text-amber-700 border-amber-300 bg-amber-50">
+                Perubahan belum disimpan
+              </Badge>
+            )}
+          </div>
+          <Button
+            onClick={handleSave}
+            disabled={isSaving || !hasUnsaved}
+            className="bg-teal-600 hover:bg-teal-700 text-white disabled:opacity-50"
+          >
+            {isSaving ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="mr-2 h-4 w-4" />
+            )}
+            {isSaving ? "Menyimpan..." : "Save Changes"}
+          </Button>
+        </div>
       </div>
-    </div>
+    </TooltipProvider>
   );
 }
