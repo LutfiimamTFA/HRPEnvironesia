@@ -635,6 +635,11 @@ service cloud.firestore {
       allow get, list: if isSignedIn();
       allow create, update, delete: if isHrd() || isSuperAdmin();
     }
+
+    match /backup_progress/{backupId} {
+      allow read, list: if isSuperAdmin();
+      allow create, update, delete: if false;
+    }
   }
 }
 

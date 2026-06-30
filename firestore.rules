@@ -916,14 +916,20 @@ service cloud.firestore {
     /**
      * /system_settings/{docId}
      * - backup_export and session_security are readable by Super Admin only.
+     * - google_drive_oauth contains OAuth refresh tokens — NEVER readable from client.
      * - Other settings (idle timeout, forceLogoutAllAt, menu_visibility) are readable by all signed-in users.
      * - Only Super Admin can write any setting.
      */
     match /system_settings/{docId} {
       allow read: if isSignedIn() && (
         !(docId in ['backup_export']) || isSuperAdmin()
-      );
-      allow write: if isSuperAdmin();
+      ) && docId != 'google_drive_oauth';
+      allow write: if isSuperAdmin() && docId != 'google_drive_oauth';
+    }
+
+    // google_drive_oauth contains sensitive refresh tokens — server-only via Admin SDK
+    match /system_settings/google_drive_oauth {
+      allow read, write: if false;
     }
 
     /**
@@ -968,6 +974,16 @@ service cloud.firestore {
       allow read, list: if isSuperAdmin();
       allow create: if isSignedIn() && isSuperAdmin();
       allow update, delete: if false;
+    }
+
+    /**
+     * /backup_progress/{backupId}
+     * - Server writes real-time backup progress with Admin SDK.
+     * - Super Admin can read progress while the modal is open.
+     */
+    match /backup_progress/{backupId} {
+      allow read, list: if isSuperAdmin();
+      allow create, update, delete: if false;
     }
   }
 }
