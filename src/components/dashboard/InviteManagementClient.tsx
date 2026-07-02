@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useCollection, useFirestore, useMemoFirebase, useAuth as useFirebaseAuth } from '@/firebase';
+import { useFeatureFlags } from '@/lib/feature-flags';
 import { collection, query, where } from 'firebase/firestore';
 import type { InviteBatch, Brand, UserProfile, InviteContractType } from '@/lib/types';
 import { useAuth } from '@/providers/auth-provider';
@@ -286,6 +287,8 @@ export function InviteManagementClient() {
   const firestore = useFirestore();
   const { toast } = useToast();
   const router = useRouter();
+  const { isEnabled: isFeatureFlagEnabled } = useFeatureFlags(firestore);
+  const employeeInviteEnabled = isFeatureFlagEnabled('employee_invite');
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -609,7 +612,12 @@ export function InviteManagementClient() {
                       </FormItem>
                     )} />
 
-                    <Button type="submit" className="w-full h-12 text-base font-semibold" disabled={isGenerating}>
+                    {!employeeInviteEnabled && (
+                      <p className="text-xs font-medium text-red-600">
+                        Fitur Employee Invite sedang dinonaktifkan oleh Super Admin.
+                      </p>
+                    )}
+                    <Button type="submit" className="w-full h-12 text-base font-semibold" disabled={isGenerating || !employeeInviteEnabled}>
                       {isGenerating
                         ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Membuat...</>
                         : <><PlusCircle className="mr-2 h-4 w-4" />Generate Batch Undangan</>

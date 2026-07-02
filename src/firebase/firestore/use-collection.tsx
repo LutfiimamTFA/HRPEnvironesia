@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { getAuth } from "firebase/auth";
 import {
   Query,
@@ -26,6 +26,25 @@ export interface UseCollectionResult<T> {
   isLoading: boolean; // True if loading.
   error: FirestoreError | Error | null; // Error object, or null.
   mutate: () => void;
+  /** True while paused after a resource-exhausted error (see cooldownMs option). */
+  isPaused: boolean;
+}
+
+export interface UseCollectionOptions {
+  /**
+   * When false, fetches once with getDocs instead of opening a persistent
+   * onSnapshot listener. Use for list/report pages that don't need live
+   * updates (Data Karyawan, Applications, Audit Log, Backup/Export Log,
+   * etc.) — every onSnapshot is a standing read cost multiplied by every
+   * concurrently-open tab. Defaults to true to preserve existing behavior.
+   */
+  realtime?: boolean;
+  /**
+   * Minimum time to back off after a `resource-exhausted` error before this
+   * hook will try again. Prevents the classic retry storm where a listener
+   * immediately re-subscribes into the same quota wall. Defaults to 60s.
+   */
+  cooldownMs?: number;
 }
 
 /* Internal implementation of Query:
@@ -73,8 +92,10 @@ function isInvalidFirestoreTarget(
   return true;
 }
 
+const DEFAULT_COOLDOWN_MS = 60_000;
+
 /**
- * React hook to subscribe to a Firestore collection or query in real-time.
+ * React hook to subscribe to (or one-shot fetch) a Firestore collection/query.
  * Handles nullable references.
  *
  *
@@ -94,9 +115,13 @@ export function useCollection<T = any>(
       })
     | null
     | undefined,
+  options?: UseCollectionOptions,
 ): UseCollectionResult<T> {
   type ResultItemType = WithId<T>;
   type StateDataType = ResultItemType[] | null;
+
+  const realtime = options?.realtime !== false;
+  const cooldownMs = options?.cooldownMs ?? DEFAULT_COOLDOWN_MS;
 
   const [data, setData] = useState<StateDataType>(null);
   const [isLoading, setIsLoading] = useState<boolean>(
@@ -104,6 +129,8 @@ export function useCollection<T = any>(
       !isInvalidFirestoreTarget(memoizedTargetRefOrQuery),
   );
   const [error, setError] = useState<FirestoreError | Error | null>(null);
+  const [pausedUntil, setPausedUntil] = useState(0);
+  const isPaused = pausedUntil > Date.now();
 
   const shouldFetch = !isInvalidFirestoreTarget(memoizedTargetRefOrQuery);
 
@@ -120,10 +147,13 @@ export function useCollection<T = any>(
       setError(null);
     } catch (e: any) {
       setError(e);
+      if (e?.code === "resource-exhausted") {
+        setPausedUntil(Date.now() + cooldownMs);
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [memoizedTargetRefOrQuery]);
+  }, [memoizedTargetRefOrQuery, shouldFetch, cooldownMs]);
 
   useEffect(() => {
     if (!shouldFetch) {
@@ -133,10 +163,51 @@ export function useCollection<T = any>(
       return;
     }
 
+    if (!memoizedTargetRefOrQuery) return;
+
+    const now = Date.now();
+    if (pausedUntil > now) {
+      // Cooling down after a resource-exhausted hit — don't hammer the
+      // backend again until the pause elapses (see the retry effect below).
+      setIsLoading(false);
+      return;
+    }
+
+    if (!realtime) {
+      let alive = true;
+      setIsLoading(true);
+      setError(null);
+      getDocs(memoizedTargetRefOrQuery)
+        .then((snapshot: QuerySnapshot<DocumentData>) => {
+          if (!alive) return;
+          const results: ResultItemType[] = [];
+          for (const doc of snapshot.docs) {
+            results.push({ ...(doc.data() as T), id: doc.id });
+          }
+          setData(results);
+          setError(null);
+          setIsLoading(false);
+        })
+        .catch((err: FirestoreError) => {
+          if (!alive) return;
+          setError(err);
+          setData(null);
+          setIsLoading(false);
+          if (err?.code === "resource-exhausted") {
+            setPausedUntil(Date.now() + cooldownMs);
+          }
+        });
+      return () => {
+        alive = false;
+      };
+    }
+
     setIsLoading(true);
     setError(null);
 
-    const unsubscribe = onSnapshot(
+    let unsubscribe: (() => void) | undefined;
+
+    unsubscribe = onSnapshot(
       memoizedTargetRefOrQuery,
       (snapshot: QuerySnapshot<DocumentData>) => {
         const results: ResultItemType[] = [];
@@ -186,11 +257,26 @@ export function useCollection<T = any>(
 
         setData(null);
         setIsLoading(false);
+
+        if (error.code === "resource-exhausted") {
+          // Stop retrying immediately — unsubscribe and cool down instead of
+          // letting the SDK's internal backoff hammer the same quota wall.
+          unsubscribe?.();
+          setPausedUntil(Date.now() + cooldownMs);
+        }
       },
     );
 
-    return () => unsubscribe();
-  }, [memoizedTargetRefOrQuery]); // Re-run if the target query/reference changes.
+    return () => unsubscribe?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [memoizedTargetRefOrQuery, shouldFetch, realtime, pausedUntil]);
+
+  // Wake up once the cooldown elapses so the listener/read resumes automatically.
+  useEffect(() => {
+    if (pausedUntil <= Date.now()) return;
+    const timeout = window.setTimeout(() => setPausedUntil(0), pausedUntil - Date.now());
+    return () => window.clearTimeout(timeout);
+  }, [pausedUntil]);
 
   if (
     memoizedTargetRefOrQuery &&
@@ -200,5 +286,5 @@ export function useCollection<T = any>(
     // console.warn('useCollection detected a non-memoized query. This can lead to performance issues. Wrap the query() call in useMemoFirebase().', memoizedTargetRefOrQuery);
   }
 
-  return { data, isLoading, error, mutate: fetchData };
+  return { data, isLoading, error, mutate: fetchData, isPaused };
 }

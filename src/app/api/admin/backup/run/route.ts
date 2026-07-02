@@ -4,6 +4,7 @@ import { Readable } from 'stream';
 import admin from '@/lib/firebase/admin';
 import { Timestamp } from 'firebase-admin/firestore';
 import * as XLSX from 'xlsx';
+import { requireFeatureEnabled } from '@/lib/server/feature-flags';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -372,6 +373,12 @@ export async function POST(req: NextRequest) {
   const authResult = await verifySuperAdmin(req);
   if ('error' in authResult) return errorResponse(authResult.error, authResult.status);
   const actor = authResult;
+
+  // This route always uploads to Google Drive (mode is forced to 'backup_to_drive' below),
+  // so it's gated by the google_drive_backup feature flag, not backup_auto (there is no
+  // scheduler/cron trigger wired up in this codebase to gate for backup_auto).
+  const featureBlock = await requireFeatureEnabled('google_drive_backup');
+  if (featureBlock) return featureBlock;
 
   let body: {
     backupId?: string;

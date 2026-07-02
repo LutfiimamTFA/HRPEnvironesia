@@ -65,6 +65,7 @@ import {
 } from "@/lib/storage-utils";
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { useFirestore } from "@/firebase";
+import { useFeatureFlags } from "@/lib/feature-flags";
 import { openOfferingDocument, isGoogleDriveUrl } from "@/lib/offering-file-utils";
 import { useAuth } from "@/providers/auth-provider";
 import { updateDocumentNonBlocking } from "@/firebase";
@@ -188,6 +189,8 @@ export function OfferEditor({
   const firestore = useFirestore();
   const { userProfile } = useAuth();
   const { toast } = useToast();
+  const { isEnabled: isFeatureFlagEnabled } = useFeatureFlags(firestore);
+  const offeringLetterEnabled = isFeatureFlagEnabled('offering_letter');
 
   // Fetch default Human Capital contact from recruitment_settings/offering
   useEffect(() => {
@@ -400,6 +403,10 @@ export function OfferEditor({
 
   const handleSaveDraft = async (data: OfferFormData) => {
     if (!userProfile) return;
+    if (!offeringLetterEnabled) {
+      toast({ variant: "destructive", title: "Fitur Dinonaktifkan", description: "Offering Letter sedang dinonaktifkan oleh Super Admin." });
+      return;
+    }
 
     setIsUploading(true);
     try {
@@ -662,6 +669,10 @@ export function OfferEditor({
 
   const handleSendOffer = async (data: OfferFormData) => {
     if (!userProfile) return;
+    if (!offeringLetterEnabled) {
+      toast({ variant: "destructive", title: "Fitur Dinonaktifkan", description: "Offering Letter sedang dinonaktifkan oleh Super Admin." });
+      return;
+    }
 
     setIsUploading(true);
     try {
@@ -1442,7 +1453,7 @@ export function OfferEditor({
                     variant="default"
                     size="sm"
                     onClick={form.handleSubmit(handleSendOffer)}
-                    disabled={isSendingOffer || isUploading}
+                    disabled={isSendingOffer || isUploading || !offeringLetterEnabled}
                   >
                     <Send className="h-4 w-4 mr-2" />
                     {isSendingOffer || isUploading ? "Mengirim..." : "Buat Penawaran Baru"}
@@ -1465,7 +1476,7 @@ export function OfferEditor({
                     variant="default"
                     size="sm"
                     onClick={form.handleSubmit(handleSendOffer)}
-                    disabled={isSendingOffer || isUploading}
+                    disabled={isSendingOffer || isUploading || !offeringLetterEnabled}
                   >
                     <Send className="h-4 w-4 mr-2" />
                     {isSendingOffer || isUploading ? "Mengirim..." : "Buat Penawaran Baru"}
@@ -1501,7 +1512,7 @@ export function OfferEditor({
                       type="button"
                       variant="secondary"
                       onClick={form.handleSubmit(handleSaveDraft)}
-                      disabled={isSavingDraft || isUploading}
+                      disabled={isSavingDraft || isUploading || !offeringLetterEnabled}
                       className="flex-1 min-w-[140px]"
                     >
                       <Save className="h-4 w-4 mr-2" />
@@ -1534,7 +1545,7 @@ export function OfferEditor({
                     type="button"
                     variant="outline"
                     onClick={form.handleSubmit(handleSaveDraft)}
-                    disabled={isSavingDraft || isUploading}
+                    disabled={isSavingDraft || isUploading || !offeringLetterEnabled}
                     className="flex-1 min-w-[140px]"
                   >
                     <Save className="h-4 w-4 mr-2" />
@@ -1543,7 +1554,7 @@ export function OfferEditor({
                   <Button
                     type="button"
                     onClick={form.handleSubmit(handleSendOffer)}
-                    disabled={isSendingOffer || isUploading}
+                    disabled={isSendingOffer || isUploading || !offeringLetterEnabled}
                     className="flex-1 min-w-[140px]"
                   >
                     <Send className="h-4 w-4 mr-2" />

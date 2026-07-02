@@ -614,53 +614,82 @@ export default function RekapAbsensiPayrollPage() {
   const [lateDetailRow, setLateDetailRow] = useState<PayrollRecapRow | null>(null);
 
   // ── Data fetching (same 3 collections as Data Karyawan) ──
-  const { data: employeeProfiles, isLoading: loadingProfiles } =
+  // realtime:false — this is a point-in-time payroll recap, not a live dashboard.
+  // Fetching once instead of holding ~10 standing onSnapshot listeners per HRD
+  // session is what actually matters for quota at 300+ concurrent users; a
+  // limit() here would silently truncate the recap instead of fixing anything.
+  const { data: employeeProfiles, isLoading: loadingProfiles, mutate: refetchProfiles } =
     useCollection<EmployeeProfile>(
-      useMemoFirebase(() => collection(firestore, "employee_profiles"), [firestore])
+      useMemoFirebase(() => collection(firestore, "employee_profiles"), [firestore]),
+      { realtime: false },
     );
 
-  const { data: users, isLoading: loadingUsers } =
+  const { data: users, isLoading: loadingUsers, mutate: refetchUsers } =
     useCollection<any>(
-      useMemoFirebase(() => collection(firestore, "users"), [firestore])
+      useMemoFirebase(() => collection(firestore, "users"), [firestore]),
+      { realtime: false },
     );
 
-  const { data: employeesDocs, isLoading: loadingEmployeesDocs } =
+  const { data: employeesDocs, isLoading: loadingEmployeesDocs, mutate: refetchEmployeesDocs } =
     useCollection<any>(
-      useMemoFirebase(() => collection(firestore, "employees"), [firestore])
+      useMemoFirebase(() => collection(firestore, "employees"), [firestore]),
+      { realtime: false },
     );
 
-  const { data: brands } = useCollection<Brand>(
-    useMemoFirebase(() => collection(firestore, "brands"), [firestore])
+  const { data: brands, mutate: refetchBrands } = useCollection<Brand>(
+    useMemoFirebase(() => collection(firestore, "brands"), [firestore]),
+    { realtime: false },
   );
 
-  const { data: attendanceEvents, isLoading: loadingAttendance } =
+  const { data: attendanceEvents, isLoading: loadingAttendance, mutate: refetchAttendance } =
     useCollection<any>(
-      useMemoFirebase(() => collection(firestore, "attendance_events"), [firestore])
+      useMemoFirebase(() => collection(firestore, "attendance_events"), [firestore]),
+      { realtime: false },
     );
 
-  const { data: attendanceSites } = useCollection<any>(
-    useMemoFirebase(() => collection(firestore, "attendance_sites"), [firestore])
+  const { data: attendanceSites, mutate: refetchAttendanceSites } = useCollection<any>(
+    useMemoFirebase(() => collection(firestore, "attendance_sites"), [firestore]),
+    { realtime: false },
   );
 
-  const { data: permissionRequests } = useCollection<any>(
-    useMemoFirebase(() => collection(firestore, "permission_requests"), [firestore])
+  const { data: permissionRequests, mutate: refetchPermissionRequests } = useCollection<any>(
+    useMemoFirebase(() => collection(firestore, "permission_requests"), [firestore]),
+    { realtime: false },
   );
 
-  const { data: leaveRequests } = useCollection<any>(
-    useMemoFirebase(() => collection(firestore, "leave_requests"), [firestore])
+  const { data: leaveRequests, mutate: refetchLeaveRequests } = useCollection<any>(
+    useMemoFirebase(() => collection(firestore, "leave_requests"), [firestore]),
+    { realtime: false },
   );
 
-  const { data: businessTripMissions } = useCollection<any>(
-    useMemoFirebase(() => collection(firestore, "business_trip_missions"), [firestore])
+  const { data: businessTripMissions, mutate: refetchBusinessTripMissions } = useCollection<any>(
+    useMemoFirebase(() => collection(firestore, "business_trip_missions"), [firestore]),
+    { realtime: false },
   );
 
-  const { data: businessTripMembers } = useCollection<any>(
-    useMemoFirebase(() => collectionGroup(firestore, "members"), [firestore])
+  const { data: businessTripMembers, mutate: refetchBusinessTripMembers } = useCollection<any>(
+    useMemoFirebase(() => collectionGroup(firestore, "members"), [firestore]),
+    { realtime: false },
   );
 
-  const { data: companyHolidays } = useCollection<any>(
-    useMemoFirebase(() => collection(firestore, "company_holidays"), [firestore])
+  const { data: companyHolidays, mutate: refetchCompanyHolidays } = useCollection<any>(
+    useMemoFirebase(() => collection(firestore, "company_holidays"), [firestore]),
+    { realtime: false },
   );
+
+  const refetchAll = () => {
+    refetchProfiles();
+    refetchUsers();
+    refetchEmployeesDocs();
+    refetchBrands();
+    refetchAttendance();
+    refetchAttendanceSites();
+    refetchPermissionRequests();
+    refetchLeaveRequests();
+    refetchBusinessTripMissions();
+    refetchBusinessTripMembers();
+    refetchCompanyHolidays();
+  };
 
   const isLoading = loadingProfiles || loadingUsers || loadingEmployeesDocs || loadingAttendance;
 
@@ -883,10 +912,16 @@ export default function RekapAbsensiPayrollPage() {
               Rekap kehadiran karyawan Web Absen
             </p>
           </div>
-          <Button variant="outline" className="gap-2 shrink-0" onClick={exportPayrollSummary} disabled={recapRows.length === 0}>
-            <Download className="h-4 w-4" />
-            Export
-          </Button>
+          <div className="flex gap-2 shrink-0">
+            <Button variant="outline" className="gap-2" onClick={refetchAll} title="Data ini dimuat sekali (bukan realtime) untuk menghemat kuota Firestore — klik untuk memuat ulang.">
+              <RotateCcw className="h-4 w-4" />
+              Muat Ulang
+            </Button>
+            <Button variant="outline" className="gap-2" onClick={exportPayrollSummary} disabled={recapRows.length === 0}>
+              <Download className="h-4 w-4" />
+              Export
+            </Button>
+          </div>
         </div>
 
         {/* ── Filter Card ── */}

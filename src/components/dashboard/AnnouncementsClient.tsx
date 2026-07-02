@@ -147,14 +147,19 @@ const LEVELS: {
   },
   {
     value: 'maintenance_lock',
-    label: 'Maintenance Lock',
-    desc: 'Sistem dikunci — user tidak bisa akses dashboard selama maintenance.',
-    userEffect: 'User yang ditarget diarahkan ke halaman maintenance. Super Admin tetap bisa masuk.',
+    label: 'Maintenance Lock (Arsip)',
+    desc: 'Level lama, tidak bisa dipilih untuk pengumuman baru. Ditampilkan sebagai arsip saja.',
+    userEffect: 'Maintenance Lock lama hanya arsip. Lock akses sekarang hanya dikendalikan dari Maintenance Control.',
     icon: Lock,
     headerCls: 'border-red-200 bg-red-50',
     badgeCls: 'bg-red-50 text-red-700 border-red-200',
   },
 ];
+
+// 'maintenance_lock' is a legacy level kept only so old announcements remain
+// readable/archived. New announcements can never select it — access locking
+// is exclusively Maintenance Control's job now (see src/lib/maintenance.ts).
+const SELECTABLE_LEVELS = LEVELS.filter(l => l.value !== 'maintenance_lock');
 
 const TARGET_ROLES: { value: TargetRole; label: string }[] = [
   { value: 'super-admin', label: 'Super Admin' },
@@ -556,7 +561,7 @@ export function AnnouncementsClient() {
           <div>
             <h1 className="text-xl font-bold text-slate-900">Pengumuman Sistem</h1>
             <p className="text-sm text-slate-500">
-              Kelola pengumuman teknis HRP — maintenance, gangguan, update fitur, dan keamanan sistem.
+              Digunakan untuk menampilkan informasi, modal, atau banner kepada user. <span className="font-medium text-slate-600">Bukan untuk mengunci akses</span> — untuk mengunci akses role/modul yang bermasalah, gunakan menu Maintenance Control.
             </p>
           </div>
         </div>
@@ -779,7 +784,7 @@ export function AnnouncementsClient() {
                                   className={a.announcementLevel === 'maintenance_lock' ? 'text-red-700' : 'text-emerald-700'}
                                 >
                                   {a.announcementLevel === 'maintenance_lock'
-                                    ? <><Lock className="mr-2 h-3.5 w-3.5" /> Aktifkan Lock</>
+                                    ? <><Lock className="mr-2 h-3.5 w-3.5" /> Aktifkan (Arsip, tidak mengunci)</>
                                     : <><Send className="mr-2 h-3.5 w-3.5" /> Aktifkan</>}
                                 </DropdownMenuItem>
                               )}
@@ -789,7 +794,7 @@ export function AnnouncementsClient() {
                                   className={a.announcementLevel === 'maintenance_lock' ? 'text-red-700' : 'text-amber-700'}
                                 >
                                   {a.announcementLevel === 'maintenance_lock'
-                                    ? <><ShieldAlert className="mr-2 h-3.5 w-3.5" /> Matikan Maintenance</>
+                                    ? <><ShieldAlert className="mr-2 h-3.5 w-3.5" /> Arsipkan</>
                                     : <><Archive className="mr-2 h-3.5 w-3.5" /> Arsipkan</>}
                                 </DropdownMenuItem>
                               )}
@@ -895,8 +900,13 @@ export function AnnouncementsClient() {
             {/* ── Section 2: Level Pengumuman ── */}
             <div className="space-y-3">
               <SectionHeading step={2} label="Level Pengumuman" />
+              <p className="flex items-start gap-1.5 text-[11px] text-slate-500">
+                <Info className="mt-0.5 h-3 w-3 shrink-0" />
+                Pengumuman ini hanya memberi informasi kepada user. Untuk mengunci akses role/modul, gunakan
+                Maintenance Control.
+              </p>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {LEVELS.map(lvl => {
+                {SELECTABLE_LEVELS.map(lvl => {
                   const active = formData.announcementLevel === lvl.value;
                   const LIcon = lvl.icon;
                   return (
@@ -905,14 +915,8 @@ export function AnnouncementsClient() {
                       type="button"
                       onClick={() => {
                         setField('announcementLevel', lvl.value);
-                        // Auto-set showAsBanner + showAsModal defaults
-                        if (lvl.value === 'maintenance_lock') {
-                          setField('showAsBanner', false);
-                          setField('showAsModal', true);
-                        } else {
-                          setField('showAsBanner', true);
-                          setField('showAsModal', false);
-                        }
+                        setField('showAsBanner', true);
+                        setField('showAsModal', false);
                       }}
                       className={cn(
                         'relative flex items-start gap-3 rounded-xl border-2 p-3 text-left transition-all',
@@ -1124,18 +1128,12 @@ export function AnnouncementsClient() {
                   <p className="text-xs leading-relaxed text-slate-700">{levelInfo.userEffect}</p>
 
                   {formData.announcementLevel === 'maintenance_lock' && (
-                    <div className="mt-2 space-y-1">
-                      <p className="text-xs text-red-700 font-medium">
-                        ✕ User ditarget → dialihkan ke halaman maintenance
+                    <div className="mt-2 flex items-start gap-1.5 rounded-lg border border-red-200 bg-red-50 p-2">
+                      <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-600" />
+                      <p className="text-xs font-medium text-red-700">
+                        Maintenance Lock lama hanya arsip. Lock akses sekarang hanya dikendalikan dari Maintenance
+                        Control — mengaktifkan atau menyimpan pengumuman ini tidak akan mengunci akses siapa pun.
                       </p>
-                      <p className="text-xs text-emerald-700 font-medium">
-                        ✓ Super Admin → tetap bisa akses semua halaman
-                      </p>
-                      {formData.startAt && formData.endAt && (
-                        <p className="text-xs text-slate-600">
-                          🕐 Lock aktif: {new Date(formData.startAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} — {new Date(formData.endAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB
-                        </p>
-                      )}
                     </div>
                   )}
 
@@ -1216,6 +1214,15 @@ export function AnnouncementsClient() {
                 </DialogHeader>
 
                 <div className="space-y-4 text-sm">
+                  {viewing.announcementLevel === 'maintenance_lock' && (
+                    <div className="flex items-start gap-1.5 rounded-lg border border-red-200 bg-red-50 p-2.5">
+                      <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-600" />
+                      <p className="text-xs font-medium text-red-700">
+                        Maintenance Lock lama hanya arsip. Lock akses sekarang hanya dikendalikan dari Maintenance
+                        Control.
+                      </p>
+                    </div>
+                  )}
                   <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
                     <p className="whitespace-pre-wrap leading-relaxed text-slate-700">{viewing.content}</p>
                   </div>

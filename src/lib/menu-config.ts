@@ -381,6 +381,18 @@ export const ALL_MENU_GROUPS: MenuGroup[] = [
     title: "Kontrol Sistem",
     items: [
       {
+        key: "admin.maintenance-control",
+        href: "/admin/super-admin/maintenance-control",
+        label: "Maintenance Control",
+        icon: createElement(Wrench),
+      },
+      {
+        key: "admin.feature-control",
+        href: "/admin/super-admin/feature-control",
+        label: "Feature Control",
+        icon: createElement(ToggleLeft),
+      },
+      {
         key: "admin.analytics-system",
         href: "/admin/super-admin/analytics-system",
         label: "Analytics Sistem",
@@ -397,12 +409,6 @@ export const ALL_MENU_GROUPS: MenuGroup[] = [
         href: "/admin/super-admin/sync-center",
         label: "Sync Center",
         icon: createElement(RefreshCw),
-      },
-      {
-        key: "admin.feature-control",
-        href: "/admin/super-admin/feature-control",
-        label: "Feature Control",
-        icon: createElement(ToggleLeft),
       },
       {
         key: "admin.storage-management",
@@ -655,6 +661,18 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
       title: "Kontrol Sistem",
       items: [
         {
+          key: "admin.maintenance-control",
+          href: "/admin/super-admin/maintenance-control",
+          label: "Maintenance Control",
+          icon: createElement(Wrench),
+        },
+        {
+          key: "admin.feature-control",
+          href: "/admin/super-admin/feature-control",
+          label: "Feature Control",
+          icon: createElement(ToggleLeft),
+        },
+        {
           key: "admin.analytics-system",
           href: "/admin/super-admin/analytics-system",
           label: "Analytics Sistem",
@@ -671,12 +689,6 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
           href: "/admin/super-admin/sync-center",
           label: "Sync Center",
           icon: createElement(RefreshCw),
-        },
-        {
-          key: "admin.feature-control",
-          href: "/admin/super-admin/feature-control",
-          label: "Feature Control",
-          icon: createElement(ToggleLeft),
         },
         {
           key: "admin.storage-management",

@@ -11,6 +11,7 @@ import {
   addDoc,
 } from 'firebase/firestore';
 import { trackSystemEvent } from '@/lib/analytics/trackSystemEvent';
+import { isMonitoringDisabled } from '@/lib/monitoring-flags';
 
 export type SessionStatus =
   | 'online'
@@ -25,10 +26,42 @@ export type LogoutReason =
   | 'force_logout'
   | null;
 
-export const SESSION_ACTIVITY_THROTTLE_MS = 60 * 1000;
+export const SESSION_ACTIVITY_THROTTLE_MS = 5 * 60 * 1000;
 export const SESSION_START_STORAGE_KEY = 'hrp:sessionStartedAt';
 export const SESSION_ID_STORAGE_KEY = 'hrp:currentSessionId';
 export const FORCE_LOGOUT_STORAGE_KEY = 'hrp:forceLogout';
+
+const ANALYTICS_DISABLED = isMonitoringDisabled();
+
+/**
+ * Simple cross-tab leader election backed by localStorage. Only the tab
+ * holding a fresh lock is allowed to perform a given periodic Firestore
+ * write (e.g. heartbeat), so opening N tabs doesn't multiply writes by N.
+ */
+const TAB_ID =
+  typeof window !== 'undefined'
+    ? typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+    : '';
+
+export function claimTabLeadership(lockKey: string, ttlMs = 90 * 1000): boolean {
+  if (typeof window === 'undefined') return true;
+  try {
+    const raw = localStorage.getItem(lockKey);
+    const now = Date.now();
+    if (raw) {
+      const parsed = JSON.parse(raw) as { tabId: string; ts: number };
+      if (parsed.tabId !== TAB_ID && now - parsed.ts < ttlMs) {
+        return false;
+      }
+    }
+    localStorage.setItem(lockKey, JSON.stringify({ tabId: TAB_ID, ts: now }));
+    return true;
+  } catch {
+    return true;
+  }
+}
 
 function getSafeNavigator() {
   if (typeof navigator === 'undefined') return null;
@@ -141,6 +174,7 @@ export async function markLoginSession(
 }
 
 export async function markActiveSession(firestore: Firestore, uid: string) {
+  if (ANALYTICS_DISABLED) return;
   await updateUserSession(firestore, uid, {
     sessionStatus: 'online' satisfies SessionStatus,
     lastActiveAt: serverTimestamp(),
@@ -150,6 +184,7 @@ export async function markActiveSession(firestore: Firestore, uid: string) {
 }
 
 export async function markIdleSession(firestore: Firestore, uid: string) {
+  if (ANALYTICS_DISABLED) return;
   await updateUserSession(firestore, uid, {
     sessionStatus: 'idle' satisfies SessionStatus,
     lastActiveAt: serverTimestamp(),
@@ -269,6 +304,7 @@ export async function writeSessionLog(
   firestore: Firestore,
   entry: Omit<SessionLogEntry, 'createdAt'>,
 ) {
+  if (ANALYTICS_DISABLED) return;
   try {
     await addDoc(collection(firestore, SESSION_LOGS_COLLECTION), {
       ...entry,

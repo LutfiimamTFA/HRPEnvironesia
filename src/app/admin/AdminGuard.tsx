@@ -17,6 +17,9 @@ import {
   SYSTEM_SETTINGS_COLLECTION,
   SESSION_SECURITY_DOC,
 } from '@/lib/session-tracking';
+import { useMaintenanceGuard } from '@/hooks/useMaintenance';
+import { timestampToMillis } from '@/lib/session-tracking';
+import { getMaintenanceSource } from '@/lib/maintenance';
 
 /** Paths inside /admin that don't need auth or idle-timeout protection. */
 const PUBLIC_ADMIN_PATHS = ['/admin/login', '/admin/change-password'];
@@ -30,6 +33,23 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
 
   const isPublicPath = PUBLIC_ADMIN_PATHS.includes(pathname);
   const isLoggedIn   = !loading && !!userProfile;
+
+  // ── Maintenance Control: checks the user's real role against
+  // system_maintenance/global and system_maintenance/role_{role} ONLY.
+  // This is the single source of truth for access locking — Pengumuman Sistem
+  // (system_announcements) is never read here.
+  const { blocked: maintenanceBlocked, rule: maintenanceRule, rules: maintenanceRules } = useMaintenanceGuard(pathname);
+
+  if (process.env.NODE_ENV === 'development' && userProfile) {
+    // eslint-disable-next-line no-console
+    console.log('[maintenance-check]', {
+      actualRole: userProfile.role,
+      globalMaintenance: maintenanceRules.find((r) => r.targetType === 'global') ?? null,
+      roleMaintenance: maintenanceRules.find((r) => r.targetType === 'role') ?? null,
+      shouldBlock: maintenanceBlocked,
+      source: maintenanceRule ? getMaintenanceSource(maintenanceRule) : null,
+    });
+  }
 
   // ── Session settings from Firestore (idle timeout config) ───────────────
   const settingsRef = useMemoFirebase(
@@ -62,8 +82,20 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
 
     if ((userProfile as any).mustChangePassword === true) {
       router.replace('/admin/change-password');
+      return;
     }
-  }, [userProfile, loading, router, pathname, isPublicPath]);
+
+    if (maintenanceBlocked && maintenanceRule) {
+      const estimatedEndMs = timestampToMillis(maintenanceRule.estimatedEndAt);
+      const params = new URLSearchParams({
+        title: maintenanceRule.title || 'Fitur Sedang Dalam Perbaikan',
+        message: maintenanceRule.message || 'Fitur ini sedang dalam perbaikan. Silakan coba lagi nanti.',
+        source: getMaintenanceSource(maintenanceRule),
+        ...(estimatedEndMs ? { estimatedEndAt: String(estimatedEndMs) } : {}),
+      });
+      router.replace(`/maintenance?${params.toString()}`);
+    }
+  }, [userProfile, loading, router, pathname, isPublicPath, maintenanceBlocked, maintenanceRule]);
 
   // ── Idle timeout ────────────────────────────────────────────────────────
   const handleIdleTimeout = useCallback(async () => {
@@ -116,7 +148,8 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
     loading ||
     !userProfile ||
     !ROLES_INTERNAL.includes(userProfile.role as any) ||
-    (userProfile as any).mustChangePassword === true
+    (userProfile as any).mustChangePassword === true ||
+    maintenanceBlocked
   ) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-background">

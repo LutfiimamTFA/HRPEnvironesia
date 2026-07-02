@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import React, { useMemo, createElement, useState, useEffect, useRef } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import type { MenuGroup, MenuItem } from "@/lib/menu-config";
 import { SidebarNav } from "./SidebarNav";
 import { Topbar } from "./Topbar";
@@ -35,16 +35,20 @@ import { Badge } from "@/components/ui/badge";
 import { useSystemAnnouncements } from "@/hooks/useSystemAnnouncements";
 import { SystemAnnouncementBanner } from "./SystemAnnouncementBanner";
 import { SystemAnnouncementModal } from "./SystemAnnouncementModal";
-import { MaintenanceLockScreen } from "./MaintenanceLockScreen";
 import {
   isActiveEmployeeEligibleForLeave,
   canUserReview,
 } from "@/lib/auth-eligibility";
-import { getCurrentDeviceInfo } from "@/lib/session-tracking";
+import { claimTabLeadership, getCurrentDeviceInfo } from "@/lib/session-tracking";
 import { trackSystemEvent } from "@/lib/analytics/trackSystemEvent";
+import { isMonitoringDisabled } from "@/lib/monitoring-flags";
+import { usePreviewRole } from "@/providers/preview-role-provider";
+import { PreviewModeBanner } from "@/components/PreviewModeBanner";
+import { useOverdueMaintenanceCount } from "@/hooks/useMaintenance";
+import { useToast } from "@/hooks/use-toast";
 
-const ANALYTICS_DISABLED = process.env.NEXT_PUBLIC_DISABLE_ANALYTICS === "true";
-const ONLINE_SESSION_HEARTBEAT_MS = 60 * 1000;
+const ANALYTICS_DISABLED = isMonitoringDisabled();
+const ONLINE_SESSION_HEARTBEAT_MS = 5 * 60 * 1000;
 
 type DashboardLayoutProps = {
   children: React.ReactNode;
@@ -86,11 +90,12 @@ export function DashboardLayout({
   const { userProfile } = useAuth();
   const firestore = useFirestore();
   const pathname = usePathname();
+  const router = useRouter();
+  // Pengumuman Sistem is informational only — it must never lock access.
+  // Access locking is handled exclusively by system_maintenance (see AdminGuard/CandidatePortalLayout).
   const {
     bannerAnnouncements,
     modalAnnouncements,
-    lockAnnouncement,
-    superAdminLockBanners,
   } = useSystemAnnouncements();
   const lastOnlineHeartbeatAtRef = useRef(0);
 
@@ -112,8 +117,12 @@ export function DashboardLayout({
     const deviceInfo = getCurrentDeviceInfo();
     const writeHeartbeat = async (force = false) => {
       if (ANALYTICS_DISABLED) return;
+      if (typeof document !== "undefined" && document.hidden) return;
+
       const now = Date.now();
       if (!force && now - lastOnlineHeartbeatAtRef.current < ONLINE_SESSION_HEARTBEAT_MS) return;
+      if (!claimTabLeadership(`hrp:onlineSessionLeader:${userProfile.uid}`)) return;
+
       lastOnlineHeartbeatAtRef.current = now;
       try {
         await setDoc(
@@ -164,8 +173,31 @@ export function DashboardLayout({
     return () => window.clearInterval(intervalId);
   }, [firestore, pathname, userProfile]);
 
+  const { previewRole, isPreviewMode } = usePreviewRole();
+  const overdueMaintenanceCount = useOverdueMaintenanceCount();
+  const { toast } = useToast();
+  const overdueToastShownRef = useRef(false);
+
+  // Reminder toast for Super Admin: shown once per session when there's at least one
+  // maintenance rule stuck past its estimated end time (never spams on every navigation).
+  useEffect(() => {
+    if (userProfile?.role !== "super-admin" || isPreviewMode) return;
+    if (overdueMaintenanceCount <= 0 || overdueToastShownRef.current) return;
+    overdueToastShownRef.current = true;
+    toast({
+      variant: "destructive",
+      title: `${overdueMaintenanceCount} Maintenance Melewati Estimasi`,
+      description: "Ada maintenance yang masih mengunci user tapi sudah melewati estimasi selesai. Buka Maintenance Control untuk perpanjang waktu atau selesaikan.",
+    });
+  }, [userProfile?.role, isPreviewMode, overdueMaintenanceCount, toast]);
+
   const roleKey = useMemo(() => {
     if (!userProfile) return null;
+    // Preview Mode (Super Admin only): simulate menu/UI as the selected role
+    // without ever touching the real account role.
+    if (isPreviewMode && previewRole) {
+      return previewRole;
+    }
     if (
       userProfile.role === "karyawan" &&
       userProfile.employmentType &&
@@ -174,7 +206,18 @@ export function DashboardLayout({
       return `karyawan-${userProfile.employmentType}`;
     }
     return userProfile.role;
-  }, [userProfile]);
+  }, [userProfile, isPreviewMode, previewRole]);
+
+  // Guard: if Super Admin's real role is used (no active Preview Mode) but the URL still
+  // points at a role-owned page reached during a previous preview session (e.g. Employee
+  // Directory under /admin/karyawan/*), send them back to the Super Admin home instead of
+  // leaving them stranded on a page meant for another role.
+  useEffect(() => {
+    if (!userProfile || userProfile.role !== "super-admin" || isPreviewMode) return;
+    if (pathname?.startsWith("/admin/karyawan/")) {
+      router.replace("/admin/super-admin");
+    }
+  }, [userProfile, isPreviewMode, pathname, router]);
 
   // For navigation_settings lookup, normalize director/management roles to 'manager'
   const menuRoleKey = useMemo(() => {
@@ -220,6 +263,7 @@ export function DashboardLayout({
       return query(
         collection(firestore, "bank_change_requests"),
         where("status", "==", "pending"),
+        limit(50),
       );
     }
     return null;
@@ -680,6 +724,19 @@ export function DashboardLayout({
             };
           }
         }
+        if (item.key === "admin.maintenance-control" && overdueMaintenanceCount > 0) {
+          return {
+            ...item,
+            badge: (
+              <Badge
+                variant="secondary"
+                className="bg-red-600 text-white hover:bg-red-700 px-2 py-0 h-5 text-[10px]"
+              >
+                {overdueMaintenanceCount}
+              </Badge>
+            ),
+          };
+        }
         return item;
       }),
     }));
@@ -695,23 +752,18 @@ export function DashboardLayout({
     isAssignmentLoading,
     hasAnyAssignment,
     pendingBankRequests,
+    overdueMaintenanceCount,
   ]);
-
-  // Maintenance Lock: block non-super-admin users entirely
-  if (lockAnnouncement) {
-    return <MaintenanceLockScreen announcement={lockAnnouncement} />;
-  }
 
   return (
     <SidebarProvider>
-      <SidebarNav menuConfig={menuConfig} />
+      {/* key={roleKey} forces a full remount when Preview Mode starts/stops, so the sidebar
+          never keeps stale menu/selection state from a previously previewed role. */}
+      <SidebarNav key={roleKey} menuConfig={menuConfig} />
       <SidebarInset>
+        <PreviewModeBanner />
         <Topbar pageTitle={pageTitle} actionArea={actionArea} />
         <main className="flex-1 items-start gap-4 p-4 sm:px-6 sm:py-6 md:gap-8">
-          {/* Super Admin: only shows a compact banner when maintenance lock is active */}
-          {superAdminLockBanners.length > 0 && (
-            <SystemAnnouncementBanner announcements={superAdminLockBanners} superAdminMode />
-          )}
           {/* Regular users: banner (only if showAsBanner=true) */}
           {bannerAnnouncements.length > 0 && (
             <SystemAnnouncementBanner announcements={bannerAnnouncements} />

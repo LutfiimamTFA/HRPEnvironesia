@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { useFirestore } from '@/firebase';
+import { useFeatureFlags } from '@/lib/feature-flags';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -586,6 +587,8 @@ export function BackupExportClient() {
   const firestore = useFirestore();
   const { firebaseUser, userProfile } = useAuth();
   const { toast } = useToast();
+  const { isEnabled: isFeatureFlagEnabled } = useFeatureFlags(firestore);
+  const googleDriveBackupEnabled = isFeatureFlagEnabled('google_drive_backup');
 
   // ── Stats (counts from collections) ─────────────────────────────────────
   const [stats, setStats] = useState({ users: 0, attendance: 0, leave: 0, overtime: 0, jobs: 0 });
@@ -2640,7 +2643,8 @@ export function BackupExportClient() {
                   <Button
                     size="sm"
                     onClick={() => handleRunBackup()}
-                    disabled={!backupReason.trim()}
+                    disabled={!backupReason.trim() || !googleDriveBackupEnabled}
+                    title={!googleDriveBackupEnabled ? 'Fitur Google Drive Backup sedang dinonaktifkan oleh Super Admin.' : undefined}
                     className="gap-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
                   >
                     <CloudUpload className="h-3.5 w-3.5" />

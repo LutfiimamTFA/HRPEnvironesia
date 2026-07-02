@@ -79,54 +79,37 @@ export function useSystemAnnouncements() {
     return unsub;
   }, [firestore, userProfile?.uid]);
 
-  // ── Super Admin path ─────────────────────────────────────────────────────────
-  // Super Admin never receives regular announcements — only a special lock banner.
-
-  const superAdminLockBanners = useMemo(() => {
-    if (!isSuperAdmin) return [];
-    return raw.filter(
-      a => isTimeActive(a) && a.announcementLevel === 'maintenance_lock',
-    );
-  }, [raw, isSuperAdmin]);
-
   // ── Regular user path ────────────────────────────────────────────────────────
+  // Pengumuman Sistem is informational only (banner/modal). It is NEVER used to
+  // lock access — access locking is the exclusive responsibility of
+  // system_maintenance (see src/lib/maintenance.ts + AdminGuard/CandidatePortalLayout).
+  // 'maintenance_lock' is a legacy level kept only so old announcements remain
+  // readable as an archive in the Pengumuman Sistem list; it is intentionally
+  // excluded here so it can never surface as a banner/modal either.
 
-  // Announcements that are time-active AND targeted at this (non-super-admin) user
+  // Super Admin doesn't receive regular announcements (matches the previous behavior).
   const activeForUser = useMemo(() => {
     if (isSuperAdmin) return [];
-    return raw.filter(a => isTimeActive(a) && isTargetedAt(a, userRole));
+    return raw.filter(
+      a => isTimeActive(a) && isTargetedAt(a, userRole) && a.announcementLevel !== 'maintenance_lock',
+    );
   }, [raw, isSuperAdmin, userRole]);
 
-  // Modals: all active announcements (non-lock) — showAsModal defaults to true
+  // Modals: all active announcements — showAsModal defaults to true
   const modalAnnouncements = useMemo(
-    () => activeForUser.filter(
-      a => a.announcementLevel !== 'maintenance_lock' && wantsModal(a),
-    ),
+    () => activeForUser.filter(wantsModal),
     [activeForUser],
   );
 
   // Banners: only when showAsBanner is explicitly true
   const bannerAnnouncements = useMemo(
-    () => activeForUser.filter(
-      a => a.showAsBanner === true && a.announcementLevel !== 'maintenance_lock',
-    ),
-    [activeForUser],
-  );
-
-  // Maintenance Lock: blocks non-super-admin users; Super Admin is never locked
-  const lockAnnouncement = useMemo(
-    () => activeForUser.find(a => a.announcementLevel === 'maintenance_lock') ?? null,
+    () => activeForUser.filter(a => a.showAsBanner === true),
     [activeForUser],
   );
 
   return {
     loading,
-    // regular user
     modalAnnouncements,
     bannerAnnouncements,
-    lockAnnouncement,
-    isLocked: !!lockAnnouncement,
-    // super admin only
-    superAdminLockBanners,
   };
 }

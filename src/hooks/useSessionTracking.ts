@@ -11,12 +11,16 @@ import {
   SESSION_ACTIVITY_THROTTLE_MS,
   SYSTEM_SETTINGS_COLLECTION,
   SESSION_SECURITY_DOC,
+  claimTabLeadership,
   getStoredSessionStartedAt,
   markActiveSession,
   signOutWithSessionStatus,
   timestampToMillis,
 } from '@/lib/session-tracking';
 import type { UserProfile } from '@/lib/types';
+import { isMonitoringDisabled } from '@/lib/monitoring-flags';
+
+const ANALYTICS_DISABLED = isMonitoringDisabled();
 
 const ACTIVITY_EVENTS = [
   'click',
@@ -54,9 +58,15 @@ export function useSessionTracking({
 
   const writeActivity = useCallback(
     async (force = false) => {
+      if (ANALYTICS_DISABLED) return;
       if (!enabled || !userProfile?.uid) return;
+      if (typeof document !== 'undefined' && document.hidden) return;
+
       const now = Date.now();
       if (!force && now - lastWriteAtRef.current < SESSION_ACTIVITY_THROTTLE_MS) {
+        return;
+      }
+      if (!claimTabLeadership(`hrp:sessionHeartbeatLeader:${userProfile.uid}`)) {
         return;
       }
 
@@ -71,6 +81,7 @@ export function useSessionTracking({
   );
 
   useEffect(() => {
+    if (ANALYTICS_DISABLED) return;
     if (!enabled || !userProfile?.uid) return;
 
     writeActivity(true);

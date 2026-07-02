@@ -40,13 +40,18 @@ service cloud.firestore {
 
     /**
      * Checks if the user is a 'super_admin'.
-     * Primary: existence check on roles_admin/{uid} (fast, safe for list queries).
-     * Fallback: read users/{uid}.role (covers case where sync-my-role hasn't run yet).
+     * Checks (in order, any match wins):
+     *  - fixed super-admin email (bootstrap account, always trusted)
+     *  - existence check on roles_admin/{uid} (fast, safe for list queries)
+     *  - users/{uid}.role == 'super-admin' (hyphen — canonical value used across the app)
+     *  - users/{uid}.role == 'super_admin' (underscore — legacy/alternate value seen in some docs)
      */
     function isSuperAdmin() {
       return isSignedIn() && (
+        request.auth.token.email == 'super_admin@gmail.com' ||
         exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid)) ||
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super-admin'
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super-admin' ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin'
       );
     }
     
@@ -931,14 +936,18 @@ service cloud.firestore {
      * /system_settings/{docId}
      * - backup_export and session_security are readable by Super Admin only.
      * - google_drive_oauth contains OAuth refresh tokens — NEVER readable from client.
+     * - "features" (Feature Control) is public-readable: unauthenticated visitors on
+     *   public pages (e.g. /careers/register) need to know if candidate_portal is OFF
+     *   before they've signed in.
      * - Other settings (idle timeout, forceLogoutAllAt, menu_visibility) are readable by all signed-in users.
      * - Only Super Admin can write any setting.
      */
     match /system_settings/{docId} {
-      allow read: if isSignedIn() && (
+      allow read: if docId == 'features' || (isSignedIn() && (
         !(docId in ['backup_export']) || isSuperAdmin()
-      ) && docId != 'google_drive_oauth';
-      allow write: if isSuperAdmin() && docId != 'google_drive_oauth';
+      ) && docId != 'google_drive_oauth');
+      allow create, update: if isSuperAdmin() && docId != 'google_drive_oauth';
+      allow delete: if false;
     }
 
     // google_drive_oauth contains sensitive refresh tokens — server-only via Admin SDK
@@ -1062,6 +1071,27 @@ service cloud.firestore {
         allow create, update: if isSignedIn() && request.auth.uid == uid;
         allow delete: if false;
       }
+    }
+
+    /**
+     * /system_maintenance/{ruleId}
+     * - Every signed-in user must be able to read the rule set, so the client
+     *   guard (AdminGuard / candidate portal layout) can evaluate whether they
+     *   are blocked. Only Super Admin may create/update/delete rules.
+     */
+    match /system_maintenance/{maintenanceId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    /**
+     * /system_maintenance_logs/{logId}
+     * - Append-only audit trail of maintenance rule changes.
+     */
+    match /system_maintenance_logs/{logId} {
+      allow get, list: if isSuperAdmin();
+      allow create: if isSuperAdmin();
+      allow update, delete: if false;
     }
   }
 }

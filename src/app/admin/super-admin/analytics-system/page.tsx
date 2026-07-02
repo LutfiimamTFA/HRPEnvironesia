@@ -18,6 +18,7 @@ import {
   Cell, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
+import { isMonitoringDisabled } from '@/lib/monitoring-flags';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { useAuth } from '@/providers/auth-provider';
 import { useFirestore } from '@/firebase';
@@ -87,7 +88,7 @@ interface SimStats {
 const TICK_MS     = 1000;
 const CONFIRM_WORD = 'SAYA PAHAM';
 const BAR_COLORS   = ['#2563eb','#7c3aed','#059669','#d97706','#dc2626','#0891b2','#16a34a','#9333ea'];
-const ANALYTICS_DISABLED = process.env.NEXT_PUBLIC_DISABLE_ANALYTICS === 'true';
+const ANALYTICS_DISABLED = isMonitoringDisabled();
 
 const FAKE_NAMES = [
   'Andi Pratama','Budi Santoso','Citra Dewi','Dian Permata','Eko Nugroho','Fajar Rahman',
@@ -718,6 +719,14 @@ function SimulationLabTab(){
 
   const saveReport=async()=>{
     if(!userProfile||saving)return;
+    if(ANALYTICS_DISABLED){
+      setTestMessage('Analytics/monitoring sedang dinonaktifkan sementara. Laporan tidak disimpan ke Firestore.');
+      return;
+    }
+    if(process.env.NEXT_PUBLIC_ENABLE_LOAD_TEST!=='true'){
+      setTestMessage('Load test dinonaktifkan. Set NEXT_PUBLIC_ENABLE_LOAD_TEST=true untuk mengaktifkan penyimpanan laporan.');
+      return;
+    }
     if(simMode==='visual_demo'){
       setReportSaved(true);
       setTestMessage('Visual Demo tidak disimpan ke Firestore. Gunakan Synthetic Load Test untuk laporan test yang tercatat.');
@@ -1183,7 +1192,7 @@ function SimulationLabTab(){
           <div className="flex items-center justify-between">
             <SectionTitle icon={Trophy} title="Laporan Simulasi" sub="Hasil akhir setelah simulasi selesai"/>
             <div className="flex gap-2">
-              {!reportSaved&&<Button size="sm" onClick={saveReport} disabled={saving} className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white">{saving?<Loader2 className="h-3.5 w-3.5 animate-spin"/>:<Archive className="h-3.5 w-3.5"/>}Simpan</Button>}
+              {!reportSaved&&<Button size="sm" onClick={saveReport} disabled={saving||ANALYTICS_DISABLED||process.env.NEXT_PUBLIC_ENABLE_LOAD_TEST!=='true'} title={ANALYTICS_DISABLED?'Analytics/monitoring dinonaktifkan sementara':process.env.NEXT_PUBLIC_ENABLE_LOAD_TEST!=='true'?'Set NEXT_PUBLIC_ENABLE_LOAD_TEST=true untuk mengaktifkan':undefined} className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white">{saving?<Loader2 className="h-3.5 w-3.5 animate-spin"/>:<Archive className="h-3.5 w-3.5"/>}Simpan</Button>}
               {reportSaved&&<Badge className="bg-emerald-600 text-white gap-1"><CheckCircle2 className="h-3 w-3"/>Tersimpan</Badge>}
             </div>
           </div>

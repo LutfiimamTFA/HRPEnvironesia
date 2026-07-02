@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import admin from '@/lib/firebase/admin';
+import { isMonitoringDisabled } from '@/lib/monitoring-flags';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -84,6 +85,10 @@ function durationForLoad(kind: string, step: string, profile: ReturnType<typeof 
 }
 
 export async function POST(req: NextRequest) {
+  if (isMonitoringDisabled() || process.env.NEXT_PUBLIC_ENABLE_LOAD_TEST !== 'true') {
+    return NextResponse.json({ success: false, message: 'Load test disabled. Set NEXT_PUBLIC_ENABLE_LOAD_TEST=true (and clear the analytics kill switch) to enable.' }, { status: 403 });
+  }
+
   const auth = await verifySuperAdmin(req);
   if ('error' in auth) return NextResponse.json({ success: false, message: auth.error }, { status: auth.status });
 

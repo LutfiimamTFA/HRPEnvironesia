@@ -4,6 +4,7 @@ import { Timestamp } from 'firebase-admin/firestore';
 import { z } from 'zod';
 import { generateUniqueCode } from '@/lib/utils';
 import type { InviteBatch, InviteContractType } from '@/lib/types';
+import { requireFeatureEnabled } from '@/lib/server/feature-flags';
 
 export const runtime = 'nodejs';
 
@@ -51,6 +52,9 @@ export async function POST(req: NextRequest) {
   if ('error' in authResult) {
     return NextResponse.json({ error: authResult.error }, { status: authResult.status });
   }
+
+  const featureBlock = await requireFeatureEnabled('employee_invite');
+  if (featureBlock) return featureBlock;
 
   try {
     const db = admin.firestore();

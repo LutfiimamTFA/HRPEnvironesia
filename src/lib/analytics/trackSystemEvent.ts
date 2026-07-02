@@ -3,6 +3,7 @@
 import { getAuth } from "firebase/auth";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { initializeFirebase } from "@/firebase";
+import { isMonitoringDisabled } from "@/lib/monitoring-flags";
 
 export type SystemAnalyticsEventType =
   | "login"
@@ -69,7 +70,7 @@ export async function trackSystemEvent({
   email?: string | null;
   role?: string | null;
 }) {
-  if (process.env.NEXT_PUBLIC_DISABLE_ANALYTICS === "true") {
+  if (isMonitoringDisabled()) {
     return;
   }
 

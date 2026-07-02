@@ -2,14 +2,19 @@
 
 import { CandidateRegisterForm } from '@/components/auth/CandidateRegisterForm';
 import { useAuth } from '@/providers/auth-provider';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useEffect } from 'react';
+import { useFeatureFlags } from '@/lib/feature-flags';
+import { useFirestore } from '@/firebase';
 
 export default function CandidateRegisterPage() {
   const { userProfile, loading } = useAuth();
   const router = useRouter();
+  const firestore = useFirestore();
+  const { isEnabled, loading: featureLoading } = useFeatureFlags(firestore);
+  const candidatePortalEnabled = isEnabled('candidate_portal');
 
   useEffect(() => {
     if (!loading && userProfile && userProfile.role === 'kandidat') {
@@ -24,7 +29,24 @@ export default function CandidateRegisterPage() {
       </div>
     );
   }
-  
+
+  if (!featureLoading && !candidatePortalEnabled) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-secondary p-4">
+        <div className="w-full max-w-md rounded-xl bg-background p-8 text-center shadow-lg">
+          <Users className="mx-auto mb-3 h-10 w-10 text-violet-400" />
+          <h1 className="text-lg font-bold text-foreground">Portal Kandidat Tidak Tersedia</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Portal Kandidat sedang dinonaktifkan sementara. Silakan coba lagi nanti.
+          </p>
+          <Link href="/careers" className="mt-4 inline-block text-sm text-primary underline-offset-4 hover:underline">
+            &larr; Kembali ke Halaman Karir
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-secondary p-4">
       <div className="w-full max-w-md space-y-6 rounded-xl bg-background p-8 shadow-lg">

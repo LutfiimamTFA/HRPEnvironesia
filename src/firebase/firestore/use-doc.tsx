@@ -25,7 +25,11 @@ export interface UseDocResult<T> {
   isLoading: boolean; // True if loading.
   error: FirestoreError | Error | null; // Error object, or null.
   mutate: () => void; // Function to manually refetch data.
+  /** True while paused after a resource-exhausted error. */
+  isPaused: boolean;
 }
+
+const DEFAULT_COOLDOWN_MS = 60_000;
 
 /**
  * React hook to subscribe to a single Firestore document in real-time.
@@ -46,12 +50,17 @@ export function useDoc<T = any>(
     | (DocumentReference<DocumentData> & { __memo?: boolean })
     | null
     | undefined,
+  options?: { cooldownMs?: number },
 ): UseDocResult<T> {
   type StateDataType = WithId<T> | null;
+
+  const cooldownMs = options?.cooldownMs ?? DEFAULT_COOLDOWN_MS;
 
   const [data, setData] = useState<StateDataType>(null);
   const [isLoading, setIsLoading] = useState<boolean>(!!memoizedDocRef);
   const [error, setError] = useState<FirestoreError | Error | null>(null);
+  const [pausedUntil, setPausedUntil] = useState(0);
+  const isPaused = pausedUntil > Date.now();
 
   const fetchData = useCallback(async () => {
     if (!memoizedDocRef) return;
@@ -63,12 +72,16 @@ export function useDoc<T = any>(
       } else {
         setData(null);
       }
+      setError(null);
     } catch (e: any) {
       setError(e);
+      if (e?.code === "resource-exhausted") {
+        setPausedUntil(Date.now() + cooldownMs);
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [memoizedDocRef]);
+  }, [memoizedDocRef, cooldownMs]);
 
   useEffect(() => {
     if (!memoizedDocRef) {
@@ -78,10 +91,17 @@ export function useDoc<T = any>(
       return;
     }
 
+    if (pausedUntil > Date.now()) {
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
-    const unsubscribe = onSnapshot(
+    let unsubscribe: (() => void) | undefined;
+
+    unsubscribe = onSnapshot(
       memoizedDocRef,
       (snapshot: DocumentSnapshot<DocumentData>) => {
         if (snapshot.exists()) {
@@ -104,6 +124,14 @@ export function useDoc<T = any>(
           return;
         }
 
+        if (error.code === "resource-exhausted") {
+          unsubscribe?.();
+          setPausedUntil(Date.now() + cooldownMs);
+          setError(error);
+          setIsLoading(false);
+          return;
+        }
+
         const contextualError = new FirestorePermissionError({
           operation: "get",
           path: memoizedDocRef.path,
@@ -119,13 +147,20 @@ export function useDoc<T = any>(
       },
     );
 
-    return () => unsubscribe();
-  }, [memoizedDocRef]);
+    return () => unsubscribe?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [memoizedDocRef, pausedUntil]);
+
+  useEffect(() => {
+    if (pausedUntil <= Date.now()) return;
+    const timeout = window.setTimeout(() => setPausedUntil(0), pausedUntil - Date.now());
+    return () => window.clearTimeout(timeout);
+  }, [pausedUntil]);
 
   if (memoizedDocRef && (memoizedDocRef as any).__memo !== true) {
     // This check helps prevent infinite loops by ensuring the docRef is memoized.
     // console.warn('useDoc detected a non-memoized docRef. This can lead to performance issues. Wrap the doc() call in useMemoFirebase().', memoizedDocRef);
   }
 
-  return { data, isLoading, error, mutate: fetchData };
+  return { data, isLoading, error, mutate: fetchData, isPaused };
 }
