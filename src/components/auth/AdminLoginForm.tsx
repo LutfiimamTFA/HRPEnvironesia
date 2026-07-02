@@ -116,7 +116,11 @@ export function AdminLoginForm() {
         return;
       }
 
-      await markLoginSession(firestore, user.uid);
+      await markLoginSession(firestore, user.uid, {
+        email: userProfile.email ?? user.email ?? null,
+        displayName: userProfile.fullName ?? user.displayName ?? null,
+        role: userProfile.role ?? null,
+      });
 
       // Update remember me preference
       if (values.rememberMe) {

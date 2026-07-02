@@ -10,6 +10,7 @@ import {
   setDoc,
   addDoc,
 } from 'firebase/firestore';
+import { trackSystemEvent } from '@/lib/analytics/trackSystemEvent';
 
 export type SessionStatus =
   | 'online'
@@ -126,6 +127,16 @@ export async function markLoginSession(
     deviceInfo: getCurrentDeviceInfo(),
   });
 
+  trackSystemEvent({
+    eventType: 'login',
+    module: 'Authentication',
+    action: 'login',
+    status: 'success',
+    uid,
+    email: extra?.email ?? null,
+    role: extra?.role ?? null,
+  });
+
   return sessionId;
 }
 
@@ -215,6 +226,15 @@ export async function signOutWithSessionStatus(
       actorUid: extra?.actorUid ?? null,
       actorName: extra?.actorName ?? null,
       deviceInfo: getCurrentDeviceInfo(),
+    });
+    trackSystemEvent({
+      eventType: 'logout',
+      module: 'Authentication',
+      action: reason,
+      status: 'success',
+      uid,
+      email: extra?.email ?? null,
+      role: extra?.role ?? null,
     });
   }
 

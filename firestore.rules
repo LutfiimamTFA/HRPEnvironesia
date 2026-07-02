@@ -958,6 +958,33 @@ service cloud.firestore {
     }
 
     /**
+     * /online_sessions/{userId}
+     * - Signed-in users update only their own heartbeat document.
+     * - Super Admin can read/list current online users.
+     */
+    match /online_sessions/{userId} {
+      allow read, list: if isSuperAdmin();
+      allow create, update: if isSignedIn() && userId == request.auth.uid && request.resource.data.uid == request.auth.uid;
+      allow delete: if false;
+    }
+
+    /**
+     * /system_analytics_events/{eventId}
+     * - Signed-in users may create non-sensitive activity events for themselves.
+     * - Super Admin can read/list aggregated analytics.
+     * - Immutable from the client.
+     */
+    match /system_analytics_events/{eventId} {
+      allow read, list: if isSuperAdmin();
+      allow create: if isSignedIn() && (
+        !('uid' in request.resource.data) ||
+        request.resource.data.uid == request.auth.uid ||
+        request.resource.data.uid == null
+      );
+      allow update, delete: if false;
+    }
+
+    /**
      * /audit_logs/{logId}
      * - Super Admin can create and read audit logs.
      * - Immutable: no update or delete allowed.
@@ -991,6 +1018,28 @@ service cloud.firestore {
     }
 
     /**
+     * /data_integrity_reports/{reportId}
+     * - Server writes completed Data Integrity reports via Admin SDK.
+     * - Super Admin can read/list report history.
+     * - Immutable from the client.
+     */
+    match /data_integrity_reports/{reportId} {
+      allow read, list: if isSuperAdmin();
+      allow create, update, delete: if false;
+    }
+
+    /**
+     * /load_test_reports/{reportId}
+     * - Super Admin creates reports after running Simulation Lab.
+     * - Read-only after creation (no updates/deletes from client).
+     */
+    match /load_test_reports/{reportId} {
+      allow read, list: if isSuperAdmin();
+      allow create: if isSuperAdmin();
+      allow update, delete: if false;
+    }
+
+    /**
      * /backup_progress/{backupId}
      * - Server writes real-time backup progress with Admin SDK.
      * - Super Admin can read progress while the modal is open.
@@ -998,6 +1047,21 @@ service cloud.firestore {
     match /backup_progress/{backupId} {
       allow read, list: if isSuperAdmin();
       allow create, update, delete: if false;
+    }
+
+    match /system_announcements/{announcementId} {
+      allow read, list: if isSignedIn();
+      allow create, update: if isSuperAdmin();
+      allow delete: if isSuperAdmin() && (
+        resource.data.status == 'draft' ||
+        resource.data.status == 'archived' ||
+        (resource.data.status == 'active' && resource.data.startAt != null && resource.data.startAt > request.time)
+      );
+      match /reads/{uid} {
+        allow read, list: if isSuperAdmin();
+        allow create, update: if isSignedIn() && request.auth.uid == uid;
+        allow delete: if false;
+      }
     }
   }
 }

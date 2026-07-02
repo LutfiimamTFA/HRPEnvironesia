@@ -39,7 +39,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Save, AlertCircle, CheckCircle2, Lock } from "lucide-react";
+import { Loader2, Save, AlertCircle, CheckCircle2, Lock, RotateCcw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 type NavigationSettings = {
@@ -48,6 +48,7 @@ type NavigationSettings = {
   updatedAt?: any;
   updatedByUid?: string;
   updatedByName?: string;
+  menuSettingsVersion?: number;
 };
 
 type DisplayRole = {
@@ -75,17 +76,19 @@ const SUPER_ADMIN_REQUIRED_KEYS = new Set([
   "admin.audit-log",
 ]);
 
-// New menu keys that should be auto-added to Super Admin if not already saved
-const SUPER_ADMIN_NEW_KEYS = [
-  "admin.session-security",
-  "admin.audit-log",
-  "admin.backup-export",
-  "admin.announcements",
-];
+const CURRENT_MENU_SETTINGS_VERSION = 1;
 
 function getDefaultMenuKeys(roleId: string): string[] {
   const groups = MENU_CONFIG[roleId] || [];
   return groups.flatMap((g) => g.items.map((i) => i.key));
+}
+
+function enforceRequiredMenuKeys(roleId: string, keys: string[]) {
+  if (roleId !== "super-admin") return normalizeMenuVisibilityKeys(keys);
+  return normalizeMenuVisibilityKeys([
+    ...keys,
+    ...Array.from(SUPER_ADMIN_REQUIRED_KEYS),
+  ]);
 }
 
 function formatTimestamp(ts: any): string | null {
@@ -107,6 +110,7 @@ export function MenuSettingsClient() {
   const [isInitialized, setIsInitialized] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [hasUnsaved, setHasUnsaved] = useState(false);
+  const [dirtyRoles, setDirtyRoles] = useState<Set<string>>(new Set());
   const [savedMeta, setSavedMeta] = useState<{
     updatedAt: any;
     updatedByName: string | null;
@@ -132,37 +136,10 @@ export function MenuSettingsClient() {
       const saved = firestoreSettings?.find((s) => s.id === role.id);
       if (saved) {
         anyDocExists = true;
-        let items = normalizeMenuVisibilityKeys(saved.visibleMenuItems);
-
-        // Back-fill required and new Super Admin keys if missing from old saved data
-        if (role.id === "super-admin") {
-          for (const key of SUPER_ADMIN_REQUIRED_KEYS) {
-            if (!items.includes(key)) items.push(key);
-          }
-          for (const key of SUPER_ADMIN_NEW_KEYS) {
-            if (!items.includes(key)) items.push(key);
-          }
-        }
-        // Legacy back-fills for other roles
-        if ((role.id === "super-admin" || role.id === "hrd") && !items.includes("overtime_payroll_recap")) {
-          items.push("overtime_payroll_recap");
-        }
-        if ((role.id === "super-admin" || role.id === "hrd") && !items.includes("monitoring.attendance-payroll-recap")) {
-          items.push("monitoring.attendance-payroll-recap");
-        }
-        if (role.id === "super-admin") {
-          if (!items.includes("hrd.leave_approval")) items.push("hrd.leave_approval");
-          if (!items.includes("manager.leave_approval")) items.push("manager.leave_approval");
-          if (!items.includes("employee.leave")) items.push("employee.leave");
-        } else if (role.id === "hrd") {
-          if (!items.includes("hrd.leave_approval")) items.push("hrd.leave_approval");
-        } else if (role.id === "manager") {
-          if (!items.includes("manager.leave_approval")) items.push("manager.leave_approval");
-        } else if (role.id === "karyawan") {
-          if (!items.includes("employee.leave")) items.push("employee.leave");
-        }
-
-        newSettings[role.id] = items;
+        newSettings[role.id] = enforceRequiredMenuKeys(
+          role.id,
+          saved.visibleMenuItems,
+        );
 
         const ts = saved.updatedAt?.seconds ?? 0;
         if (saved.updatedAt && ts > (latestUpdatedAt?.seconds ?? 0)) {
@@ -170,7 +147,10 @@ export function MenuSettingsClient() {
           latestUpdatedByName = saved.updatedByName ?? null;
         }
       } else {
-        newSettings[role.id] = getDefaultMenuKeys(role.id);
+        newSettings[role.id] = enforceRequiredMenuKeys(
+          role.id,
+          getDefaultMenuKeys(role.id),
+        );
       }
     });
 
@@ -181,6 +161,7 @@ export function MenuSettingsClient() {
     });
     setSettings(newSettings);
     setHasUnsaved(false);
+    setDirtyRoles(new Set());
     setIsInitialized(true);
   }, [firestoreSettings, isLoadingSettings, isInitialized]);
 
@@ -199,12 +180,34 @@ export function MenuSettingsClient() {
         const updated = checked
           ? [...current, menuItemKey]
           : current.filter((k) => k !== menuItemKey);
-        return { ...prev, [roleId]: updated };
+        return { ...prev, [roleId]: normalizeMenuVisibilityKeys(updated) };
+      });
+      setDirtyRoles((prev) => {
+        const next = new Set(prev);
+        next.add(roleId);
+        return next;
       });
       setHasUnsaved(true);
     },
     [toast],
   );
+
+  const handleResetRoleToDefault = useCallback((roleId: string) => {
+    setSettings((prev) => ({
+      ...prev,
+      [roleId]: enforceRequiredMenuKeys(roleId, getDefaultMenuKeys(roleId)),
+    }));
+    setDirtyRoles((prev) => {
+      const next = new Set(prev);
+      next.add(roleId);
+      return next;
+    });
+    setHasUnsaved(true);
+    toast({
+      title: "Role direset ke default",
+      description: "Klik Save Changes untuk menyimpan default role ini.",
+    });
+  }, [toast]);
 
   const handleSave = useCallback(async () => {
     if (!firebaseUser) {
@@ -217,14 +220,22 @@ export function MenuSettingsClient() {
     const now = serverTimestamp();
 
     try {
-      const promises = Object.entries(settings).map(([roleId, visibleMenuItems]) => {
-        const normalized = normalizeMenuVisibilityKeys(visibleMenuItems);
+      const rolesToSave = Array.from(dirtyRoles);
+      if (rolesToSave.length === 0) {
+        setHasUnsaved(false);
+        setIsSaving(false);
+        return;
+      }
+
+      const promises = rolesToSave.map((roleId) => {
+        const normalized = enforceRequiredMenuKeys(roleId, settings[roleId] || []);
         const docRef = doc(firestore, "navigation_settings", roleId);
         return setDoc(
           docRef,
           {
             role: roleId,
             visibleMenuItems: normalized,
+            menuSettingsVersion: CURRENT_MENU_SETTINGS_VERSION,
             updatedAt: now,
             updatedByUid: firebaseUser.uid,
             updatedByName: actorName,
@@ -235,16 +246,24 @@ export function MenuSettingsClient() {
 
       await Promise.all(promises);
 
+      setSettings((prev) => {
+        const next = { ...prev };
+        for (const roleId of rolesToSave) {
+          next[roleId] = enforceRequiredMenuKeys(roleId, next[roleId] || []);
+        }
+        return next;
+      });
       setSavedMeta({
         updatedAt: { toDate: () => new Date() },
         updatedByName: actorName,
         isDefault: false,
       });
+      setDirtyRoles(new Set());
       setHasUnsaved(false);
 
       toast({
         title: "Pengaturan disimpan",
-        description: "Visibilitas menu berhasil diperbarui.",
+        description: `Visibilitas menu berhasil diperbarui untuk ${rolesToSave.length} role.`,
       });
     } catch (err: any) {
       console.error("MenuSettings save error:", err);
@@ -259,7 +278,7 @@ export function MenuSettingsClient() {
     } finally {
       setIsSaving(false);
     }
-  }, [settings, firebaseUser, userProfile, firestore, toast]);
+  }, [settings, dirtyRoles, firebaseUser, userProfile, firestore, toast]);
 
   if (!isInitialized) {
     return (
@@ -320,7 +339,19 @@ export function MenuSettingsClient() {
                         key={role.id}
                         className="text-center font-semibold capitalize min-w-[100px]"
                       >
-                        {role.label}
+                        <div className="flex flex-col items-center gap-1.5">
+                          <span>{role.label}</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-[11px] text-slate-500 hover:text-slate-800"
+                            onClick={() => handleResetRoleToDefault(role.id)}
+                          >
+                            <RotateCcw className="mr-1 h-3 w-3" />
+                            Reset Role Ini ke Default
+                          </Button>
+                        </div>
                       </TableHead>
                     ))}
                   </TableRow>

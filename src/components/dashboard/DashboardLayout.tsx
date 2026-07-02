@@ -1,7 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-import React, { useMemo, createElement, useState, useEffect } from "react";
+import React, { useMemo, createElement, useState, useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
 import type { MenuGroup, MenuItem } from "@/lib/menu-config";
 import { SidebarNav } from "./SidebarNav";
 import { Topbar } from "./Topbar";
@@ -13,7 +14,7 @@ import {
   useMemoFirebase,
   useCollection,
 } from "@/firebase";
-import { doc, collection, query, where, limit } from "firebase/firestore";
+import { doc, collection, query, where, limit, serverTimestamp, setDoc } from "firebase/firestore";
 import type { NavigationSetting, UserRole, Job } from "@/lib/types";
 import {
   MENU_CONFIG,
@@ -31,10 +32,19 @@ import {
   MapPin,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { useSystemAnnouncements } from "@/hooks/useSystemAnnouncements";
+import { SystemAnnouncementBanner } from "./SystemAnnouncementBanner";
+import { SystemAnnouncementModal } from "./SystemAnnouncementModal";
+import { MaintenanceLockScreen } from "./MaintenanceLockScreen";
 import {
   isActiveEmployeeEligibleForLeave,
   canUserReview,
 } from "@/lib/auth-eligibility";
+import { getCurrentDeviceInfo } from "@/lib/session-tracking";
+import { trackSystemEvent } from "@/lib/analytics/trackSystemEvent";
+
+const ANALYTICS_DISABLED = process.env.NEXT_PUBLIC_DISABLE_ANALYTICS === "true";
+const ONLINE_SESSION_HEARTBEAT_MS = 60 * 1000;
 
 type DashboardLayoutProps = {
   children: React.ReactNode;
@@ -42,6 +52,30 @@ type DashboardLayoutProps = {
   actionArea?: ReactNode;
   menuConfig?: MenuGroup[];
 };
+
+function getCurrentModule(pathname: string) {
+  if (pathname.includes("/backup-export")) return "Backup & Export";
+  if (pathname.includes("/data-integrity")) return "Data Integrity";
+  if (pathname.includes("/sync-center")) return "Sync Center";
+  if (pathname.includes("/analytics-system")) return "Analytics Sistem";
+  if (pathname.includes("/recruitment") || pathname.includes("/jobs") || pathname.includes("/interviews")) return "Recruitment";
+  if (pathname.includes("/monitoring/absen") || pathname.includes("/attendance")) return "Absensi";
+  if (pathname.includes("/overtime") || pathname.includes("lembur")) return "Rekap Lembur";
+  if (pathname.includes("cuti") || pathname.includes("izin")) return "Cuti & Izin";
+  if (pathname.includes("/announcements")) return "Pengumuman Sistem";
+  if (pathname.includes("/user-management")) return "User Management";
+  if (pathname.includes("/storage-management")) return "Storage Management";
+  return pathname.split("/").filter(Boolean).slice(0, 3).join(" / ") || "Dashboard";
+}
+
+function parseBrowser(userAgent?: string | null) {
+  if (!userAgent) return null;
+  if (userAgent.includes("Edg/")) return "Edge";
+  if (userAgent.includes("Chrome/")) return "Chrome";
+  if (userAgent.includes("Firefox/")) return "Firefox";
+  if (userAgent.includes("Safari/")) return "Safari";
+  return "Browser";
+}
 
 export function DashboardLayout({
   children,
@@ -51,6 +85,14 @@ export function DashboardLayout({
 }: DashboardLayoutProps) {
   const { userProfile } = useAuth();
   const firestore = useFirestore();
+  const pathname = usePathname();
+  const {
+    bannerAnnouncements,
+    modalAnnouncements,
+    lockAnnouncement,
+    superAdminLockBanners,
+  } = useSystemAnnouncements();
+  const lastOnlineHeartbeatAtRef = useRef(0);
 
   // Fetch employee_profiles by uid — this is the primary source for hrdEmploymentInfo
   const profileDocRef = useMemoFirebase(
@@ -61,6 +103,66 @@ export function DashboardLayout({
     [userProfile?.uid, firestore],
   );
   const { data: employeeProfile } = useDoc<any>(profileDocRef);
+
+  useEffect(() => {
+    if (ANALYTICS_DISABLED) return;
+    if (!userProfile?.uid || !pathname) return;
+
+    const moduleName = getCurrentModule(pathname);
+    const deviceInfo = getCurrentDeviceInfo();
+    const writeHeartbeat = async (force = false) => {
+      if (ANALYTICS_DISABLED) return;
+      const now = Date.now();
+      if (!force && now - lastOnlineHeartbeatAtRef.current < ONLINE_SESSION_HEARTBEAT_MS) return;
+      lastOnlineHeartbeatAtRef.current = now;
+      try {
+        await setDoc(
+          doc(firestore, "online_sessions", userProfile.uid),
+          {
+            uid: userProfile.uid,
+            email: userProfile.email ?? null,
+            displayName: userProfile.fullName ?? (userProfile as any).displayName ?? userProfile.email ?? userProfile.uid,
+            role: userProfile.role ?? null,
+            currentPath: pathname,
+            currentModule: moduleName,
+            lastSeen: serverTimestamp(),
+            loginAt: (userProfile as any).lastLoginAt ?? null,
+            device: deviceInfo?.platform ?? null,
+            browser: parseBrowser(deviceInfo?.userAgent),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true },
+        );
+      } catch (error) {
+        console.warn("[analytics] Failed to update online session:", error);
+      }
+    };
+
+    writeHeartbeat();
+    trackSystemEvent({
+      eventType: "page_view",
+      module: moduleName,
+      action: "open_page",
+      status: "success",
+      path: pathname,
+      uid: userProfile.uid,
+      email: userProfile.email ?? null,
+      role: userProfile.role ?? null,
+    });
+    trackSystemEvent({
+      eventType: "module_opened",
+      module: moduleName,
+      action: "open_module",
+      status: "success",
+      path: pathname,
+      uid: userProfile.uid,
+      email: userProfile.email ?? null,
+      role: userProfile.role ?? null,
+    });
+
+    const intervalId = window.setInterval(writeHeartbeat, ONLINE_SESSION_HEARTBEAT_MS);
+    return () => window.clearInterval(intervalId);
+  }, [firestore, pathname, userProfile]);
 
   const roleKey = useMemo(() => {
     if (!userProfile) return null;
@@ -144,19 +246,6 @@ export function DashboardLayout({
           : roleKey;
     }
 
-    // Debug logging
-    if (userProfile?.uid) {
-      console.log("sidebar-menu-role", {
-        uid: userProfile.uid,
-        role: userProfile.role,
-        structuralLevel: (userProfile as any)?.structuralLevel,
-        roleKey,
-        menuRoleKey,
-        lookupKey,
-        visibleMenuCount: navSettings?.visibleMenuItems?.length || 0,
-      });
-    }
-
     const hasNavigationSettings =
       !isLoadingSettings && Array.isArray(navSettings?.visibleMenuItems);
     const baseConfigSource = hasNavigationSettings
@@ -172,12 +261,6 @@ export function DashboardLayout({
       const visibleKeys = new Set(
         normalizeMenuVisibilityKeys(navSettings?.visibleMenuItems || []),
       );
-
-      if (roleKey === "super-admin" || roleKey === "hrd") {
-        visibleKeys.add("overtime_payroll_recap");
-        visibleKeys.add("hrd.dashboard.karyawan");
-        visibleKeys.add("hrd.dashboard.rekrutmen");
-      }
 
       // Filter by visibility
       finalConfig = ALL_MENU_GROUPS.map((group) => ({
@@ -614,12 +697,29 @@ export function DashboardLayout({
     pendingBankRequests,
   ]);
 
+  // Maintenance Lock: block non-super-admin users entirely
+  if (lockAnnouncement) {
+    return <MaintenanceLockScreen announcement={lockAnnouncement} />;
+  }
+
   return (
     <SidebarProvider>
       <SidebarNav menuConfig={menuConfig} />
       <SidebarInset>
         <Topbar pageTitle={pageTitle} actionArea={actionArea} />
         <main className="flex-1 items-start gap-4 p-4 sm:px-6 sm:py-6 md:gap-8">
+          {/* Super Admin: only shows a compact banner when maintenance lock is active */}
+          {superAdminLockBanners.length > 0 && (
+            <SystemAnnouncementBanner announcements={superAdminLockBanners} superAdminMode />
+          )}
+          {/* Regular users: banner (only if showAsBanner=true) */}
+          {bannerAnnouncements.length > 0 && (
+            <SystemAnnouncementBanner announcements={bannerAnnouncements} />
+          )}
+          {/* Regular users: modal (default for all active announcements) */}
+          {modalAnnouncements.length > 0 && (
+            <SystemAnnouncementModal announcements={modalAnnouncements} />
+          )}
           {children}
         </main>
       </SidebarInset>

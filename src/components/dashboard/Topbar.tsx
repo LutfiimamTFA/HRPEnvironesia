@@ -112,6 +112,11 @@ function UserNav() {
       userProfile?.uid,
       "manual_logout",
       "offline",
+      {
+        email: userProfile?.email ?? null,
+        displayName: userProfile?.fullName ?? null,
+        role: userProfile?.role ?? null,
+      },
     );
     router.push("/");
   };

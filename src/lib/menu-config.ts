@@ -38,6 +38,12 @@ import {
   Wrench,
   CalendarClock,
   Home,
+  Megaphone,
+  ScanSearch,
+  RefreshCw,
+  ToggleLeft,
+  HardDrive,
+  Server,
   Briefcase as BriefcaseIcon,
 } from "lucide-react";
 import type { UserRole } from "@/lib/types";
@@ -372,6 +378,47 @@ export const ALL_MENU_GROUPS: MenuGroup[] = [
     ],
   },
   {
+    title: "Kontrol Sistem",
+    items: [
+      {
+        key: "admin.analytics-system",
+        href: "/admin/super-admin/analytics-system",
+        label: "Analytics Sistem",
+        icon: createElement(BarChart),
+      },
+      {
+        key: "admin.data-integrity",
+        href: "/admin/super-admin/data-integrity",
+        label: "Data Integrity",
+        icon: createElement(ScanSearch),
+      },
+      {
+        key: "admin.sync-center",
+        href: "/admin/super-admin/sync-center",
+        label: "Sync Center",
+        icon: createElement(RefreshCw),
+      },
+      {
+        key: "admin.feature-control",
+        href: "/admin/super-admin/feature-control",
+        label: "Feature Control",
+        icon: createElement(ToggleLeft),
+      },
+      {
+        key: "admin.storage-management",
+        href: "/admin/super-admin/storage-management",
+        label: "Storage Management",
+        icon: createElement(HardDrive),
+      },
+      {
+        key: "admin.environment-info",
+        href: "/admin/super-admin/environment-info",
+        label: "Environment Info",
+        icon: createElement(Server),
+      },
+    ],
+  },
+  {
     title: "Personal",
     items: [
       {
@@ -600,7 +647,48 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
           key: "admin.announcements",
           href: "/admin/super-admin/announcements",
           label: "Pengumuman Sistem",
-          icon: createElement(Settings),
+          icon: createElement(Megaphone),
+        },
+      ],
+    },
+    {
+      title: "Kontrol Sistem",
+      items: [
+        {
+          key: "admin.analytics-system",
+          href: "/admin/super-admin/analytics-system",
+          label: "Analytics Sistem",
+          icon: createElement(BarChart),
+        },
+        {
+          key: "admin.data-integrity",
+          href: "/admin/super-admin/data-integrity",
+          label: "Data Integrity",
+          icon: createElement(ScanSearch),
+        },
+        {
+          key: "admin.sync-center",
+          href: "/admin/super-admin/sync-center",
+          label: "Sync Center",
+          icon: createElement(RefreshCw),
+        },
+        {
+          key: "admin.feature-control",
+          href: "/admin/super-admin/feature-control",
+          label: "Feature Control",
+          icon: createElement(ToggleLeft),
+        },
+        {
+          key: "admin.storage-management",
+          href: "/admin/super-admin/storage-management",
+          label: "Storage Management",
+          icon: createElement(HardDrive),
+        },
+        {
+          key: "admin.environment-info",
+          href: "/admin/super-admin/environment-info",
+          label: "Environment Info",
+          icon: createElement(Server),
         },
       ],
     },

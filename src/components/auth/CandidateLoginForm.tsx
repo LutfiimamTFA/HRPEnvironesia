@@ -102,7 +102,11 @@ export function CandidateLoginForm({ onSwitchToRegister }: { onSwitchToRegister?
 
       await batch.commit();
     }
-    await markLoginSession(firestore, user.uid);
+    await markLoginSession(firestore, user.uid, {
+      email: user.email ?? null,
+      displayName: user.displayName ?? null,
+      role: 'kandidat',
+    });
     // On successful candidate login/creation, layout will redirect to /careers/portal
     toast({ title: 'Success', description: 'Logged in successfully.' });
   };
