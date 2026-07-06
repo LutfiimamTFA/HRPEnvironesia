@@ -30,6 +30,7 @@ import {
   CalendarOff,
   User,
   MapPin,
+  Package,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useSystemAnnouncements } from "@/hooks/useSystemAnnouncements";
@@ -234,6 +235,19 @@ export function DashboardLayout({
   const { data: navSettings, isLoading: isLoadingSettings } =
     useDoc<NavigationSetting>(settingsDocRef);
 
+  // Inventory Admin is a separate access grant (inventory_access/{uid}), not an
+  // HRP role — used only to decide whether the Inventory CRUD menu (Dashboard
+  // Inventory, Master Barang, Tambah Barang, Data Peminjaman) shows for
+  // non-Super-Admin users. "Manajemen Akses Inventory" stays Super-Admin-only
+  // regardless of this flag.
+  const inventoryAccessDocRef = useMemoFirebase(
+    () =>
+      userProfile?.uid ? doc(firestore, "inventory_access", userProfile.uid) : null,
+    [userProfile?.uid, firestore],
+  );
+  const { data: inventoryAccess } = useDoc<{ status?: string }>(inventoryAccessDocRef);
+  const hasActiveInventoryAccess = inventoryAccess?.status === "active";
+
   // Realtime checks for recruitment-related assignments across multiple sources
   const panelistQuery = useMemoFirebase(() => {
     if (!userProfile?.uid) return null;
@@ -366,6 +380,50 @@ export function DashboardLayout({
       }
     }
 
+    // Inventory Admin is a separate access grant, not an HRP role — inject the
+    // Inventory CRUD menu for any non-Super-Admin user with an active grant,
+    // regardless of their role's navigation_settings/MENU_CONFIG default.
+    if (hasActiveInventoryAccess && roleKey !== "super-admin") {
+      let inventoryGroup = finalConfig.find(
+        (g: MenuGroup) => g.title === "Inventory",
+      );
+      if (!inventoryGroup) {
+        inventoryGroup = { title: "Inventory", items: [] };
+        finalConfig.push(inventoryGroup);
+      }
+      const inventoryAdminItems: MenuItem[] = [
+        {
+          key: "inventory_dashboard",
+          href: "/admin/inventory/dashboard",
+          label: "Dashboard Inventory",
+          icon: createElement(Package),
+        },
+        {
+          key: "inventory_barang",
+          href: "/admin/inventory/items",
+          label: "Barang",
+          icon: createElement(Package),
+        },
+        {
+          key: "inventory_categories",
+          href: "/admin/inventory/categories",
+          label: "Kategori Barang",
+          icon: createElement(Package),
+        },
+        {
+          key: "inventory_borrowings",
+          href: "/admin/inventory/borrowings",
+          label: "Data Peminjaman",
+          icon: createElement(Package),
+        },
+      ];
+      for (const item of inventoryAdminItems) {
+        if (!inventoryGroup.items.some((existing: MenuItem) => existing.key === item.key)) {
+          inventoryGroup.items.push(item);
+        }
+      }
+    }
+
     // Detect manager/director/management users who are also active employees
     const isManagerOrDirector =
       menuRoleKey === "manager" &&
@@ -424,6 +482,26 @@ export function DashboardLayout({
             (isAssignmentLoading || !hasAnyAssignment)
           ) {
             return false;
+          }
+
+          // Manajemen Akses Inventory (grant/revoke tool) is Super Admin only, always enforced.
+          if (item.key === "inventory_access" && roleKey !== "super-admin") {
+            return false;
+          }
+
+          // Inventory CRUD menu (Dashboard/Barang/Kategori Barang/Data
+          // Peminjaman): Super Admin always sees it; everyone else needs an
+          // active inventory_access grant — a separate access flag, not a
+          // role. Enforced regardless of navSettings so a plain karyawan
+          // never sees this even if Menu Visibility was toggled on for their role.
+          const inventoryCrudKeys = [
+            "inventory_dashboard",
+            "inventory_barang",
+            "inventory_categories",
+            "inventory_borrowings",
+          ];
+          if (inventoryCrudKeys.includes(item.key) && roleKey !== "super-admin") {
+            return hasActiveInventoryAccess;
           }
 
           // When navSettings is the authority, it already filtered visible items — trust it.

@@ -37,7 +37,7 @@ import { UserProfile, ROLES, UserRole } from "@/lib/types";
 import { Loader2, Eye, EyeOff, RefreshCw, Copy, Check } from "lucide-react";
 import { useFirestore } from "@/firebase";
 import { useAuth } from "@/providers/auth-provider";
-import { doc, serverTimestamp, writeBatch } from "firebase/firestore";
+import { doc, getDoc, serverTimestamp, writeBatch } from "firebase/firestore";
 
 const creatableRoles: UserRole[] = ["hrd", "manager", "karyawan"];
 const allRolesForEdit: UserRole[] = [
@@ -109,6 +109,9 @@ export function UserFormDialog({
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [copiedPassword, setCopiedPassword] = useState(false);
+  const [inventoryAccessActive, setInventoryAccessActive] = useState(false);
+  const [loadingInventoryAccess, setLoadingInventoryAccess] = useState(false);
+  const [savingInventoryAccess, setSavingInventoryAccess] = useState(false);
   const { firebaseUser } = useAuth();
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -144,6 +147,53 @@ export function UserFormDialog({
       form.reset(defaultValues as any);
     }
   }, [user, open, mode, form]);
+
+  // Inventory Admin is a separate access flag (inventory_access/{uid}), not part
+  // of the user's main HRP role — load its current status independently.
+  useEffect(() => {
+    if (!open || mode !== "edit" || !user) {
+      setInventoryAccessActive(false);
+      return;
+    }
+    setLoadingInventoryAccess(true);
+    getDoc(doc(firestore, "inventory_access", user.uid))
+      .then((snap) => setInventoryAccessActive(snap.exists() && snap.data()?.status === "active"))
+      .catch(() => setInventoryAccessActive(false))
+      .finally(() => setLoadingInventoryAccess(false));
+  }, [open, mode, user, firestore]);
+
+  async function handleToggleInventoryAccess(nextActive: boolean) {
+    if (!user || !firebaseUser) return;
+    setSavingInventoryAccess(true);
+    try {
+      const idToken = await firebaseUser.getIdToken();
+      const res = await fetch(`/api/admin/inventory-access/${nextActive ? "grant" : "revoke"}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ uid: user.uid }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || data.error || "Gagal mengubah akses inventory.");
+      setInventoryAccessActive(nextActive);
+      toast({
+        title: nextActive ? "Akses Inventory Admin diberikan" : "Akses Inventory Admin dicabut",
+        description: nextActive
+          ? `${user.fullName} sekarang bisa membuka menu pendataan barang.`
+          : `${user.fullName} tidak lagi bisa membuka menu pendataan barang.`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Gagal mengubah akses inventory",
+        description: error.message,
+      });
+    } finally {
+      setSavingInventoryAccess(false);
+    }
+  }
 
   const cleanCreatePayload = (values: FormValues) => {
     const payload: any = {
@@ -484,6 +534,40 @@ export function UserFormDialog({
                   )}
                 />
               </div>
+
+              {/* Section 2b: Akses Tambahan (Inventory Admin) — terpisah dari role utama HRP */}
+              {mode === "edit" && user && (
+                <div className="space-y-4 mb-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-1 h-6 bg-primary rounded-full"></div>
+                    <h3 className="text-lg font-bold">Akses Tambahan</h3>
+                  </div>
+
+                  <Card className="bg-muted/30">
+                    <CardContent className="pt-4">
+                      <div className="flex flex-row items-center justify-between">
+                        <div className="space-y-1">
+                          <label className="font-semibold text-sm">Inventory Admin</label>
+                          <p className="text-xs text-muted-foreground">
+                            {user.role === "super-admin"
+                              ? "Super Admin sudah punya akses penuh ke Inventory secara otomatis."
+                              : "Izinkan karyawan ini membuka menu pendataan barang (Inventory). Role HRP tidak berubah."}
+                          </p>
+                        </div>
+                        {loadingInventoryAccess ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        ) : (
+                          <Switch
+                            checked={inventoryAccessActive}
+                            disabled={savingInventoryAccess || user.role === "super-admin"}
+                            onCheckedChange={handleToggleInventoryAccess}
+                          />
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
 
               {/* Section 3: Status Akun */}
               <div className="space-y-4">

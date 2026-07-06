@@ -766,12 +766,15 @@ export async function GET(req: NextRequest) {
   const checkedAt = new Date().toISOString();
 
   try {
+    // Super Admin = technical system owner, NOT HRD/SDM data owner (see product policy).
+    // Data Integrity here only ever checks technical config (auth/role wiring, sidebar/menu
+    // config, storage metadata, backup/export logs, environment). It intentionally does NOT
+    // run checkOrganizationApproval/checkRecruitment/checkAttendancePayroll — those inspect
+    // HRD-owned data (approval chains, candidate/recruitment records, payroll) which is
+    // outside Super Admin's remit and must be validated by HRD in their own menu instead.
     const checks = await Promise.all([
       checkAuthAndRole(db),
       checkSidebarAndAccess(db),
-      checkOrganizationApproval(db),
-      checkRecruitment(db),
-      checkAttendancePayroll(db),
       checkStorageAndFile(db),
       checkBackupExport(db),
       checkEnvironmentSystem(db),

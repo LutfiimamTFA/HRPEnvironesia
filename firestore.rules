@@ -64,6 +64,23 @@ service cloud.firestore {
     }
 
     /**
+     * Inventory Admin — a separate access grant (inventory_access/{uid}.status
+     * == 'active'), NOT an HRP role. Super Admin always has full inventory
+     * access on top of this (see canManageInventory below); grant/revoke of
+     * this flag itself is Super-Admin-only (see /inventory_access rules).
+     */
+    function isInventoryAdmin() {
+      return isSignedIn() && (
+        get(/databases/$(database)/documents/inventory_access/$(request.auth.uid)).data.status == 'active'
+      );
+    }
+
+    /** Super Admin or Inventory Admin — for future inventory data collections (items, borrowings, etc). */
+    function canManageInventory() {
+      return isSuperAdmin() || isInventoryAdmin();
+    }
+
+    /**
      * WARNING: NOT SAFE FOR LIST QUERIES.
      * Gets the full user document. Use only in 'get' or 'write' rules.
      * Using this in a 'list' rule will cause the query to be denied.
@@ -1002,6 +1019,114 @@ service cloud.firestore {
       allow read, list: if isSuperAdmin();
       allow create: if isSignedIn() && isSuperAdmin();
       allow update, delete: if false;
+    }
+
+    /**
+     * /sync_logs/{logId}
+     * - Written ONLY by the Admin SDK from /api/admin/sync/* routes (client create is
+     *   always denied) — Sync Center never writes directly to Firestore from the browser.
+     * - Super Admin can read for the "Terakhir dijalankan" / "Lihat Riwayat" UI.
+     */
+    match /sync_logs/{logId} {
+      allow read, list: if isSuperAdmin();
+      allow create, update, delete: if false;
+    }
+
+    /**
+     * Storage Management (technical, Super Admin only) — all writes come from
+     * /api/admin/storage/* via the Admin SDK (which bypasses these rules
+     * entirely). Client-side reads are Super Admin only since this exposes
+     * internal file paths/metadata, not HRD data.
+     */
+    match /storage_file_index/{fileId} {
+      allow read, list: if isSuperAdmin();
+      allow create, update, delete: if false;
+    }
+
+    match /storage_scan_reports/{reportId} {
+      allow read, list: if isSuperAdmin();
+      allow create, update, delete: if false;
+    }
+
+    match /storage_provider_logs/{logId} {
+      allow read, list: if isSuperAdmin();
+      allow create, update, delete: if false;
+    }
+
+    /**
+     * /inventory_access/{uid}
+     * Grants the separate "inventory_admin" access flag to specific employees
+     * — NOT an HRP role change (users/{uid}.role is never touched by this).
+     * Only Super Admin may grant/revoke; an employee may read their own doc to
+     * check their own access, but cannot list all grants or write to any doc
+     * (including their own) — that would let an Inventory Admin re-grant or
+     * extend their own access, which must stay Super-Admin-only.
+     */
+    match /inventory_access/{uid} {
+      allow get: if isSuperAdmin() || (isSignedIn() && request.auth.uid == uid);
+      allow list: if isSuperAdmin();
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    /**
+     * /inventory_access_logs/{logId}
+     * Append-only audit trail of grant/revoke actions. Super Admin only.
+     */
+    match /inventory_access_logs/{logId} {
+      allow read, list: if isSuperAdmin();
+      allow create: if isSuperAdmin();
+      allow update, delete: if false;
+    }
+
+    /**
+     * /inventory_items/{itemId}
+     * Barang perusahaan didata di HRP (canManageInventory = Super Admin or
+     * an active inventory_access grant). Any signed-in user can read — the
+     * separate Scan Portal app reads the same collection to show item detail
+     * when an employee scans its QR code, and to check current
+     * status/borrower before allowing a borrow/return.
+     */
+    match /inventory_items/{itemId} {
+      allow read, list: if isSignedIn();
+      allow create, update, delete: if canManageInventory();
+    }
+
+    /**
+     * /inventory_borrowings/{borrowingId}
+     * Created/updated by canManageInventory() from HRP's Data Peminjaman
+     * page, or by the Scan Portal's own server-side (Admin SDK) borrow/return
+     * flow — which bypasses these client rules entirely. Any signed-in user
+     * can read so an employee can see their own borrowing history.
+     */
+    match /inventory_borrowings/{borrowingId} {
+      allow read, list: if isSignedIn();
+      allow create, update, delete: if canManageInventory();
+    }
+
+    /**
+     * /inventory_logs/{logId}
+     * Append-only audit trail of inventory item actions (create/update/
+     * deactivate/QR generation/borrow/return). Only canManageInventory() may
+     * write; immutable once written.
+     */
+    match /inventory_logs/{logId} {
+      allow read, list: if canManageInventory();
+      allow create: if canManageInventory();
+      allow update, delete: if false;
+    }
+
+    /**
+     * /inventory_categories/{categoryId}
+     * Master data for item categories (Elektronik, Laptop, ...). Managed from
+     * HRP's Kategori Barang page. Any signed-in user can read (the Scan
+     * Portal may want to show a category label on item detail); only
+     * canManageInventory() may create/update/deactivate. Never hard-deleted
+     * (deactivate sets status: "inactive"), so delete stays disabled.
+     */
+    match /inventory_categories/{categoryId} {
+      allow read, list: if isSignedIn();
+      allow create, update: if canManageInventory();
+      allow delete: if false;
     }
 
     /**

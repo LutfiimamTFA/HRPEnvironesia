@@ -1,13 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { useState, useEffect, useCallback } from "react";
-import { collection, doc, setDoc, serverTimestamp } from "firebase/firestore";
-import {
-  useCollection,
-  useFirestore,
-  useMemoFirebase,
-} from "@/firebase";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { collection, doc, getDocs, setDoc, serverTimestamp } from "firebase/firestore";
+import { useFirestore } from "@/firebase";
 import {
   ALL_MENU_GROUPS,
   MENU_CONFIG,
@@ -41,15 +37,6 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Save, AlertCircle, CheckCircle2, Lock, RotateCcw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-
-type NavigationSettings = {
-  id: string;
-  visibleMenuItems: string[];
-  updatedAt?: any;
-  updatedByUid?: string;
-  updatedByName?: string;
-  menuSettingsVersion?: number;
-};
 
 type DisplayRole = {
   id: string;
@@ -117,53 +104,74 @@ export function MenuSettingsClient() {
     isDefault: boolean;
   } | null>(null);
 
-  const settingsCollectionRef = useMemoFirebase(
-    () => collection(firestore, "navigation_settings"),
-    [firestore],
-  );
-  const { data: firestoreSettings, isLoading: isLoadingSettings } =
-    useCollection<NavigationSettings>(settingsCollectionRef);
+  // Guards the one-shot load against React StrictMode's double-invoke and
+  // against a second load firing while the first is still in flight.
+  const loadingRef = useRef(false);
+
+  /**
+   * Loads permissions straight from Firestore (navigation_settings/{roleId})
+   * — never from the hardcoded MENU_CONFIG default, except per-role as a
+   * fallback when that role has no saved document yet (rule 1 & 2). This is
+   * a plain one-shot getDocs, not a realtime listener, so a save that just
+   * completed is always reflected the next time this runs (e.g. right after
+   * Save, or on next mount) — no stale-cache race.
+   */
+  const loadSettings = useCallback(async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    try {
+      const snap = await getDocs(collection(firestore, "navigation_settings"));
+      const firestoreSettings = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+
+      const newSettings: Record<string, string[]> = {};
+      let anyDocExists = false;
+      let latestUpdatedAt: any = null;
+      let latestUpdatedByName: string | null = null;
+
+      rolesToDisplay.forEach((role) => {
+        const saved = firestoreSettings.find((s) => s.id === role.id);
+        if (saved) {
+          anyDocExists = true;
+          newSettings[role.id] = enforceRequiredMenuKeys(
+            role.id,
+            saved.visibleMenuItems || [],
+          );
+
+          const ts = saved.updatedAt?.seconds ?? 0;
+          if (saved.updatedAt && ts > (latestUpdatedAt?.seconds ?? 0)) {
+            latestUpdatedAt = saved.updatedAt;
+            latestUpdatedByName = saved.updatedByName ?? null;
+          }
+        } else {
+          // Rule 2: default is ONLY used when the Firestore document for this
+          // role doesn't exist at all — never overwrites an existing doc.
+          newSettings[role.id] = enforceRequiredMenuKeys(
+            role.id,
+            getDefaultMenuKeys(role.id),
+          );
+        }
+      });
+
+      console.log("[MenuVisibility] loaded permissions from Firestore:", newSettings);
+
+      setSavedMeta({
+        updatedAt: latestUpdatedAt,
+        updatedByName: latestUpdatedByName,
+        isDefault: !anyDocExists,
+      });
+      setSettings(newSettings);
+      setHasUnsaved(false);
+      setDirtyRoles(new Set());
+      setIsInitialized(true);
+      return newSettings;
+    } finally {
+      loadingRef.current = false;
+    }
+  }, [firestore]);
 
   useEffect(() => {
-    if (isLoadingSettings || isInitialized) return;
-
-    const newSettings: Record<string, string[]> = {};
-    let anyDocExists = false;
-    let latestUpdatedAt: any = null;
-    let latestUpdatedByName: string | null = null;
-
-    rolesToDisplay.forEach((role) => {
-      const saved = firestoreSettings?.find((s) => s.id === role.id);
-      if (saved) {
-        anyDocExists = true;
-        newSettings[role.id] = enforceRequiredMenuKeys(
-          role.id,
-          saved.visibleMenuItems,
-        );
-
-        const ts = saved.updatedAt?.seconds ?? 0;
-        if (saved.updatedAt && ts > (latestUpdatedAt?.seconds ?? 0)) {
-          latestUpdatedAt = saved.updatedAt;
-          latestUpdatedByName = saved.updatedByName ?? null;
-        }
-      } else {
-        newSettings[role.id] = enforceRequiredMenuKeys(
-          role.id,
-          getDefaultMenuKeys(role.id),
-        );
-      }
-    });
-
-    setSavedMeta({
-      updatedAt: latestUpdatedAt,
-      updatedByName: latestUpdatedByName,
-      isDefault: !anyDocExists,
-    });
-    setSettings(newSettings);
-    setHasUnsaved(false);
-    setDirtyRoles(new Set());
-    setIsInitialized(true);
-  }, [firestoreSettings, isLoadingSettings, isInitialized]);
+    loadSettings();
+  }, [loadSettings]);
 
   const handleCheckboxChange = useCallback(
     (roleId: string, menuItemKey: string, checked: boolean) => {
@@ -227,44 +235,55 @@ export function MenuSettingsClient() {
         return;
       }
 
-      const promises = rolesToSave.map((roleId) => {
-        const normalized = enforceRequiredMenuKeys(roleId, settings[roleId] || []);
-        const docRef = doc(firestore, "navigation_settings", roleId);
-        return setDoc(
-          docRef,
-          {
-            role: roleId,
-            visibleMenuItems: normalized,
-            menuSettingsVersion: CURRENT_MENU_SETTINGS_VERSION,
-            updatedAt: now,
-            updatedByUid: firebaseUser.uid,
-            updatedByName: actorName,
-          },
-          { merge: true },
-        );
-      });
+      const payloadByRole: Record<string, string[]> = {};
+      for (const roleId of rolesToSave) {
+        payloadByRole[roleId] = enforceRequiredMenuKeys(roleId, settings[roleId] || []);
+      }
+      console.log("[MenuVisibility] permissions about to be saved:", payloadByRole);
 
-      await Promise.all(promises);
+      const results = await Promise.allSettled(
+        rolesToSave.map((roleId) => {
+          const docPath = `navigation_settings/${roleId}`;
+          console.log(`[MenuVisibility] saving to Firestore path: ${docPath}`);
+          const docRef = doc(firestore, "navigation_settings", roleId);
+          return setDoc(
+            docRef,
+            {
+              role: roleId,
+              visibleMenuItems: payloadByRole[roleId],
+              menuSettingsVersion: CURRENT_MENU_SETTINGS_VERSION,
+              updatedAt: now,
+              updatedByUid: firebaseUser.uid,
+              updatedByName: actorName,
+            },
+            { merge: true },
+          );
+        }),
+      );
 
-      setSettings((prev) => {
-        const next = { ...prev };
-        for (const roleId of rolesToSave) {
-          next[roleId] = enforceRequiredMenuKeys(roleId, next[roleId] || []);
-        }
-        return next;
-      });
-      setSavedMeta({
-        updatedAt: { toDate: () => new Date() },
-        updatedByName: actorName,
-        isDefault: false,
-      });
-      setDirtyRoles(new Set());
-      setHasUnsaved(false);
+      const failedRoles = rolesToSave.filter((_, i) => results[i].status === "rejected");
+      console.log(
+        "[MenuVisibility] save result:",
+        failedRoles.length === 0 ? "berhasil" : `sebagian gagal (${failedRoles.join(", ")})`,
+      );
 
-      toast({
-        title: "Pengaturan disimpan",
-        description: `Visibilitas menu berhasil diperbarui untuk ${rolesToSave.length} role.`,
-      });
+      // Rule 4: re-read from Firestore after save instead of trusting local
+      // optimistic state, so what's displayed always matches what's persisted.
+      const reloaded = await loadSettings();
+      console.log("[MenuVisibility] permissions after reload:", reloaded);
+
+      if (failedRoles.length > 0) {
+        toast({
+          variant: "destructive",
+          title: "Sebagian role gagal disimpan",
+          description: `Gagal menyimpan untuk: ${failedRoles.join(", ")}.`,
+        });
+      } else {
+        toast({
+          title: "Pengaturan disimpan",
+          description: `Visibilitas menu berhasil diperbarui untuk ${rolesToSave.length} role.`,
+        });
+      }
     } catch (err: any) {
       console.error("MenuSettings save error:", err);
       const isPermission = err?.code === "permission-denied";
@@ -278,7 +297,7 @@ export function MenuSettingsClient() {
     } finally {
       setIsSaving(false);
     }
-  }, [settings, dirtyRoles, firebaseUser, userProfile, firestore, toast]);
+  }, [settings, dirtyRoles, firebaseUser, userProfile, firestore, toast, loadSettings]);
 
   if (!isInitialized) {
     return (

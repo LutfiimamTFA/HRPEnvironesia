@@ -160,6 +160,15 @@ function FeatureControlContent() {
         </p>
       </div>
 
+      <div className="flex items-start gap-3 rounded-xl border border-red-100 bg-red-50 px-4 py-3">
+        <ToggleLeft className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+        <p className="text-sm text-red-700">
+          Feature Control hanya mematikan/menyalakan fitur sistem (mis. Candidate Portal, Employee Invite, Offering
+          Letter, Google Drive Backup). Ini tidak mengubah keputusan HRD/SDM apa pun — data karyawan, kandidat,
+          approval, dan payroll tetap sepenuhnya kewenangan HRD.
+        </p>
+      </div>
+
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {FEATURE_KEYS.map((key) => {
           const flag = config[key];

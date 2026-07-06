@@ -30,6 +30,11 @@ export default function MaintenanceControlPage() {
             </p>
           </div>
         </div>
+        <p className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-xs text-red-700">
+          Maintenance Control hanya mengunci akses teknis saat ada bug (mis. dashboard HRD error, portal kandidat
+          error). Data dan keputusan HRD/SDM di dalamnya tetap tidak berubah — begitu maintenance selesai, semua data
+          kembali seperti sebelumnya.
+        </p>
         <MaintenanceControlClient />
       </div>
     </DashboardLayout>

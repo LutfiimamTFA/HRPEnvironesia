@@ -115,12 +115,17 @@ export function SidebarNav({ menuConfig }: SidebarNavProps) {
               {/* ── Menu items ─────────────────────── */}
               <SidebarMenu className="gap-[2px]">
                 {group.items.map(item => {
-                  const active = isActive(item.href);
+                  const active = !item.external && isActive(item.href);
 
                   return (
                     <SidebarMenuItem key={item.key || item.label}>
                       <SidebarMenuButton
-                        asChild
+                        asChild={!item.external}
+                        onClick={
+                          item.external
+                            ? () => window.open(item.href, '_blank', 'noopener,noreferrer')
+                            : undefined
+                        }
                         tooltip={item.label}
                         isActive={active}
                         className={cn(
@@ -158,17 +163,31 @@ export function SidebarNav({ menuConfig }: SidebarNavProps) {
                           ],
                         )}
                       >
-                        <Link href={item.href}>
-                          {item.icon}
-                          <span className="group-data-[state=collapsed]:hidden truncate">
-                            {item.label}
-                          </span>
-                          {item.badge && (
-                            <span className="ml-auto shrink-0 group-data-[state=collapsed]:hidden">
-                              {item.badge}
+                        {item.external ? (
+                          <>
+                            {item.icon}
+                            <span className="group-data-[state=collapsed]:hidden truncate">
+                              {item.label}
                             </span>
-                          )}
-                        </Link>
+                            {item.badge && (
+                              <span className="ml-auto shrink-0 group-data-[state=collapsed]:hidden">
+                                {item.badge}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <Link href={item.href}>
+                            {item.icon}
+                            <span className="group-data-[state=collapsed]:hidden truncate">
+                              {item.label}
+                            </span>
+                            {item.badge && (
+                              <span className="ml-auto shrink-0 group-data-[state=collapsed]:hidden">
+                                {item.badge}
+                              </span>
+                            )}
+                          </Link>
+                        )}
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   );

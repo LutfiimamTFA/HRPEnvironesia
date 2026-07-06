@@ -45,6 +45,7 @@ import {
   HardDrive,
   Server,
   Briefcase as BriefcaseIcon,
+  Package,
 } from "lucide-react";
 import type { UserRole } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
@@ -55,6 +56,8 @@ export type MenuItem = {
   label: string;
   icon: ReactNode;
   badge?: ReactNode | number;
+  /** Opens href in a new tab via window.open instead of client-side routing — for links to other apps (e.g. Inventory Portal). */
+  external?: boolean;
 };
 
 export type MenuGroup = {
@@ -306,6 +309,62 @@ const DEVELOPER_MENU_ITEMS: MenuGroup = {
   ],
 };
 
+/**
+ * Pendataan barang (CRUD) happens IN HRP. The separate Scan Portal
+ * (localhost:3002 in dev) is only for employees to log in, scan a QR code,
+ * borrow, and return items — it reads the same Firestore collections but has
+ * no menu link from HRP; HRP never redirects here.
+ */
+const INVENTORY_ITEMS_BASIC: MenuItem[] = [
+  {
+    key: "inventory_dashboard",
+    href: "/admin/inventory/dashboard",
+    label: "Dashboard Inventory",
+    icon: createElement(Package),
+  },
+  {
+    key: "inventory_barang",
+    href: "/admin/inventory/items",
+    label: "Barang",
+    icon: createElement(Package),
+  },
+  {
+    key: "inventory_categories",
+    href: "/admin/inventory/categories",
+    label: "Kategori Barang",
+    icon: createElement(Package),
+  },
+  {
+    key: "inventory_borrowings",
+    href: "/admin/inventory/borrowings",
+    label: "Data Peminjaman",
+    icon: createElement(Package),
+  },
+];
+
+/**
+ * Full Inventory group — used in Super Admin's default menu, and as the
+ * toggleable row set in ALL_MENU_GROUPS / Menu Visibility for every role.
+ * It is NOT added to any non-super-admin role's default MENU_CONFIG: an
+ * active Inventory Admin sees the 4 CRUD items via the dynamic injection in
+ * DashboardLayout (tied to inventory_access/{uid}.status == "active"), not
+ * via a fixed role default — Inventory Admin is an additive access flag, not
+ * an HRP role. "Manajemen Akses Inventory" itself stays Super-Admin-only,
+ * always enforced regardless of Menu Visibility.
+ */
+const INVENTORY_MENU_GROUP_FULL: MenuGroup = {
+  title: "Inventory",
+  items: [
+    ...INVENTORY_ITEMS_BASIC,
+    {
+      key: "inventory_access",
+      href: "/admin/inventory-access",
+      label: "Manajemen Akses Inventory",
+      icon: createElement(Package),
+    },
+  ],
+};
+
 export const ALL_MENU_GROUPS: MenuGroup[] = [
   RECRUITMENT_MENU_ITEMS,
   EMPLOYEE_MANAGEMENT_ITEMS,
@@ -348,6 +407,7 @@ export const ALL_MENU_GROUPS: MenuGroup[] = [
       },
     ],
   },
+  INVENTORY_MENU_GROUP_FULL,
   {
     title: "Keamanan & Sistem",
     items: [
@@ -407,7 +467,7 @@ export const ALL_MENU_GROUPS: MenuGroup[] = [
       {
         key: "admin.sync-center",
         href: "/admin/super-admin/sync-center",
-        label: "Sync Center",
+        label: "Technical Sync Center",
         icon: createElement(RefreshCw),
       },
       {
@@ -628,6 +688,7 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
         },
       ],
     },
+    INVENTORY_MENU_GROUP_FULL,
     {
       title: "Keamanan & Sistem",
       items: [
@@ -687,7 +748,7 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
         {
           key: "admin.sync-center",
           href: "/admin/super-admin/sync-center",
-          label: "Sync Center",
+          label: "Technical Sync Center",
           icon: createElement(RefreshCw),
         },
         {

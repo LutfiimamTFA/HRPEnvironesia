@@ -1407,6 +1407,11 @@ export default function AnalyticsSystemPage(){
           </div>
         </div>
 
+        <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+          Analytics Sistem memantau kesehatan teknis website — user online, aktivitas sistem, error, backup/export,
+          storage, dan load test. Ini bukan alat untuk menilai kinerja HRD atau keputusan SDM.
+        </p>
+
         {ANALYTICS_DISABLED&&(
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-medium text-amber-800">
             Analytics sedang dinonaktifkan sementara untuk mencegah Firestore quota exceeded.

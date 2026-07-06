@@ -14,7 +14,6 @@ import {
   History,
   Info,
   Loader2,
-  Network,
   Play,
   RefreshCw,
   Route,
@@ -22,8 +21,6 @@ import {
   Server,
   ShieldAlert,
   ShieldCheck,
-  Users,
-  Wallet,
   XCircle,
 } from 'lucide-react';
 import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore';
@@ -114,12 +111,13 @@ interface ActivityLogItem {
   tone?: 'default' | 'success' | 'warning' | 'error';
 }
 
+// Super Admin = technical system owner, not HRD/SDM data owner. Every check here is
+// strictly technical (auth/role wiring, sidebar/menu config, storage, backup/export logs,
+// environment). Organization approval chains, recruitment records, and payroll are HRD-owned
+// data and are intentionally NOT checked or fixed from here — see /api/admin/data-integrity/check.
 const CHECK_META: Record<string, { icon: any; color: string; bg: string; border: string }> = {
   auth_role: { icon: ShieldAlert, color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-100' },
   sidebar_access: { icon: Route, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
-  organization_approval: { icon: Network, color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100' },
-  recruitment: { icon: Users, color: 'text-violet-600', bg: 'bg-violet-50', border: 'border-violet-100' },
-  attendance_payroll: { icon: Wallet, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-100' },
   storage_file: { icon: HardDrive, color: 'text-cyan-600', bg: 'bg-cyan-50', border: 'border-cyan-100' },
   backup_export: { icon: Archive, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-100' },
   environment_system: { icon: Server, color: 'text-slate-600', bg: 'bg-slate-100', border: 'border-slate-200' },
@@ -128,9 +126,6 @@ const CHECK_META: Record<string, { icon: any; color: string; bg: string; border:
 const CHECK_STEPS = [
   { key: 'auth_role', title: 'Auth & Role' },
   { key: 'sidebar_access', title: 'Sidebar Access' },
-  { key: 'organization_approval', title: 'Organization Approval' },
-  { key: 'recruitment', title: 'Recruitment' },
-  { key: 'attendance_payroll', title: 'Absensi & Payroll' },
   { key: 'storage_file', title: 'Storage & File' },
   { key: 'backup_export', title: 'Backup & Export' },
   { key: 'environment_system', title: 'Environment & System' },
@@ -142,7 +137,7 @@ const EMPTY_SUMMARY = {
   criticalCount: 0,
   warningCount: 0,
   safeCount: 0,
-  total: 8,
+  total: 5,
 };
 
 function formatClock(date = new Date()) {
@@ -791,7 +786,8 @@ export default function DataIntegrityPage() {
                 </Badge>
               </div>
               <p className="text-sm text-slate-500">
-                Pusat laporan konsistensi data website dan sistem HRP.
+                Pusat laporan konsistensi teknis sistem — role access, sidebar/menu, storage, backup/export, dan
+                environment. Data karyawan, kandidat, approval, dan payroll tetap divalidasi oleh HRD.
               </p>
             </div>
           </div>
