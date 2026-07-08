@@ -3,8 +3,9 @@
 import { useMemo, useState } from 'react';
 import {
   ToggleLeft, Database, HardDrive, Users, Mail,
-  FileText, Lock, Info, AlertTriangle, Wrench,
+  FileText, Lock, Info, AlertTriangle, Wrench, Bug,
 } from 'lucide-react';
+import { doc, getDoc } from 'firebase/firestore';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { useAuth } from '@/providers/auth-provider';
@@ -23,7 +24,8 @@ import {
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { cn } from '@/lib/utils';
 import {
-  FEATURE_KEYS, FEATURE_DEFAULTS, initializeFeatureConfig, toggleFeature, useFeatureFlags,
+  FEATURE_KEYS, FEATURE_DEFAULTS, FEATURE_SETTINGS_COLLECTION, FEATURE_SETTINGS_DOC,
+  initializeFeatureConfig, toggleFeature, useFeatureFlags,
   type FeatureKey, type FeatureRiskLevel,
 } from '@/lib/feature-flags';
 
@@ -77,6 +79,26 @@ function FeatureControlContent() {
     () => maintenanceRules.some((r) => r.enabled === true),
     [maintenanceRules],
   );
+
+  // Dev-only debug helper: reads system_settings/features directly (one-shot,
+  // bypassing the realtime listener/hook) so we can confirm exactly what's on
+  // Firestore right now if the UI and the API ever disagree again.
+  const handleCheckFirestore = async () => {
+    try {
+      const snap = await getDoc(doc(firestore, FEATURE_SETTINGS_COLLECTION, FEATURE_SETTINGS_DOC));
+      const data = snap.exists() ? snap.data() : null;
+      const employeeInvite = data?.employee_invite;
+      console.log('[feature-control debug] system_settings/features:', data);
+      toast({
+        title: 'Data Firestore (employee_invite)',
+        description: employeeInvite
+          ? `enabled = ${employeeInvite.enabled === true ? 'true' : 'false'}`
+          : 'Dokumen/field employee_invite tidak ditemukan.',
+      });
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Gagal membaca Firestore', description: err?.message ?? 'Terjadi kesalahan.' });
+    }
+  };
 
   const handleInitialize = async () => {
     setInitializing(true);
@@ -149,6 +171,11 @@ function FeatureControlContent() {
             Saklar fitur utama HRP — mati/nyala di sini benar-benar mengunci tombol, menu, dan API terkait.
           </p>
         </div>
+        {process.env.NODE_ENV === 'development' && (
+          <Button size="sm" variant="outline" onClick={handleCheckFirestore} className="ml-auto gap-1.5 text-xs">
+            <Bug className="h-3.5 w-3.5" /> Cek Data Firestore
+          </Button>
+        )}
       </div>
 
       <div className="flex items-start gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">

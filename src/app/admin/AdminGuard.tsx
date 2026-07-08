@@ -40,7 +40,7 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
   // (system_announcements) is never read here.
   const { blocked: maintenanceBlocked, rule: maintenanceRule, rules: maintenanceRules } = useMaintenanceGuard(pathname);
 
-  if (process.env.NODE_ENV === 'development' && userProfile) {
+  if (process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_DEBUG_MAINTENANCE === 'true' && userProfile) {
     // eslint-disable-next-line no-console
     console.log('[maintenance-check]', {
       actualRole: userProfile.role,

@@ -39,12 +39,12 @@ export async function PATCH(
 ) {
   const authResult = await verifyAdmin(req);
   if (authResult.error) {
-      return NextResponse.json({ error: authResult.error }, { status: authResult.status });
+      return NextResponse.json({ success: false, message: authResult.error }, { status: authResult.status });
   }
 
   const { batchId } = params;
   if (!batchId) {
-    return NextResponse.json({ error: 'Batch ID is required.' }, { status: 400 });
+    return NextResponse.json({ success: false, message: 'Batch ID is required.' }, { status: 400 });
   }
 
   try {
@@ -52,7 +52,7 @@ export async function PATCH(
     const parseResult = patchSchema.safeParse(body);
 
     if (!parseResult.success) {
-      return NextResponse.json({ error: 'Invalid request body.', details: parseResult.error.flatten() }, { status: 400 });
+      return NextResponse.json({ success: false, message: 'Invalid request body.', details: parseResult.error.flatten() }, { status: 400 });
     }
 
     const { additionalQuantity, isActive } = parseResult.data;
@@ -68,11 +68,14 @@ export async function PATCH(
       transaction.update(batchRef, updates);
     });
 
-    return NextResponse.json({ message: 'Batch updated successfully.' });
+    return NextResponse.json({ success: true, message: 'Batch updated successfully.' });
 
   } catch (error: any) {
-    console.error('Error adding quota to batch:', error);
-    return NextResponse.json({ error: error.message || 'An unexpected server error occurred.' }, { status: 500 });
+    console.error('[invite-batches] Error adding quota / updating batch:', error);
+    return NextResponse.json({
+      success: false,
+      message: error instanceof Error ? error.message : 'An unexpected server error occurred.',
+    }, { status: 500 });
   }
 }
 
@@ -83,18 +86,18 @@ export async function DELETE(
 ) {
   const authResult = await verifyAdmin(req);
   if (authResult.error) {
-      return NextResponse.json({ error: authResult.error }, { status: authResult.status });
+      return NextResponse.json({ success: false, message: authResult.error }, { status: authResult.status });
   }
 
   const { batchId } = params;
   if (!batchId) {
-    return NextResponse.json({ error: 'Batch ID is required.' }, { status: 400 });
+    return NextResponse.json({ success: false, message: 'Batch ID is required.' }, { status: 400 });
   }
 
   try {
     const db = admin.firestore();
     const batchRef = db.collection('invite_batches').doc(batchId);
-    
+
     const batchDoc = await batchRef.get();
     if (!batchDoc.exists) {
         throw new Error('Batch not found.');
@@ -102,10 +105,15 @@ export async function DELETE(
 
     await batchRef.delete();
 
-    return new NextResponse(null, { status: 204 });
+    // Always return a JSON body (never an empty 204) — an empty body makes
+    // any caller doing response.json() throw "Unexpected end of JSON input".
+    return NextResponse.json({ success: true, message: 'Batch undangan berhasil dihapus.' });
 
   } catch (error: any) {
-    console.error('Error deleting invite batch:', error);
-    return NextResponse.json({ error: error.message || 'An unexpected server error occurred.' }, { status: 500 });
+    console.error('[invite-batches] Error deleting invite batch:', error);
+    return NextResponse.json({
+      success: false,
+      message: error instanceof Error ? error.message : 'An unexpected server error occurred.',
+    }, { status: 500 });
   }
 }

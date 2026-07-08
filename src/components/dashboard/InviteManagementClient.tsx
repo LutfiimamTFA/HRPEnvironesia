@@ -34,6 +34,7 @@ import {
   Collapsible, CollapsibleContent, CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
+import { parseJsonSafe } from '@/lib/parse-json-safe';
 import { useRouter } from 'next/navigation';
 
 const CONTRACT_TYPES: InviteContractType[] = ['Magang', 'Probation', 'Kontrak', 'Tetap'];
@@ -92,12 +93,14 @@ function AddQuotaDialog({
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ additionalQuantity: values.additionalQuantity }),
       });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Gagal menambah kuota.');
+      const result = await parseJsonSafe(res);
+      console.log('[employee-invites response]', { status: res.status, ok: res.ok, result });
+      if (!res.ok || !result.success) throw new Error(result.message || 'Gagal menambah kuota.');
       toast({ title: 'Kuota Ditambahkan', description: `${values.additionalQuantity} slot baru ditambahkan.` });
       onDone();
       onOpenChange(false);
     } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Gagal', description: e.message });
+      toast({ variant: 'destructive', title: 'Gagal menambah kuota.', description: e.message });
     } finally {
       setIsSaving(false);
     }
@@ -364,13 +367,36 @@ export function InviteManagementClient() {
 
   const handleGenerate = async (values: GenerateFormValues) => {
     if (!firebaseUser) return;
+
+    // Guard against stale/undefined selections before ever reading a field off
+    // them (e.g. brands list still loading, or a previously-selected id no
+    // longer exists) — this is what used to crash with
+    // "Cannot read properties of undefined (reading 'label')".
+    const selectedBrand = brands?.find(b => b.id === values.brandId);
+    if (!selectedBrand) {
+      toast({ variant: 'destructive', title: 'Brand tidak valid. Silakan pilih ulang.' });
+      return;
+    }
+    const selectedContractType = CONTRACT_TYPES.find(t => t === values.contractType);
+    if (!selectedContractType) {
+      toast({ variant: 'destructive', title: 'Jenis kontrak tidak valid. Silakan pilih ulang.' });
+      return;
+    }
+    if (!values.quantity || values.quantity <= 0) {
+      toast({ variant: 'destructive', title: 'Kuota harus berupa angka lebih dari 0.' });
+      return;
+    }
+
     setIsGenerating(true);
     try {
       const token = await firebaseUser.getIdToken(true);
       const body: any = {
-        brandId: values.brandId,
-        contractType: values.contractType,
+        brandId: selectedBrand.id,
+        brandName: selectedBrand.name ?? selectedBrand.id,
+        contractType: selectedContractType,
+        contractTypeLabel: selectedContractType,
         quantity: values.quantity,
+        quota: values.quantity,
       };
       if (values.expiresAt) body.expiresAt = new Date(values.expiresAt).toISOString();
       if (values.notes) body.notes = values.notes;
@@ -384,12 +410,13 @@ export function InviteManagementClient() {
         toast({ variant: 'destructive', title: 'Sesi Habis', description: 'Silakan login kembali.' });
         await auth.signOut(); router.push('/admin/login'); return;
       }
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error || 'Gagal membuat batch.');
+      const result = await parseJsonSafe(res);
+      console.log('[generate invite response]', { status: res.status, ok: res.ok, result });
+      if (!res.ok || !result.success) throw new Error(result.message || 'Gagal membuat undangan.');
       toast({ title: 'Batch Undangan Dibuat', description: `Link undangan dengan kuota ${values.quantity} untuk ${values.contractType} telah dibuat.` });
       form.reset({ brandId: values.brandId, contractType: values.contractType, quantity: 10 });
     } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Gagal', description: e.message });
+      toast({ variant: 'destructive', title: 'Gagal membuat undangan.', description: e.message });
     } finally {
       setIsGenerating(false);
     }
@@ -404,11 +431,13 @@ export function InviteManagementClient() {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ isActive: !batch.isActive }),
       });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Gagal memperbarui batch.');
+      const result = await parseJsonSafe(res);
+      console.log('[employee-invites response]', { status: res.status, ok: res.ok, result });
+      if (!res.ok || !result.success) throw new Error(result.message || 'Gagal menonaktifkan undangan.');
       toast({ title: batch.isActive ? 'Batch Dinonaktifkan' : 'Batch Diaktifkan' });
       mutateBatches();
     } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Gagal', description: e.message });
+      toast({ variant: 'destructive', title: batch.isActive ? 'Gagal menonaktifkan undangan.' : 'Gagal mengaktifkan undangan.', description: e.message });
     }
   };
 
@@ -421,10 +450,12 @@ export function InviteManagementClient() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.status === 401) { await auth.signOut(); router.push('/admin/login'); return; }
-      if (!res.ok && res.status !== 204) throw new Error((await res.json().catch(() => ({}))).error || 'Gagal menghapus.');
+      const result = await parseJsonSafe(res);
+      console.log('[employee-invites response]', { status: res.status, ok: res.ok, result });
+      if (!res.ok || !result.success) throw new Error(result.message || 'Gagal menghapus undangan.');
       toast({ title: 'Batch Dihapus', description: `Batch undangan ${batchToDelete.brandName} telah dihapus.` });
     } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Gagal', description: e.message });
+      toast({ variant: 'destructive', title: 'Gagal menghapus undangan.', description: e.message });
     } finally {
       setBatchToDelete(null);
     }
@@ -439,11 +470,13 @@ export function InviteManagementClient() {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ isActive: false }),
       });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Gagal.');
+      const result = await parseJsonSafe(res);
+      console.log('[employee-invites response]', { status: res.status, ok: res.ok, result });
+      if (!res.ok || !result.success) throw new Error(result.message || 'Gagal menonaktifkan undangan.');
       toast({ title: 'Batch Dinonaktifkan', description: 'Link undangan tidak bisa digunakan lagi.' });
       mutateBatches();
     } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Gagal', description: e.message });
+      toast({ variant: 'destructive', title: 'Gagal menonaktifkan undangan.', description: e.message });
     } finally {
       setBatchToDelete(null);
     }
@@ -457,10 +490,12 @@ export function InviteManagementClient() {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Gagal menghapus.');
+      const result = await parseJsonSafe(res);
+      console.log('[employee-invites response]', { status: res.status, ok: res.ok, result });
+      if (!res.ok || !result.success) throw new Error(result.message || result.error || 'Gagal menghapus pengguna.');
       toast({ title: 'Pengguna Dihapus', description: `Akun ${userToDelete.fullName} dihapus.` });
     } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Gagal', description: e.message });
+      toast({ variant: 'destructive', title: 'Gagal menghapus pengguna.', description: e.message });
     } finally {
       setUserToDelete(null);
     }
@@ -617,7 +652,19 @@ export function InviteManagementClient() {
                         Fitur Employee Invite sedang dinonaktifkan oleh Super Admin.
                       </p>
                     )}
-                    <Button type="submit" className="w-full h-12 text-base font-semibold" disabled={isGenerating || !employeeInviteEnabled}>
+                    <Button
+                      type="submit"
+                      className="w-full h-12 text-base font-semibold"
+                      disabled={
+                        isGenerating ||
+                        !employeeInviteEnabled ||
+                        isLoadingBrands ||
+                        !brands?.length ||
+                        !form.watch('brandId') ||
+                        !form.watch('contractType') ||
+                        !form.watch('quantity')
+                      }
+                    >
                       {isGenerating
                         ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Membuat...</>
                         : <><PlusCircle className="mr-2 h-4 w-4" />Generate Batch Undangan</>

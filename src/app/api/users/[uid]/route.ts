@@ -29,22 +29,22 @@ export async function DELETE(
   { params }: { params: { uid: string } }
 ) {
   if (!admin.apps.length) {
-    return NextResponse.json({ error: 'Firebase Admin SDK not initialized.' }, { status: 500 });
+    return NextResponse.json({ success: false, message: 'Firebase Admin SDK not initialized.', error: 'Firebase Admin SDK not initialized.' }, { status: 500 });
   }
 
   const authResult = await verifySuperAdmin(req);
   if (authResult.error) {
-    return NextResponse.json({ error: authResult.error }, { status: authResult.status });
+    return NextResponse.json({ success: false, message: authResult.error, error: authResult.error }, { status: authResult.status });
   }
 
   const { uid } = params;
   if (!uid) {
-    return NextResponse.json({ error: 'User UID is required.' }, { status: 400 });
+    return NextResponse.json({ success: false, message: 'User UID is required.', error: 'User UID is required.' }, { status: 400 });
   }
 
   try {
     const db = admin.firestore();
-    
+
     // CORRECT ORDER: Delete from Firestore first
     const batch = db.batch();
     const userDocRef = db.collection('users').doc(uid);
@@ -54,13 +54,15 @@ export async function DELETE(
     batch.delete(userDocRef);
     batch.delete(adminRoleDocRef);
     batch.delete(hrdRoleDocRef);
-    
+
     await batch.commit();
 
     // Now, delete the user from Firebase Authentication
     await admin.auth().deleteUser(uid);
 
-    return new NextResponse(null, { status: 204 });
+    // Always return a JSON body (never an empty 204) — an empty body makes
+    // any caller doing response.json() throw "Unexpected end of JSON input".
+    return NextResponse.json({ success: true, message: 'User berhasil dihapus.' });
 
   } catch (error: any) {
     console.error(`Failed to delete user ${uid}:`, error);
@@ -78,13 +80,14 @@ export async function DELETE(
         batch.delete(userDocRef);
         batch.delete(adminRoleDocRef);
         batch.delete(hrdRoleDocRef);
-        
+
         await batch.commit().catch(e => console.error("Firestore cleanup failed after auth user not found:", e));
 
         // Return a success response as the user is gone.
-        return new NextResponse(null, { status: 204 });
+        return NextResponse.json({ success: true, message: 'User berhasil dihapus.' });
     }
 
-    return NextResponse.json({ error: error.message || 'An unexpected error occurred.' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'An unexpected error occurred.';
+    return NextResponse.json({ success: false, message, error: message }, { status: 500 });
   }
 }
