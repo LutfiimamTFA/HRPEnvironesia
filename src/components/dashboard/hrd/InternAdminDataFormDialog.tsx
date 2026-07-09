@@ -20,6 +20,7 @@ import type { EmployeeProfile, Brand, UserProfile, JobApplication, Job } from '@
 import { addMonths } from 'date-fns';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { useHrdScopedBrands, useHrdScopedCollection } from '@/hooks/useHrdScopedCollection';
 
 const adminFormSchema = z.object({
   division: z.string().optional(),
@@ -73,13 +74,15 @@ export function InternAdminDataFormDialog({ open, onOpenChange, profile, applica
   }, [firestore, profile]);
   const { data: userProfile } = useDoc<UserProfile>(userRef);
 
-  const { data: brands } = useCollection<Brand>(
-    useMemoFirebase(() => collection(firestore, 'brands'), [firestore])
-  );
+  const { data: brands } = useHrdScopedBrands();
   
-  const { data: supervisors } = useCollection<UserProfile>(
-    useMemoFirebase(() => query(collection(firestore, 'users'), where('role', 'in', ['manager', 'karyawan']), where('isActive', '==', true)), [firestore])
+  const supervisorConstraints = useMemo(
+    () => [where('role', 'in', ['manager', 'karyawan']), where('isActive', '==', true)],
+    [],
   );
+  const { data: supervisors } = useHrdScopedCollection<UserProfile>('users', {
+    constraints: supervisorConstraints,
+  });
   
   const jobRef = useMemoFirebase(() => {
     if (!application) return null;

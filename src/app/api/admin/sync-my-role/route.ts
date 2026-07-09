@@ -31,7 +31,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'User profile not found in Firestore.', uid }, { status: 200 });
     }
 
-    const userProfile = userDoc.data() as { role?: string; fullName?: string; email?: string };
+    const userProfile = userDoc.data() as {
+      role?: string;
+      fullName?: string;
+      email?: string;
+      isActive?: boolean;
+      hrdScope?: {
+        scopeType?: string;
+        allowedBrandIds?: string[];
+        allowedBrandNames?: string[];
+      };
+    };
     const role = userProfile.role ?? '';
     const batch = db.batch();
     const adminRoleRef = db.collection('roles_admin').doc(uid);
@@ -50,12 +60,29 @@ export async function POST(req: NextRequest) {
       batch.delete(hrdRoleRef);
       actionTaken = 'synced super-admin';
     } else if (role === 'hrd') {
+      const existingHrdRole = await hrdRoleRef.get();
+      const existingScope = existingHrdRole.exists ? existingHrdRole.data() : null;
+      const sourceScope = existingScope?.scopeType ? existingScope : userProfile.hrdScope;
+      const scopeType = sourceScope?.scopeType === 'all_companies' ? 'all_companies' : 'selected_companies';
       batch.set(hrdRoleRef, {
         role: 'hrd',
         uid,
         email: userProfile.email ?? decodedToken.email ?? '',
+        scopeType,
+        allowedBrandIds: scopeType === 'all_companies' ? [] : (Array.isArray(sourceScope?.allowedBrandIds) ? sourceScope.allowedBrandIds : []),
+        allowedBrandNames: scopeType === 'all_companies' ? [] : (Array.isArray(sourceScope?.allowedBrandNames) ? sourceScope.allowedBrandNames : []),
+        active: userProfile.isActive !== false,
         updatedAt: FieldValue.serverTimestamp(),
-      });
+      }, { merge: true });
+      batch.set(userDocRef, {
+        hrdScope: {
+          scopeType,
+          allowedBrandIds: scopeType === 'all_companies' ? [] : (Array.isArray(sourceScope?.allowedBrandIds) ? sourceScope.allowedBrandIds : []),
+          allowedBrandNames: scopeType === 'all_companies' ? [] : (Array.isArray(sourceScope?.allowedBrandNames) ? sourceScope.allowedBrandNames : []),
+          updatedAt: FieldValue.serverTimestamp(),
+          updatedBy: 'sync-my-role',
+        },
+      }, { merge: true });
       // Hapus dari admin jika ada
       batch.delete(adminRoleRef);
       actionTaken = 'synced hrd';

@@ -5,7 +5,7 @@ import { useAuth } from "@/providers/auth-provider";
 import { useRoleGuard } from "@/hooks/useRoleGuard";
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { MENU_CONFIG } from "@/lib/menu-config";
-import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
+import { useFirestore } from "@/firebase";
 import { collection, query, where, doc, setDoc, serverTimestamp, writeBatch } from "firebase/firestore";
 import type {
   UserProfile,
@@ -84,6 +84,8 @@ import {
 } from "@/lib/employee-status";
 import { normalizeEmployeeRow } from "@/lib/employee-row-normalizer";
 import { cn } from "@/lib/utils";
+import { useHrdScopedBrands, useHrdScopedCollection } from "@/hooks/useHrdScopedCollection";
+import { HrdScopeEmptyState } from "@/components/dashboard/hrd/HrdScopeEmptyState";
 
 /** Merged view of a single employee from all 3 sources */
 interface MergedEmployee {
@@ -111,6 +113,8 @@ interface MergedEmployee {
   pendingBankRequest?: any;
   userRole?: string;
   managementScopes?: any[];
+  source?: string | null;
+  inviteBatchId?: string | null;
 }
 
 function StatusKepegawaanBadge({ status }: { status: OperationalStatus }) {
@@ -138,9 +142,9 @@ function StatusKepegawaanBadge({ status }: { status: OperationalStatus }) {
   );
 }
 
-export type MappedEmployeeType = "tetap" | "kontrak" | "probation" | "magang" | "belum_diatur" | "nonaktif";
+type MappedEmployeeType = "tetap" | "kontrak" | "probation" | "magang" | "belum_diatur" | "nonaktif";
 
-export function getMappedEmployeeType(emp: Partial<MergedEmployee>): MappedEmployeeType {
+function getMappedEmployeeType(emp: Partial<MergedEmployee>): MappedEmployeeType {
   const status = (emp.employmentStatus || "").toLowerCase();
   if (status === "resigned" || status === "terminated" || status === "nonaktif") {
     return "nonaktif";
@@ -156,7 +160,7 @@ export function getMappedEmployeeType(emp: Partial<MergedEmployee>): MappedEmplo
   return "belum_diatur";
 }
 
-export function getMappedEmployeeTypeLabel(type: MappedEmployeeType): string {
+function getMappedEmployeeTypeLabel(type: MappedEmployeeType): string {
   switch (type) {
     case "tetap": return "Karyawan Tetap";
     case "kontrak": return "Kontrak";
@@ -168,7 +172,7 @@ export function getMappedEmployeeTypeLabel(type: MappedEmployeeType): string {
   }
 }
 
-export function EmployeeTypeBadge({ type }: { type: MappedEmployeeType }) {
+function EmployeeTypeBadge({ type }: { type: MappedEmployeeType }) {
   const label = getMappedEmployeeTypeLabel(type);
   let variantClass = "bg-slate-500/10 text-slate-400 border-slate-500/20";
   if (type === "tetap") variantClass = "bg-emerald-500/10 text-emerald-500 border-emerald-500/20";
@@ -933,43 +937,34 @@ export default function KaryawanDataPage() {
   const [selectedReviewReq, setSelectedReviewReq] = useState<any | null>(null);
   const [showMtdAbsensiModal, setShowMtdAbsensiModal] = useState(false);
 
-  const { data: pendingBankRequests, mutate: mutateBankRequests } =
-    useCollection<any>(
-      useMemoFirebase(
-        () =>
-          query(
-            collection(firestore, "bank_change_requests"),
-            where("status", "==", "pending"),
-          ),
-        [firestore],
-      ),
-    );
-
-  const { data: users, isLoading: usersLoading } = useCollection<UserProfile>(
-    useMemoFirebase(() => collection(firestore, "users"), [firestore]),
+  const pendingBankConstraints = useMemo(() => [where("status", "==", "pending")], []);
+  const userConstraints = useMemo(
+    () => [where("role", "in", ["karyawan", "manager"]), where("isActive", "==", true)],
+    [],
   );
+
+  const { data: pendingBankRequests, mutate: mutateBankRequests } =
+    useHrdScopedCollection<any>("bank_change_requests", { constraints: pendingBankConstraints });
+
+  const {
+    data: users,
+    isLoading: usersLoading,
+    isScopeConfigured,
+    emptyStateMessage,
+  } = useHrdScopedCollection<UserProfile>("users", { constraints: userConstraints });
 
   const {
     data: employees,
     isLoading: employeesLoading,
     mutate,
-  } = useCollection<EmployeeMasterData>(
-    useMemoFirebase(() => collection(firestore, "employees"), [firestore]),
-  );
+  } = useHrdScopedCollection<EmployeeMasterData>("employees");
 
   const { data: employeeProfiles, isLoading: profilesLoading } =
-    useCollection<EmployeeProfile>(
-      useMemoFirebase(
-        () => collection(firestore, "employee_profiles"),
-        [firestore],
-      ),
-    );
+    useHrdScopedCollection<EmployeeProfile>("employee_profiles");
 
-  const { data: brands, isLoading: brandsLoading } = useCollection<Brand>(
-    useMemoFirebase(() => collection(firestore, "brands"), [firestore]),
-  );
+  const { data: brands, isLoading: brandsLoading } = useHrdScopedBrands();
 
-  const isLoading = usersLoading || employeesLoading || profilesLoading;
+  const isLoading = usersLoading || employeesLoading || profilesLoading || brandsLoading;
 
   const allMerged = useMemo<MergedEmployee[]>(() => {
     if (isLoading) return [];
@@ -1422,6 +1417,25 @@ export default function KaryawanDataPage() {
     );
   }
 
+  if (!isScopeConfigured) {
+    return (
+      <DashboardLayout pageTitle="Data Karyawan" menuConfig={menuConfig}>
+        <HrdScopeEmptyState message={emptyStateMessage} />
+      </DashboardLayout>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <DashboardLayout pageTitle="Data Karyawan" menuConfig={menuConfig}>
+        <div className="space-y-4">
+          <Skeleton className="h-10 w-64" />
+          <Skeleton className="h-96 w-full" />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
   return (
     <>
       <DashboardLayout pageTitle="Employee Directory" menuConfig={menuConfig}>
@@ -1595,19 +1609,25 @@ export default function KaryawanDataPage() {
                   />
                 </div>
 
-                <Select value={brandFilter} onValueChange={setBrandFilter}>
-                  <SelectTrigger className="w-[180px] bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 h-11 rounded-xl text-sm font-medium text-slate-900 dark:text-white">
-                    <SelectValue placeholder="Brand" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                    <SelectItem value="all">Semua Brand</SelectItem>
-                    {brands?.map((b) => (
-                      <SelectItem key={b.id!} value={b.id!}>
-                        {b.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {(brands?.length || 0) === 1 ? (
+                  <div className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-200">
+                    Perusahaan: {brands?.[0]?.name || brands?.[0]?.id}
+                  </div>
+                ) : (
+                  <Select value={brandFilter} onValueChange={setBrandFilter}>
+                    <SelectTrigger className="w-[180px] bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 h-11 rounded-xl text-sm font-medium text-slate-900 dark:text-white">
+                      <SelectValue placeholder="Brand" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+                      <SelectItem value="all">Semua Brand</SelectItem>
+                      {brands?.map((b) => (
+                        <SelectItem key={b.id!} value={b.id!}>
+                          {b.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
 
                 <Select
                   value={completenessFilter}

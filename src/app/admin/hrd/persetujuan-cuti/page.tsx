@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { useCollection, useFirestore, useMemoFirebase, setDocumentNonBlocking } from '@/firebase';
-import { collection, query, doc, serverTimestamp, writeBatch, updateDoc, getDoc } from 'firebase/firestore';
+import { collection, doc, serverTimestamp, where, writeBatch, updateDoc, getDoc } from 'firebase/firestore';
 import { resolveApprovalTarget } from '@/lib/approval-flow';
 import { useAuth } from '@/providers/auth-provider';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
@@ -48,6 +48,8 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
+import { useHrdScopedBrands, useHrdScopedCollection } from '@/hooks/useHrdScopedCollection';
+import { HrdScopeEmptyState } from '@/components/dashboard/hrd/HrdScopeEmptyState';
 
 export default function HrdLeaveApprovalPage() {
   const { userProfile } = useAuth();
@@ -90,14 +92,19 @@ export default function HrdLeaveApprovalPage() {
   const [isAdjustmentDetailOpen, setIsAdjustmentDetailOpen] = useState(false);
 
   // 1. Fetch all necessary data sources for resolving complete employee records
-  const profilesQuery = useMemoFirebase(() => query(collection(firestore, 'employee_profiles')), [firestore]);
-  const { data: employeeProfiles } = useCollection<any>(profilesQuery);
+  const {
+    data: employeeProfiles,
+    isScopeConfigured,
+    emptyStateMessage,
+  } = useHrdScopedCollection<any>('employee_profiles');
 
-  const employeesQuery = useMemoFirebase(() => query(collection(firestore, 'employees')), [firestore]);
-  const { data: rawEmployees } = useCollection<any>(employeesQuery);
+  const { data: rawEmployees } = useHrdScopedCollection<any>('employees');
 
-  const usersQuery = useMemoFirebase(() => query(collection(firestore, 'users')), [firestore]);
-  const { data: rawUsers } = useCollection<any>(usersQuery);
+  const activeUserConstraints = useMemo(
+    () => [where('role', 'in', ['karyawan', 'manager']), where('isActive', '==', true)],
+    [],
+  );
+  const { data: rawUsers } = useHrdScopedCollection<any>('users', { constraints: activeUserConstraints });
 
   const { employeeProfilesMap, employeesMap, usersMap } = useMemo(() => {
     const pMap = new Map<string, any>();
@@ -139,26 +146,16 @@ export default function HrdLeaveApprovalPage() {
   };
 
   // 2. Fetch all leave requests
-  const requestsQuery = useMemoFirebase(() => {
-    return query(collection(firestore, 'leave_requests'));
-  }, [firestore]);
-  const { data: requests, isLoading: isLoadingRequests, mutate: mutateRequests } = useCollection<LeaveRequest>(requestsQuery);
+  const { data: requests, isLoading: isLoadingRequests, mutate: mutateRequests } = useHrdScopedCollection<LeaveRequest>('leave_requests');
 
   // 3. Fetch all leave balances
-  const balancesQuery = useMemoFirebase(() => {
-    return query(collection(firestore, 'leave_balances'));
-  }, [firestore]);
-  const { data: balances, isLoading: isLoadingBalances, mutate: mutateBalances } = useCollection<LeaveBalance>(balancesQuery);
+  const { data: balances, isLoading: isLoadingBalances, mutate: mutateBalances } = useHrdScopedCollection<LeaveBalance>('leave_balances');
 
   // 4. Fetch all adjustments
-  const adjustmentsQuery = useMemoFirebase(() => {
-    return query(collection(firestore, 'leave_balance_adjustments'));
-  }, [firestore]);
-  const { data: adjustments, isLoading: isLoadingAdjustments, mutate: mutateAdjustments } = useCollection<LeaveBalanceAdjustment>(adjustmentsQuery);
+  const { data: adjustments, isLoading: isLoadingAdjustments, mutate: mutateAdjustments } = useHrdScopedCollection<LeaveBalanceAdjustment>('leave_balance_adjustments');
 
   // 5. Fetch master brands and divisions
-  const brandsQuery = useMemoFirebase(() => collection(firestore, 'brands'), [firestore]);
-  const { data: masterBrands } = useCollection<any>(brandsQuery);
+  const { data: masterBrands } = useHrdScopedBrands();
 
   const divisionsQuery = useMemoFirebase(() => {
     if (filterBrand === 'all') return null;
@@ -1086,6 +1083,14 @@ export default function HrdLeaveApprovalPage() {
 
 
 
+  if (!isScopeConfigured) {
+    return (
+      <DashboardLayout pageTitle="Persetujuan Cuti HRD">
+        <HrdScopeEmptyState message={emptyStateMessage} />
+      </DashboardLayout>
+    );
+  }
+
   if (isLoadingRequests || isLoadingBalances || isLoadingAdjustments) {
     return (
       <DashboardLayout pageTitle="Persetujuan Cuti HRD">
@@ -1228,19 +1233,25 @@ export default function HrdLeaveApprovalPage() {
                 {/* 1. Brand Filter */}
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Filter Brand</label>
-                  <select
-                    value={filterBrand}
-                    onChange={e => {
-                      setFilterBrand(e.target.value);
-                      setFilterDivision('all');
-                    }}
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-bold text-slate-700 focus:border-indigo-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
-                  >
-                    <option value="all">Semua Brand (Default)</option>
-                    {brandOptions.map(b => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
-                    ))}
-                  </select>
+                  {brandOptions.length === 1 ? (
+                    <div className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-bold text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-white">
+                      Perusahaan: {brandOptions[0].name}
+                    </div>
+                  ) : (
+                    <select
+                      value={filterBrand}
+                      onChange={e => {
+                        setFilterBrand(e.target.value);
+                        setFilterDivision('all');
+                      }}
+                      className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-bold text-slate-700 focus:border-indigo-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                    >
+                      <option value="all">Semua Brand (Default)</option>
+                      {brandOptions.map(b => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 {/* 2. Division Filter */}

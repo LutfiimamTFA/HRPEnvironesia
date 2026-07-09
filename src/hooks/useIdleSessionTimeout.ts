@@ -9,11 +9,19 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 
 // ── Defaults ────────────────────────────────────────────────────────────────
-export const IDLE_TIMEOUT_MS    = 15 * 60 * 1000; // 15 minutes
-export const WARNING_BEFORE_MS  =  2 * 60 * 1000; //  2 minutes warning
+// Minimum 30 minutes by default — never hardcode 5 minutes or less. Session &
+// Security can override this per-deployment (see AdminGuard's Firestore read).
+export const IDLE_TIMEOUT_MS    = 30 * 60 * 1000; // 30 minutes
+export const WARNING_BEFORE_MS  =  60 * 1000;     //  1 minute warning
 const FORCE_LOGOUT_KEY = 'hrp:forceLogout';
+const LAST_ACTIVITY_KEY = 'hrp:lastActivityAt';
+// Throttle localStorage writes — activity events (mousemove especially) can
+// fire dozens of times per second; we only need a coarse "was the user here
+// recently" timestamp, not a write on every pixel of mouse movement.
+const ACTIVITY_PERSIST_INTERVAL_MS = 30 * 1000;
+
 const ACTIVITY_EVENTS = [
-  'mousemove', 'mousedown', 'click', 'keydown', 'scroll', 'touchstart',
+  'mousemove', 'pointermove', 'mousedown', 'click', 'keydown', 'scroll', 'touchstart',
 ] as const;
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -22,6 +30,10 @@ export interface IdleSessionTimeoutOptions {
   warningBeforeMs?: number;
   /** Set to false to disable (e.g. on public pages or when logged out). */
   enabled?: boolean;
+  /** Which activity types count as "still here" — all default to true. */
+  trackMouseMove?: boolean;
+  trackKeyboard?: boolean;
+  trackScroll?: boolean;
   /** Called when the idle period has elapsed and the user must be signed out. */
   onTimeout: () => Promise<void> | void;
   /** Called when the user enters the warning/idle phase. */
@@ -35,11 +47,25 @@ export interface IdleSessionTimeoutResult {
   keepAlive: () => void;
 }
 
+function readLastActivityAt(): number | null {
+  try {
+    const raw = localStorage.getItem(LAST_ACTIVITY_KEY);
+    if (!raw) return null;
+    const ms = Number(raw);
+    return Number.isFinite(ms) ? ms : null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Hook ────────────────────────────────────────────────────────────────────
 export function useIdleSessionTimeout({
   idleTimeoutMs   = IDLE_TIMEOUT_MS,
   warningBeforeMs = WARNING_BEFORE_MS,
   enabled         = true,
+  trackMouseMove  = true,
+  trackKeyboard   = true,
+  trackScroll     = true,
   onTimeout,
   onWarning,
 }: IdleSessionTimeoutOptions): IdleSessionTimeoutResult {
@@ -63,6 +89,7 @@ export function useIdleSessionTimeout({
   const logoutTimer      = useRef<ReturnType<typeof setTimeout>  | null>(null);
   const countdownTimer   = useRef<ReturnType<typeof setInterval> | null>(null);
   const warningActiveRef = useRef(false);
+  const lastPersistRef   = useRef(0);
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   const clearAll = useCallback(() => {
@@ -71,10 +98,24 @@ export function useIdleSessionTimeout({
     if (countdownTimer.current) { clearInterval(countdownTimer.current); countdownTimer.current = null; }
   }, []);
 
-  const executeLogout = useCallback(async () => {
+  const persistLastActivity = useCallback((force = false) => {
+    const now = Date.now();
+    if (!force && now - lastPersistRef.current < ACTIVITY_PERSIST_INTERVAL_MS) return;
+    lastPersistRef.current = now;
+    try { localStorage.setItem(LAST_ACTIVITY_KEY, now.toString()); } catch { /* ignore */ }
+  }, []);
+
+  const executeLogout = useCallback(async (reason: string) => {
     clearAll();
     warningActiveRef.current = false;
     setShowWarning(false);
+
+    console.log('[session-debug]', {
+      lastActivityAt: readLastActivityAt(),
+      idleForSeconds: null,
+      timeoutMinutes: Math.round(idleTimeoutMsRef.current / 60000),
+      reason,
+    });
 
     // Notify other open tabs
     try { localStorage.setItem(FORCE_LOGOUT_KEY, Date.now().toString()); } catch { /* ignore */ }
@@ -82,39 +123,69 @@ export function useIdleSessionTimeout({
     try { await onTimeoutRef.current(); } catch { /* still force logout */ }
   }, [clearAll]);
 
-  const startIdle = useCallback(() => {
+  /**
+   * (Re)starts the idle clock. `elapsedMs` accounts for time already spent
+   * idle before this call (e.g. a backgrounded tab being refocused) — instead
+   * of naively granting a fresh full idleTimeoutMs, we schedule only the time
+   * actually remaining, and jump straight to the warning/logout state if
+   * that time has already passed while the tab was hidden.
+   */
+  const startIdle = useCallback((elapsedMs = 0) => {
     clearAll();
     warningActiveRef.current = false;
     setShowWarning(false);
+    persistLastActivity(true);
 
-    const warnAfter = idleTimeoutMsRef.current - warningBeforeMsRef.current;
+    const idleTimeout   = idleTimeoutMsRef.current;
+    const warningBefore = warningBeforeMsRef.current;
+    const warnAfter      = idleTimeout - warningBefore;
+    const remainingUntilWarn   = warnAfter - elapsedMs;
+    const remainingUntilLogout = idleTimeout - elapsedMs;
 
-    warningTimer.current = setTimeout(() => {
-      // ── Show warning modal ────────────────────────────────────────────
+    if (remainingUntilLogout <= 0) {
+      // Already idle past the full timeout while backgrounded/reloaded.
+      executeLogout('idle_timeout');
+      return;
+    }
+
+    const showWarningNow = (ms: number) => {
       warningActiveRef.current = true;
       setShowWarning(true);
       try { onWarningRef.current?.(); } catch { /* ignore status write failures */ }
 
-      let secs = Math.floor(warningBeforeMsRef.current / 1000);
+      let secs = Math.max(0, Math.floor(ms / 1000));
       setSecondsRemaining(secs);
+      console.log('[session-debug]', {
+        lastActivityAt: readLastActivityAt(),
+        idleForSeconds: Math.round(elapsedMs / 1000),
+        timeoutMinutes: Math.round(idleTimeout / 60000),
+        reason: 'idle_warning',
+      });
 
       countdownTimer.current = setInterval(() => {
         secs -= 1;
         setSecondsRemaining(secs > 0 ? secs : 0);
-        if (secs <= 0) {
-          if (countdownTimer.current) {
-            clearInterval(countdownTimer.current);
-            countdownTimer.current = null;
-          }
+        if (secs <= 0 && countdownTimer.current) {
+          clearInterval(countdownTimer.current);
+          countdownTimer.current = null;
         }
       }, 1000);
 
-      // ── Schedule final logout ─────────────────────────────────────────
       logoutTimer.current = setTimeout(() => {
-        executeLogout();
-      }, warningBeforeMsRef.current);
-    }, warnAfter);
-  }, [clearAll, executeLogout]);
+        executeLogout('idle_timeout');
+      }, ms);
+    };
+
+    if (remainingUntilWarn <= 0) {
+      // Already within the warning window (e.g. tab was hidden for a while).
+      showWarningNow(remainingUntilLogout);
+      return;
+    }
+
+    warningTimer.current = setTimeout(() => {
+      showWarningNow(warningBefore);
+    }, remainingUntilWarn);
+  }, [clearAll, executeLogout, persistLastActivity]);
 
   /** Reset the idle clock and close the warning modal. */
   const keepAlive = useCallback(() => {
@@ -132,23 +203,36 @@ export function useIdleSessionTimeout({
 
     startIdle();
 
+    // Any genuine activity proves the user is present — including while the
+    // warning modal is showing. Requiring a specific button click only (the
+    // previous behavior) meant a user who kept moving the mouse/scrolling but
+    // didn't notice/click the modal in time still got logged out despite
+    // clearly being active. Real activity always resets the clock now.
     const onActivity = () => {
-      // Ignore activity while the warning is visible — user must click the button.
-      if (!warningActiveRef.current) startIdle();
+      persistLastActivity();
+      startIdle();
     };
 
     const onVisibility = () => {
-      if (document.visibilityState === 'visible' && !warningActiveRef.current) {
-        startIdle();
-      }
+      if (document.visibilityState !== 'visible') return;
+      const lastActivityAt = readLastActivityAt();
+      const elapsed = lastActivityAt ? Date.now() - lastActivityAt : 0;
+      startIdle(Math.max(0, elapsed));
     };
 
     // Cross-tab: another tab emitted the force-logout signal
     const onStorage = (e: StorageEvent) => {
-      if (e.key === FORCE_LOGOUT_KEY && e.newValue) executeLogout();
+      if (e.key === FORCE_LOGOUT_KEY && e.newValue) executeLogout('idle_timeout');
     };
 
-    ACTIVITY_EVENTS.forEach(evt =>
+    const activeEvents = ACTIVITY_EVENTS.filter((evt) => {
+      if (['mousemove', 'pointermove', 'mousedown', 'click'].includes(evt)) return trackMouseMove;
+      if (evt === 'keydown') return trackKeyboard;
+      if (evt === 'scroll') return trackScroll;
+      return true; // touchstart always tracked
+    });
+
+    activeEvents.forEach(evt =>
       document.addEventListener(evt, onActivity, { passive: true }),
     );
     document.addEventListener('visibilitychange', onVisibility);
@@ -156,16 +240,16 @@ export function useIdleSessionTimeout({
 
     return () => {
       clearAll();
-      ACTIVITY_EVENTS.forEach(evt =>
+      activeEvents.forEach(evt =>
         document.removeEventListener(evt, onActivity),
       );
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('storage', onStorage);
     };
   // `startIdle` and `executeLogout` are stable (useCallback with stable deps).
-  // Only re-run if `enabled` changes.
+  // Only re-run if `enabled` or tracking flags change.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled]);
+  }, [enabled, trackMouseMove, trackKeyboard, trackScroll]);
 
   return { showWarning, secondsRemaining, keepAlive };
 }

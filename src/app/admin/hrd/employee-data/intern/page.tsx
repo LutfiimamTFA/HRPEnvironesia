@@ -5,8 +5,7 @@ import { useAuth } from '@/providers/auth-provider';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { MENU_CONFIG } from '@/lib/menu-config';
-import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, query, where } from 'firebase/firestore';
+import { where } from 'firebase/firestore';
 import type { EmployeeProfile, UserProfile } from '@/lib/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
@@ -17,6 +16,8 @@ import { Button } from '@/components/ui/button';
 import { format } from 'date-fns';
 import { InternProfileDetailDialog } from '@/components/dashboard/hrd/InternProfileDetailDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useHrdScopedCollection } from '@/hooks/useHrdScopedCollection';
+import { HrdScopeEmptyState } from '@/components/dashboard/hrd/HrdScopeEmptyState';
 
 function InternTableSkeleton() {
     return (
@@ -34,13 +35,14 @@ const subtypeLabels: Record<string, string> = {
     'intern_pre_probation': 'Pra-Probation'
 }
 
+type InternMergedProfile = UserProfile & Partial<EmployeeProfile> & Record<string, any>;
+
 export default function InternDataPage() {
     const { userProfile } = useAuth();
     const hasAccess = useRoleGuard(['hrd', 'super-admin']);
-    const firestore = useFirestore();
     const [searchTerm, setSearchTerm] = useState('');
     const [activeTab, setActiveTab] = useState('intern_education');
-    const [selectedProfile, setSelectedProfile] = useState<(UserProfile & Partial<EmployeeProfile>) | null>(null);
+    const [selectedProfile, setSelectedProfile] = useState<InternMergedProfile | null>(null);
     const [isDetailOpen, setIsDetailOpen] = useState(false);
 
     const menuConfig = useMemo(() => {
@@ -48,15 +50,18 @@ export default function InternDataPage() {
         return MENU_CONFIG[userProfile.role] || [];
     }, [userProfile]);
 
-    // 1. Fetch all users who are interns (Source of Truth)
-    const { data: internUsers, isLoading: usersLoading } = useCollection<UserProfile>(
-        useMemoFirebase(() => query(collection(firestore, 'users'), where('employmentType', '==', 'magang')), [firestore])
-    );
+    const internConstraints = useMemo(() => [where('employmentType', '==', 'magang')], []);
 
-    // 2. Fetch all employee profiles to merge with
-    const { data: employeeProfiles, isLoading: profilesLoading, mutate } = useCollection<EmployeeProfile>(
-        useMemoFirebase(() => collection(firestore, 'employee_profiles'), [firestore])
-    );
+    // 1. Fetch scoped users who are interns (Source of Truth)
+    const {
+        data: internUsers,
+        isLoading: usersLoading,
+        isScopeConfigured,
+        emptyStateMessage,
+    } = useHrdScopedCollection<UserProfile>('users', { constraints: internConstraints });
+
+    // 2. Fetch scoped employee profiles to merge with
+    const { data: employeeProfiles, isLoading: profilesLoading, mutate } = useHrdScopedCollection<EmployeeProfile>('employee_profiles');
     
     // 3. Merge the two data sources
     const processedProfiles = useMemo(() => {
@@ -82,13 +87,17 @@ export default function InternDataPage() {
         });
     }, [processedProfiles, searchTerm, activeTab]);
 
-    const handleViewDetails = (profile: UserProfile & Partial<EmployeeProfile>) => {
+    const handleViewDetails = (profile: InternMergedProfile) => {
         setSelectedProfile(profile);
         setIsDetailOpen(true);
     };
 
     if (!hasAccess) {
         return <DashboardLayout pageTitle="Data Diri Intern" menuConfig={menuConfig}><InternTableSkeleton /></DashboardLayout>;
+    }
+
+    if (!isScopeConfigured) {
+        return <DashboardLayout pageTitle="Data Diri Intern" menuConfig={menuConfig}><HrdScopeEmptyState message={emptyStateMessage} /></DashboardLayout>;
     }
 
     return (
@@ -137,7 +146,7 @@ export default function InternDataPage() {
                                             {profile.updatedAt ? format(profile.updatedAt.toDate(), 'dd MMM yyyy, HH:mm') : '-'}
                                         </TableCell>
                                         <TableCell className="text-right">
-                                            <Button variant="ghost" size="sm" onClick={() => handleViewDetails(profile)}>
+                                            <Button variant="ghost" size="sm" onClick={() => handleViewDetails(profile as InternMergedProfile)}>
                                                 <Eye className="mr-2 h-4 w-4" /> Detail
                                             </Button>
                                         </TableCell>

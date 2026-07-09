@@ -20,11 +20,11 @@ import {
 } from 'lucide-react';
 import type { Job, UserProfile, Brand, EmployeeProfile } from '@/lib/types';
 import { useAuth } from '@/providers/auth-provider';
-import { useAuth as useFirebaseAuth, useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection } from 'firebase/firestore';
+import { useAuth as useFirebaseAuth, useFirestore } from '@/firebase';
 import { useRouter } from 'next/navigation';
 import { getInitials, cn } from '@/lib/utils';
 import { normalizeEmployeeRow } from '@/lib/employee-row-normalizer';
+import { useHrdScopedCollection } from '@/hooks/useHrdScopedCollection';
 
 interface AssignedUsersDialogProps {
   open: boolean;
@@ -187,12 +187,8 @@ export function AssignedUsersDialog({
   const firestore = useFirestore();
 
   // ── Fetch employee_profiles (fresh, always re-queried when modal opens) ──
-  const employeeProfilesRef = useMemoFirebase(
-    () => collection(firestore, 'employee_profiles'),
-    [firestore],
-  );
   const { data: employeeProfiles, isLoading: profilesLoading } =
-    useCollection<EmployeeProfile>(employeeProfilesRef);
+    useHrdScopedCollection<EmployeeProfile>('employee_profiles', { enabled: open });
 
   // Build uid → EmployeeProfile map
   // employee_profiles docs may have uid as doc.id OR as a uid field (legacy)

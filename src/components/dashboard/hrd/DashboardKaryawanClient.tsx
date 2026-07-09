@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, query, where } from 'firebase/firestore';
+import { where } from 'firebase/firestore';
 import type { JobApplication, UserProfile, Brand, AttendanceSite, AttendanceEvent } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { startOfDay, endOfDay, subDays } from 'date-fns';
+import { useHrdScopedBrands, useHrdScopedCollection } from '@/hooks/useHrdScopedCollection';
+import { HrdScopeEmptyState } from './HrdScopeEmptyState';
 
 import { GlobalFilterBar } from './GlobalFilterBar';
 import { KpiCards } from './KpiCards';
@@ -37,7 +38,6 @@ function DashboardSkeleton() {
 }
 
 export function DashboardKaryawanClient() {
-  const firestore = useFirestore();
   const [view, setView] = useState('overview');
 
   const [filters, setFilters] = useState<FilterState>({
@@ -49,61 +49,56 @@ export function DashboardKaryawanClient() {
     needsActionOnly: false,
   });
 
-  // --- Existing Data Fetching ---
-  const { data: users, isLoading: isLoadingUsers } = useCollection<UserProfile>(
-    useMemoFirebase(() => query(collection(firestore, 'users'), where('isActive', '==', true)), [firestore])
+  const activeEmployeeConstraints = useMemo(
+    () => [where('isActive', '==', true), where('role', 'in', ['karyawan', 'manager'])],
+    [],
   );
-  const { data: sites, isLoading: isLoadingSites } = useCollection<AttendanceSite>(
-    useMemoFirebase(() => collection(firestore, 'attendance_sites'), [firestore])
+  const pendingPermissionConstraints = useMemo(
+    () => [where('status', 'in', ['pending_hrd', 'pending_manager'])],
+    [],
   );
-  const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(
-    useMemoFirebase(() => collection(firestore, 'brands'), [firestore])
+  const pendingOvertimeConstraints = useMemo(
+    () => [where('status', '==', 'pending_hrd')],
+    [],
+  );
+  const pendingTripConstraints = useMemo(
+    () => [where('status', '==', 'pending')],
+    [],
   );
 
-  const eventsQuery = useMemoFirebase(() => {
+  // --- Scoped Data Fetching ---
+  const {
+    data: users,
+    isLoading: isLoadingUsers,
+    isScopeConfigured,
+    emptyStateMessage,
+  } = useHrdScopedCollection<UserProfile>('users', { constraints: activeEmployeeConstraints });
+  const { data: sites, isLoading: isLoadingSites } = useHrdScopedCollection<AttendanceSite>('attendance_sites');
+  const { data: brands, isLoading: isLoadingBrands } = useHrdScopedBrands();
+
+  const eventConstraints = useMemo(() => {
     const endDate = endOfDay(filters.date);
     const startDate = startOfDay(subDays(filters.date, 7));
-    return query(
-      collection(firestore, 'attendance_events'),
+    return [
       where('tsServer', '>=', startDate),
-      where('tsServer', '<=', endDate)
-    );
-  }, [firestore, filters.date]);
-  const { data: attendanceEvents, isLoading: isLoadingEvents } = useCollection<AttendanceEvent>(eventsQuery);
+      where('tsServer', '<=', endDate),
+    ];
+  }, [filters.date]);
+  const { data: attendanceEvents, isLoading: isLoadingEvents } = useHrdScopedCollection<AttendanceEvent>('attendance_events', {
+    constraints: eventConstraints,
+  });
 
   // --- New Data Fetching for Pending Submissions ---
-  const { data: pendingIzin } = useCollection(
-    useMemoFirebase(() => query(
-      collection(firestore, 'permission_requests'),
-      where('status', 'in', ['pending_hrd', 'pending_manager'])
-    ), [firestore])
-  );
+  const { data: pendingIzin } = useHrdScopedCollection('permission_requests', { constraints: pendingPermissionConstraints });
 
-  const { data: pendingCuti } = useCollection(
-    useMemoFirebase(() => query(
-      collection(firestore, 'leave_requests'),
-      where('status', 'in', ['pending_hrd', 'pending_manager'])
-    ), [firestore])
-  );
+  const { data: pendingCuti } = useHrdScopedCollection('leave_requests', { constraints: pendingPermissionConstraints });
 
-  const { data: pendingLembur } = useCollection(
-    useMemoFirebase(() => query(
-      collection(firestore, 'overtime_submissions'),
-      where('status', '==', 'pending_hrd')
-    ), [firestore])
-  );
+  const { data: pendingLembur } = useHrdScopedCollection('overtime_submissions', { constraints: pendingOvertimeConstraints });
 
-  const { data: pendingDinas } = useCollection(
-    useMemoFirebase(() => query(
-      collection(firestore, 'business_trips'),
-      where('status', '==', 'pending')
-    ), [firestore])
-  );
+  const { data: pendingDinas } = useHrdScopedCollection('business_trips', { constraints: pendingTripConstraints });
 
   // --- Employee profiles for data completeness ---
-  const { data: profiles } = useCollection(
-    useMemoFirebase(() => collection(firestore, 'profiles'), [firestore])
-  );
+  const { data: profiles } = useHrdScopedCollection('employee_profiles');
 
   const isLoading = isLoadingUsers || isLoadingSites || isLoadingBrands || isLoadingEvents;
 
@@ -149,6 +144,10 @@ export function DashboardKaryawanClient() {
 
   if (isLoading) {
     return <DashboardSkeleton />;
+  }
+
+  if (!isScopeConfigured) {
+    return <HrdScopeEmptyState message={emptyStateMessage} />;
   }
 
   const filteredRecords = attendanceRecords.filter(record => {

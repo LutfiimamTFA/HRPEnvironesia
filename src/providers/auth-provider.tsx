@@ -6,6 +6,7 @@ import {
   ReactNode,
   useCallback,
   useEffect,
+  useRef,
 } from "react";
 import { User as FirebaseAuthUser } from "firebase/auth";
 import { doc } from "firebase/firestore";
@@ -38,8 +39,28 @@ function AuthContent({ children }: { children: ReactNode }) {
   const {
     data: userProfileData,
     isLoading: isProfileLoading,
+    error: profileError,
     mutate,
   } = useDoc<UserProfile>(userDocRef);
+
+  // Item 8: a transient Firestore read error (network blip, brief permission
+  // propagation delay, resource-exhausted cooldown, ...) must NOT be treated
+  // as "user has no profile" — useDoc() nulls its `data` on any onSnapshot
+  // error, and AdminGuard redirects to /admin/login whenever userProfile is
+  // null. Without this, a one-off Firestore hiccup silently logs an actively
+  // present user out. Keep the last successfully-loaded profile around and
+  // only actually drop it once Firebase Auth itself says the user is gone.
+  const lastGoodProfileRef = useRef<UserProfile | null>(null);
+  if (userProfileData) {
+    lastGoodProfileRef.current = userProfileData;
+  }
+  if (!firebaseUser) {
+    lastGoodProfileRef.current = null;
+  }
+  if (profileError) {
+    // eslint-disable-next-line no-console
+    console.warn('[auth-provider] users/{uid} read error — keeping last known profile, not forcing logout:', profileError);
+  }
 
   // Auto-sync role documents for data consistency
   useEffect(() => {
@@ -70,9 +91,9 @@ function AuthContent({ children }: { children: ReactNode }) {
     mutate();
   }, [mutate]);
 
-  const userProfile = userProfileData ?? null;
+  const userProfile = userProfileData ?? (firebaseUser ? lastGoodProfileRef.current : null);
 
-  const loading = isAuthLoading || (!!firebaseUser && isProfileLoading);
+  const loading = isAuthLoading || (!!firebaseUser && isProfileLoading && !lastGoodProfileRef.current);
 
   const value = { firebaseUser, userProfile, loading, refreshUserProfile };
 

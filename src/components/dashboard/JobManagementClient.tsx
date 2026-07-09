@@ -5,7 +5,7 @@ import {
   collection, doc, serverTimestamp, query, where, Timestamp, arrayUnion,
 } from 'firebase/firestore';
 import {
-  useCollection, useFirestore, useMemoFirebase,
+  useFirestore,
   updateDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking,
 } from '@/firebase';
 import type { Job, Brand, UserProfile } from '@/lib/types';
@@ -43,6 +43,8 @@ import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/comp
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { getInitials } from '@/lib/utils';
 import { GoogleDatePicker } from '../ui/google-date-picker';
+import { useHrdScopedBrands, useHrdScopedCollection } from '@/hooks/useHrdScopedCollection';
+import { HrdScopeEmptyState } from '@/components/dashboard/hrd/HrdScopeEmptyState';
 
 // ─── Status helpers ───────────────────────────────────────────────────────────
 
@@ -724,20 +726,27 @@ export function JobManagementClient() {
   const [isArchiving, setIsArchiving] = useState(false);
   const [isReopening, setIsReopening] = useState(false);
 
-  const jobsRef = useMemoFirebase(() => collection(firestore, 'jobs'), [firestore]);
-  const { data: jobs, isLoading: isLoadingJobs, mutate: mutateJobs } = useCollection<Job>(jobsRef);
+  const {
+    data: jobs,
+    isLoading: isLoadingJobs,
+    mutate: mutateJobs,
+    isScopeConfigured,
+    emptyStateMessage,
+  } = useHrdScopedCollection<Job>('jobs');
 
-  const brandsRef = useMemoFirebase(() => collection(firestore, 'brands'), [firestore]);
-  const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(brandsRef);
+  const { data: brands, isLoading: isLoadingBrands } = useHrdScopedBrands();
 
-  const usersQuery = useMemoFirebase(() =>
-    query(collection(firestore, 'users'), where('role', 'in', ['hrd', 'super-admin', 'manager', 'karyawan']), where('isActive', '==', true)),
-    [firestore]
-  );
-  const { data: users, isLoading: isLoadingUsers } = useCollection<UserProfile>(usersQuery);
+  const internalUserConstraints = useMemo(() => {
+    if (userProfile?.role === 'super-admin') {
+      return [where('role', 'in', ['hrd', 'super-admin', 'manager', 'karyawan']), where('isActive', '==', true)];
+    }
+    return [where('role', 'in', ['manager', 'karyawan']), where('isActive', '==', true)];
+  }, [userProfile?.role]);
+  const { data: users, isLoading: isLoadingUsers } = useHrdScopedCollection<UserProfile>('users', {
+    constraints: internalUserConstraints,
+  });
 
-  const appsRef = useMemoFirebase(() => collection(firestore, 'applications'), [firestore]);
-  const { data: applications } = useCollection<any>(appsRef);
+  const { data: applications } = useHrdScopedCollection<any>('applications');
 
   const isLoading = isLoadingJobs || isLoadingBrands || isLoadingUsers;
   const isSuperAdmin = userProfile?.role === 'super-admin';
@@ -969,6 +978,10 @@ export function JobManagementClient() {
     </div>
   );
 
+  if (!isScopeConfigured) {
+    return <HrdScopeEmptyState message={emptyStateMessage} />;
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -1040,15 +1053,21 @@ export function JobManagementClient() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
           </div>
-          <Select value={brandFilter} onValueChange={setBrandFilter}>
-            <SelectTrigger className="h-9 w-44 rounded-xl border-slate-200 dark:border-slate-700 text-sm">
-              <SelectValue placeholder="Semua Brand" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Semua Brand</SelectItem>
-              {brands?.map(b => <SelectItem key={b.id} value={b.id!}>{b.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          {(brands?.length || 0) === 1 ? (
+            <div className="h-9 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+              Perusahaan: {brands?.[0]?.name || brands?.[0]?.id}
+            </div>
+          ) : (
+            <Select value={brandFilter} onValueChange={setBrandFilter}>
+              <SelectTrigger className="h-9 w-44 rounded-xl border-slate-200 dark:border-slate-700 text-sm">
+                <SelectValue placeholder="Semua Brand" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Brand</SelectItem>
+                {brands?.map(b => <SelectItem key={b.id} value={b.id!}>{b.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
           <Select value={typeFilter} onValueChange={setTypeFilter}>
             <SelectTrigger className="h-9 w-36 rounded-xl border-slate-200 dark:border-slate-700 text-sm">
               <SelectValue placeholder="Semua Tipe" />

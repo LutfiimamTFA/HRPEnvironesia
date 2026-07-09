@@ -12,6 +12,13 @@ const createSchema = z.object({
   password: z.string().min(8),
   role: z.enum(ROLES),
   isActive: z.boolean().default(true),
+  hrdScope: z
+    .object({
+      scopeType: z.enum(["selected_companies", "all_companies"]).default("selected_companies"),
+      allowedBrandIds: z.array(z.string()).default([]),
+      allowedBrandNames: z.array(z.string()).default([]),
+    })
+    .optional(),
 });
 
 const removeUndefined = (obj: Record<string, unknown>) => {
@@ -88,17 +95,21 @@ export async function POST(req: NextRequest) {
     const { email, password, fullName, role, isActive } = parseResult.data;
     const requesterRole = authResult.role;
 
-    // --- New Validation Logic ---
-    if (requesterRole === "super-admin" && !["hrd", "manager"].includes(role)) {
+    if (requesterRole === "hrd" && role !== "karyawan") {
       return NextResponse.json(
         {
-          error:
-            "Super Admins can only create HRD or Manager accounts via this form.",
+          error: "HRD hanya boleh membuat akun karyawan.",
         },
         { status: 403 },
       );
     }
-    // --- End New Validation ---
+
+    if (requesterRole !== "super-admin" && role === "hrd") {
+      return NextResponse.json(
+        { error: "Hanya Super Admin yang boleh membuat akun HRD." },
+        { status: 403 },
+      );
+    }
 
     const db = admin.firestore();
 
@@ -122,6 +133,24 @@ export async function POST(req: NextRequest) {
       displayName: fullName,
     });
 
+    const normalizedHrdScope =
+      role === "hrd"
+        ? {
+            scopeType:
+              parseResult.data.hrdScope?.scopeType === "all_companies"
+                ? "all_companies"
+                : "selected_companies",
+            allowedBrandIds:
+              parseResult.data.hrdScope?.scopeType === "all_companies"
+                ? []
+                : parseResult.data.hrdScope?.allowedBrandIds || [],
+            allowedBrandNames:
+              parseResult.data.hrdScope?.scopeType === "all_companies"
+                ? []
+                : parseResult.data.hrdScope?.allowedBrandNames || [],
+          }
+        : null;
+
     const userProfile: any = {
       uid: userRecord.uid,
       email,
@@ -131,6 +160,13 @@ export async function POST(req: NextRequest) {
       isActive,
       createdAt: Timestamp.now(),
       createdBy: authResult.uid,
+      hrdScope: normalizedHrdScope
+        ? {
+            ...normalizedHrdScope,
+            updatedAt: Timestamp.now(),
+            updatedBy: authResult.uid,
+          }
+        : undefined,
     };
 
     removeUndefined(userProfile);
@@ -144,7 +180,14 @@ export async function POST(req: NextRequest) {
         .set({ role: "super-admin" });
     }
     if (role === "hrd") {
-      await db.collection("roles_hrd").doc(userRecord.uid).set({ role: "hrd" });
+      await db.collection("roles_hrd").doc(userRecord.uid).set({
+        uid: userRecord.uid,
+        role: "hrd",
+        ...normalizedHrdScope,
+        active: isActive,
+        updatedAt: Timestamp.now(),
+        updatedBy: authResult.uid,
+      });
     }
 
     return NextResponse.json(

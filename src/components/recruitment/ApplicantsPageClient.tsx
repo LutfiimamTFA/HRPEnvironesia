@@ -20,7 +20,7 @@ import { BulkScheduleWizard } from './BulkScheduleWizard';
 import { useToast } from '@/hooks/use-toast';
 import { ORDERED_RECRUITMENT_STAGES } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
-import { setDocumentNonBlocking, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { setDocumentNonBlocking, useFirestore } from '@/firebase';
 import { doc, documentId, serverTimestamp, Timestamp, query, collection, where, writeBatch, getDocs, updateDoc } from 'firebase/firestore';
 import type { ScheduleInterviewData } from './ScheduleInterviewDialog';
 import { ScheduleInterviewDialog } from './ScheduleInterviewDialog';
@@ -39,6 +39,7 @@ import {
   getApplicationFilterStage,
   shouldNormalizeCompletedPersonalityApplication,
 } from '@/lib/recruitment/application-stage';
+import { useHrdScopedCollection } from '@/hooks/useHrdScopedCollection';
 
 type SelectionState = { selectedIds: Set<string> };
 
@@ -137,6 +138,7 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allBrands
   const { toast } = useToast();
 
   const isPrivilegedRecruiter = userProfile?.role === 'super-admin' || userProfile?.role === 'hrd';
+  const canViewMultiApplications = userProfile?.role === 'super-admin';
 
   useEffect(() => {
     setApplications(applications);
@@ -147,7 +149,7 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allBrands
   // Fetch multi-application data: for each candidateUid in this job's applicants,
   // query all their applications across all jobs (grouped, no per-row query).
   useEffect(() => {
-    if (!isPrivilegedRecruiter || displayApplications.length === 0) return;
+    if (!canViewMultiApplications || displayApplications.length === 0) return;
     const currentJobId = job?.id;
     const uids = [...new Set(displayApplications.map(a => a.candidateUid).filter(Boolean))];
     if (uids.length === 0) return;
@@ -175,7 +177,7 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allBrands
       });
       setMultiAppMap(map);
     })();
-  }, [displayApplications, firestore, isPrivilegedRecruiter, job?.id]);
+  }, [canViewMultiApplications, displayApplications, firestore, job?.id]);
 
   useEffect(() => {
     const uids = [...new Set(displayApplications.map(a => a.candidateUid).filter(Boolean))];
@@ -203,22 +205,22 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allBrands
   }, [displayApplications, firestore]);
 
   useEffect(() => {
-    const uids = [...new Set(displayApplications.map(a => a.candidateUid).filter(Boolean))];
-    if (uids.length === 0) {
+    const applicationIds = [...new Set(displayApplications.map(a => a.id).filter(Boolean))] as string[];
+    if (applicationIds.length === 0) {
       setAssessmentSessionMap(new Map());
       return;
     }
 
-    const CHUNK = 30;
+    const CHUNK = 10;
     const chunks: string[][] = [];
-    for (let i = 0; i < uids.length; i += CHUNK) chunks.push(uids.slice(i, i + CHUNK));
+    for (let i = 0; i < applicationIds.length; i += CHUNK) chunks.push(applicationIds.slice(i, i + CHUNK));
 
     (async () => {
       const map = new Map<string, AssessmentSession[]>();
       await Promise.all(
         chunks.map(async chunk => {
           const snap = await getDocs(
-            query(collection(firestore, 'assessment_sessions'), where('candidateUid', 'in', chunk))
+            query(collection(firestore, 'assessment_sessions'), where('applicationId', 'in', chunk))
           );
           snap.forEach(d => {
             const session = { id: d.id, ...d.data() } as unknown as AssessmentSession;
@@ -232,16 +234,16 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allBrands
     })().catch(console.error);
   }, [displayApplications, firestore]);
 
-  const { data: usersToFilter } = useCollection<UserProfile>(
-    useMemoFirebase(() => {
-      if (!userProfile || !isPrivilegedRecruiter) return null;
-      return query(
-        collection(firestore, 'users'),
-        where('role', 'in', ['hrd', 'manager', 'karyawan', 'super-admin']),
-        where('isActive', '==', true)
-      );
-    }, [firestore, userProfile, isPrivilegedRecruiter])
-  );
+  const assignableUserConstraints = useMemo(() => {
+    if (userProfile?.role === 'super-admin') {
+      return [where('role', 'in', ['hrd', 'manager', 'karyawan', 'super-admin']), where('isActive', '==', true)];
+    }
+    return [where('role', 'in', ['manager', 'karyawan']), where('isActive', '==', true)];
+  }, [userProfile?.role]);
+  const { data: usersToFilter } = useHrdScopedCollection<UserProfile>('users', {
+    constraints: assignableUserConstraints,
+    enabled: Boolean(userProfile && isPrivilegedRecruiter),
+  });
 
   const assignableUsers = useMemo(() => {
     if (!usersToFilter) return [];
@@ -698,7 +700,7 @@ export function ApplicantsPageClient({ applications, job, onJobUpdate, allBrands
                       <td className="px-5 py-4 align-middle">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="text-base font-bold text-slate-900 dark:text-white">{app.candidateName}</p>
-                          {isPrivilegedRecruiter && (
+                          {canViewMultiApplications && (
                             <MultiApplicationBadge otherApplications={multiAppMap.get(app.candidateUid) || []} />
                           )}
                         </div>

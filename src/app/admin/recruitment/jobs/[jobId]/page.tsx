@@ -16,6 +16,8 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ArrowLeft } from 'lucide-react';
 import { MENU_CONFIG } from '@/lib/menu-config';
 import { ApplicantsPageClient } from '@/components/recruitment/ApplicantsPageClient';
+import { useHrdScopedBrands, useHrdScopedCollection } from '@/hooks/useHrdScopedCollection';
+import { HrdScopeEmptyState } from '@/components/dashboard/hrd/HrdScopeEmptyState';
 
 function ApplicantsPageSkeleton() {
   return (
@@ -36,14 +38,19 @@ export default function RecruitmentApplicantsPage() {
   const jobRef = useMemoFirebase(() => (jobId ? doc(firestore, 'jobs', jobId) : null), [firestore, jobId]);
   const { data: job, isLoading: isLoadingJob, mutate: mutateJob } = useDoc<Job>(jobRef);
 
-  const applicationsQuery = useMemoFirebase(
-    () => (jobId ? query(collection(firestore, 'applications'), where('jobId', '==', jobId)) : null),
-    [firestore, jobId]
-  );
-  const { data: applications, isLoading: isLoadingApps, error } = useCollection<JobApplication>(applicationsQuery);
+  const applicationConstraints = useMemo(() => (jobId ? [where('jobId', '==', jobId)] : []), [jobId]);
+  const {
+    data: applications,
+    isLoading: isLoadingApps,
+    error,
+    isScopeConfigured,
+    emptyStateMessage,
+  } = useHrdScopedCollection<JobApplication>('applications', {
+    constraints: applicationConstraints,
+    enabled: Boolean(jobId),
+  });
 
-  const brandsQuery = useMemoFirebase(() => collection(firestore, 'brands'), [firestore]);
-  const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(brandsQuery);
+  const { data: brands, isLoading: isLoadingBrands } = useHrdScopedBrands();
 
   const hasAccess = useMemo(() => {
     if (isLoadingJob || !userProfile || !job) return false;
@@ -69,6 +76,14 @@ export default function RecruitmentApplicantsPage() {
           <AlertTitle>Akses Ditolak</AlertTitle>
           <AlertDescription>Anda tidak memiliki izin untuk melihat halaman ini.</AlertDescription>
         </Alert>
+      </DashboardLayout>
+    );
+  }
+
+  if (!isScopeConfigured) {
+    return (
+      <DashboardLayout pageTitle="Applicants" menuConfig={menuConfig}>
+        <HrdScopeEmptyState message={emptyStateMessage} />
       </DashboardLayout>
     );
   }

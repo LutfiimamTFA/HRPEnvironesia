@@ -5,8 +5,8 @@ import { useAuth } from "@/providers/auth-provider";
 import { useRoleGuard } from "@/hooks/useRoleGuard";
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { MENU_CONFIG } from "@/lib/menu-config";
-import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
-import { collection, doc, updateDoc, writeBatch } from "firebase/firestore";
+import { useFirestore } from "@/firebase";
+import { doc, updateDoc, writeBatch } from "firebase/firestore";
 import type { BankChangeRequest } from "@/lib/types";
 import {
   Table,
@@ -31,6 +31,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { useHrdScopedCollection } from "@/hooks/useHrdScopedCollection";
+import { HrdScopeEmptyState } from "@/components/dashboard/hrd/HrdScopeEmptyState";
 
 export default function BankChangeRequestsPage() {
   const { userProfile } = useAuth();
@@ -48,9 +50,13 @@ export default function BankChangeRequestsPage() {
     return MENU_CONFIG[userProfile.role] || [];
   }, [userProfile]);
 
-  const { data: requests, isLoading, mutate } = useCollection<BankChangeRequest>(
-    useMemoFirebase(() => collection(firestore, "bank_change_requests"), [firestore])
-  );
+  const {
+    data: requests,
+    isLoading,
+    mutate,
+    isScopeConfigured,
+    emptyStateMessage,
+  } = useHrdScopedCollection<BankChangeRequest>("bank_change_requests");
 
   const handleReview = (req: BankChangeRequest) => {
     setSelectedRequest(req);
@@ -124,6 +130,14 @@ export default function BankChangeRequestsPage() {
           <Skeleton className="h-10 w-64" />
           <Skeleton className="h-96 w-full" />
         </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!isScopeConfigured) {
+    return (
+      <DashboardLayout pageTitle="Pengajuan Perubahan Rekening" menuConfig={menuConfig}>
+        <HrdScopeEmptyState message={emptyStateMessage} />
       </DashboardLayout>
     );
   }

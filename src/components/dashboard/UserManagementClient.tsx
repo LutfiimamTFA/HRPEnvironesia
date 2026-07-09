@@ -64,6 +64,12 @@ import {
   type LogoutReason,
   type SessionStatus,
 } from '@/lib/session-tracking';
+import {
+  getHrdScopeBadgeLabel,
+  normalizeHrdScope,
+  type HrdRoleDocument,
+  type HrdScope,
+} from '@/lib/hrd-scope';
 
 const groupConfig = {
   'super-admin': {
@@ -119,9 +125,9 @@ const groupDisplayConfig: Record<string, { label: string; icon: string; descript
     description: 'Akses penuh sistem dan manajemen user',
   },
   hrd: {
-    label: 'HRD',
+    label: 'Akses HRD',
     icon: 'HR',
-    description: 'Pengelola data karyawan dan approval cuti/izin',
+    description: 'Kelola batas akses HRD per perusahaan',
   },
   manager: {
     label: 'Manager',
@@ -502,6 +508,9 @@ export function UserManagementClient() {
   const brandsRef = useMemoFirebase(() => collection(firestore, 'brands'), [firestore]);
   const { data: brands } = useCollection<Brand>(brandsRef);
 
+  const hrdRolesRef = useMemoFirebase(() => collection(firestore, 'roles_hrd'), [firestore]);
+  const { data: hrdRoles } = useCollection<HrdRoleDocument>(hrdRolesRef);
+
   const employeeProfilesRef = useMemoFirebase(() => collection(firestore, 'employee_profiles'), [firestore]);
   const { data: employeeProfiles } = useCollection<EmployeeProfile>(employeeProfilesRef);
 
@@ -518,6 +527,24 @@ export function UserManagementClient() {
     if (!employeeProfiles) return new Map<string, EmployeeProfile>();
     return new Map(employeeProfiles.map(p => [p.uid, p]));
   }, [employeeProfiles]);
+
+  const hrdRoleMap = useMemo(() => {
+    if (!hrdRoles) return new Map<string, HrdRoleDocument>();
+    return new Map(hrdRoles.map(role => [role.uid || role.id, role]));
+  }, [hrdRoles]);
+
+  const getUserHrdScope = (user: UserProfile): HrdScope | null => {
+    if (user.role !== 'hrd') return null;
+    return normalizeHrdScope(hrdRoleMap.get(user.uid) || user.hrdScope || null);
+  };
+
+  const hrdWithoutScopeCount = useMemo(() => {
+    const hrdUsers = users?.filter(user => user.role === 'hrd') || [];
+    return hrdUsers.filter(user => {
+      const scope = getUserHrdScope(user);
+      return !scope || (scope.scopeType !== 'all_companies' && scope.allowedBrandIds.length === 0);
+    }).length;
+  }, [users, hrdRoleMap]);
 
   const usersByGroup = useMemo(() => {
     if (!users) return {};
@@ -890,6 +917,15 @@ export function UserManagementClient() {
                     <p className="text-sm text-muted-foreground">{filteredGroupUsers.length} user{filteredGroupUsers.length !== 1 ? 's' : ''} - {groupDisplayConfig[activeTab]?.description}</p>
                   </div>
                 </div>
+                {activeTab === 'hrd' && hrdWithoutScopeCount > 0 && (
+                  <Alert className="mt-4 border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Akses HRD Belum Diatur</AlertTitle>
+                    <AlertDescription>
+                      {hrdWithoutScopeCount} HRD belum memiliki akses perusahaan. Mereka tidak akan dapat melihat data sampai akses diatur.
+                    </AlertDescription>
+                  </Alert>
+                )}
               </div>
 
               {displayGroups.map((groupKey) => (
@@ -902,6 +938,7 @@ export function UserManagementClient() {
                           <TableHead className="min-w-[220px] py-3">User</TableHead>
                           <TableHead className="hidden min-w-[210px] md:table-cell">Email</TableHead>
                           <TableHead className="min-w-[120px]">Role</TableHead>
+                          {activeTab === 'hrd' && <TableHead className="min-w-[220px]">Akses Perusahaan</TableHead>}
                           <TableHead className="hidden min-w-[150px] lg:table-cell">Tipe User/Karyawan</TableHead>
                           <TableHead className="hidden min-w-[190px] xl:table-cell">Brand / Divisi</TableHead>
                           <TableHead className="min-w-[150px]">Status Akun</TableHead>
@@ -917,6 +954,9 @@ export function UserManagementClient() {
                           const employeeProfile = employeeProfileMap.get(user.uid);
                           const health = buildUserHealth(user, employeeProfile, brandMap);
                           const userInitial = user.fullName?.charAt(0).toUpperCase() || '?';
+                          const hrdScope = getUserHrdScope(user);
+                          const hrdScopeLabel = getHrdScopeBadgeLabel(hrdScope);
+                          const hrdCompanyCount = hrdScope?.scopeType === 'all_companies' ? (brands?.length || 0) : (hrdScope?.allowedBrandIds.length || 0);
 
                           return (
                             <TableRow key={user.uid} className="border-b hover:bg-muted/50">
@@ -943,6 +983,32 @@ export function UserManagementClient() {
                               <TableCell>
                                 <Badge variant="outline" className="capitalize">{prettifyValue(user.role)}</Badge>
                               </TableCell>
+                              {activeTab === 'hrd' && (
+                                <TableCell>
+                                  <div className="space-y-1.5">
+                                    <Badge
+                                      variant="outline"
+                                      className={cn(
+                                        hrdScopeLabel === 'Belum Diatur'
+                                          ? issueBadgeClass
+                                          : 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300',
+                                      )}
+                                    >
+                                      {hrdScopeLabel}
+                                    </Badge>
+                                    <p className="text-xs text-muted-foreground">
+                                      {hrdScope?.scopeType === 'all_companies'
+                                        ? 'Akses seluruh brand'
+                                        : `${hrdCompanyCount} perusahaan dipilih`}
+                                    </p>
+                                    {hrdScope?.scopeType !== 'all_companies' && (hrdScope?.allowedBrandNames?.length || 0) > 0 && (
+                                      <p className="max-w-[220px] truncate text-xs text-muted-foreground">
+                                        {hrdScope?.allowedBrandNames.join(', ')}
+                                      </p>
+                                    )}
+                                  </div>
+                                </TableCell>
+                              )}
                               <TableCell className="hidden lg:table-cell">
                                 <Badge variant="outline">{health.employee.type}</Badge>
                               </TableCell>

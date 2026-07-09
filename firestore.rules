@@ -57,10 +57,75 @@ service cloud.firestore {
     
     /**
      * Checks if the user's role is 'hrd' via a performant existence check.
-     * This is safe for list queries when checking against the requesting user's UID.
+     * HRD access is active only when roles_hrd/{uid}.active is not false.
      */
+    function getHrdRole(uid) {
+      return get(/databases/$(database)/documents/roles_hrd/$(uid)).data;
+    }
+
     function isHrd() {
-      return isSignedIn() && exists(/databases/$(database)/documents/roles_hrd/$(request.auth.uid));
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/roles_hrd/$(request.auth.uid)) &&
+        getHrdRole(request.auth.uid).get('active', true) != false;
+    }
+
+    function hrdScopeType() {
+      return getHrdRole(request.auth.uid).get('scopeType', 'selected_companies');
+    }
+
+    function hrdAllowedBrandIds() {
+      let ids = getHrdRole(request.auth.uid).get('allowedBrandIds', []);
+      return ids is list ? ids : [];
+    }
+
+    function isHrdAllCompanies() {
+      return isHrd() && hrdScopeType() == 'all_companies';
+    }
+
+    function isHrdAllowedForBrand(brandId) {
+      return isHrd() &&
+        brandId is string &&
+        (isHrdAllCompanies() || brandId in hrdAllowedBrandIds());
+    }
+
+    function hrdCanReadBrandData(data) {
+      return isHrdAllowedForBrand(data.get('brandId', null));
+    }
+
+    function hrdCanCreateBrandData(data) {
+      return hrdCanReadBrandData(data);
+    }
+
+    function hrdCanUpdateBrandData(currentData, nextData) {
+      return hrdCanReadBrandData(currentData) && hrdCanReadBrandData(nextData);
+    }
+
+    function isHrdVisibleUserData(data) {
+      return data.get('role', '') in ['manager', 'karyawan'];
+    }
+
+    function hrdCanReadApplication(appData) {
+      return hrdCanReadBrandData(appData);
+    }
+
+    function hrdCanReadOffering(offeringData) {
+      let appId = offeringData.get('applicationId', null);
+      return hrdCanReadBrandData(offeringData) ||
+        (appId is string && hrdCanReadApplication(get(/databases/$(database)/documents/applications/$(appId)).data));
+    }
+
+    function hrdCanReadAssessmentSession(sessionData) {
+      let appId = sessionData.get('applicationId', null);
+      return hrdCanReadBrandData(sessionData) ||
+        (appId is string && hrdCanReadApplication(get(/databases/$(database)/documents/applications/$(appId)).data));
+    }
+
+    function hrdCanReadMission(missionId) {
+      return hrdCanReadBrandData(get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data);
+    }
+
+    function hrdCanReadLegacyTrip(tripId) {
+      return hrdCanReadBrandData(get(/databases/$(database)/documents/business_trips/$(tripId)).data);
     }
 
     /**
@@ -164,9 +229,21 @@ service cloud.firestore {
      * - Only a super_admin can list all users or create/delete them.
      */
     match /users/{userId} {
-      allow get: if isOwner(userId) || isInternal();
-      allow update: if isOwner(userId) || isSuperAdmin() || isHrd();
-      allow list: if isSuperAdmin() || isHrd();
+      allow get: if isOwner(userId) ||
+        isSuperAdmin() ||
+        (isHrd() && isHrdVisibleUserData(resource.data) && hrdCanReadBrandData(resource.data)) ||
+        (isInternal() && !isHrd());
+      allow update: if isOwner(userId) ||
+        isSuperAdmin() ||
+        (
+          isHrd() &&
+          isHrdVisibleUserData(resource.data) &&
+          isHrdVisibleUserData(request.resource.data) &&
+          hrdCanUpdateBrandData(resource.data, request.resource.data) &&
+          request.resource.data.role == resource.data.role
+        );
+      allow list: if isSuperAdmin() ||
+        (isHrd() && isHrdVisibleUserData(resource.data) && hrdCanReadBrandData(resource.data));
       allow create: if (isOwner(userId) && request.resource.data.role == 'kandidat' && hasValidCreateData(userId)) || isSuperAdmin();
       allow delete: if isSuperAdmin();
 
@@ -220,10 +297,15 @@ service cloud.firestore {
           return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedFields);
         }
 
-      allow get: if isOwner(uid) || isInternal();
-      allow create: if isOwner(uid) || isHrd() || isSuperAdmin();
-      allow update: if (isOwner(uid) && isUpdatingOwnAllowedFields()) || isHrd() || isSuperAdmin();
-      allow list: if isHrd() || isSuperAdmin();
+      allow get: if isOwner(uid) ||
+        isSuperAdmin() ||
+        (isHrd() && hrdCanReadBrandData(resource.data)) ||
+        (isInternal() && !isHrd());
+      allow create: if isOwner(uid) || isSuperAdmin() || (isHrd() && hrdCanCreateBrandData(request.resource.data));
+      allow update: if (isOwner(uid) && isUpdatingOwnAllowedFields()) ||
+        isSuperAdmin() ||
+        (isHrd() && hrdCanUpdateBrandData(resource.data, request.resource.data));
+      allow list: if isSuperAdmin() || (isHrd() && hrdCanReadBrandData(resource.data));
       allow delete: if false;
     }
     
@@ -288,9 +370,17 @@ service cloud.firestore {
      * - Only internal users (hrd, super_admin) can write to jobs.
      */
     match /jobs/{jobId} {
-      allow list: if true;
-      allow get: if resource.data.publishStatus == "published" || isInternal();
-      allow write: if isInternal() && getUserData().role in ['super-admin', 'hrd'];
+      allow list: if resource.data.publishStatus in ["published", "reopened"] ||
+        isSuperAdmin() ||
+        (isHrd() && hrdCanReadBrandData(resource.data)) ||
+        (isInternal() && !isHrd());
+      allow get: if resource.data.publishStatus in ["published", "reopened"] ||
+        isSuperAdmin() ||
+        (isHrd() && hrdCanReadBrandData(resource.data)) ||
+        (isInternal() && !isHrd());
+      allow create: if isSuperAdmin() || (isHrd() && hrdCanCreateBrandData(request.resource.data));
+      allow update: if isSuperAdmin() || (isHrd() && hrdCanUpdateBrandData(resource.data, request.resource.data));
+      allow delete: if isSuperAdmin() || (isHrd() && hrdCanReadBrandData(resource.data));
     }
 
     /**
@@ -302,10 +392,15 @@ service cloud.firestore {
         // The client-side query MUST contain `where('candidateUid', '==', request.auth.uid)`.
         // Security is then enforced by the `get` rule below, which Firestore
         // runs on each document in the result set.
-        allow list: if isSignedIn();
+        allow list: if isSuperAdmin() ||
+                     (isHrd() && hrdCanReadApplication(resource.data)) ||
+                     resource.data.candidateUid == request.auth.uid ||
+                     request.auth.uid in resource.data.get('allPanelistIds', []) ||
+                     request.auth.uid in resource.data.get(['internalReviewConfig', 'assignedReviewerUids'], []);
 
         // GET: Allow if the user is an admin, the document owner, an assigned panelist, or an assigned internal reviewer.
-        allow get: if isHrd() || isSuperAdmin() || 
+        allow get: if isSuperAdmin() ||
+                     (isHrd() && hrdCanReadApplication(resource.data)) ||
                      resource.data.candidateUid == request.auth.uid || 
                      request.auth.uid in resource.data.get('allPanelistIds', []) ||
                      request.auth.uid in resource.data.get(['internalReviewConfig', 'assignedReviewerUids'], []);
@@ -317,7 +412,11 @@ service cloud.firestore {
         // UPDATE: A candidate can update their own DRAFT or mark an active offer as viewed. Internal users can update any. candidateUid cannot be changed.
         allow update: if 
                       (
-                        isInternal() && (
+                        (
+                          isSuperAdmin() ||
+                          (isHrd() && hrdCanUpdateBrandData(resource.data, request.resource.data)) ||
+                          (isInternal() && !isHrd())
+                        ) && (
                           isInternalStatusUpdate() || 
                           isUpdatingCvCache()
                         )
@@ -334,7 +433,9 @@ service cloud.firestore {
                       );
 
         // DELETE: Only internal users can delete applications.
-        allow delete: if isInternal();
+        allow delete: if isSuperAdmin() ||
+          (isHrd() && hrdCanReadApplication(resource.data)) ||
+          (isInternal() && !isHrd());
 
         // Helper functions local to this scope for clarity
         function isOwner() {
@@ -407,15 +508,29 @@ service cloud.firestore {
     }
     
     match /applications/{applicationId}/internal_reviews/{reviewerUid} {
-      allow get: if isHrd() || isSuperAdmin() || request.auth.uid == reviewerUid || (isSignedIn() && hasInternalReviewAccess(applicationId));
-      allow list: if isHrd() || isSuperAdmin() || (isSignedIn() && hasInternalReviewAccess(applicationId));
-      allow write: if isHrd() || isSuperAdmin() || (isOwner(reviewerUid) && hasInternalReviewAccess(applicationId));
+      allow get: if isSuperAdmin() ||
+        (isHrd() && hrdCanReadApplication(get(/databases/$(database)/documents/applications/$(applicationId)).data)) ||
+        request.auth.uid == reviewerUid ||
+        (isSignedIn() && hasInternalReviewAccess(applicationId));
+      allow list: if isSuperAdmin() ||
+        (isHrd() && hrdCanReadApplication(get(/databases/$(database)/documents/applications/$(applicationId)).data)) ||
+        (isSignedIn() && hasInternalReviewAccess(applicationId));
+      allow write: if isSuperAdmin() ||
+        (isHrd() && hrdCanReadApplication(get(/databases/$(database)/documents/applications/$(applicationId)).data)) ||
+        (isOwner(reviewerUid) && hasInternalReviewAccess(applicationId));
     }
     
     match /applications/{applicationId}/post_interview_reviews/{reviewerUid} {
-      allow get: if isHrd() || isSuperAdmin() || request.auth.uid == reviewerUid || (isSignedIn() && hasPostInterviewReviewAccess(applicationId));
-      allow list: if isHrd() || isSuperAdmin() || (isSignedIn() && hasPostInterviewReviewAccess(applicationId));
-      allow write: if isHrd() || isSuperAdmin() || (isOwner(reviewerUid) && hasPostInterviewReviewAccess(applicationId));
+      allow get: if isSuperAdmin() ||
+        (isHrd() && hrdCanReadApplication(get(/databases/$(database)/documents/applications/$(applicationId)).data)) ||
+        request.auth.uid == reviewerUid ||
+        (isSignedIn() && hasPostInterviewReviewAccess(applicationId));
+      allow list: if isSuperAdmin() ||
+        (isHrd() && hrdCanReadApplication(get(/databases/$(database)/documents/applications/$(applicationId)).data)) ||
+        (isSignedIn() && hasPostInterviewReviewAccess(applicationId));
+      allow write: if isSuperAdmin() ||
+        (isHrd() && hrdCanReadApplication(get(/databases/$(database)/documents/applications/$(applicationId)).data)) ||
+        (isOwner(reviewerUid) && hasPostInterviewReviewAccess(applicationId));
     }
     
     function hasInternalReviewAccess(appId) {
@@ -429,7 +544,7 @@ service cloud.firestore {
       // Access granted to explicitly assigned panelists or anyone with general internal review access
       return request.auth.uid in appData.get('allPanelistIds', []) || 
              request.auth.uid in appData.get(['internalReviewConfig', 'assignedReviewerUids'], []) ||
-             isHrd() || isSuperAdmin();
+             (isHrd() && hrdCanReadApplication(appData)) || isSuperAdmin();
     }
 
 
@@ -445,14 +560,16 @@ service cloud.firestore {
     
     // --- Monitoring & Attendance Rules ---
     match /attendance_sites/{siteId} {
-      allow read: if isHrd() || isSuperAdmin();
-      allow write: if isHrd() || isSuperAdmin();
+      allow read: if isSuperAdmin() || (isHrd() && hrdCanReadBrandData(resource.data));
+      allow create: if isSuperAdmin() || (isHrd() && hrdCanCreateBrandData(request.resource.data));
+      allow update: if isSuperAdmin() || (isHrd() && hrdCanUpdateBrandData(resource.data, request.resource.data));
+      allow delete: if isSuperAdmin() || (isHrd() && hrdCanReadBrandData(resource.data));
     }
 
     match /attendance_events/{eventId} {
-      allow read: if isHrd() || isSuperAdmin();
+      allow read: if isSuperAdmin() || (isHrd() && hrdCanReadBrandData(resource.data));
       allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
-      allow delete: if isHrd() || isSuperAdmin();
+      allow delete: if isSuperAdmin() || (isHrd() && hrdCanReadBrandData(resource.data));
     }
     
     match /overtime_submissions/{submissionId} {
@@ -464,8 +581,18 @@ service cloud.firestore {
       }
       
       // Allow read by owner, their manager, HR, or Super Admin
-      allow get: if isSignedIn() && (isSubmissionOwner() || isAssignedManager(resource.data) || isHrd() || isSuperAdmin());
-      allow list: if isSignedIn(); // Queries must be filtered on client-side
+      allow get: if isSignedIn() && (
+        isSubmissionOwner() ||
+        isAssignedManager(resource.data) ||
+        isSuperAdmin() ||
+        (isHrd() && hrdCanReadBrandData(resource.data))
+      );
+      allow list: if isSignedIn() && (
+        request.auth.uid == resource.data.uid ||
+        isAssignedManager(resource.data) ||
+        isSuperAdmin() ||
+        (isHrd() && hrdCanReadBrandData(resource.data))
+      );
 
       // Allow create by an internal user for themselves
       allow create: if isInternal() && isRequester();
@@ -477,7 +604,7 @@ service cloud.firestore {
         // Manager can act on pending_manager requests
         (isAssignedManager(resource.data) && resource.data.status == 'pending_manager') ||
         // HRD can act on pending_hrd or approved_by_manager requests
-        (isHrd() && (resource.data.status == 'pending_hrd' || resource.data.status == 'approved_by_manager')) ||
+        (isHrd() && hrdCanUpdateBrandData(resource.data, request.resource.data) && (resource.data.status == 'pending_hrd' || resource.data.status == 'approved_by_manager')) ||
         // Super Admin can always update
         isSuperAdmin()
       );
@@ -505,15 +632,25 @@ service cloud.firestore {
         return isOwner && isTransitionValid && changedKeys.hasOnly(allowedKeys);
       }
       
-      allow get: if isSignedIn() && (isSubmissionOwner() || isAssignedManager(resource.data) || isHrd() || isSuperAdmin());
-      allow list: if isSignedIn();
+      allow get: if isSignedIn() && (
+        isSubmissionOwner() ||
+        isAssignedManager(resource.data) ||
+        isSuperAdmin() ||
+        (isHrd() && hrdCanReadBrandData(resource.data))
+      );
+      allow list: if isSignedIn() && (
+        request.auth.uid == resource.data.uid ||
+        isAssignedManager(resource.data) ||
+        isSuperAdmin() ||
+        (isHrd() && hrdCanReadBrandData(resource.data))
+      );
 
       allow create: if isInternal() && isRequester();
 
       allow update: if isSignedIn() && isSubmissionOwner() && (resource.data.status in ['draft', 'revision_manager', 'revision_hrd']);
       allow update: if isSignedIn() && isReportingReturn();
       allow update: if isSignedIn() && isAssignedManager(resource.data) && (resource.data.status in ['pending_manager', 'reported', 'returned']);
-      allow update: if isSignedIn() && isHrd() && (resource.data.status in ['pending_hrd', 'approved_by_manager', 'verified_manager']);
+      allow update: if isSignedIn() && isHrd() && hrdCanUpdateBrandData(resource.data, request.resource.data) && (resource.data.status in ['pending_hrd', 'approved_by_manager', 'verified_manager']);
       allow update: if isSignedIn() && isSuperAdmin();
 
       
@@ -546,11 +683,19 @@ service cloud.firestore {
     
     match /assessment_sessions/{sessionId} {
       // READ: A user can get their own session. Internal roles can get any session.
-      allow get: if isOwner(resource.data.candidateUid) || isInternal();
+      allow get: if isOwner(resource.data.candidateUid) ||
+        isSuperAdmin() ||
+        (isHrd() && hrdCanReadAssessmentSession(resource.data)) ||
+        (isInternal() && !isHrd());
       
       // LIST: A user can only list their own sessions. Internal roles can list all.
       // This is safe because queries are filtered on the client to check for candidateUid
-      allow list: if isSignedIn();
+      allow list: if isSignedIn() && (
+        resource.data.candidateUid == request.auth.uid ||
+        isSuperAdmin() ||
+        (isHrd() && hrdCanReadAssessmentSession(resource.data)) ||
+        (isInternal() && !isHrd())
+      );
 
       // CREATE: A user can only create a session for themselves.
       allow create: if isOwner(request.resource.data.candidateUid);
@@ -558,8 +703,15 @@ service cloud.firestore {
       // UPDATE:
       // - A candidate can only update their own session, and only if it's a 'draft'.
       // - Internal roles can update the decision.
-      allow update: if (isOwner(resource.data.candidateUid) && resource.data.status == 'draft') || 
-                       isUpdatingHrdDecision();
+      allow update: if (isOwner(resource.data.candidateUid) && resource.data.status == 'draft') ||
+        (
+          (
+            isSuperAdmin() ||
+            (isHrd() && hrdCanReadAssessmentSession(resource.data)) ||
+            (isInternal() && !isHrd())
+          ) &&
+          isUpdatingHrdDecision()
+        );
                        
       // DELETE: No one can delete a session record.
       allow delete: if false;
@@ -581,18 +733,23 @@ service cloud.firestore {
       allow get: if isSignedIn() && (
                     isOwner(resource.data.uid) ||
                     request.auth.uid == resource.data.supervisorUid ||
-                    isHrd() ||
-                    isSuperAdmin()
+                    isSuperAdmin() ||
+                    (isHrd() && hrdCanReadBrandData(resource.data))
                   );
                   
-      allow list: if isSignedIn();
+      allow list: if isSignedIn() && (
+                    resource.data.uid == request.auth.uid ||
+                    resource.data.supervisorUid == request.auth.uid ||
+                    isSuperAdmin() ||
+                    (isHrd() && hrdCanReadBrandData(resource.data))
+                  );
 
       allow create: if isOwner(request.resource.data.uid)
                     && (request.resource.data.status == 'draft' || request.resource.data.status == 'submitted');
 
       allow update: if isSignedIn() && (
                       (isOwner(resource.data.uid) && resource.data.status in ['draft', 'needs_revision']) ||
-                      ((request.auth.uid == resource.data.supervisorUid || isHrd() || isSuperAdmin()) && resource.data.status == 'submitted')
+                      ((request.auth.uid == resource.data.supervisorUid || isSuperAdmin() || (isHrd() && hrdCanUpdateBrandData(resource.data, request.resource.data))) && resource.data.status == 'submitted')
                     );
 
       allow delete: if false;
@@ -600,9 +757,20 @@ service cloud.firestore {
     
     // --- Monthly Evaluation Rules ---
     match /monthly_evaluations/{evaluationId} {
-      allow list: if isHrd() || isSuperAdmin() || isSignedIn();
-      allow get: if isHrd() || isSuperAdmin() || (isSignedIn() && evaluationId.split('_')[0] == request.auth.uid) || (isSignedIn() && isSupervisor(evaluationId.split('_')[0]));
-      allow create, update: if isHrd() || isSuperAdmin() || (isSignedIn() && isSupervisor(request.resource.data.internUid));
+      allow list: if isSuperAdmin() ||
+        (isHrd() && hrdCanReadBrandData(resource.data)) ||
+        (isSignedIn() && resource.data.internUid == request.auth.uid) ||
+        (isSignedIn() && isSupervisor(resource.data.internUid));
+      allow get: if isSuperAdmin() ||
+        (isHrd() && hrdCanReadBrandData(resource.data)) ||
+        (isSignedIn() && evaluationId.split('_')[0] == request.auth.uid) ||
+        (isSignedIn() && isSupervisor(evaluationId.split('_')[0]));
+      allow create: if isSuperAdmin() ||
+        (isHrd() && hrdCanCreateBrandData(request.resource.data)) ||
+        (isSignedIn() && isSupervisor(request.resource.data.internUid));
+      allow update: if isSuperAdmin() ||
+        (isHrd() && hrdCanUpdateBrandData(resource.data, request.resource.data)) ||
+        (isSignedIn() && isSupervisor(request.resource.data.internUid));
       allow delete: if isSuperAdmin();
     }
 
@@ -646,22 +814,24 @@ service cloud.firestore {
      * - Candidates can read their own offerings and update status/interactions.
      */
     match /offerings/{offeringId} {
-      allow get: if isHrd() || isSuperAdmin() || 
+      allow get: if isSuperAdmin() ||
+                    (isHrd() && hrdCanReadOffering(resource.data)) ||
                     (isSignedIn() && (
                       resource.data.get('candidateUid', '') == request.auth.uid || 
                       resource.data.get('candidateEmail', '') == request.auth.token.email ||
                       (resource.data.applicationId != null && get(/databases/$(database)/documents/applications/$(resource.data.applicationId)).data.candidateUid == request.auth.uid)
                     ));
       
-      allow list: if isHrd() || isSuperAdmin() || 
+      allow list: if isSuperAdmin() ||
+                     (isHrd() && hrdCanReadOffering(resource.data)) ||
                      (isSignedIn() && (
-                       request.query.where('candidateUid', '==', request.auth.uid) ||
-                       request.query.where('candidateEmail', '==', request.auth.token.email)
+                       resource.data.get('candidateUid', '') == request.auth.uid ||
+                       resource.data.get('candidateEmail', '') == request.auth.token.email
                      ));
 
-      allow create: if isHrd() || isSuperAdmin();
+      allow create: if isSuperAdmin() || (isHrd() && hrdCanReadOffering(request.resource.data));
 
-      allow update: if isHrd() || isSuperAdmin();
+      allow update: if isSuperAdmin() || (isHrd() && hrdCanReadOffering(resource.data) && hrdCanReadOffering(request.resource.data));
       
       allow delete: if false;
     }
@@ -676,10 +846,21 @@ service cloud.firestore {
         resource.data.get('approvalTargetUid', '') == request.auth.uid ||
         resource.data.get('directSupervisorUid', '') == request.auth.uid ||
         resource.data.get('currentApproverUid', '') == request.auth.uid ||
-        isHrd() || 
-        isSuperAdmin()
+        isSuperAdmin() ||
+        (isHrd() && hrdCanReadBrandData(resource.data))
       );
-      allow list: if isSignedIn();
+      allow list: if isSignedIn() && (
+        resource.data.employeeId == request.auth.uid ||
+        resource.data.managerId == request.auth.uid ||
+        resource.data.managerUid == request.auth.uid ||
+        resource.data.directManagerId == request.auth.uid ||
+        resource.data.directManagerUid == request.auth.uid ||
+        resource.data.get('approvalTargetUid', '') == request.auth.uid ||
+        resource.data.get('directSupervisorUid', '') == request.auth.uid ||
+        resource.data.get('currentApproverUid', '') == request.auth.uid ||
+        isSuperAdmin() ||
+        (isHrd() && hrdCanReadBrandData(resource.data))
+      );
       allow create: if isSignedIn() && request.resource.data.employeeId == request.auth.uid;
       allow update: if isSignedIn() && (
         (resource.data.employeeId == request.auth.uid && (
@@ -696,7 +877,7 @@ service cloud.firestore {
             resource.data.status in ['pending_manager', 'pending_manager_review', 'pending_director', 'pending_director_review', 'pending_supervisor', 'menunggu_approval_atasan'] ||
             resource.data.status.startsWith('pending_')
          )) ||
-        isHrd() ||
+        (isHrd() && hrdCanUpdateBrandData(resource.data, request.resource.data)) ||
         isSuperAdmin()
       );
       allow delete: if isSuperAdmin() || (resource.data.employeeId == request.auth.uid && (
@@ -712,7 +893,7 @@ service cloud.firestore {
       // - creator (assignedByUid) can read
       // - staff who are part of the mission (assignedStaffUids/memberUids) can read
       // - approvers listed in approvalTargetUids can read
-      allow get: if isSuperAdmin() || isHrd() || isManagement() ||
+      allow get: if isSuperAdmin() || (isHrd() && hrdCanReadBrandData(resource.data)) || (isManagement() && !isHrd()) ||
         (isSignedIn() && (
           resource.data.assignedByUid == request.auth.uid ||
           (resource.data.assignedStaffUids is list && request.auth.uid in resource.data.assignedStaffUids) ||
@@ -721,13 +902,13 @@ service cloud.firestore {
         ));
 
       // Listing missions is restricted to HRD, Super Admin, and Management.
-      allow list: if isSuperAdmin() || isHrd() || isManagement();
+      allow list: if isSuperAdmin() || (isHrd() && hrdCanReadBrandData(resource.data)) || (isManagement() && !isHrd());
 
       // Creation allowed for signed-in users; assignedByUid must match requester
       allow create: if isSignedIn() && request.resource.data.assignedByUid == request.auth.uid;
 
       // Update allowed for creator, HRD, or Super Admin
-      allow update: if isSuperAdmin() || isHrd() || (isSignedIn() && resource.data.assignedByUid == request.auth.uid)
+      allow update: if isSuperAdmin() || (isHrd() && hrdCanUpdateBrandData(resource.data, request.resource.data)) || (isSignedIn() && resource.data.assignedByUid == request.auth.uid)
         // Mission members may submit final report (limited fields)
         || (isSignedIn() &&
             (resource.data.memberUids is list && request.auth.uid in resource.data.memberUids ||
@@ -737,14 +918,14 @@ service cloud.firestore {
             ]) &&
             request.resource.data.status == 'final_report_submitted')
         // HRD/management may archive mission (limited fields)
-        || (isSignedIn() && isManagement() &&
+        || (isSignedIn() && isManagement() && !isHrd() &&
             request.resource.data.diff(resource.data).affectedKeys().hasOnly([
               'status', 'archivedAt', 'archivedByUid', 'archivedByName', 'updatedAt'
             ]) &&
             request.resource.data.status == 'completed');
 
       // Deletion reserved for Super Admin or HRD
-      allow delete: if isSuperAdmin() || isHrd();
+      allow delete: if isSuperAdmin() || (isHrd() && hrdCanReadBrandData(resource.data));
 
       // Members subcollection: individual member docs keyed by employee UID
       match /members/{memberId} {
@@ -752,20 +933,23 @@ service cloud.firestore {
         // - super_admin/hrd/management can read
         // - member themselves can read
         // - approver for that member can read
-        allow get: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && request.auth.uid == memberId) || (isSignedIn() && resource.data.approvalTargetUid == request.auth.uid);
+        allow get: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId)) || (isManagement() && !isHrd()) || (isSignedIn() && request.auth.uid == memberId) || (isSignedIn() && resource.data.approvalTargetUid == request.auth.uid);
 
-        // Listing members: allow signed-in users (client must filter by employeeUid).
-        allow list: if isSuperAdmin() || isHrd() || isManagement() || isSignedIn();
+        allow list: if isSuperAdmin() ||
+          (isHrd() && hrdCanReadMission(missionId)) ||
+          (isManagement() && !isHrd()) ||
+          resource.data.employeeUid == request.auth.uid ||
+          resource.data.approvalTargetUid == request.auth.uid;
 
         // Creation: only mission creator/HRD/Super Admin may create member docs
-        allow create: if isSuperAdmin() || isHrd() || (isSignedIn() && get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid);
+        allow create: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId)) || (isSignedIn() && get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid);
 
         // Update rules:
         // - staff can update their own confirmation fields
         // - any confirmed mission member can update tracking fields of fellow members (group milestone)
         // - approver can only update managerValidation related fields
         // - HRD/Super Admin/Management can update any
-        allow update: if isSuperAdmin() || isHrd() || isManagement() || (
+        allow update: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId)) || (isManagement() && !isHrd()) || (
           isSignedIn() && (
             // Staff confirmation update (own doc only)
             ((request.auth.uid == resource.data.employeeUid) &&
@@ -800,145 +984,211 @@ service cloud.firestore {
           )
         );
 
-        allow delete: if isSuperAdmin() || isHrd();
+        allow delete: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId));
       }
 
       // Approval requests subcollection: documents keyed by approver UID
       match /approval_requests/{approverId} {
-        allow get: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && request.auth.uid == approverId);
-        // Listing approval requests: allow signed-in users (client must filter by approverUid).
-        allow list: if isSuperAdmin() || isHrd() || isManagement() || isSignedIn();
-        allow create: if isSuperAdmin() || isHrd() || (isSignedIn() && get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid);
+        allow get: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId)) || (isManagement() && !isHrd()) || (isSignedIn() && request.auth.uid == approverId);
+        allow list: if isSuperAdmin() ||
+          (isHrd() && hrdCanReadMission(missionId)) ||
+          (isManagement() && !isHrd()) ||
+          resource.data.approverUid == request.auth.uid ||
+          approverId == request.auth.uid;
+        allow create: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId)) || (isSignedIn() && get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid);
         // Only the approver (or HRD/Super Admin) can update their approval request
-        allow update: if isSuperAdmin() || isHrd() || (isSignedIn() && request.auth.uid == approverId);
-        allow delete: if isSuperAdmin() || isHrd();
+        allow update: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId)) || (isSignedIn() && request.auth.uid == approverId);
+        allow delete: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId));
       }
 
       // Timeline: mission-level timeline entries
       match /timeline/{entryId} {
-        allow get: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && (
+        allow get: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId)) || (isManagement() && !isHrd()) || (isSignedIn() && (
           resource.data.byUid == request.auth.uid ||
           get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid ||
           (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids) ||
           (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids)
         ));
-        allow list: if isSignedIn() || isManagement();
+        allow list: if isSuperAdmin() ||
+          (isHrd() && hrdCanReadMission(missionId)) ||
+          (isManagement() && !isHrd()) ||
+          resource.data.byUid == request.auth.uid ||
+          get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid ||
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids) ||
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids);
         // Mission members (staff) may create tracking timeline entries
-        allow create: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && (
+        allow create: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId)) || (isManagement() && !isHrd()) || (isSignedIn() && (
           get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid ||
           (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids) ||
           (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids)
         ));
-        allow update, delete: if isSuperAdmin() || isHrd();
+        allow update, delete: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId));
       }
 
       // Staff changes subcollection for mission staffing history
       match /staff_changes/{changeId} {
-        allow get: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && (
+        allow get: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId)) || (isManagement() && !isHrd()) || (isSignedIn() && (
           get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid ||
           (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids) ||
           (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids) ||
           (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.approvalTargetUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.approvalTargetUids) ||
           (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.managerUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.managerUids)
         ));
-        allow list: if isSuperAdmin() || isHrd() || isManagement() || isSignedIn();
-        allow create: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && (
+        allow list: if isSuperAdmin() ||
+          (isHrd() && hrdCanReadMission(missionId)) ||
+          (isManagement() && !isHrd()) ||
+          get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid ||
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids) ||
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids) ||
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.approvalTargetUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.approvalTargetUids) ||
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.managerUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.managerUids);
+        allow create: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId)) || (isManagement() && !isHrd()) || (isSignedIn() && (
           get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid ||
           (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.approvalTargetUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.approvalTargetUids) ||
           (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.managerUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.managerUids)
         ));
-        allow update: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && (
+        allow update: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId)) || (isManagement() && !isHrd()) || (isSignedIn() && (
           get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid ||
           (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.approvalTargetUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.approvalTargetUids) ||
           (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.managerUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.managerUids)
         ));
-        allow delete: if isSuperAdmin() || isHrd() || isManagement();
+        allow delete: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId)) || (isManagement() && !isHrd());
       }
 
       // Final report (team or mixed mode main report)
       match /final_report/{reportId} {
-        allow get: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && (
+        allow get: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId)) || (isManagement() && !isHrd()) || (isSignedIn() && (
           get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid ||
           (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids) ||
           (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids)
         ));
-        allow list: if isSuperAdmin() || isHrd() || isSignedIn();
-        allow create: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && (
+        allow list: if isSuperAdmin() ||
+          (isHrd() && hrdCanReadMission(missionId)) ||
+          get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid ||
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids) ||
+          (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids);
+        allow create: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId)) || (isManagement() && !isHrd()) || (isSignedIn() && (
           (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids) ||
           (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedStaffUids) ||
           get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid
         ));
         // Staff may update their own team report while draft OR when revision was requested
-        allow update: if isSuperAdmin() || isHrd() || isManagement() ||
+        allow update: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId)) || (isManagement() && !isHrd()) ||
           (isSignedIn() && resource.data.dilaporkanOlehUid == request.auth.uid &&
             (resource.data.submittedAt == null || resource.data.reportReviewStatus == "revision_requested"));
-        allow delete: if isSuperAdmin() || isHrd();
+        allow delete: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId));
       }
 
       // Per-member individual reports (individual_report mode)
       match /member_final_reports/{memberUid} {
-        allow get: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && (
+        allow get: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId)) || (isManagement() && !isHrd()) || (isSignedIn() && (
           request.auth.uid == memberUid ||
           get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid ||
           (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids)
         ));
-        allow list: if isSuperAdmin() || isHrd() || isSignedIn();
-        allow create: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && request.auth.uid == memberUid);
+        allow list: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId)) || request.auth.uid == memberUid;
+        allow create: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId)) || (isManagement() && !isHrd()) || (isSignedIn() && request.auth.uid == memberUid);
         // Staff may update their own report while draft OR when revision was requested
-        allow update: if isSuperAdmin() || isHrd() || isManagement() ||
+        allow update: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId)) || (isManagement() && !isHrd()) ||
           (isSignedIn() && request.auth.uid == memberUid &&
             (resource.data.submittedAt == null || resource.data.reportReviewStatus == "revision_requested"));
-        allow delete: if isSuperAdmin() || isHrd();
+        allow delete: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId));
       }
 
       // Per-member notes (mixed_report mode optional personal notes)
       match /member_notes/{memberUid} {
-        allow get: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && (
+        allow get: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId)) || (isManagement() && !isHrd()) || (isSignedIn() && (
           request.auth.uid == memberUid ||
           get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid ||
           (get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids is list && request.auth.uid in get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.memberUids)
         ));
-        allow list: if isSuperAdmin() || isHrd() || isSignedIn();
-        allow create, update: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && request.auth.uid == memberUid);
-        allow delete: if isSuperAdmin() || isHrd();
+        allow list: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId)) || request.auth.uid == memberUid;
+        allow create, update: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId)) || (isManagement() && !isHrd()) || (isSignedIn() && request.auth.uid == memberUid);
+        allow delete: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId));
       }
 
       // Manager validations cache
       match /manager_validations/{validationId} {
-        allow get: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && (
+        allow get: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId)) || (isManagement() && !isHrd()) || (isSignedIn() && (
           resource.data.managerUid == request.auth.uid ||
           get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid
         ));
-        allow list: if isSuperAdmin() || isHrd() || isManagement();
-        allow create, update, delete: if isSuperAdmin() || isHrd() || (isSignedIn() && get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid);
+        allow list: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId)) || (isManagement() && !isHrd());
+        allow create, update, delete: if isSuperAdmin() || (isHrd() && hrdCanReadMission(missionId)) || (isSignedIn() && get(/databases/$(database)/documents/business_trip_missions/$(missionId)).data.assignedByUid == request.auth.uid);
       }
     }
 
     // Legacy business_trips collection for older detail pages and imports
     match /business_trips/{tripId} {
-      allow get: if isSuperAdmin() || isHrd() || isManagement() ||
+      allow get: if isSuperAdmin() || (isHrd() && hrdCanReadBrandData(resource.data)) || (isManagement() && !isHrd()) ||
         (isSignedIn() && resource.data.assignedByUid == request.auth.uid);
-      allow list: if isSuperAdmin() || isHrd() || isManagement();
-      allow create: if isSuperAdmin() || isHrd() || (isSignedIn() && request.resource.data.assignedByUid == request.auth.uid);
-      allow update: if isSuperAdmin() || isHrd() || (isSignedIn() && resource.data.assignedByUid == request.auth.uid);
-      allow delete: if isSuperAdmin() || isHrd();
+      allow list: if isSuperAdmin() || (isHrd() && hrdCanReadBrandData(resource.data)) || (isManagement() && !isHrd());
+      allow create: if isSuperAdmin() || (isHrd() && hrdCanCreateBrandData(request.resource.data)) || (isSignedIn() && request.resource.data.assignedByUid == request.auth.uid);
+      allow update: if isSuperAdmin() || (isHrd() && hrdCanUpdateBrandData(resource.data, request.resource.data)) || (isSignedIn() && resource.data.assignedByUid == request.auth.uid);
+      allow delete: if isSuperAdmin() || (isHrd() && hrdCanReadBrandData(resource.data));
 
       match /timeline/{entryId} {
-        allow get: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && (
+        allow get: if isSuperAdmin() || (isHrd() && hrdCanReadLegacyTrip(tripId)) || (isManagement() && !isHrd()) || (isSignedIn() && (
           resource.data.byUid == request.auth.uid ||
           get(/databases/$(database)/documents/business_trips/$(tripId)).data.assignedByUid == request.auth.uid
         ));
-        allow list: if isSuperAdmin() || isHrd() || isManagement() || isSignedIn();
-        allow create: if isSuperAdmin() || isHrd() || (isSignedIn() && get(/databases/$(database)/documents/business_trips/$(tripId)).data.assignedByUid == request.auth.uid);
-        allow update, delete: if isSuperAdmin() || isHrd();
+        allow list: if isSuperAdmin() ||
+          (isHrd() && hrdCanReadLegacyTrip(tripId)) ||
+          (isManagement() && !isHrd()) ||
+          resource.data.byUid == request.auth.uid ||
+          get(/databases/$(database)/documents/business_trips/$(tripId)).data.assignedByUid == request.auth.uid;
+        allow create: if isSuperAdmin() || (isHrd() && hrdCanReadLegacyTrip(tripId)) || (isSignedIn() && get(/databases/$(database)/documents/business_trips/$(tripId)).data.assignedByUid == request.auth.uid);
+        allow update, delete: if isSuperAdmin() || (isHrd() && hrdCanReadLegacyTrip(tripId));
       }
 
       match /expenses/{expenseId} {
-        allow get: if isSuperAdmin() || isHrd() || isManagement() || (isSignedIn() && get(/databases/$(database)/documents/business_trips/$(tripId)).data.assignedByUid == request.auth.uid);
-        allow list: if isSuperAdmin() || isHrd() || isManagement() || isSignedIn();
-        allow create: if isSuperAdmin() || isHrd() || (isSignedIn() && get(/databases/$(database)/documents/business_trips/$(tripId)).data.assignedByUid == request.auth.uid);
-        allow update, delete: if isSuperAdmin() || isHrd();
+        allow get: if isSuperAdmin() || (isHrd() && hrdCanReadLegacyTrip(tripId)) || (isManagement() && !isHrd()) || (isSignedIn() && get(/databases/$(database)/documents/business_trips/$(tripId)).data.assignedByUid == request.auth.uid);
+        allow list: if isSuperAdmin() ||
+          (isHrd() && hrdCanReadLegacyTrip(tripId)) ||
+          (isManagement() && !isHrd()) ||
+          get(/databases/$(database)/documents/business_trips/$(tripId)).data.assignedByUid == request.auth.uid;
+        allow create: if isSuperAdmin() || (isHrd() && hrdCanReadLegacyTrip(tripId)) || (isSignedIn() && get(/databases/$(database)/documents/business_trips/$(tripId)).data.assignedByUid == request.auth.uid);
+        allow update, delete: if isSuperAdmin() || (isHrd() && hrdCanReadLegacyTrip(tripId));
       }
+    }
+
+    match /employees/{employeeId} {
+      allow get, list: if isSuperAdmin() ||
+        (isHrd() && hrdCanReadBrandData(resource.data)) ||
+        (isSignedIn() && resource.data.uid == request.auth.uid);
+      allow create: if isSuperAdmin() || (isHrd() && hrdCanCreateBrandData(request.resource.data));
+      allow update: if isSuperAdmin() || (isHrd() && hrdCanUpdateBrandData(resource.data, request.resource.data));
+      allow delete: if isSuperAdmin();
+    }
+
+    match /bank_change_requests/{requestId} {
+      allow get, list: if isSuperAdmin() ||
+        (isHrd() && hrdCanReadBrandData(resource.data)) ||
+        (isSignedIn() && resource.data.employeeUid == request.auth.uid);
+      allow create: if isSignedIn() && request.resource.data.employeeUid == request.auth.uid;
+      allow update: if isSuperAdmin() || (isHrd() && hrdCanUpdateBrandData(resource.data, request.resource.data));
+      allow delete: if isSuperAdmin();
+    }
+
+    match /leave_balances/{balanceId} {
+      allow get, list: if isSuperAdmin() ||
+        (isHrd() && hrdCanReadBrandData(resource.data)) ||
+        (isSignedIn() && resource.data.employeeId == request.auth.uid);
+      allow create: if isSuperAdmin() || (isHrd() && hrdCanCreateBrandData(request.resource.data));
+      allow update: if isSuperAdmin() || (isHrd() && hrdCanUpdateBrandData(resource.data, request.resource.data));
+      allow delete: if isSuperAdmin();
+    }
+
+    match /leave_balance_adjustments/{adjustmentId} {
+      allow get, list: if isSuperAdmin() || (isHrd() && hrdCanReadBrandData(resource.data));
+      allow create: if isSuperAdmin() || (isHrd() && hrdCanCreateBrandData(request.resource.data));
+      allow update: if isSuperAdmin() || (isHrd() && hrdCanUpdateBrandData(resource.data, request.resource.data));
+      allow delete: if isSuperAdmin();
+    }
+
+    match /company_holidays/{holidayId} {
+      allow read, list: if isSignedIn();
+      allow create, update, delete: if isSuperAdmin();
     }
 
     // Landing Page CMS Sections

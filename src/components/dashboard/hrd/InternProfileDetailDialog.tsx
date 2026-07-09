@@ -23,15 +23,11 @@ import { format } from "date-fns";
 import { id } from "date-fns/locale";
 import { parseDateValue } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  useCollection,
-  useFirestore,
-  useMemoFirebase,
-  useDoc,
-} from "@/firebase";
-import { collection, query, where, doc } from "firebase/firestore";
+import { useFirestore, useMemoFirebase, useDoc } from "@/firebase";
+import { where, doc } from "firebase/firestore";
 import { Loader2, Edit, Banknote } from "lucide-react";
 import { InternAdminDataFormDialog } from "./InternAdminDataFormDialog";
+import { useHrdScopedBrands, useHrdScopedCollection } from "@/hooks/useHrdScopedCollection";
 
 const InfoRow = ({
   label,
@@ -56,7 +52,7 @@ interface InternProfileDetailDialogProps {
   profile: EmployeeProfile | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onAdminDataChange: () => void;
+  onAdminDataChange?: () => void;
 }
 
 export function InternProfileDetailDialog({
@@ -68,17 +64,18 @@ export function InternProfileDetailDialog({
   const [isEditAdminOpen, setIsEditAdminOpen] = useState(false);
   const firestore = useFirestore();
 
-  const applicationQuery = useMemoFirebase(() => {
-    if (!profile?.uid) return null;
-    return query(
-      collection(firestore, "applications"),
+  const applicationConstraints = useMemo(() => {
+    if (!profile?.uid) return [];
+    return [
       where("candidateUid", "==", profile.uid),
       where("status", "==", "hired"),
-    );
-  }, [firestore, profile?.uid]);
-
+    ];
+  }, [profile?.uid]);
   const { data: applications, isLoading: isLoadingApplication } =
-    useCollection<JobApplication>(applicationQuery);
+    useHrdScopedCollection<JobApplication>("applications", {
+      constraints: applicationConstraints,
+      enabled: Boolean(profile?.uid),
+    });
 
   const userRef = useMemoFirebase(() => {
     if (!profile) return null;
@@ -87,9 +84,7 @@ export function InternProfileDetailDialog({
   const { data: userProfile, isLoading: isLoadingUser } =
     useDoc<UserProfile>(userRef);
 
-  const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(
-    useMemoFirebase(() => collection(firestore, "brands"), [firestore]),
-  );
+  const { data: brands, isLoading: isLoadingBrands } = useHrdScopedBrands();
 
   const application = useMemo(() => {
     if (!applications || applications.length === 0) return null;
@@ -128,7 +123,7 @@ export function InternProfileDetailDialog({
   }, [profile, userProfile, application, brandMap]);
 
   const handleAdminFormSuccess = () => {
-    onAdminDataChange();
+    onAdminDataChange?.();
     setIsEditAdminOpen(false);
   };
 
@@ -138,16 +133,17 @@ export function InternProfileDetailDialog({
   if (!profile) return null;
 
   // --- UNIFIED DATA LOGIC ---
+  const internProfile = profile as EmployeeProfile & Record<string, any>;
   const divisionToDisplay = profile.division || job?.division;
   const supervisorToDisplay = profile.supervisorName;
   const startDateToDisplay =
-    profile.internshipStartDate?.toDate() ||
+    internProfile.internshipStartDate?.toDate() ||
     application?.contractStartDate?.toDate();
   const endDateToDisplay =
-    profile.internshipEndDate?.toDate() ||
+    internProfile.internshipEndDate?.toDate() ||
     application?.contractEndDate?.toDate();
   const compensationToDisplay =
-    profile.compensationAmount ?? application?.offeredSalary;
+    internProfile.compensationAmount ?? application?.offeredSalary;
   const notesToDisplay = profile.hrdNotes || application?.offerNotes;
 
   return (
@@ -202,7 +198,7 @@ export function InternProfileDetailDialog({
                   <InfoRow
                     label="Tipe Magang"
                     value={
-                      profile.internSubtype === "intern_education"
+                      internProfile.internSubtype === "intern_education"
                         ? "Terikat Pendidikan"
                         : "Pra-Probation"
                     }
@@ -306,19 +302,19 @@ export function InternProfileDetailDialog({
                 <dl className="space-y-1">
                   <InfoRow
                     label="Asal Sekolah/Kampus"
-                    value={profile.schoolOrCampus}
+                    value={internProfile.schoolOrCampus}
                   />
-                  <InfoRow label="Jurusan" value={profile.major} />
+                  <InfoRow label="Jurusan" value={internProfile.major} />
                   <InfoRow
                     label="Jenjang Pendidikan"
-                    value={profile.educationLevel}
+                    value={internProfile.educationLevel}
                   />
                   <InfoRow
                     label="Perkiraan Selesai (Studi)"
                     value={
-                      profile.expectedEndDate
+                      internProfile.expectedEndDate
                         ? format(
-                            new Date(profile.expectedEndDate),
+                            new Date(internProfile.expectedEndDate),
                             "dd MMMM yyyy",
                             { locale: id },
                           )

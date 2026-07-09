@@ -20,6 +20,7 @@ import {
 import { useMaintenanceGuard } from '@/hooks/useMaintenance';
 import { timestampToMillis } from '@/lib/session-tracking';
 import { getMaintenanceSource } from '@/lib/maintenance';
+import { useToast } from '@/hooks/use-toast';
 
 /** Paths inside /admin that don't need auth or idle-timeout protection. */
 const PUBLIC_ADMIN_PATHS = ['/admin/login', '/admin/change-password'];
@@ -30,6 +31,7 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
   const firestore = useFirestore();
   const router = useRouter();
   const pathname = usePathname();
+  const { toast } = useToast();
 
   const isPublicPath = PUBLIC_ADMIN_PATHS.includes(pathname);
   const isLoggedIn   = !loading && !!userProfile;
@@ -61,21 +63,35 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
   const idleTimeoutMs   = rawSettings?.idleTimeoutMinutes
     ? rawSettings.idleTimeoutMinutes * 60 * 1000
     : IDLE_TIMEOUT_MS;
-  const warningBeforeMs = rawSettings?.warningBeforeLogoutMinutes
-    ? rawSettings.warningBeforeLogoutMinutes * 60 * 1000
-    : WARNING_BEFORE_MS;
+  // Prefer the seconds-based field if present; fall back to the older
+  // minutes-based one so existing configs keep working.
+  const warningBeforeMs = rawSettings?.warningBeforeLogoutSeconds
+    ? rawSettings.warningBeforeLogoutSeconds * 1000
+    : rawSettings?.warningBeforeLogoutMinutes
+      ? rawSettings.warningBeforeLogoutMinutes * 60 * 1000
+      : WARNING_BEFORE_MS;
+  const autoLogoutEnabled = rawSettings?.autoLogoutEnabled !== false; // default true
+  const trackMouseMove    = rawSettings?.trackMouseMove !== false;    // default true
+  const trackKeyboard     = rawSettings?.trackKeyboard !== false;     // default true
+  const trackScroll       = rawSettings?.trackScroll !== false;       // default true
 
   // ── Redirect logic ──────────────────────────────────────────────────────
+  // Never redirects while `loading` is true — Firebase Auth/profile restore
+  // must finish first, otherwise a still-authenticated user briefly looks
+  // "logged out" and gets bounced to /admin/login before their session is
+  // even done loading.
   useEffect(() => {
     if (isPublicPath) return;
     if (loading) return;
 
     if (!userProfile) {
+      console.log('[session-debug]', { reason: 'auth_null', pathname });
       router.replace('/admin/login');
       return;
     }
 
     if (!ROLES_INTERNAL.includes(userProfile.role as any)) {
+      console.log('[session-debug]', { reason: 'role_missing', role: userProfile.role, pathname });
       router.replace('/careers/login');
       return;
     }
@@ -86,6 +102,7 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
     }
 
     if (maintenanceBlocked && maintenanceRule) {
+      console.log('[session-debug]', { reason: 'maintenance_redirect', pathname, rule: maintenanceRule.title });
       const estimatedEndMs = timestampToMillis(maintenanceRule.estimatedEndAt);
       const params = new URLSearchParams({
         title: maintenanceRule.title || 'Fitur Sedang Dalam Perbaikan',
@@ -99,6 +116,7 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
 
   // ── Idle timeout ────────────────────────────────────────────────────────
   const handleIdleTimeout = useCallback(async () => {
+    console.log('[session-debug]', { reason: 'idle_timeout', uid: userProfile?.uid, timeoutMinutes: Math.round(idleTimeoutMs / 60000) });
     try {
       await signOutWithSessionStatus(
         auth,
@@ -112,8 +130,13 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
     try {
       [FORCE_LOGOUT_STORAGE_KEY].forEach(k => localStorage.removeItem(k));
     } catch { /* ignore */ }
+    // Never log the user out silently — always say why.
+    toast({
+      title: 'Sesi berakhir',
+      description: `Sesi berakhir karena tidak ada aktivitas selama ${Math.round(idleTimeoutMs / 60000)} menit.`,
+    });
     router.replace('/admin/login');
-  }, [auth, firestore, router, userProfile?.uid]);
+  }, [auth, firestore, router, userProfile?.uid, idleTimeoutMs, toast]);
 
   const handleIdleWarning = useCallback(async () => {
     if (!userProfile?.uid) return;
@@ -133,9 +156,12 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
   });
 
   const { showWarning, secondsRemaining, keepAlive } = useIdleSessionTimeout({
-    enabled:        isLoggedIn && !isPublicPath,
+    enabled:        isLoggedIn && !isPublicPath && autoLogoutEnabled,
     idleTimeoutMs,
     warningBeforeMs,
+    trackMouseMove,
+    trackKeyboard,
+    trackScroll,
     onTimeout:      handleIdleTimeout,
     onWarning:      handleIdleWarning,
   });

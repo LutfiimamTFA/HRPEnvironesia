@@ -62,9 +62,28 @@ export async function POST(req: NextRequest) {
           impact: 'Tidak ada data HRD yang diubah. Perbaikan ini hanya melengkapi dokumen akses teknis role.',
         });
         if (!dryRun) {
+          const isHrd = role === 'hrd';
           fixes.push({
             ref: db.collection(roleCollection).doc(uid),
-            data: { uid, email: userDoc.data().email ?? null, createdAt: admin.firestore.FieldValue.serverTimestamp(), syncedBy: 'technical-sync-center' },
+            data: isHrd
+              ? {
+                  uid,
+                  role: 'hrd',
+                  email: userDoc.data().email ?? null,
+                  scopeType: userDoc.data().hrdScope?.scopeType === 'all_companies' ? 'all_companies' : 'selected_companies',
+                  allowedBrandIds: userDoc.data().hrdScope?.scopeType === 'all_companies' ? [] : (Array.isArray(userDoc.data().hrdScope?.allowedBrandIds) ? userDoc.data().hrdScope.allowedBrandIds : []),
+                  allowedBrandNames: userDoc.data().hrdScope?.scopeType === 'all_companies' ? [] : (Array.isArray(userDoc.data().hrdScope?.allowedBrandNames) ? userDoc.data().hrdScope.allowedBrandNames : []),
+                  active: userDoc.data().isActive !== false,
+                  createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                  syncedBy: 'technical-sync-center',
+                }
+              : {
+                  uid,
+                  role: 'super-admin',
+                  email: userDoc.data().email ?? null,
+                  createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                  syncedBy: 'technical-sync-center',
+                },
           });
         }
       }

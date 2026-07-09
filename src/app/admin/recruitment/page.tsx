@@ -30,6 +30,8 @@ import { id as idLocale } from 'date-fns/locale';
 import { cn, getInitials } from '@/lib/utils';
 import { updateDocumentNonBlocking } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
+import { useHrdScopedBrands, useHrdScopedCollection } from '@/hooks/useHrdScopedCollection';
+import { HrdScopeEmptyState } from '@/components/dashboard/hrd/HrdScopeEmptyState';
 
 // ─── Status helpers ───────────────────────────────────────────────────────────
 
@@ -376,20 +378,23 @@ export default function RecruitmentJobSelectionPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
 
-  const jobsQuery = useMemoFirebase(() => collection(firestore, 'jobs'), [firestore]);
-  const { data: jobs, isLoading: isLoadingJobs, error: jobsError } = useCollection<Job>(jobsQuery);
+  const {
+    data: jobs,
+    isLoading: isLoadingJobs,
+    error: jobsError,
+    isScopeConfigured,
+    emptyStateMessage,
+  } = useHrdScopedCollection<Job>('jobs');
 
-  const appsQuery = useMemoFirebase(() => collection(firestore, 'applications'), [firestore]);
-  const { data: applications, isLoading: isLoadingApps, error: appsError } = useCollection<JobApplication>(appsQuery);
+  const { data: applications, isLoading: isLoadingApps, error: appsError } = useHrdScopedCollection<JobApplication>('applications');
 
-  const brandsQuery = useMemoFirebase(() => collection(firestore, 'brands'), [firestore]);
-  const { data: brands, isLoading: isLoadingBrands, error: brandsError } = useCollection<Brand>(brandsQuery);
+  const { data: brands, isLoading: isLoadingBrands, error: brandsError } = useHrdScopedBrands();
 
-  const usersQuery = useMemoFirebase(() =>
-    query(collection(firestore, 'users'), where('isActive', '==', true)),
-    [firestore]
-  );
-  const { data: users } = useCollection<UserProfile>(usersQuery);
+  const internalUserConstraints = useMemo(() => {
+    if (userProfile?.role === 'super-admin') return [where('isActive', '==', true)];
+    return [where('isActive', '==', true), where('role', 'in', ['manager', 'karyawan'])];
+  }, [userProfile?.role]);
+  const { data: users } = useHrdScopedCollection<UserProfile>('users', { constraints: internalUserConstraints });
 
   const menuConfig = useMemo(() => {
     if (!userProfile) return [];
@@ -521,6 +526,14 @@ export default function RecruitmentJobSelectionPage() {
           <Skeleton className="h-10 w-full rounded-xl" />
           <Skeleton className="h-80 w-full rounded-2xl" />
         </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!isScopeConfigured) {
+    return (
+      <DashboardLayout pageTitle="Manajemen Lamaran" menuConfig={menuConfig}>
+        <HrdScopeEmptyState message={emptyStateMessage} />
       </DashboardLayout>
     );
   }
@@ -686,15 +699,21 @@ export default function RecruitmentJobSelectionPage() {
           {/* Advanced filter row */}
           {showFilters && (
             <div className="flex flex-wrap gap-2 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40 p-3">
-              <Select value={brandFilter} onValueChange={setBrandFilter}>
-                <SelectTrigger className="h-9 w-44 rounded-xl border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm">
-                  <SelectValue placeholder="Semua Brand" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua Brand</SelectItem>
-                  {brands?.map(b => <SelectItem key={b.id} value={b.id!}>{b.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              {(brands?.length || 0) === 1 ? (
+                <div className="h-9 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                  Perusahaan: {brands?.[0]?.name || brands?.[0]?.id}
+                </div>
+              ) : (
+                <Select value={brandFilter} onValueChange={setBrandFilter}>
+                  <SelectTrigger className="h-9 w-44 rounded-xl border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm">
+                    <SelectValue placeholder="Semua Brand" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua Brand</SelectItem>
+                    {brands?.map(b => <SelectItem key={b.id} value={b.id!}>{b.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
               <Select value={typeFilter} onValueChange={setTypeFilter}>
                 <SelectTrigger className="h-9 w-36 rounded-xl border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm">
                   <SelectValue placeholder="Semua Tipe" />

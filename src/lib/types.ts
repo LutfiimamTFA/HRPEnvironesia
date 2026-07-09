@@ -6,6 +6,7 @@ import {
   EMPLOYMENT_STAGES,
   EMPLOYMENT_STATUSES,
 } from "./constants";
+import type { HrdScope } from "./hrd-scope";
 
 // Re-export for convenience
 export {
@@ -98,6 +99,7 @@ export type UserProfile = {
   hiddenOfferingIds?: string[];
 
   updatedAt?: Timestamp;
+  hrdScope?: HrdScope;
 };
 
 export type EmployeeDataSource = "import" | "manual" | "employee";

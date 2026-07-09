@@ -7,8 +7,7 @@ import { useAuth } from '@/providers/auth-provider';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { MENU_CONFIG } from '@/lib/menu-config';
-import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, query, where } from 'firebase/firestore';
+import { where } from 'firebase/firestore';
 import type { EmployeeProfile } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
@@ -18,6 +17,8 @@ import { Eye, Search } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 import { InternProfileDetailDialog } from '@/components/dashboard/hrd/InternProfileDetailDialog';
+import { useHrdScopedCollection } from '@/hooks/useHrdScopedCollection';
+import { HrdScopeEmptyState } from '@/components/dashboard/hrd/HrdScopeEmptyState';
 
 function InternProfilesSkeleton() {
     return (
@@ -33,7 +34,6 @@ function InternProfilesSkeleton() {
 export default function ProfilMagangPage() {
   const { userProfile } = useAuth();
   const hasAccess = useRoleGuard(['hrd', 'super-admin']);
-  const firestore = useFirestore();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedProfile, setSelectedProfile] = useState<EmployeeProfile | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
@@ -44,22 +44,23 @@ export default function ProfilMagangPage() {
     return [];
   }, [userProfile]);
   
-  const profilesQuery = useMemoFirebase(
-    () => {
-        if (!hasAccess) return null; // Don't create query until access is confirmed
-        return query(collection(firestore, 'employee_profiles'), where('employmentType', '==', 'magang'));
-    },
-    [firestore, hasAccess] // Re-create query when hasAccess changes
-  );
-  
-  const { data: profiles, isLoading } = useCollection<EmployeeProfile>(profilesQuery);
+  const profileConstraints = useMemo(() => [where('employmentType', '==', 'magang')], []);
+  const {
+    data: profiles,
+    isLoading,
+    isScopeConfigured,
+    emptyStateMessage,
+  } = useHrdScopedCollection<EmployeeProfile>('employee_profiles', {
+    constraints: profileConstraints,
+    enabled: hasAccess,
+  });
   
   const filteredProfiles = useMemo(() => {
     if (!profiles) return [];
     const lowercasedSearch = searchTerm.toLowerCase();
-    return profiles.filter(p => 
+    return profiles.filter(p =>
         p.fullName.toLowerCase().includes(lowercasedSearch) ||
-        p.phone.includes(lowercasedSearch)
+        ((p as any).phone || '').includes(lowercasedSearch)
     ).sort((a, b) => (b.updatedAt?.toMillis() || 0) - (a.updatedAt?.toMillis() || 0));
   }, [profiles, searchTerm]);
 
@@ -70,6 +71,10 @@ export default function ProfilMagangPage() {
 
   if (!hasAccess) {
     return <DashboardLayout pageTitle="Profil Magang" menuConfig={menuConfig}><InternProfilesSkeleton /></DashboardLayout>;
+  }
+
+  if (!isScopeConfigured) {
+    return <DashboardLayout pageTitle="Profil Magang" menuConfig={menuConfig}><HrdScopeEmptyState message={emptyStateMessage} /></DashboardLayout>;
   }
 
   return (
@@ -105,9 +110,9 @@ export default function ProfilMagangPage() {
                             {filteredProfiles.length > 0 ? filteredProfiles.map(profile => (
                                 <TableRow key={profile.id}>
                                     <TableCell className="font-medium">{profile.fullName}</TableCell>
-                                    <TableCell className="capitalize">{profile.internSubtype === 'intern_education' ? 'Terikat Pendidikan' : 'Pra-Probation'}</TableCell>
-                                    <TableCell>{profile.schoolOrCampus}</TableCell>
-                                    <TableCell>{profile.phone}</TableCell>
+                                    <TableCell className="capitalize">{(profile as any).internSubtype === 'intern_education' ? 'Terikat Pendidikan' : 'Pra-Probation'}</TableCell>
+                                    <TableCell>{(profile as any).schoolOrCampus || '-'}</TableCell>
+                                    <TableCell>{(profile as any).phone || '-'}</TableCell>
                                     <TableCell>
                                         <Badge variant={profile.completeness?.isComplete ? 'default' : 'secondary'}>
                                             {profile.completeness?.isComplete ? 'Lengkap' : 'Draf'}

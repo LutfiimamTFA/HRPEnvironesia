@@ -55,6 +55,10 @@ import {
 } from "@/lib/attendance-methods";
 import { OvertimeStatusBadge } from "@/components/dashboard/karyawan/OvertimeStatusBadge";
 import { AttendanceMethodEditDialog } from "@/components/dashboard/hrd/AttendanceMethodEditDialog";
+import { HrdScopeEmptyState } from "@/components/dashboard/hrd/HrdScopeEmptyState";
+import { useHrdScopedBrands, useHrdScopedCollection } from "@/hooks/useHrdScopedCollection";
+import { useHrdScope } from "@/hooks/useHrdScope";
+import { canHrdAccessBrand } from "@/lib/hrd-scope";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -512,6 +516,12 @@ export default function EmployeeDetailPage({
   const firestore = useFirestore();
   const { toast } = useToast();
   const router = useRouter();
+  const {
+    scope: hrdScope,
+    isConfigured: isHrdScopeConfigured,
+    isSuperAdmin,
+    emptyStateMessage,
+  } = useHrdScope();
 
   const handleOpenSecureUrl = async (url?: string | null) => {
     try {
@@ -586,18 +596,11 @@ export default function EmployeeDetailPage({
       [firestore, employeeId],
     ),
   );
-  const { data: brands, isLoading: brandsLoading } = useCollection<Brand>(
-    useMemoFirebase(() => collection(firestore, "brands"), [firestore]),
-  );
+  const { data: brands, isLoading: brandsLoading } = useHrdScopedBrands();
 
   // Fetch attendance sites
   const { data: sitesData, isLoading: sitesLoading } =
-    useCollection<AttendanceSite>(
-      useMemoFirebase(
-        () => collection(firestore, "attendance_sites"),
-        [firestore]
-      )
-    );
+    useHrdScopedCollection<AttendanceSite>("attendance_sites");
 
   useEffect(() => {
     if (sitesData) {
@@ -617,15 +620,15 @@ export default function EmployeeDetailPage({
   const { data: historyData } = useCollection(historyQuery);
 
   // Overtime query
-  const overtimeQuery = useMemoFirebase(() => {
-    if (!employeeId) return null;
-    return query(
-      collection(firestore, "overtime_submissions"),
-      where("employeeUid", "==", employeeId)
-    );
-  }, [firestore, employeeId]);
+  const overtimeConstraints = useMemo(() => {
+    if (!employeeId) return [];
+    return [where("employeeUid", "==", employeeId)];
+  }, [employeeId]);
 
-  const { data: overtimeDataRaw } = useCollection<OvertimeSubmission>(overtimeQuery);
+  const { data: overtimeDataRaw } = useHrdScopedCollection<OvertimeSubmission>("overtime_submissions", {
+    constraints: overtimeConstraints,
+    enabled: Boolean(employeeId),
+  });
 
   // Client-side sort by overtimeDate desc
   const overtimeData = useMemo(() => {
@@ -651,6 +654,16 @@ export default function EmployeeDetailPage({
     );
     return norm;
   }, [empDoc, profileDoc, userDoc, brands, isLoading]);
+
+  const employeeBrandId = useMemo(() => {
+    const rawBrandId =
+      normalizedData?.brandId ||
+      profileDoc?.hrdEmploymentInfo?.brandId ||
+      profileDoc?.brandId ||
+      empDoc?.brandId ||
+      userDoc?.brandId;
+    return Array.isArray(rawBrandId) ? rawBrandId[0] : rawBrandId || null;
+  }, [empDoc?.brandId, normalizedData?.brandId, profileDoc?.brandId, profileDoc?.hrdEmploymentInfo?.brandId, userDoc?.brandId]);
 
   const hrdStruktur = useMemo(() => {
     if (isLoading) return null;
@@ -1836,6 +1849,10 @@ export default function EmployeeDetailPage({
 
   if (!hasAccess) return null;
 
+  if (!isHrdScopeConfigured) {
+    return <HrdScopeEmptyState message={emptyStateMessage} />;
+  }
+
   if (isLoading) {
     return (
       <>
@@ -1845,6 +1862,12 @@ export default function EmployeeDetailPage({
         </div>
         <Skeleton className="h-96 w-full" />
       </>
+    );
+  }
+
+  if (!isSuperAdmin && !canHrdAccessBrand(hrdScope, employeeBrandId)) {
+    return (
+      <HrdScopeEmptyState message="Anda tidak memiliki akses ke perusahaan karyawan ini." />
     );
   }
 

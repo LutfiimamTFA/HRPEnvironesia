@@ -40,10 +40,14 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { OvertimeApprovalStatusBadge } from "./OvertimeApprovalStatusBadge";
+import { useHrdScopedBrands, useHrdScopedCollection } from "@/hooks/useHrdScopedCollection";
+import { HrdScopeEmptyState } from "@/components/dashboard/hrd/HrdScopeEmptyState";
 
 interface OvertimeApprovalClientProps {
   mode: "manager" | "hrd";
 }
+
+type OvertimeSubmissionRecord = OvertimeSubmission & Record<string, any>;
 
 const workLocationLabels: Record<string, string> = {
   kantor: "Kantor",
@@ -55,7 +59,7 @@ const workLocationLabels: Record<string, string> = {
   site: "Site / Lokasi Klien",
 };
 
-const getWorkLocationDisplay = (submission: OvertimeSubmission) => {
+const getWorkLocationDisplay = (submission: OvertimeSubmissionRecord) => {
   const rawLocation =
     (submission as any).workLocation || submission.location || "kantor";
   const label =
@@ -67,7 +71,7 @@ const getWorkLocationDisplay = (submission: OvertimeSubmission) => {
 };
 
 export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
-  const { userProfile } = useAuth();
+  const { userProfile } = useAuth() as { userProfile: UserProfile };
   const firestore = useFirestore();
 
   const searchParams = useSearchParams();
@@ -87,6 +91,7 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
     | "rekap_payroll"
     | "all"
     | "riwayat_saya"
+    | "perlu_diproses"
   >(mode === "hrd" ? "pending_hrd" : "pending_coordinator");
   const [brandFilter, setBrandFilter] = useState("all");
   const [divisionFilter, setDivisionFilter] = useState("all");
@@ -99,7 +104,7 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
     "recent" | "duration" | "overtime_date"
   >("recent");
   const [selectedSubmission, setSelectedSubmission] =
-    useState<OvertimeSubmission | null>(null);
+    useState<OvertimeSubmissionRecord | null>(null);
   const [expandedEmployeeId, setExpandedEmployeeId] = useState<string | null>(
     null,
   );
@@ -332,7 +337,7 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
   const getOvertimeDate = (submission: OvertimeSubmission) =>
     parseSafeDate((submission as any).overtimeDate ?? submission.date) ?? null;
 
-  const submissionsQuery = useMemoFirebase(() => {
+  const managerSubmissionsQuery = useMemoFirebase(() => {
     if (!userProfile) return null;
 
     if (mode === "manager") {
@@ -347,32 +352,48 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
       );
     }
 
-    if (mode === "hrd") {
-      return query(
-        collection(firestore, "overtime_submissions"),
-        orderBy("submittedAt", "desc"),
-      );
-    }
-
     return null;
   }, [userProfile, firestore, mode]);
 
+  const hrdSubmissionConstraints = useMemo(
+    () => [orderBy("submittedAt", "desc")],
+    [],
+  );
   const {
-    data: submissions,
-    isLoading,
-    mutate,
-  } = useCollection<OvertimeSubmission>(submissionsQuery);
+    data: managerSubmissions,
+    isLoading: managerSubmissionsLoading,
+    mutate: mutateManagerSubmissions,
+  } = useCollection<OvertimeSubmissionRecord>(managerSubmissionsQuery);
+  const {
+    data: hrdSubmissions,
+    isLoading: hrdSubmissionsLoading,
+    mutate: mutateHrdSubmissions,
+    isScopeConfigured,
+    emptyStateMessage,
+  } = useHrdScopedCollection<OvertimeSubmissionRecord>("overtime_submissions", {
+    constraints: hrdSubmissionConstraints,
+    enabled: mode === "hrd",
+  });
+  const submissions = mode === "hrd" ? hrdSubmissions : managerSubmissions;
+  const isLoading = mode === "hrd" ? hrdSubmissionsLoading : managerSubmissionsLoading;
+  const mutate = mode === "hrd" ? mutateHrdSubmissions : mutateManagerSubmissions;
 
   // Fetch all brands dari master data
   const brandsQuery = useMemo(
-    () => query(collection(firestore, "brands")),
-    [firestore]
+    () => (mode === "manager" ? query(collection(firestore, "brands")) : null),
+    [firestore, mode]
   );
 
   const {
-    data: allBrands = [],
-    isLoading: brandsLoading,
+    data: managerBrands = [],
+    isLoading: managerBrandsLoading,
   } = useCollection<Brand>(brandsQuery);
+  const {
+    data: hrdBrands = [],
+    isLoading: hrdBrandsLoading,
+  } = useHrdScopedBrands();
+  const allBrands = mode === "hrd" ? hrdBrands : managerBrands;
+  const brandsLoading = mode === "hrd" ? hrdBrandsLoading : managerBrandsLoading;
 
   const brandOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -891,6 +912,10 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
     return false;
   };
 
+  if (mode === "hrd" && !isScopeConfigured) {
+    return <HrdScopeEmptyState message={emptyStateMessage} />;
+  }
+
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
@@ -1036,22 +1061,28 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
           >
             {mode === "hrd" && (
               <>
-                <Select
-                  value={brandFilter}
-                  onValueChange={(val) => setPersistedBrandFilter(val)}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Semua Brand" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Semua Brand</SelectItem>
-                    {brandOptions.map((brand) => (
-                      <SelectItem key={brand.value} value={brand.value}>
-                        {brand.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {brandOptions.length === 1 ? (
+                  <div className="w-full rounded-md border bg-background px-3 py-2 text-sm font-medium">
+                    Perusahaan: {brandOptions[0].label}
+                  </div>
+                ) : (
+                  <Select
+                    value={brandFilter}
+                    onValueChange={(val) => setPersistedBrandFilter(val)}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Semua Brand" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Semua Brand</SelectItem>
+                      {brandOptions.map((brand) => (
+                        <SelectItem key={brand.value} value={brand.value}>
+                          {brand.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
                 <Select
                   value={divisionFilter}
                   onValueChange={(val) => setPersistedDivisionFilter(val)}

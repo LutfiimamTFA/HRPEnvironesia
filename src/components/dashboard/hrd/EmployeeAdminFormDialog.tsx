@@ -69,6 +69,7 @@ import {
   EMPLOYMENT_STATUSES,
 } from "@/lib/types";
 import { Separator } from "@/components/ui/separator";
+import { useHrdScopedBrands, useHrdScopedCollection } from "@/hooks/useHrdScopedCollection";
 
 const isDirectionLevel = (positionTitle?: string, role?: string) => {
   if (!positionTitle && !role) return false;
@@ -138,9 +139,7 @@ export function EmployeeAdminFormDialog({
     ),
   );
 
-  const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(
-    useMemoFirebase(() => collection(firestore, "brands"), [firestore]),
-  );
+  const { data: brands, isLoading: isLoadingBrands } = useHrdScopedBrands();
 
   const form = useForm<AdminFormValues>({
     resolver: zodResolver(adminFormSchema),
@@ -163,35 +162,33 @@ export function EmployeeAdminFormDialog({
   const selectedBrandId = form.watch("brandId");
   const selectedPositionTitle = form.watch("positionTitle");
   const isDirector = isDirectionLevel(selectedPositionTitle, user?.role);
+  const supervisorConstraints = useMemo(
+    () => [
+      where("role", "in", ["manager", "karyawan"]),
+      where("isActive", "==", true),
+    ],
+    [],
+  );
+  const managementConstraints = useMemo(
+    () => [
+      where("structuralLevel", "==", "management"),
+      where("isActive", "==", true),
+    ],
+    [],
+  );
 
   // Fetch supervisors: managers, management/directors, and super-admins
   // We'll filter and sort them based on their relevance to the employee's brand/division
   const { data: supervisors, isLoading: isLoadingSupervisors } =
-    useCollection<UserProfile>(
-      useMemoFirebase(
-        () =>
-          query(
-            collection(firestore, "users"),
-            where("role", "in", ["manager", "hrd", "super-admin", "director", "direktur", "direksi"]),
-            where("isActive", "==", true),
-          ),
-        [firestore],
-      ),
-    );
+    useHrdScopedCollection<UserProfile>("users", {
+      constraints: supervisorConstraints,
+    });
 
   // Also fetch all management-level users for scope matching
   const { data: managementUsers, isLoading: isLoadingManagement } =
-    useCollection<UserProfile>(
-      useMemoFirebase(
-        () =>
-          query(
-            collection(firestore, "users"),
-            where("structuralLevel", "==", "management"),
-            where("isActive", "==", true),
-          ),
-        [firestore],
-      ),
-    );
+    useHrdScopedCollection<UserProfile>("users", {
+      constraints: managementConstraints,
+    });
 
   const { data: divisions, isLoading: isLoadingDivisions } =
     useCollection<Division>(

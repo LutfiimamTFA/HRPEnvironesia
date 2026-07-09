@@ -33,11 +33,13 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { UserProfile, ROLES, UserRole } from "@/lib/types";
+import { UserProfile, ROLES, UserRole, Brand } from "@/lib/types";
 import { Loader2, Eye, EyeOff, RefreshCw, Copy, Check } from "lucide-react";
-import { useFirestore } from "@/firebase";
+import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
 import { useAuth } from "@/providers/auth-provider";
-import { doc, getDoc, serverTimestamp, writeBatch } from "firebase/firestore";
+import { collection, deleteField, doc, getDoc, serverTimestamp, writeBatch } from "firebase/firestore";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 const creatableRoles: UserRole[] = ["hrd", "manager", "karyawan"];
 const allRolesForEdit: UserRole[] = [
@@ -48,7 +50,7 @@ const allRolesForEdit: UserRole[] = [
   "kandidat",
 ];
 
-const roleDescriptions: Record<UserRole, string> = {
+const roleDescriptions: Record<string, string> = {
   "super-admin": "Akses penuh sistem dan manajemen user",
   hrd: "Pengelola data karyawan, cuti, izin, dan approval",
   manager: "Atasan yang memberi approval untuk tim mereka",
@@ -68,6 +70,8 @@ const createSchema = z
     role: z.enum(ROLES),
     isActive: z.boolean().default(true),
     adminNotes: z.string().optional(),
+    hrdScopeType: z.enum(["selected_companies", "all_companies"]).default("selected_companies"),
+    hrdAllowedBrandIds: z.array(z.string()).default([]),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: "Password dan konfirmasi password harus sama",
@@ -80,9 +84,14 @@ const editSchema = z.object({
   role: z.enum(ROLES),
   isActive: z.boolean().default(true),
   adminNotes: z.string().optional(),
+  hrdScopeType: z.enum(["selected_companies", "all_companies"]).default("selected_companies"),
+  hrdAllowedBrandIds: z.array(z.string()).default([]),
 });
 
-type FormValues = z.infer<typeof createSchema> | z.infer<typeof editSchema>;
+type FormValues = z.infer<typeof editSchema> & {
+  password?: string;
+  confirmPassword?: string;
+};
 
 // Utility function to generate random password
 function generateRandomPassword(length: number = 12): string {
@@ -112,13 +121,17 @@ export function UserFormDialog({
   const [inventoryAccessActive, setInventoryAccessActive] = useState(false);
   const [loadingInventoryAccess, setLoadingInventoryAccess] = useState(false);
   const [savingInventoryAccess, setSavingInventoryAccess] = useState(false);
+  const [loadingHrdScope, setLoadingHrdScope] = useState(false);
   const { firebaseUser } = useAuth();
   const firestore = useFirestore();
   const { toast } = useToast();
   const mode = user ? "edit" : "create";
 
-  const form = useForm({
-    resolver: zodResolver(mode === "create" ? createSchema : editSchema),
+  const brandsRef = useMemoFirebase(() => collection(firestore, "brands"), [firestore]);
+  const { data: brands, isLoading: loadingBrands } = useCollection<Brand>(brandsRef);
+
+  const form = useForm<FormValues>({
+    resolver: zodResolver(mode === "create" ? createSchema : editSchema) as any,
   });
 
   const role = form.watch("role");
@@ -134,6 +147,8 @@ export function UserFormDialog({
               role: user.role,
               isActive: user.isActive,
               adminNotes: "",
+              hrdScopeType: user.hrdScope?.scopeType || "selected_companies",
+              hrdAllowedBrandIds: user.hrdScope?.allowedBrandIds || [],
             }
           : {
               fullName: "",
@@ -143,10 +158,32 @@ export function UserFormDialog({
               role: "karyawan",
               isActive: true,
               adminNotes: "",
+              hrdScopeType: "selected_companies",
+              hrdAllowedBrandIds: [],
             };
       form.reset(defaultValues as any);
     }
   }, [user, open, mode, form]);
+
+  useEffect(() => {
+    if (!open || mode !== "edit" || !user || user.role !== "hrd") {
+      setLoadingHrdScope(false);
+      return;
+    }
+
+    setLoadingHrdScope(true);
+    getDoc(doc(firestore, "roles_hrd", user.uid))
+      .then((snap) => {
+        const data = snap.exists() ? snap.data() : user.hrdScope;
+        form.setValue("hrdScopeType", data?.scopeType === "all_companies" ? "all_companies" : "selected_companies");
+        form.setValue("hrdAllowedBrandIds", Array.isArray(data?.allowedBrandIds) ? data.allowedBrandIds : []);
+      })
+      .catch(() => {
+        form.setValue("hrdScopeType", user.hrdScope?.scopeType || "selected_companies");
+        form.setValue("hrdAllowedBrandIds", user.hrdScope?.allowedBrandIds || []);
+      })
+      .finally(() => setLoadingHrdScope(false));
+  }, [open, mode, user, firestore, form]);
 
   // Inventory Admin is a separate access flag (inventory_access/{uid}), not part
   // of the user's main HRP role — load its current status independently.
@@ -195,6 +232,19 @@ export function UserFormDialog({
     }
   }
 
+  const buildHrdScopePayload = (values: FormValues) => {
+    const scopeType = (values as any).hrdScopeType === "all_companies" ? "all_companies" : "selected_companies";
+    const selectedIds = scopeType === "all_companies" ? [] : ((values as any).hrdAllowedBrandIds || []);
+    const brandNameMap = new Map((brands || []).map((brand) => [brand.id, brand.name]));
+    return {
+      scopeType,
+      allowedBrandIds: selectedIds,
+      allowedBrandNames: selectedIds
+        .map((brandId: string) => brandNameMap.get(brandId) || brandId)
+        .filter(Boolean),
+    };
+  };
+
   const cleanCreatePayload = (values: FormValues) => {
     const payload: any = {
       fullName: values.fullName,
@@ -203,6 +253,10 @@ export function UserFormDialog({
       role: values.role,
       isActive: values.isActive,
     };
+
+    if (values.role === "hrd") {
+      payload.hrdScope = buildHrdScopePayload(values);
+    }
 
     Object.keys(payload).forEach((key) => {
       if (payload[key] === undefined || payload[key] === null || payload[key] === "") {
@@ -243,13 +297,24 @@ export function UserFormDialog({
     const adminRoleRef = doc(firestore, "roles_admin", user.uid);
     const hrdRoleRef = doc(firestore, "roles_hrd", user.uid);
 
-    const dataToUpdate: Partial<UserProfile> = {
+    const dataToUpdate: Record<string, any> = {
       fullName: values.fullName,
       nameLower: values.fullName.toLowerCase(),
       role: values.role,
       isActive: values.isActive,
       updatedAt: serverTimestamp(),
     };
+
+    if (values.role === "hrd") {
+      dataToUpdate.hrdScope = {
+        ...buildHrdScopePayload(values),
+        updatedAt: serverTimestamp(),
+        updatedBy: firebaseUser?.uid || null,
+      };
+    } else {
+      dataToUpdate.hrdScope = deleteField();
+    }
+
     batch.update(userRef, dataToUpdate);
 
     if (values.role === "super-admin") {
@@ -259,7 +324,15 @@ export function UserFormDialog({
     }
 
     if (values.role === "hrd") {
-      batch.set(hrdRoleRef, { role: "hrd" });
+      const scopePayload = buildHrdScopePayload(values);
+      batch.set(hrdRoleRef, {
+        uid: user.uid,
+        role: "hrd",
+        ...scopePayload,
+        active: values.isActive,
+        updatedAt: serverTimestamp(),
+        updatedBy: firebaseUser?.uid || null,
+      });
     } else {
       batch.delete(hrdRoleRef);
     }
@@ -299,11 +372,15 @@ export function UserFormDialog({
   };
 
   const handleCopyPassword = () => {
-    const pwd = form.getValues("password");
+    const pwd = form.getValues("password") || "";
     navigator.clipboard.writeText(pwd);
     setCopiedPassword(true);
     setTimeout(() => setCopiedPassword(false), 2000);
   };
+
+  const selectedHrdBrandIds = (form.watch("hrdAllowedBrandIds") || []) as string[];
+  const hrdScopeType = form.watch("hrdScopeType");
+  const showHrdScopeSettings = role === "hrd";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -533,6 +610,106 @@ export function UserFormDialog({
                     </FormItem>
                   )}
                 />
+
+                {showHrdScopeSettings && (
+                  <Card className="bg-muted/30">
+                    <CardContent className="pt-4 space-y-4">
+                      <div className="space-y-1">
+                        <label className="font-semibold text-sm">Akses Perusahaan HRD</label>
+                        <p className="text-xs text-muted-foreground">
+                          Pengaturan ini hanya bisa diubah oleh Super Admin dan menjadi dasar pembatasan data HRD.
+                        </p>
+                      </div>
+
+                      <FormField
+                        control={form.control}
+                        name="hrdScopeType"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="font-semibold text-sm">Jenis Akses</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value || "selected_companies"}>
+                              <FormControl>
+                                <SelectTrigger className="h-10">
+                                  <SelectValue />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="selected_companies">Perusahaan Tertentu</SelectItem>
+                                <SelectItem value="all_companies">Semua Perusahaan</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormDescription className="text-xs">
+                              Default HRD baru adalah Perusahaan Tertentu.
+                            </FormDescription>
+                          </FormItem>
+                        )}
+                      />
+
+                      {hrdScopeType !== "all_companies" && (
+                        <FormField
+                          control={form.control}
+                          name="hrdAllowedBrandIds"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="font-semibold text-sm">Checklist Perusahaan/Brand</FormLabel>
+                              <div className="max-h-56 overflow-y-auto rounded-lg border bg-background p-3">
+                                {loadingBrands || loadingHrdScope ? (
+                                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    Memuat perusahaan...
+                                  </div>
+                                ) : (brands || []).length === 0 ? (
+                                  <p className="text-sm text-muted-foreground">Belum ada data perusahaan/brand.</p>
+                                ) : (
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                    {(brands || [])
+                                      .slice()
+                                      .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+                                      .map((brand) => {
+                                        const brandId = brand.id;
+                                        if (!brandId) return null;
+                                        const checked = selectedHrdBrandIds.includes(brandId);
+                                        return (
+                                          <label
+                                            key={brandId}
+                                            className="flex items-start gap-2 rounded-md border p-2 text-sm hover:bg-muted/50"
+                                          >
+                                            <Checkbox
+                                              checked={checked}
+                                              onCheckedChange={(isChecked) => {
+                                                const current = Array.isArray(field.value) ? field.value : [];
+                                                field.onChange(
+                                                  isChecked
+                                                    ? Array.from(new Set([...current, brandId]))
+                                                    : current.filter((id: string) => id !== brandId),
+                                                );
+                                              }}
+                                            />
+                                            <span className="leading-tight">
+                                              <span className="block font-medium">{brand.name || brandId}</span>
+                                              <span className="block text-[11px] text-muted-foreground">{brandId}</span>
+                                            </span>
+                                          </label>
+                                        );
+                                      })}
+                                  </div>
+                                )}
+                              </div>
+                              {selectedHrdBrandIds.length === 0 && (
+                                <Alert className="border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                                  <AlertDescription className="text-xs">
+                                    HRD ini belum memiliki akses perusahaan. Dia tidak akan dapat melihat data sampai akses diatur.
+                                  </AlertDescription>
+                                </Alert>
+                              )}
+                              <FormMessage className="text-xs" />
+                            </FormItem>
+                          )}
+                        />
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
               </div>
 
               {/* Section 2b: Akses Tambahan (Inventory Admin) — terpisah dari role utama HRP */}

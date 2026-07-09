@@ -17,6 +17,9 @@ import type { JobApplication, Job, UserProfile, Brand } from '@/lib/types';
 import { Skeleton } from '../ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { getApplicationFilterStage } from '@/lib/recruitment/application-stage';
+import { useHrdScopedBrands, useHrdScopedCollection } from '@/hooks/useHrdScopedCollection';
+import { HrdScopeEmptyState } from '@/components/dashboard/hrd/HrdScopeEmptyState';
+import { useAuth } from '@/providers/auth-provider';
 
 export type FilterState = {
   dateRange: { from?: Date | null; to?: Date | null };
@@ -41,23 +44,27 @@ function DashboardSkeleton() {
 
 export function RecruitmentDashboardClient() {
     const firestore = useFirestore();
+    const { userProfile } = useAuth();
     const { toast } = useToast();
     const [view, setView] = useState('overview');
     const [candidateViewMode, setCandidateViewMode] = useState<'table' | 'kanban'>('table');
     
     // Data Fetching
-    const { data: applications, isLoading: isLoadingApps } = useCollection<JobApplication>(
-        useMemoFirebase(() => collection(firestore, 'applications'), [firestore])
-    );
-    const { data: jobs, isLoading: isLoadingJobs } = useCollection<Job>(
-        useMemoFirebase(() => collection(firestore, 'jobs'), [firestore])
-    );
-    const { data: recruiters, isLoading: isLoadingRecruiters } = useCollection<UserProfile>(
-        useMemoFirebase(() => query(collection(firestore, 'users'), where('role', 'in', ['hrd', 'super-admin'])), [firestore])
-    );
-    const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(
-        useMemoFirebase(() => collection(firestore, 'brands'), [firestore])
-    );
+    const {
+        data: applications,
+        isLoading: isLoadingApps,
+        isScopeConfigured,
+        emptyStateMessage,
+    } = useHrdScopedCollection<JobApplication>('applications');
+    const { data: jobs, isLoading: isLoadingJobs } = useHrdScopedCollection<Job>('jobs');
+    const recruiterConstraints = useMemo(() => {
+        if (userProfile?.role === 'super-admin') return [where('role', 'in', ['hrd', 'super-admin'])];
+        return [where('role', 'in', ['manager', 'karyawan']), where('isActive', '==', true)];
+    }, [userProfile?.role]);
+    const { data: recruiters, isLoading: isLoadingRecruiters } = useHrdScopedCollection<UserProfile>('users', {
+        constraints: recruiterConstraints,
+    });
+    const { data: brands, isLoading: isLoadingBrands } = useHrdScopedBrands();
 
     const [filters, setFilters] = useState<FilterState>({
         dateRange: { from: null, to: null },
@@ -105,6 +112,10 @@ export function RecruitmentDashboardClient() {
 
     if (isLoading) {
         return <DashboardSkeleton />;
+    }
+
+    if (!isScopeConfigured) {
+        return <HrdScopeEmptyState message={emptyStateMessage} />;
     }
 
     return (

@@ -59,6 +59,8 @@ import { PermissionStatusBadge } from "@/components/dashboard/karyawan/Permissio
 import { ReviewPermissionDialog } from "./ReviewPermissionDialog";
 import { PermissionImpactSummary } from "./PermissionImpactSummary";
 import { cn } from "@/lib/utils";
+import { useHrdScopedBrands, useHrdScopedCollection } from "@/hooks/useHrdScopedCollection";
+import { HrdScopeEmptyState } from "@/components/dashboard/hrd/HrdScopeEmptyState";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -68,6 +70,8 @@ type ManagerTab =
   | "rejected_by_me"
   | "revision_by_me"
   | "all";
+
+type PermissionRequestRecord = PermissionRequest & Record<string, any>;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -336,7 +340,7 @@ function getHumanStatusLabel(s: PermissionRequest): string {
     case "returned":
       return "Sudah Kembali (Menunggu Verifikasi)";
     default:
-      return s.status.replace(/_/g, " ");
+      return String((s as any).status || "").replace(/_/g, " ");
   }
 }
 
@@ -390,7 +394,7 @@ export function PermissionApprovalClient({
   const [waitingForFilter, setWaitingForFilter] = useState("");
 
   const [selectedSubmission, setSelectedSubmission] =
-    useState<PermissionRequest | null>(null);
+    useState<PermissionRequestRecord | null>(null);
 
   // HRD tab state
   type HrdTab = "validation_needed" | "manager_process" | "impact_summary" | "history";
@@ -433,28 +437,27 @@ export function PermissionApprovalClient({
     firestore,
   ]);
 
-  const hrdQuery = useMemoFirebase(() => {
-    if (mode !== "hrd") return null;
-    return query(collection(firestore, "permission_requests"));
-  }, [firestore, mode]);
-
   const {
     data: byManagerUid,
     isLoading: l1,
     mutate: m1,
-  } = useCollection<PermissionRequest>(byManagerUidQuery);
+  } = useCollection<PermissionRequestRecord>(byManagerUidQuery);
   const {
     data: byWaitingFor,
     isLoading: l2,
     mutate: m2,
-  } = useCollection<PermissionRequest>(byWaitingForUidQuery);
+  } = useCollection<PermissionRequestRecord>(byWaitingForUidQuery);
   const { data: byDivBrand, mutate: m3 } =
-    useCollection<PermissionRequest>(legacyDivBrandQuery);
+    useCollection<PermissionRequestRecord>(legacyDivBrandQuery);
   const {
     data: hrdData,
     isLoading: l4,
     mutate: m4,
-  } = useCollection<PermissionRequest>(hrdQuery);
+    isScopeConfigured,
+    emptyStateMessage,
+  } = useHrdScopedCollection<PermissionRequestRecord>("permission_requests", {
+    enabled: mode === "hrd",
+  });
 
   // Combined raw submissions (deduped)
   const combinedRaw = useMemo(() => {
@@ -481,21 +484,37 @@ export function PermissionApprovalClient({
   };
 
   // Load employee profiles and users to enrich legacy submissions
-  const { data: employeeProfiles } = useCollection<EmployeeProfile>(
+  const { data: managerEmployeeProfiles } = useCollection<EmployeeProfile>(
     useMemoFirebase(
-      () => collection(firestore, "employee_profiles"),
-      [firestore],
+      () => (mode === "manager" ? collection(firestore, "employee_profiles") : null),
+      [firestore, mode],
     ),
   );
-  const { data: usersList } = useCollection<any>(
-    useMemoFirebase(() => collection(firestore, "users"), [firestore]),
+  const { data: hrdEmployeeProfiles } = useHrdScopedCollection<EmployeeProfile>("employee_profiles", {
+    enabled: mode === "hrd",
+  });
+  const employeeProfiles = mode === "hrd" ? hrdEmployeeProfiles : managerEmployeeProfiles;
+
+  const { data: managerUsersList } = useCollection<any>(
+    useMemoFirebase(() => (mode === "manager" ? collection(firestore, "users") : null), [firestore, mode]),
   );
+  const hrdUserConstraints = useMemo(
+    () => [where("role", "in", ["karyawan", "manager"]), where("isActive", "==", true)],
+    [],
+  );
+  const { data: hrdUsersList } = useHrdScopedCollection<any>("users", {
+    constraints: hrdUserConstraints,
+    enabled: mode === "hrd",
+  });
+  const usersList = mode === "hrd" ? hrdUsersList : managerUsersList;
 
   // ── Supporting data ───────────────────────────────────────────────────────
 
-  const { data: brandsList } = useCollection<Brand>(
-    useMemoFirebase(() => collection(firestore, "brands"), [firestore]),
+  const { data: managerBrandsList } = useCollection<Brand>(
+    useMemoFirebase(() => (mode === "manager" ? collection(firestore, "brands") : null), [firestore, mode]),
   );
+  const { data: hrdBrandsList } = useHrdScopedBrands();
+  const brandsList = mode === "hrd" ? hrdBrandsList : managerBrandsList;
 
   // Load divisions from each brand's subcollection
   const divisionsMapByBrand = useMemo(() => {
@@ -533,7 +552,7 @@ export function PermissionApprovalClient({
         (ep as any)?.position ||
         (ep as any)?.jobTitle ||
         (ep as any)?.roleName ||
-        ep?.hrdEmploymentInfo?.positionName ||
+        (ep?.hrdEmploymentInfo as any)?.positionName ||
         ep?.hrdEmploymentInfo?.jabatan ||
         user?.positionTitle ||
         user?.roleName ||
@@ -583,7 +602,7 @@ export function PermissionApprovalClient({
         _resolvedApplicantBrand: brand || null,
         _enrichedEmployeeProfile: ep || null,
         _enrichedUserProfile: user || null,
-      } as PermissionRequest & {
+      } as PermissionRequestRecord & {
         _resolvedApplicantPosition?: string | null;
         _resolvedApplicantDivision?: string | null;
         _resolvedApplicantBrand?: string | null;
@@ -1200,6 +1219,10 @@ export function PermissionApprovalClient({
 
   const colSpan = mode === "manager" ? 8 : 10;
 
+  if (mode === "hrd" && !isScopeConfigured) {
+    return <HrdScopeEmptyState message={emptyStateMessage} />;
+  }
+
   return (
     <div className="space-y-6">
       {/* ── KPI Cards ── */}
@@ -1497,19 +1520,25 @@ export function PermissionApprovalClient({
                 </Select>
 
                 {/* Brand */}
-                <Select value={brandFilter} onValueChange={setBrandFilter}>
-                  <SelectTrigger className="w-[140px] h-9 text-sm bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white">
-                    <SelectValue placeholder="Brand" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                    <SelectItem value="all">Semua Brand</SelectItem>
-                    {brandsList?.map((b: Brand) => (
-                      <SelectItem key={b.id} value={b.id!}>
-                        {b.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {(brandsList?.length || 0) === 1 ? (
+                  <div className="h-9 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-200">
+                    Perusahaan: {brandsList?.[0]?.name || brandsList?.[0]?.id}
+                  </div>
+                ) : (
+                  <Select value={brandFilter} onValueChange={setBrandFilter}>
+                    <SelectTrigger className="w-[140px] h-9 text-sm bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white">
+                      <SelectValue placeholder="Brand" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+                      <SelectItem value="all">Semua Brand</SelectItem>
+                      {brandsList?.map((b: Brand) => (
+                        <SelectItem key={b.id} value={b.id!}>
+                          {b.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
 
                 {/* Divisi */}
                 <Select
@@ -1732,12 +1761,12 @@ export function PermissionApprovalClient({
                     <TableHead className="w-[175px] text-slate-600 dark:text-slate-400 font-semibold">Pengaju</TableHead>
                     <TableHead className="w-[190px] text-slate-600 dark:text-slate-400 font-semibold">Izin</TableHead>
                     <TableHead className="w-[140px] text-slate-600 dark:text-slate-400 font-semibold">Periode</TableHead>
-                    {mode === "hrd" && (
+                    {(mode as string) === "hrd" && (
                       <TableHead className="w-[140px] text-slate-600 dark:text-slate-400 font-semibold">Brand / Divisi</TableHead>
                     )}
                     <TableHead className="w-[165px] text-slate-600 dark:text-slate-400 font-semibold">Keterangan</TableHead>
                     <TableHead className="w-[90px] text-slate-600 dark:text-slate-400 font-semibold">Lampiran</TableHead>
-                    {mode === "hrd" && (
+                    {(mode as string) === "hrd" && (
                       <TableHead className="w-[130px] text-slate-600 dark:text-slate-400 font-semibold">Tahap</TableHead>
                     )}
                     <TableHead className="w-[185px] text-slate-600 dark:text-slate-400 font-semibold">Status</TableHead>
@@ -1778,7 +1807,7 @@ export function PermissionApprovalClient({
                         isHrdValidationPhase(s) && !isFinalStatus(s.status);
 
                       let rowClass = "bg-white dark:bg-slate-950/20 border-b border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900/20";
-                      if (mode === "hrd") {
+                      if ((mode as string) === "hrd") {
                         if (isHrdActionable) {
                           rowClass =
                             "bg-teal-50 dark:bg-teal-950/20 border-l-2 border-l-teal-500 border-b border-slate-200 dark:border-slate-800 hover:bg-teal-100/50 dark:hover:bg-teal-950/30";
@@ -1901,7 +1930,7 @@ export function PermissionApprovalClient({
                           </TableCell>
 
                           {/* Brand / Divisi (HRD only) */}
-                          {mode === "hrd" && (
+                          {(mode as string) === "hrd" && (
                             <TableCell>
                               <p className="text-sm font-medium text-slate-900 dark:text-white">
                                 {s._resolvedApplicantBrand || s.brandName || "—"}
@@ -1947,7 +1976,7 @@ export function PermissionApprovalClient({
                           </TableCell>
 
                           {/* Tahap (HRD only) */}
-                          {mode === "hrd" && (
+                          {(mode as string) === "hrd" && (
                             <TableCell>
                               {(() => {
                                 const tahap = getTahapLabel(s);
@@ -2067,7 +2096,7 @@ export function PermissionApprovalClient({
                                 "outline";
                               let btnClass = "";
 
-                              if (mode === "hrd") {
+                              if ((mode as string) === "hrd") {
                                 if (isHrdActionable) {
                                   btnText = "Validasi";
                                   btnVariant = "default";

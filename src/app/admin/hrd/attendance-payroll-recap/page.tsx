@@ -31,7 +31,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
-import { collection, collectionGroup } from "firebase/firestore";
+import { collection, collectionGroup, where } from "firebase/firestore";
 import { format, eachDayOfInterval } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
 import { Download, AlertCircle, RotateCcw, CalendarDays, Info, Eye, FileSpreadsheet, Clock, MapPin, Briefcase } from "lucide-react";
@@ -52,6 +52,8 @@ import {
   type LeaveDetail,
 } from "@/lib/payroll-recap";
 import { Badge } from "@/components/ui/badge";
+import { useHrdScopedBrands, useHrdScopedCollection } from "@/hooks/useHrdScopedCollection";
+import { HrdScopeEmptyState } from "@/components/dashboard/hrd/HrdScopeEmptyState";
 
 const PERIOD_MODES: Array<{ value: PeriodMode; label: string }> = [
   { value: "payroll", label: "Periode Payroll (26–25)" },
@@ -619,53 +621,35 @@ export default function RekapAbsensiPayrollPage() {
   // session is what actually matters for quota at 300+ concurrent users; a
   // limit() here would silently truncate the recap instead of fixing anything.
   const { data: employeeProfiles, isLoading: loadingProfiles, mutate: refetchProfiles } =
-    useCollection<EmployeeProfile>(
-      useMemoFirebase(() => collection(firestore, "employee_profiles"), [firestore]),
-      { realtime: false },
-    );
+    useHrdScopedCollection<EmployeeProfile>("employee_profiles", { realtime: false });
 
+  const userConstraints = useMemo(
+    () => [where("role", "in", ["karyawan", "manager"]), where("isActive", "==", true)],
+    [],
+  );
   const { data: users, isLoading: loadingUsers, mutate: refetchUsers } =
-    useCollection<any>(
-      useMemoFirebase(() => collection(firestore, "users"), [firestore]),
-      { realtime: false },
-    );
+    useHrdScopedCollection<any>("users", { constraints: userConstraints, realtime: false });
 
   const { data: employeesDocs, isLoading: loadingEmployeesDocs, mutate: refetchEmployeesDocs } =
-    useCollection<any>(
-      useMemoFirebase(() => collection(firestore, "employees"), [firestore]),
-      { realtime: false },
-    );
+    useHrdScopedCollection<any>("employees", { realtime: false });
 
-  const { data: brands, mutate: refetchBrands } = useCollection<Brand>(
-    useMemoFirebase(() => collection(firestore, "brands"), [firestore]),
-    { realtime: false },
-  );
+  const { data: brands, mutate: refetchBrands } = useHrdScopedBrands();
 
   const { data: attendanceEvents, isLoading: loadingAttendance, mutate: refetchAttendance } =
-    useCollection<any>(
-      useMemoFirebase(() => collection(firestore, "attendance_events"), [firestore]),
-      { realtime: false },
-    );
+    useHrdScopedCollection<any>("attendance_events", { realtime: false });
 
-  const { data: attendanceSites, mutate: refetchAttendanceSites } = useCollection<any>(
-    useMemoFirebase(() => collection(firestore, "attendance_sites"), [firestore]),
-    { realtime: false },
-  );
+  const { data: attendanceSites, mutate: refetchAttendanceSites } = useHrdScopedCollection<any>("attendance_sites", { realtime: false });
 
-  const { data: permissionRequests, mutate: refetchPermissionRequests } = useCollection<any>(
-    useMemoFirebase(() => collection(firestore, "permission_requests"), [firestore]),
-    { realtime: false },
-  );
+  const { data: permissionRequests, mutate: refetchPermissionRequests } = useHrdScopedCollection<any>("permission_requests", { realtime: false });
 
-  const { data: leaveRequests, mutate: refetchLeaveRequests } = useCollection<any>(
-    useMemoFirebase(() => collection(firestore, "leave_requests"), [firestore]),
-    { realtime: false },
-  );
+  const { data: leaveRequests, mutate: refetchLeaveRequests } = useHrdScopedCollection<any>("leave_requests", { realtime: false });
 
-  const { data: businessTripMissions, mutate: refetchBusinessTripMissions } = useCollection<any>(
-    useMemoFirebase(() => collection(firestore, "business_trip_missions"), [firestore]),
-    { realtime: false },
-  );
+  const {
+    data: businessTripMissions,
+    mutate: refetchBusinessTripMissions,
+    isScopeConfigured,
+    emptyStateMessage,
+  } = useHrdScopedCollection<any>("business_trip_missions", { realtime: false });
 
   const { data: businessTripMembers, mutate: refetchBusinessTripMembers } = useCollection<any>(
     useMemoFirebase(() => collectionGroup(firestore, "members"), [firestore]),
@@ -898,6 +882,14 @@ export default function RekapAbsensiPayrollPage() {
     return <DashboardLayout pageTitle="Rekap Absensi Payroll"><Skeleton className="h-[600px] w-full" /></DashboardLayout>;
   }
 
+  if (!isScopeConfigured) {
+    return (
+      <DashboardLayout pageTitle="Rekap Absensi Payroll">
+        <HrdScopeEmptyState message={emptyStateMessage} />
+      </DashboardLayout>
+    );
+  }
+
   return (
     <DashboardLayout pageTitle="Rekap Absensi Payroll">
       <div className="space-y-5">
@@ -988,15 +980,21 @@ export default function RekapAbsensiPayrollPage() {
 
               <div>
                 <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1.5">Brand</label>
-                <Select value={selectedBrand} onValueChange={setSelectedBrand}>
-                  <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Semua Brand</SelectItem>
-                    {brands?.map(b => (
-                      <SelectItem key={b.id} value={b.id || ""}>{b.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {(brands?.length || 0) === 1 ? (
+                  <div className="h-9 rounded-md border bg-background px-3 py-2 text-sm font-medium">
+                    Perusahaan: {brands?.[0]?.name || brands?.[0]?.id}
+                  </div>
+                ) : (
+                  <Select value={selectedBrand} onValueChange={setSelectedBrand}>
+                    <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Semua Brand</SelectItem>
+                      {brands?.map(b => (
+                        <SelectItem key={b.id} value={b.id || ""}>{b.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
 
               <div>
