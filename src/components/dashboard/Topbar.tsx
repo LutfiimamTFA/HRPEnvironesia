@@ -220,11 +220,22 @@ export function Topbar({ pageTitle, actionArea }: TopbarProps) {
       !["hrd", "super-admin"].includes(userProfile.role)
     )
       return null;
+    // HRD is split per-brand — never list every HRD's notifications, only
+    // the ones addressed to this specific HRD. Super Admin keeps full
+    // visibility (no recipientUid filter; allowed via isSuperAdmin() rule).
+    if (userProfile.role === "super-admin") {
+      return query(
+        collection(firestore, "hrd_notifications"),
+        where("isRead", "==", false),
+      );
+    }
+    if (!userProfile.uid) return null;
     return query(
       collection(firestore, "hrd_notifications"),
+      where("recipientUid", "==", userProfile.uid),
       where("isRead", "==", false),
     );
-  }, [userProfile?.role, firestore]);
+  }, [userProfile?.role, userProfile?.uid, firestore]);
   const { data: hrdUnreadNotifications } =
     useCollection<Notification>(hrdUnreadNotifsQuery);
 

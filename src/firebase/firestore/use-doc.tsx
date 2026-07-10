@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { getAuth } from "firebase/auth";
 import {
   DocumentReference,
@@ -62,9 +62,16 @@ export function useDoc<T = any>(
   const [pausedUntil, setPausedUntil] = useState(0);
   const isPaused = pausedUntil > Date.now();
 
+  // Anti-flicker ("keep previous data"): once the doc has resolved at least
+  // once, a later re-subscribe (docRef identity changed) doesn't flip
+  // `isLoading` back to true — the UI keeps the last good value in place
+  // until the new snapshot arrives. Resets when the ref becomes null (e.g.
+  // after logout), so the next real doc starts a fresh "loading" state.
+  const hasLoadedOnceRef = useRef(false);
+
   const fetchData = useCallback(async () => {
     if (!memoizedDocRef) return;
-    setIsLoading(true);
+    if (!hasLoadedOnceRef.current) setIsLoading(true);
     try {
       const docSnap = await getDoc(memoizedDocRef);
       if (docSnap.exists()) {
@@ -73,6 +80,7 @@ export function useDoc<T = any>(
         setData(null);
       }
       setError(null);
+      hasLoadedOnceRef.current = true;
     } catch (e: any) {
       setError(e);
       if (e?.code === "resource-exhausted") {
@@ -85,6 +93,7 @@ export function useDoc<T = any>(
 
   useEffect(() => {
     if (!memoizedDocRef) {
+      hasLoadedOnceRef.current = false;
       setData(null);
       setError(null);
       setIsLoading(false);
@@ -96,7 +105,7 @@ export function useDoc<T = any>(
       return;
     }
 
-    setIsLoading(true);
+    if (!hasLoadedOnceRef.current) setIsLoading(true);
     setError(null);
 
     let unsubscribe: (() => void) | undefined;
@@ -111,6 +120,7 @@ export function useDoc<T = any>(
         }
         setError(null);
         setIsLoading(false);
+        hasLoadedOnceRef.current = true;
       },
       (error: FirestoreError) => {
         try {

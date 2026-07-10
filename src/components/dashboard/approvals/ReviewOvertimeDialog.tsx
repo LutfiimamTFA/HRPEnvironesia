@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, CheckCircle, XCircle, Send, Info } from "lucide-react";
+import { Loader2, CheckCircle, XCircle, Send, Info, FileText, Image as ImageIcon, ExternalLink } from "lucide-react";
 import {
   OvertimeSubmission,
   isFinalStatus,
@@ -1161,22 +1161,60 @@ export function ReviewOvertimeDialog({
                     )}
 
                     {submission.attachments?.length ? (
-                      <div>
-                        <p className="text-xs uppercase text-muted-foreground">
-                          Lampiran
+                      <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                        <p className="text-sm font-bold text-slate-950">
+                          Bukti Lembur
                         </p>
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {submission.attachments.map((attachment, index) => (
-                            <span
-                              key={index}
-                              className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs text-slate-600"
-                            >
-                              {attachment}
-                            </span>
-                          ))}
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Lampiran ini digunakan sebagai bukti pendukung bahwa
+                          pekerjaan lembur benar-benar dilakukan.
+                        </p>
+                        <div className="mt-3 space-y-2">
+                          {submission.attachments.map((attachment, index) => {
+                            const isObj = typeof attachment === "object" && attachment !== null;
+                            const fileUrl = isObj
+                              ? (attachment as any).fileUrl || (attachment as any).url || ""
+                              : attachment;
+                            const fileName = isObj
+                              ? (attachment as any).fileName || (attachment as any).name || `Lampiran ${index + 1}`
+                              : `Lampiran ${index + 1}`;
+                            const fileType = isObj ? (attachment as any).mimeType || (attachment as any).contentType || "" : "";
+                            const uploadedAt = isObj ? (attachment as any).uploadedAt : null;
+                            const isImage = fileType.startsWith("image/") || /\.(png|jpe?g|gif|webp)$/i.test(fileName);
+                            return (
+                              <a
+                                key={index}
+                                href={fileUrl || undefined}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 hover:bg-slate-100 transition-colors"
+                              >
+                                {isImage && fileUrl ? (
+                                  <img src={fileUrl} alt={fileName} className="h-12 w-12 rounded-lg object-cover border border-slate-200" />
+                                ) : (
+                                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-white border border-slate-200">
+                                    {isImage ? <ImageIcon className="h-5 w-5 text-slate-400" /> : <FileText className="h-5 w-5 text-slate-400" />}
+                                  </div>
+                                )}
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm font-medium text-slate-800">{fileName}</p>
+                                  {uploadedAt && (
+                                    <p className="text-xs text-muted-foreground">
+                                      Diunggah {new Date(uploadedAt).toLocaleString("id-ID")}
+                                    </p>
+                                  )}
+                                </div>
+                                <ExternalLink className="h-4 w-4 shrink-0 text-slate-400" />
+                              </a>
+                            );
+                          })}
                         </div>
                       </div>
-                    ) : null}
+                    ) : (
+                      <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
+                        Pengajuan ini belum memiliki lampiran bukti lembur.
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 

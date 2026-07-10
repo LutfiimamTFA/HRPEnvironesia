@@ -66,6 +66,7 @@ import {
   setDocumentNonBlocking,
 } from "@/firebase";
 import { sendNotification } from "@/lib/notifications";
+import { uploadFile } from "@/lib/storage/storage-adapter";
 import {
   doc,
   serverTimestamp,
@@ -199,6 +200,10 @@ const submissionSchema = z
       .min(1, "Koordinator/Pengawas lembur harus dipilih."),
     overtimeInstructionNote: z.string().optional().default(""),
     employeeNotes: z.string().optional(),
+    // Pending file uploads live in separate React state (not react-hook-form),
+    // so the actual "at least 1 file" requirement is enforced in
+    // handleSubmit against that state, not here — this field only carries
+    // already-uploaded URLs when editing an existing submission.
     attachments: z.array(z.string()).optional().default([]),
   })
   .refine(
@@ -2154,13 +2159,22 @@ export function OvertimeSubmissionForm({
   }, [open, submission, form]);
 
   // Helper functions for file handling
+  const OVERTIME_ATTACHMENT_MAX_FILES = 5;
+  const OVERTIME_ATTACHMENT_ACCEPT = "image/*,.pdf,.doc,.docx,.xls,.xlsx";
+  const isAllowedOvertimeAttachment = (file: File) =>
+    file.type.startsWith("image/") ||
+    file.type === "application/pdf" ||
+    file.type === "application/msword" ||
+    file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    file.type === "application/vnd.ms-excel" ||
+    file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+    /\.(docx?|xlsx?)$/i.test(file.name);
+
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
     const validFiles = files.filter((file) => {
-      const isValidType =
-        file.type.startsWith("image/") || file.type === "application/pdf";
       const isValidSize = file.size <= 5 * 1024 * 1024; // 5MB limit
-      return isValidType && isValidSize;
+      return isAllowedOvertimeAttachment(file) && isValidSize;
     });
 
     if (validFiles.length !== files.length) {
@@ -2168,11 +2182,22 @@ export function OvertimeSubmissionForm({
         variant: "destructive",
         title: "File Tidak Valid",
         description:
-          "Hanya file gambar (PNG, JPG, JPEG) dan PDF yang diperbolehkan, maksimal 5MB per file.",
+          "Format yang didukung: PNG, JPG, JPEG, PDF, DOC, DOCX, XLS, XLSX. Maksimal 5MB per file.",
       });
     }
 
-    setAttachments((prev) => [...prev, ...validFiles]);
+    setAttachments((prev) => {
+      const combined = [...prev, ...validFiles];
+      if (combined.length > OVERTIME_ATTACHMENT_MAX_FILES) {
+        toast({
+          variant: "destructive",
+          title: "Terlalu Banyak File",
+          description: `Maksimal ${OVERTIME_ATTACHMENT_MAX_FILES} file lampiran.`,
+        });
+        return combined.slice(0, OVERTIME_ATTACHMENT_MAX_FILES);
+      }
+      return combined;
+    });
     event.target.value = ""; // Reset input
   };
 
@@ -2180,21 +2205,43 @@ export function OvertimeSubmissionForm({
     setAttachments((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const uploadAttachments = async (): Promise<string[]> => {
+  type UploadedOvertimeAttachment = {
+    fileName: string;
+    fileUrl: string;
+    fileType: string;
+    fileSize: number;
+    uploadedAt: string;
+  };
+
+  /** Uploads every pending file for real (Google Drive/Firebase Storage per env config) — never fabricates a URL. Throws with a user-facing message on any failure so the caller never writes a submission with a broken/missing attachment. */
+  const uploadAttachments = async (): Promise<UploadedOvertimeAttachment[]> => {
     if (attachments.length === 0) return [];
+    if (!userProfile?.uid) throw new Error("Upload lampiran gagal. Silakan unggah ulang bukti lembur.");
 
     setUploadingAttachments(true);
     try {
-      const uploadPromises = attachments.map(async (file) => {
-        // For now, we'll simulate upload - in real implementation, you'd upload to Firebase Storage
-        // and return the download URL
-        return `uploaded_${file.name}_${Date.now()}`;
-      });
-
-      const urls = await Promise.all(uploadPromises);
-      return urls;
-    } catch (error) {
-      throw new Error("Gagal mengupload lampiran");
+      const uploaded = await Promise.all(
+        attachments.map(async (file) => {
+          const result = await uploadFile(
+            file,
+            `overtime-attachments/${userProfile.uid}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.]/g, "_")}`,
+            userProfile.uid,
+            { category: "overtime", ownerUid: userProfile.uid, compress: false },
+          );
+          const fileUrl = result.viewUrl || result.webViewLink || result.downloadUrl || "";
+          if (!fileUrl) throw new Error("Upload lampiran gagal. Silakan unggah ulang bukti lembur.");
+          return {
+            fileName: file.name,
+            fileUrl,
+            fileType: file.type || "application/octet-stream",
+            fileSize: file.size,
+            uploadedAt: new Date().toISOString(),
+          };
+        }),
+      );
+      return uploaded;
+    } catch (error: any) {
+      throw new Error("Upload lampiran gagal. Silakan unggah ulang bukti lembur.");
     } finally {
       setUploadingAttachments(false);
     }
@@ -2312,10 +2359,24 @@ export function OvertimeSubmissionForm({
       return;
     }
 
+    // Bukti lembur wajib — a fresh submission (mode "Buat") must have at
+    // least one pending file selected; an edit that already has uploaded
+    // attachments on the existing submission doesn't need a brand-new file.
+    const hasExistingAttachments = (values.attachments?.length ?? 0) > 0;
+    if (attachments.length === 0 && !hasExistingAttachments) {
+      setSubmitAttempted(true);
+      toast({
+        variant: "destructive",
+        title: "Pengajuan belum bisa dikirim",
+        description: "Lampiran bukti lembur wajib diunggah sebagai dasar review pengajuan.",
+      });
+      return;
+    }
+
     setIsSaving(true);
     try {
-      // Upload attachments first
-      const attachmentUrls = await uploadAttachments();
+      // Upload attachments first — throws (blocking submit) if any file fails.
+      const newlyUploadedAttachments = await uploadAttachments();
 
       const docRef = submission
         ? doc(firestore, "overtime_submissions", submission.id!)
@@ -2422,8 +2483,15 @@ export function OvertimeSubmissionForm({
         reason: values.reason,
         notes: values.employeeNotes || null,
 
-        // Attachments
-        attachments: [...(values.attachments || []), ...attachmentUrls],
+        // Attachments — richer objects (fileName/fileUrl/fileType/fileSize/
+        // uploadedAt) for the approval views to render properly, plus a
+        // flat attachmentUrls array for any code that only needs the links.
+        attachments: [...(submission?.attachments || []), ...newlyUploadedAttachments],
+        attachmentUrls: [
+          ...((submission?.attachments || []).map((a: any) => (typeof a === "string" ? a : a?.fileUrl || a?.url)).filter(Boolean)),
+          ...newlyUploadedAttachments.map((a) => a.fileUrl),
+        ],
+        hasSupportingEvidence: true,
 
         // Approval flow
         approvalFlowType: approvalFlow.approvalFlowType,
@@ -3678,12 +3746,31 @@ export function OvertimeSubmissionForm({
 
               {!isReadOnly && (
                 <section className="space-y-4">
-                  <FormLabel>Lampiran Pendukung (Opsional)</FormLabel>
+                  <div className="flex items-center gap-2">
+                    <FormLabel>Lampiran Bukti Lembur</FormLabel>
+                    <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-semibold text-destructive">
+                      Wajib
+                    </span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Upload bukti pekerjaan lembur berupa foto aktivitas kerja,
+                    screenshot pekerjaan, file laporan, dokumen hasil kerja,
+                    atau bukti pendukung lain yang menunjukkan pekerjaan
+                    benar-benar dilakukan.
+                  </p>
+                  <ul className="list-disc space-y-0.5 pl-5 text-xs text-muted-foreground">
+                    <li>Foto pekerjaan di lapangan/kantor</li>
+                    <li>Screenshot pekerjaan di laptop/sistem</li>
+                    <li>File laporan hasil kerja</li>
+                    <li>Dokumen revisi/hasil pekerjaan</li>
+                    <li>Bukti komunikasi tugas dari atasan</li>
+                    <li>Dokumentasi pekerjaan yang diselesaikan saat lembur</li>
+                  </ul>
                   <div className="space-y-4">
                     <div className="flex items-center gap-4">
                       <Input
                         type="file"
-                        accept="image/*,.pdf"
+                        accept={OVERTIME_ATTACHMENT_ACCEPT}
                         multiple
                         onChange={handleFileSelect}
                         className="flex-1"
@@ -3700,9 +3787,17 @@ export function OvertimeSubmissionForm({
                       </Button>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      Upload foto, screenshot, atau dokumen pendukung (PNG, JPG,
-                      JPEG, PDF, maksimal 5MB per file)
+                      Upload bukti lembur di sini
+                      <br />
+                      Format: PNG, JPG, JPEG, PDF, DOC, DOCX, XLS, XLSX
+                      <br />
+                      Maksimal 5MB per file, maksimal {OVERTIME_ATTACHMENT_MAX_FILES} file
                     </p>
+                    {submitAttempted && attachments.length === 0 && !(submission?.attachments?.length) && (
+                      <p className="text-sm font-medium text-destructive">
+                        Lampiran bukti lembur wajib diunggah sebagai dasar review pengajuan.
+                      </p>
+                    )}
 
                     {attachments.length > 0 && (
                       <div className="space-y-2">

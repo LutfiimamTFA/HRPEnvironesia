@@ -706,6 +706,68 @@ export type Brand = {
   id?: string;
   name: string;
   description?: string;
+  /**
+   * Manual, Super-Admin-assigned short code (e.g. "EGS", "GIG") used to route
+   * payroll Excel export to the right template/sheet. Deliberately NOT
+   * derived from `name` (no fuzzy "contains" matching) — brand.name can
+   * change or be ambiguous, this code cannot.
+   */
+  code?: string;
+  /** payroll_templates/{id} this brand's payroll export should use. */
+  payrollTemplateId?: string;
+  /** Exact sheet name inside that template's workbook to fill for this brand, e.g. "Payroll EGS". */
+  payrollSheetName?: string;
+  /** Free-form template family label for display purposes only (e.g. "egs" | "gig" | "default"). */
+  payrollTemplateType?: string;
+  /**
+   * payroll_groups/{id} this brand is a member of, if any. When set, the
+   * payrollTemplateId/payrollSheetName/payrollTemplateType fields above are
+   * kept in sync with that group (denormalized here purely so exports can
+   * read a brand doc directly instead of joining payroll_groups) — the
+   * group document remains the source of truth Super Admin edits.
+   */
+  payrollGroupId?: string;
+  /** Denormalized payroll_groups/{id}.name, for display/filename purposes only. */
+  payrollGroupName?: string;
+};
+
+export type PayrollGroup = {
+  id?: string;
+  name: string;
+  description?: string;
+  /** brands/{id} member ids. Never shown raw in UI — always resolve to brandNames. */
+  brandIds: string[];
+  /** Denormalized brand.name for each entry in brandIds, same order. */
+  brandNames: string[];
+  payrollTemplateId: string;
+  payrollTemplateName: string;
+  payrollSheetName: string;
+  payrollTemplateType: "egs" | "gig" | "default";
+  isActive: boolean;
+  createdByUid: string;
+  createdByName: string;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+};
+
+export type PayrollTemplate = {
+  id?: string;
+  name: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  /** Always "google_drive" — Firebase Storage is not used for payroll templates (bucket quota). */
+  storageProvider: 'google_drive';
+  driveFileId: string;
+  driveFolderId: string;
+  driveWebViewLink?: string | null;
+  driveWebContentLink?: string | null;
+  sheetNames: string[];
+  isActive: boolean;
+  createdByUid: string;
+  createdByName: string;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
 };
 
 export type Division = {
@@ -1984,24 +2046,63 @@ export interface InterviewAssignment {
 }
 
 // --- EMPLOYEE MONITORING TYPES ---
+
+/** A group of days sharing one work schedule, e.g. Mon-Thu 08:00-17:00 vs Fri 08:00-16:30. */
+export type WorkScheduleDay = "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
+
+export interface WorkScheduleGroup {
+  days: WorkScheduleDay[];
+  startTime: string; // HH:mm
+  endTime: string; // HH:mm
+  breakStart?: string; // HH:mm
+  breakEnd?: string; // HH:mm
+}
+
+export type LocationValidationMode = "radius_only" | "address_only" | "radius_and_address" | "hybrid";
+
 export type AttendanceSite = {
   id?: string;
   name: string;
   brandIds?: string[]; // Updated from brandId
-  brandId?: string; // Legacy
+  brandId?: string; // Legacy — kept in sync as brandIds[0] so existing Firestore rules (which check singular brandId) keep working.
+  brandNames?: string[];
   isActive: boolean;
   office: {
     lat: number;
     lng: number;
   };
+  address?: string;
+  addressDetail?: string;
+  /** Legacy single radius — kept for back-compat with older readers; new code should prefer checkInRadiusMeters/checkOutRadiusMeters. */
   radiusM: number;
+  checkInRadiusMeters?: number;
+  checkOutRadiusMeters?: number;
+  useSameRadiusForCheckOut?: boolean;
+  /** Street name / address aliases considered valid for this site, in addition to GPS radius — e.g. ["Jalan Kaliurang", "Jl. Kaliurang", "Sleman"]. */
+  validAddressKeywords?: string[];
+  locationValidationMode?: LocationValidationMode;
   timezone: string;
+  /** Legacy 3-letter day codes ("Mon".."Sun") — kept for back-compat; new code should prefer activeDays. */
   workDays: string[];
+  activeDays?: WorkScheduleDay[];
+  /** Grouped weekly schedule — lets Mon-Thu share one shift while Fri (or Sat) has its own. */
+  workSchedules?: WorkScheduleGroup[];
+  /** Legacy single shift — kept for back-compat with older readers; new code should prefer workSchedules. */
   shift: {
     startTime: string; // HH:mm
     endTime: string; // HH:mm
     graceLateMinutes: number;
   };
+  breakStart?: string; // HH:mm
+  breakEnd?: string; // HH:mm
+  lateToleranceMinutes?: number;
+  earlyLeaveToleranceMinutes?: number;
+  earliestCheckIn?: string; // HH:mm
+  latestCheckInWithoutReview?: string; // HH:mm
+  earliestCheckOut?: string; // HH:mm
+  minimumWorkMinutes?: number;
+  createdByUid?: string;
+  updatedByUid?: string;
   updatedAt?: Timestamp;
   updatedBy?: string;
 };
@@ -2023,11 +2124,21 @@ export type AttendanceEvent = {
     lat: number;
     lng: number;
   };
+  /** GPS accuracy in meters, as reported by the device (if available). */
+  gpsAccuracy?: number;
   photoUrl?: string;
   brandId?: string;
   displayName?: string;
   flags?: string[];
   address?: string;
+  /** Optional "kondisi khusus" note the employee attaches to a tap-in/out (e.g. health/urgent condition). */
+  specialCondition?: string | null;
+  /** HRD review of this specific tap event — separate from `isInvalid` (Tandai Tidak Valid, payroll-exclusion). */
+  hrdReviewStatus?: "valid_auto" | "needs_review" | "approved" | "rejected" | "revision_requested";
+  hrdReviewNote?: string | null;
+  hrdReviewedByUid?: string | null;
+  hrdReviewedByName?: string | null;
+  hrdReviewedAt?: Timestamp | null;
 };
 
 export type ReportStatus =

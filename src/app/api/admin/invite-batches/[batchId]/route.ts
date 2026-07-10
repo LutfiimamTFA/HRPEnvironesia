@@ -10,39 +10,58 @@ const patchSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
+type AuthResult =
+  | { error: string; status: number }
+  | { uid: string; isSuperAdmin: boolean; isHrd: boolean; hrdScopeType: 'all_companies' | 'selected_companies'; hrdAllowedBrandIds: string[] };
+
 // Helper to verify user role
-async function verifyAdmin(req: NextRequest) {
-    const authorization = req.headers.get('Authorization');
-    if (!authorization?.startsWith('Bearer ')) {
-        return { error: 'Unauthorized: Missing token.', status: 401 };
+async function verifyAdmin(req: NextRequest): Promise<AuthResult> {
+  const authorization = req.headers.get('Authorization');
+  if (!authorization?.startsWith('Bearer ')) {
+    return { error: 'Unauthorized: Missing token.', status: 401 };
+  }
+  const idToken = authorization.split('Bearer ')[1];
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const db = admin.firestore();
+    const [userDoc, hrdSnap] = await Promise.all([
+      db.collection('users').doc(decodedToken.uid).get(),
+      db.collection('roles_hrd').doc(decodedToken.uid).get(),
+    ]);
+    const role = userDoc.data()?.role;
+    if (!userDoc.exists || !['super-admin', 'hrd'].includes(role)) {
+      return { error: 'Forbidden.', status: 403 };
     }
-    const idToken = authorization.split('Bearer ')[1];
-    try {
-        const decodedToken = await admin.auth().verifyIdToken(idToken);
-        const userDoc = await admin.firestore().collection('users').doc(decodedToken.uid).get();
-        if (!userDoc.exists || !['super-admin', 'hrd'].includes(userDoc.data()?.role)) {
-            return { error: 'Forbidden.', status: 403 };
-        }
-        return { uid: decodedToken.uid };
-    } catch (error: any) {
-        if (error.code === 'auth/id-token-expired') {
-            return { error: 'Sesi Anda telah berakhir, silakan muat ulang halaman dan coba lagi.', status: 401 };
-        }
-        return { error: 'Invalid token.', status: 401 };
+    const isSuperAdmin = role === 'super-admin';
+    const isHrd = !isSuperAdmin;
+    const hrdScopeType = hrdSnap.data()?.scopeType === 'all_companies' ? 'all_companies' : 'selected_companies';
+    const hrdAllowedBrandIds: string[] = Array.isArray(hrdSnap.data()?.allowedBrandIds) ? hrdSnap.data()!.allowedBrandIds : [];
+    return { uid: decodedToken.uid, isSuperAdmin, isHrd, hrdScopeType, hrdAllowedBrandIds };
+  } catch (error: any) {
+    if (error.code === 'auth/id-token-expired') {
+      return { error: 'Sesi Anda telah berakhir, silakan muat ulang halaman dan coba lagi.', status: 401 };
     }
+    return { error: 'Invalid token.', status: 401 };
+  }
 }
 
+/** True if this actor may act on a batch belonging to `brandId` — Super Admin always, HRD only within their own allowedBrandIds. */
+function canAccessBrand(auth: Extract<AuthResult, { uid: string }>, brandId: string | undefined): boolean {
+  if (auth.isSuperAdmin) return true;
+  if (auth.hrdScopeType === 'all_companies') return true;
+  return !!brandId && auth.hrdAllowedBrandIds.includes(brandId);
+}
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { batchId: string } }
+  { params }: { params: Promise<{ batchId: string }> },
 ) {
   const authResult = await verifyAdmin(req);
-  if (authResult.error) {
-      return NextResponse.json({ success: false, message: authResult.error }, { status: authResult.status });
+  if ('error' in authResult) {
+    return NextResponse.json({ success: false, message: authResult.error }, { status: authResult.status });
   }
 
-  const { batchId } = params;
+  const { batchId } = await params;
   if (!batchId) {
     return NextResponse.json({ success: false, message: 'Batch ID is required.' }, { status: 400 });
   }
@@ -59,9 +78,17 @@ export async function PATCH(
     const db = admin.firestore();
     const batchRef = db.collection('invite_batches').doc(batchId);
 
+    const batchDoc = await batchRef.get();
+    if (!batchDoc.exists) {
+      return NextResponse.json({ success: false, message: 'Batch not found.' }, { status: 404 });
+    }
+    if (!canAccessBrand(authResult, batchDoc.data()?.brandId)) {
+      return NextResponse.json({ success: false, message: 'Anda tidak memiliki akses ke batch undangan perusahaan ini.' }, { status: 403 });
+    }
+
     await db.runTransaction(async (transaction) => {
-      const batchDoc = await transaction.get(batchRef);
-      if (!batchDoc.exists) throw new Error('Batch not found.');
+      const freshDoc = await transaction.get(batchRef);
+      if (!freshDoc.exists) throw new Error('Batch not found.');
       const updates: Record<string, any> = { updatedAt: Timestamp.now() };
       if (additionalQuantity !== undefined) updates.totalSlots = FieldValue.increment(additionalQuantity);
       if (isActive !== undefined) updates.isActive = isActive;
@@ -82,14 +109,14 @@ export async function PATCH(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { batchId: string } }
+  { params }: { params: Promise<{ batchId: string }> },
 ) {
   const authResult = await verifyAdmin(req);
-  if (authResult.error) {
-      return NextResponse.json({ success: false, message: authResult.error }, { status: authResult.status });
+  if ('error' in authResult) {
+    return NextResponse.json({ success: false, message: authResult.error }, { status: authResult.status });
   }
 
-  const { batchId } = params;
+  const { batchId } = await params;
   if (!batchId) {
     return NextResponse.json({ success: false, message: 'Batch ID is required.' }, { status: 400 });
   }
@@ -100,7 +127,10 @@ export async function DELETE(
 
     const batchDoc = await batchRef.get();
     if (!batchDoc.exists) {
-        throw new Error('Batch not found.');
+      return NextResponse.json({ success: false, message: 'Batch not found.' }, { status: 404 });
+    }
+    if (!canAccessBrand(authResult, batchDoc.data()?.brandId)) {
+      return NextResponse.json({ success: false, message: 'Anda tidak memiliki akses ke batch undangan perusahaan ini.' }, { status: 403 });
     }
 
     await batchRef.delete();

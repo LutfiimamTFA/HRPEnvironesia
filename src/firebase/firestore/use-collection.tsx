@@ -59,6 +59,36 @@ export interface InternalQuery extends Query<DocumentData> {
   };
 }
 
+/**
+ * Best-effort extraction of a query's actual where()-clause filters (field/
+ * operator/value), reaching into the SDK's internal `_query.filters` the
+ * same way `InternalQuery` above reaches into `_query.path` — there's no
+ * public API for this. Used only for the permission-denied console log
+ * below, so a future "list" rejection actually shows which field(s) the
+ * query was scoped by (or that it wasn't scoped at all), instead of just
+ * the bare collection path repeated with no way to tell which component or
+ * filter was responsible.
+ */
+function describeQueryFilters(target: (CollectionReference<DocumentData> | Query<DocumentData>) & { __memo?: boolean }): string {
+  if ((target as any).type === "collection") return "(no filters — bare collection reference)";
+  try {
+    const filters = (target as any)?._query?.filters;
+    if (!Array.isArray(filters) || filters.length === 0) {
+      return "(no filters — unscoped query)";
+    }
+    return filters
+      .map((f: any) => {
+        const field = f?.field?.segments?.join(".") ?? f?.field?.toString?.() ?? "?";
+        const op = f?.op ?? "?";
+        const value = f?.value?.value ?? f?.value ?? "?";
+        return `${field} ${op} ${JSON.stringify(value)}`;
+      })
+      .join(" AND ");
+  } catch {
+    return "(unable to introspect filters)";
+  }
+}
+
 function isInvalidFirestoreTarget(
   target:
     | ((CollectionReference<DocumentData> | Query<DocumentData>) & {
@@ -134,9 +164,18 @@ export function useCollection<T = any>(
 
   const shouldFetch = !isInvalidFirestoreTarget(memoizedTargetRefOrQuery);
 
+  // Anti-flicker ("keep previous data"): once a query has successfully
+  // resolved at least once, later re-subscribes (e.g. because the query
+  // object's identity changed — a new brandId filter, a dependent value
+  // updating, etc.) no longer flip `isLoading` back to true or blank out
+  // `data`. The UI keeps showing the last good rows until the new snapshot
+  // arrives, then swaps in place. Resets whenever the target becomes
+  // disabled/null (a genuinely new load cycle, e.g. after logout).
+  const hasLoadedOnceRef = useRef(false);
+
   const fetchData = useCallback(async () => {
     if (!shouldFetch || !memoizedTargetRefOrQuery) return;
-    setIsLoading(true);
+    if (!hasLoadedOnceRef.current) setIsLoading(true);
     try {
       const querySnapshot = await getDocs(memoizedTargetRefOrQuery);
       const results: ResultItemType[] = [];
@@ -145,6 +184,7 @@ export function useCollection<T = any>(
       }
       setData(results);
       setError(null);
+      hasLoadedOnceRef.current = true;
     } catch (e: any) {
       setError(e);
       if (e?.code === "resource-exhausted") {
@@ -157,6 +197,7 @@ export function useCollection<T = any>(
 
   useEffect(() => {
     if (!shouldFetch) {
+      hasLoadedOnceRef.current = false;
       setData([]);
       setError(null);
       setIsLoading(false);
@@ -175,7 +216,7 @@ export function useCollection<T = any>(
 
     if (!realtime) {
       let alive = true;
-      setIsLoading(true);
+      if (!hasLoadedOnceRef.current) setIsLoading(true);
       setError(null);
       getDocs(memoizedTargetRefOrQuery)
         .then((snapshot: QuerySnapshot<DocumentData>) => {
@@ -187,6 +228,7 @@ export function useCollection<T = any>(
           setData(results);
           setError(null);
           setIsLoading(false);
+          hasLoadedOnceRef.current = true;
         })
         .catch((err: FirestoreError) => {
           if (!alive) return;
@@ -202,7 +244,7 @@ export function useCollection<T = any>(
       };
     }
 
-    setIsLoading(true);
+    if (!hasLoadedOnceRef.current) setIsLoading(true);
     setError(null);
 
     let unsubscribe: (() => void) | undefined;
@@ -217,6 +259,7 @@ export function useCollection<T = any>(
         setData(results);
         setError(null);
         setIsLoading(false);
+        hasLoadedOnceRef.current = true;
       },
       (error: FirestoreError) => {
         try {
@@ -237,9 +280,20 @@ export function useCollection<T = any>(
                 memoizedTargetRefOrQuery as unknown as InternalQuery
               )._query.path.canonicalString();
 
-        console.error(
-          `Firestore onSnapshot error on path '${path}': ${error.message} (Code: ${error.code})`,
-        );
+        if (error.code === "permission-denied") {
+          // The filters, not just the path, are what actually determine
+          // whether a `list` was legitimately scoped — this line is what
+          // tells you WHICH query hit the rule, since the bare path alone
+          // (e.g. "leave_requests") looks identical whether the query was
+          // properly scoped by uid/brandId or not scoped at all.
+          console.error(
+            `Firestore onSnapshot permission-denied on path '${path}' — filters: ${describeQueryFilters(memoizedTargetRefOrQuery)}`,
+          );
+        } else {
+          console.error(
+            `Firestore onSnapshot error on path '${path}': ${error.message} (Code: ${error.code})`,
+          );
+        }
 
         if (error.code === "permission-denied") {
           const contextualError = new FirestorePermissionError({

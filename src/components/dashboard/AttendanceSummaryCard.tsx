@@ -1,7 +1,7 @@
 "use client";
 
 import { Card, CardContent } from "@/components/ui/card";
-import { Users, CheckCircle, Clock, AlertCircle, TrendingUp, AlertTriangle, Zap } from "lucide-react";
+import { Users, CheckCircle, Clock, AlertCircle, TrendingUp, AlertTriangle, Zap, HeartPulse, ShieldCheck } from "lucide-react";
 
 interface AttendanceSummaryStats {
   total: number;
@@ -12,6 +12,8 @@ interface AttendanceSummaryStats {
   terlambat: number;
   tidakValid: number;
   perluReview: number;
+  kondisiKhusus?: number;
+  validOtomatis?: number;
 }
 
 interface AttendanceSummaryCardProps {
@@ -62,27 +64,46 @@ export function AttendanceSummaryCard({ stats }: AttendanceSummaryCardProps) {
       icon: AlertCircle,
       color: "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300",
     },
+    {
+      label: "Kondisi Khusus",
+      value: stats.kondisiKhusus ?? 0,
+      icon: HeartPulse,
+      color: "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300",
+    },
+    {
+      label: "Valid Otomatis",
+      value: stats.validOtomatis ?? 0,
+      icon: ShieldCheck,
+      color: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300",
+    },
   ];
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
+    <div
+      className="grid gap-3"
+      style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}
+    >
       {summaryCards.map((card, idx) => {
         const Icon = card.icon;
         return (
           <Card key={idx} className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40">
-            <CardContent className="p-4">
-              <div className={`${card.color} rounded-lg p-3 mb-2 w-fit`}>
+            <CardContent className="p-3.5 h-[90px] flex items-center gap-3">
+              <div className={`${card.color} rounded-lg p-2.5 shrink-0`}>
                 <Icon className="h-5 w-5" />
               </div>
-              <p className="text-xs text-slate-600 dark:text-slate-400 font-medium mb-1">
-                {card.label}
-              </p>
-              <p className="text-2xl font-bold text-slate-900 dark:text-white">
-                {card.value}
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-500 mt-1">
-                {stats.total > 0 ? `${Math.round((card.value / stats.total) * 100)}%` : "0%"}
-              </p>
+              <div className="min-w-0">
+                <p className="text-xs text-slate-600 dark:text-slate-400 font-medium leading-tight truncate">
+                  {card.label}
+                </p>
+                <div className="flex items-baseline gap-1.5 mt-0.5">
+                  <p className="text-2xl font-bold text-slate-900 dark:text-white leading-none">
+                    {card.value}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-500">
+                    {stats.total > 0 ? `${Math.round((card.value / stats.total) * 100)}%` : "0%"}
+                  </p>
+                </div>
+              </div>
             </CardContent>
           </Card>
         );

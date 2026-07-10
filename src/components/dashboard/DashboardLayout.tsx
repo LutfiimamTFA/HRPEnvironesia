@@ -18,7 +18,6 @@ import { doc, collection, query, where, limit, serverTimestamp, setDoc } from "f
 import type { NavigationSetting, UserRole, Job } from "@/lib/types";
 import {
   MENU_CONFIG,
-  ALL_MENU_GROUPS,
   normalizeMenuKey,
   normalizeMenuRole,
   normalizeMenuVisibilityKeys,
@@ -90,6 +89,12 @@ export function DashboardLayout({
 }: DashboardLayoutProps) {
   const { userProfile } = useAuth();
   const firestore = useFirestore();
+
+  // Temporary debug log — remove once the flicker fix is confirmed stable.
+  // If this prints repeatedly with no user interaction, something upstream
+  // is still causing unnecessary re-renders.
+  // eslint-disable-next-line no-console
+  console.log("[DASHBOARD_LAYOUT_RENDER]");
   const pathname = usePathname();
   const router = useRouter();
   // Pengumuman Sistem is informational only — it must never lock access.
@@ -306,9 +311,15 @@ export function DashboardLayout({
 
     const hasNavigationSettings =
       !isLoadingSettings && Array.isArray(navSettings?.visibleMenuItems);
-    const baseConfigSource = hasNavigationSettings
-      ? ALL_MENU_GROUPS
-      : MENU_CONFIG[lookupKey] || [];
+    // navigation_settings/{role} only ever controls WHICH menu items are
+    // visible — never the sidebar's order or grouping. The base structure
+    // must always come from that role's own MENU_CONFIG entry. Using
+    // ALL_MENU_GROUPS here was the bug: on first render (before navSettings
+    // finished loading) the sidebar correctly showed MENU_CONFIG.hrd's order,
+    // then a few seconds later — once navSettings resolved — it silently
+    // rebuilt from ALL_MENU_GROUPS (the legacy/default structure) instead,
+    // which is why HRD's sidebar "snapped back" to a different layout.
+    const baseConfigSource = MENU_CONFIG[lookupKey] || [];
 
     let finalConfig = baseConfigSource.map((group) => ({
       ...group,
@@ -320,8 +331,8 @@ export function DashboardLayout({
         normalizeMenuVisibilityKeys(navSettings?.visibleMenuItems || []),
       );
 
-      // Filter by visibility
-      finalConfig = ALL_MENU_GROUPS.map((group) => ({
+      // Filter by visibility — using the role's own base structure/order, not ALL_MENU_GROUPS.
+      finalConfig = baseConfigSource.map((group) => ({
         ...group,
         items: group.items.filter((item) =>
           visibleKeys.has(normalizeMenuKey(item.key)),

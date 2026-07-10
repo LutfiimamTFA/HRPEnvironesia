@@ -85,12 +85,19 @@ export async function POST(req: NextRequest) {
       db.collection('users').doc(uid).get(),
     ]);
     const role = userDoc.data()?.role || '';
-    const isAuthorized = hrdSnap.exists || adminSnap.exists || superSnap.exists ||
-      ['super-admin', 'hrd', 'admin'].includes(role);
+    const isSuperAdmin = adminSnap.exists || superSnap.exists || ['super-admin', 'admin'].includes(role);
+    const isHrd = !isSuperAdmin && (hrdSnap.exists || role === 'hrd');
+    const isAuthorized = isSuperAdmin || isHrd;
     if (!isAuthorized) {
       return NextResponse.json({ success: false, message: 'HRD tidak memiliki izin membuat batch undangan.' }, { status: 403 });
     }
     const createdByName = userDoc.data()?.fullName || userDoc.data()?.email || uid;
+
+    // HRD scope — brandId chosen must be inside roles_hrd/{uid}.allowedBrandIds
+    // (unless scopeType is 'all_companies'). Never trust the client's own
+    // dropdown filtering alone — this is the actual enforcement point.
+    const hrdScopeType = hrdSnap.data()?.scopeType === 'all_companies' ? 'all_companies' : 'selected_companies';
+    const hrdAllowedBrandIds: string[] = Array.isArray(hrdSnap.data()?.allowedBrandIds) ? hrdSnap.data()!.allowedBrandIds : [];
 
     // 3. Feature flag — single source of truth: system_settings/features, key
     // "employee_invite" (same doc/key the Feature Control UI reads and writes
@@ -134,6 +141,17 @@ export async function POST(req: NextRequest) {
 
     const brandId: string | null = typeof body.brandId === 'string' && body.brandId.trim() ? body.brandId.trim() : null;
     const brandNameFromBody: string | null = body.brandName || body.brandLabel || body.brand || null;
+
+    // Reject a brand outside the HRD's own scope here — before any Firestore
+    // write — rather than only hiding it in the dropdown UI.
+    if (isHrd && hrdScopeType !== 'all_companies') {
+      if (!brandId || !hrdAllowedBrandIds.includes(brandId)) {
+        return NextResponse.json({
+          success: false,
+          message: 'Anda tidak memiliki akses ke perusahaan ini.',
+        }, { status: 403 });
+      }
+    }
 
     const employmentTypeRaw = body.employmentType || body.contractType || null;
     const employmentType = normalizeContractType(employmentTypeRaw);
@@ -206,6 +224,8 @@ export async function POST(req: NextRequest) {
       ...batchData,
       employmentTypeLabel,
       createdByName,
+      createdByUid: uid,
+      createdByRole: isSuperAdmin ? 'super-admin' : 'hrd',
     });
 
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.APP_URL || new URL(req.url).origin || 'http://localhost:3000';

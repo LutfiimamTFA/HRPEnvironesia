@@ -111,6 +111,37 @@ export function getAttendanceMethodLabel(method?: string): string {
 }
 
 /**
+ * Canonical attendance-method bucket. Two independent editors write to the
+ * same `employee_profiles.attendanceMethod` field with different value
+ * vocabularies — this dialog/lib ("fingerprint"/"web_photo"/"hybrid"/"exempt")
+ * vs the Kelola Metode Absensi bulk modal ("web_absen"/"id_card"/"manual").
+ * Without normalizing both to one bucket, an employee saved as "web_photo"
+ * here shows up as "Belum Diatur" (unrecognized) in the other editor and gets
+ * excluded from Monitoring Absensi's `attendanceMethod === "web_absen"` check.
+ */
+export type AttendanceMethodBucket = "web_absen" | "id_card" | "manual" | undefined;
+
+export function normalizeAttendanceMethodBucket(
+  method?: string | null,
+): AttendanceMethodBucket {
+  if (!method) return undefined;
+  switch (method) {
+    case "web_absen":
+    case "web_photo":
+    case "hybrid":
+      return "web_absen";
+    case "fingerprint":
+    case "id_card":
+      return "id_card";
+    case "manual":
+    case "exempt":
+      return "manual";
+    default:
+      return undefined;
+  }
+}
+
+/**
  * Get label for location mode
  */
 export function getLocationModeLabel(mode?: string): string {

@@ -83,6 +83,7 @@ import {
   OperationalStatus,
 } from "@/lib/employee-status";
 import { normalizeEmployeeRow } from "@/lib/employee-row-normalizer";
+import { normalizeAttendanceMethodBucket } from "@/lib/attendance-methods";
 import { cn } from "@/lib/utils";
 import { useHrdScopedBrands, useHrdScopedCollection } from "@/hooks/useHrdScopedCollection";
 import { HrdScopeEmptyState } from "@/components/dashboard/hrd/HrdScopeEmptyState";
@@ -281,22 +282,27 @@ function AdminCheckIcons({
 }
 
 // ─── Attendance Method helpers ──────────────────────────────────────────────
+// Values are normalized through normalizeAttendanceMethodBucket() so legacy
+// values written by the detail page's editor ("web_photo"/"hybrid"/"exempt")
+// are recognized here too, instead of falling into "Belum Diatur".
 
-type AttendanceMethodValue = "web_absen" | "id_card" | "fingerprint" | "manual" | undefined;
+type AttendanceMethodValue = "web_absen" | "id_card" | "fingerprint" | "manual" | "web_photo" | "hybrid" | "exempt" | undefined;
 
 function getAttendanceMethodLabel(method: AttendanceMethodValue): string {
-  if (!method) return "Belum Diatur";
-  if (method === "web_absen") return "Web Absen";
-  if (method === "id_card" || method === "fingerprint") return "ID Card";
+  const bucket = normalizeAttendanceMethodBucket(method);
+  if (!bucket) return "Belum Diatur";
+  if (bucket === "web_absen") return "Web Absen";
+  if (bucket === "id_card") return "ID Card";
   return "Manual";
 }
 
 function AttendanceMethodBadge({ method }: { method: AttendanceMethodValue }) {
+  const bucket = normalizeAttendanceMethodBucket(method);
   const label = getAttendanceMethodLabel(method);
   let cls = "border-slate-500/30 text-slate-400 bg-slate-500/10";
-  if (method === "web_absen") cls = "border-blue-500/30 text-blue-500 bg-blue-500/10";
-  else if (method === "id_card" || method === "fingerprint") cls = "border-teal-500/30 text-teal-500 bg-teal-500/10";
-  else if (method === "manual") cls = "border-orange-500/30 text-orange-500 bg-orange-500/10";
+  if (bucket === "web_absen") cls = "border-blue-500/30 text-blue-500 bg-blue-500/10";
+  else if (bucket === "id_card") cls = "border-teal-500/30 text-teal-500 bg-teal-500/10";
+  else if (bucket === "manual") cls = "border-orange-500/30 text-orange-500 bg-orange-500/10";
   return (
     <Badge variant="outline" className={cn("text-[10px] font-bold px-2 py-0 h-5 uppercase tracking-wider", cls)}>
       {label}
@@ -351,7 +357,7 @@ function KelolaMtdAbsensiModal({
     const q = search.toLowerCase();
     return employees.filter((e) => {
       const m = (e.employeeProfile?.attendanceMethod as AttendanceMethodValue) ?? undefined;
-      const normalized = m === "fingerprint" ? "id_card" : m;
+      const normalized = normalizeAttendanceMethodBucket(m);
       if (methodFilter === "web_absen" && normalized !== "web_absen") return false;
       if (methodFilter === "id_card" && normalized !== "id_card") return false;
       if (methodFilter === "manual" && normalized !== "manual") return false;
@@ -369,7 +375,7 @@ function KelolaMtdAbsensiModal({
     let webAbsen = 0, idCard = 0, manual = 0, belum = 0;
     employees.forEach((e) => {
       const m = (e.employeeProfile?.attendanceMethod as AttendanceMethodValue) ?? undefined;
-      const n = m === "fingerprint" ? "id_card" : m;
+      const n = normalizeAttendanceMethodBucket(m);
       if (n === "web_absen") webAbsen++;
       else if (n === "id_card") idCard++;
       else if (n === "manual") manual++;
@@ -402,10 +408,16 @@ function KelolaMtdAbsensiModal({
     setSaving(true);
     try {
       const batch = writeBatch(db as any);
+      const methodLabel = method === "web_absen" ? "Web Absen" : method === "id_card" ? "ID Card" : "Manual";
       uids.forEach((uid) => {
         const ref = doc(db as any, "employee_profiles", uid);
         batch.set(ref, {
           attendanceMethod: method,
+          attendanceMethodLabel: methodLabel,
+          attendanceConfig: { method, methodLabel },
+          attendanceMethodUpdatedAt: serverTimestamp(),
+          attendanceMethodUpdatedBy: currentUserUid,
+          // Legacy fields kept for backward compatibility with older reads.
           attendanceUpdatedAt: serverTimestamp(),
           attendanceUpdatedBy: currentUserUid,
           attendanceUpdatedByName: currentUserName,

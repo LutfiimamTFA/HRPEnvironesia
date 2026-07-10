@@ -92,6 +92,40 @@ service cloud.firestore {
       return isHrdAllowedForBrand(data.get('brandId', null));
     }
 
+    // leave_requests has accumulated several different "this is the owning
+    // employee" field names across older and newer writes (employeeId was
+    // the original field; employeeUid/requesterUid/uid were added later for
+    // clients that expect one of those specific names) — check all of them
+    // so neither an old doc nor a client using a different field name gets
+    // incorrectly denied.
+    function isLeaveRequestOwner(data) {
+      return data.get('employeeUid', '') == request.auth.uid ||
+        data.get('requesterUid', '') == request.auth.uid ||
+        data.get('uid', '') == request.auth.uid ||
+        data.get('userId', '') == request.auth.uid ||
+        // employeeId compatibility fallback only — old documents stored the
+        // auth UID here before employeeUid existed. New writes should use
+        // employeeId for an internal employee code instead, not the UID.
+        data.get('employeeId', '') == request.auth.uid;
+    }
+
+    // attendance_sites stores brandIds as an array (a site can serve multiple
+    // brands) rather than the singular brandId most other collections use —
+    // this variant supports both so HRD access actually works for that
+    // collection without touching hrdCanReadBrandData (shared by many others).
+    function isHrdAllowedForAnyBrand(brandIds) {
+      return isHrd() &&
+        brandIds is list &&
+        (isHrdAllCompanies() || brandIds.hasAny(hrdAllowedBrandIds()));
+    }
+
+    function hrdCanAccessSiteData(data) {
+      let brandIds = data.get('brandIds', null);
+      return brandIds is list
+        ? isHrdAllowedForAnyBrand(brandIds)
+        : isHrdAllowedForBrand(data.get('brandId', null));
+    }
+
     function hrdCanCreateBrandData(data) {
       return hrdCanReadBrandData(data);
     }
@@ -341,10 +375,19 @@ service cloud.firestore {
 
     /**
      * /invite_batches/{batchId}
-     * - Allows HRD and Super Admins to manage invite batches.
+     * - Super Admin: full read/list/create/update/delete on every batch.
+     * - HRD: only batches whose brandId is in their own allowedBrandIds —
+     *   reused via isHrdAllowedForBrand() (same helper brands/attendance/etc.
+     *   already use), so the client MUST query with a
+     *   where('brandId','in',allowedBrandIds) filter (chunked ≤10) for list
+     *   to succeed — Firestore evaluates `list` rules per matched document,
+     *   so an unscoped query that could return another brand's batch is
+     *   rejected outright rather than silently filtered.
      */
     match /invite_batches/{batchId} {
-      allow read, write: if isHrd() || isSuperAdmin();
+      allow get, list: if isSuperAdmin() || isHrdAllowedForBrand(resource.data.brandId);
+      allow create: if isSuperAdmin() || isHrdAllowedForBrand(request.resource.data.brandId);
+      allow update, delete: if isSuperAdmin() || isHrdAllowedForBrand(resource.data.brandId);
     }
     
     /**
@@ -356,11 +399,31 @@ service cloud.firestore {
     match /brands/{brandId} {
       allow read: if true;
       allow write: if isSuperAdmin();
-      
+
       match /divisions/{divisionId} {
         allow read: if isInternal();
         allow write: if isSuperAdmin();
       }
+    }
+
+    // Payroll Excel templates (uploaded by Super Admin, mapped to brands via
+    // brands/{id}.payrollTemplateId / payroll_groups/{id}.payrollTemplateId).
+    // HRD never lists this collection — the frontend resolves a brand's
+    // template via a single getDoc using the templateId already denormalized
+    // onto brands/{id}, so HRD only ever needs `get`, never `list`.
+    match /payroll_templates/{templateId} {
+      allow get, list, create, update, delete: if isSuperAdmin();
+      allow get: if isHrd();
+    }
+
+    // Payroll Groups — Super Admin groups several brands under one shared
+    // payroll template/sheet (e.g. "ABC Group" = PT ABC + PT ABC 1-3). HRD
+    // never reads this collection directly: on save, Super Admin cascades
+    // the group's template mapping onto each member brands/{id} doc, and HRD
+    // reads that (already-scoped) brand doc instead — see Tahap 2/5 of the
+    // Payroll Group spec.
+    match /payroll_groups/{groupId} {
+      allow get, list, create, update, delete: if isSuperAdmin();
     }
     
     /**
@@ -560,10 +623,10 @@ service cloud.firestore {
     
     // --- Monitoring & Attendance Rules ---
     match /attendance_sites/{siteId} {
-      allow read: if isSuperAdmin() || (isHrd() && hrdCanReadBrandData(resource.data));
-      allow create: if isSuperAdmin() || (isHrd() && hrdCanCreateBrandData(request.resource.data));
-      allow update: if isSuperAdmin() || (isHrd() && hrdCanUpdateBrandData(resource.data, request.resource.data));
-      allow delete: if isSuperAdmin() || (isHrd() && hrdCanReadBrandData(resource.data));
+      allow read: if isSuperAdmin() || (isHrd() && hrdCanAccessSiteData(resource.data));
+      allow create: if isSuperAdmin() || (isHrd() && hrdCanAccessSiteData(request.resource.data));
+      allow update: if isSuperAdmin() || (isHrd() && hrdCanAccessSiteData(resource.data) && hrdCanAccessSiteData(request.resource.data));
+      allow delete: if isSuperAdmin() || (isHrd() && hrdCanAccessSiteData(resource.data));
     }
 
     match /attendance_events/{eventId} {
@@ -838,19 +901,7 @@ service cloud.firestore {
 
     match /leave_requests/{requestId} {
       allow get: if isSignedIn() && (
-        resource.data.employeeId == request.auth.uid || 
-        resource.data.managerId == request.auth.uid || 
-        resource.data.managerUid == request.auth.uid || 
-        resource.data.directManagerId == request.auth.uid || 
-        resource.data.directManagerUid == request.auth.uid || 
-        resource.data.get('approvalTargetUid', '') == request.auth.uid ||
-        resource.data.get('directSupervisorUid', '') == request.auth.uid ||
-        resource.data.get('currentApproverUid', '') == request.auth.uid ||
-        isSuperAdmin() ||
-        (isHrd() && hrdCanReadBrandData(resource.data))
-      );
-      allow list: if isSignedIn() && (
-        resource.data.employeeId == request.auth.uid ||
+        isLeaveRequestOwner(resource.data) ||
         resource.data.managerId == request.auth.uid ||
         resource.data.managerUid == request.auth.uid ||
         resource.data.directManagerId == request.auth.uid ||
@@ -861,15 +912,27 @@ service cloud.firestore {
         isSuperAdmin() ||
         (isHrd() && hrdCanReadBrandData(resource.data))
       );
-      allow create: if isSignedIn() && request.resource.data.employeeId == request.auth.uid;
+      allow list: if isSignedIn() && (
+        isLeaveRequestOwner(resource.data) ||
+        resource.data.managerId == request.auth.uid ||
+        resource.data.managerUid == request.auth.uid ||
+        resource.data.directManagerId == request.auth.uid ||
+        resource.data.directManagerUid == request.auth.uid ||
+        resource.data.get('approvalTargetUid', '') == request.auth.uid ||
+        resource.data.get('directSupervisorUid', '') == request.auth.uid ||
+        resource.data.get('currentApproverUid', '') == request.auth.uid ||
+        isSuperAdmin() ||
+        (isHrd() && hrdCanReadBrandData(resource.data))
+      );
+      allow create: if isSignedIn() && isLeaveRequestOwner(request.resource.data);
       allow update: if isSignedIn() && (
-        (resource.data.employeeId == request.auth.uid && (
+        (isLeaveRequestOwner(resource.data) && (
           resource.data.status in ['pending_manager', 'pending_manager_review', 'pending_director', 'pending_director_review', 'revision_requested', 'revision_requested_by_manager', 'revision_requested_by_hrd'] ||
           request.resource.data.status == 'cancelled'
         )) ||
-        ((resource.data.managerId == request.auth.uid || 
-          resource.data.managerUid == request.auth.uid || 
-          resource.data.directManagerId == request.auth.uid || 
+        ((resource.data.managerId == request.auth.uid ||
+          resource.data.managerUid == request.auth.uid ||
+          resource.data.directManagerId == request.auth.uid ||
           resource.data.directManagerUid == request.auth.uid ||
           resource.data.get('approvalTargetUid', '') == request.auth.uid ||
           resource.data.get('directSupervisorUid', '') == request.auth.uid ||
@@ -880,7 +943,7 @@ service cloud.firestore {
         (isHrd() && hrdCanUpdateBrandData(resource.data, request.resource.data)) ||
         isSuperAdmin()
       );
-      allow delete: if isSuperAdmin() || (resource.data.employeeId == request.auth.uid && (
+      allow delete: if isSuperAdmin() || (isLeaveRequestOwner(resource.data) && (
         resource.data.status in ['pending_manager', 'pending_manager_review', 'pending_director', 'pending_director_review'] ||
         resource.data.status.startsWith('pending_')
       ));
@@ -1467,6 +1530,30 @@ service cloud.firestore {
       allow get, list: if isSuperAdmin();
       allow create: if isSuperAdmin();
       allow update, delete: if false;
+    }
+
+    /**
+     * /hrd_notifications/{notifId}
+     * Per-HRD action-item feed (bank change requests, personality test
+     * completed, etc). After splitting HRD into per-brand accounts, an HRD
+     * must ONLY ever read notifications addressed to them — never a global
+     * list of every HRD's notifications, which is exactly what "resource.data
+     * .recipientUid == request.auth.uid" enforces per-document. Super Admin
+     * keeps full visibility. Creation happens almost exclusively server-side
+     * (Admin SDK, via /api/notifications/hrd-notify, which resolves the
+     * correct brand-scoped recipientUid(s) from roles_hrd) — Admin SDK writes
+     * bypass these rules entirely, so `allow create: if isSignedIn()` here
+     * only covers the handful of legacy client-side callers (overtime/leave
+     * review dialogs, candidate application submission) that still write
+     * directly; those docs simply won't carry a recipientUid yet.
+     */
+    match /hrd_notifications/{notifId} {
+      allow get, list: if isSuperAdmin() ||
+        (isSignedIn() && resource.data.get('recipientUid', null) == request.auth.uid);
+      allow create: if isSignedIn();
+      allow update: if isSuperAdmin() ||
+        (isSignedIn() && resource.data.get('recipientUid', null) == request.auth.uid);
+      allow delete: if isSuperAdmin();
     }
   }
 }

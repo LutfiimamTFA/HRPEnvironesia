@@ -403,15 +403,26 @@ export default function RecruitmentJobSelectionPage() {
     return [];
   }, [userProfile]);
 
-  // Unread recruitment notifications (new_application + personality_test_completed)
+  // Unread recruitment notifications (new_application + personality_test_completed).
+  // HRD is split per-brand — only read notifications addressed to this HRD
+  // (recipientUid). Super Admin keeps full visibility.
   const recruitmentNotifsQuery = useMemoFirebase(() => {
     if (!userProfile?.role || !['hrd', 'super-admin'].includes(userProfile.role)) return null;
+    if (userProfile.role === 'super-admin') {
+      return query(
+        collection(firestore, 'hrd_notifications'),
+        where('notificationType', '==', 'recruitment'),
+        where('isRead', '==', false),
+      );
+    }
+    if (!userProfile.uid) return null;
     return query(
       collection(firestore, 'hrd_notifications'),
+      where('recipientUid', '==', userProfile.uid),
       where('notificationType', '==', 'recruitment'),
       where('isRead', '==', false),
     );
-  }, [userProfile?.role, firestore]);
+  }, [userProfile?.role, userProfile?.uid, firestore]);
   const { data: unreadRecruitmentNotifs } = useCollection<Notification>(recruitmentNotifsQuery);
 
   const newApplicationCount = useMemo(

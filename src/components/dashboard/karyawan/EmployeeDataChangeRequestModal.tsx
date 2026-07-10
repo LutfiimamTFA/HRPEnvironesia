@@ -338,23 +338,27 @@ export function EmployeeDataChangeRequestModal({
         payload,
       );
 
-      // Kirim notifikasi ke HRD
+      // Kirim notifikasi ke HRD — diselesaikan server-side (Admin SDK) karena
+      // karyawan tidak boleh membaca roles_hrd untuk menentukan HRD tujuan;
+      // server yang me-resolve HRD sesuai brand karyawan lalu mengisi recipientUid.
       try {
-        await addDoc(collection(firestore, "hrd_notifications"), {
-          type: isDocRequest
-            ? "employee_document_change_request"
-            : "employee_change_request",
-          category: values.category,
-          documentType: isDocRequest ? payload.documentType : undefined,
-          title: "Pengajuan Perubahan Data Baru",
-          message: `${initialProfile.fullName || firebaseUser.displayName || "Karyawan"} mengajukan perubahan ${CATEGORY_LABELS[values.category as ChangeRequestCategory]}.`,
-          employeeUid: firebaseUser.uid,
-          employeeName:
-            initialProfile.fullName || firebaseUser.displayName || "",
-          requestId: docRef.id,
-          isRead: false,
-          link: `/admin/hrd/employee-data/karyawan`,
-          createdAt: serverTimestamp(),
+        const idToken = await firebaseUser.getIdToken();
+        await fetch("/api/notifications/hrd-notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({
+            type: isDocRequest
+              ? "employee_document_change_request"
+              : "employee_change_request",
+            module: "employee",
+            title: "Pengajuan Perubahan Data Baru",
+            message: `${initialProfile.fullName || firebaseUser.displayName || "Karyawan"} mengajukan perubahan ${CATEGORY_LABELS[values.category as ChangeRequestCategory]}.`,
+            targetType: "user",
+            targetId: docRef.id,
+            actionUrl: "/admin/hrd/employee-data/karyawan",
+            brandId: (initialProfile as any).brandId ?? null,
+            brandName: (initialProfile as any).brandName ?? null,
+          }),
         });
       } catch (notifErr) {
         console.error("Gagal kirim notifikasi ke HRD", notifErr);

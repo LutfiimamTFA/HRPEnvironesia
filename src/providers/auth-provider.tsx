@@ -62,30 +62,47 @@ function AuthContent({ children }: { children: ReactNode }) {
     console.warn('[auth-provider] users/{uid} read error — keeping last known profile, not forcing logout:', profileError);
   }
 
-  // Auto-sync role documents for data consistency
+  // Auto-sync role documents for data consistency — at most ONCE per uid per
+  // browser session. This used to depend on `userProfileData` (a new object
+  // on every users/{uid} snapshot), and the sync itself writes to
+  // users/{uid}.hrdScope — which re-fires that very snapshot, re-running this
+  // effect, re-syncing, forever. That infinite feedback loop is what caused
+  // the repeated "POST /api/admin/sync-my-role" spam and the HRD dashboard
+  // flicker. Depending only on the uid (a stable primitive) plus a
+  // ref+sessionStorage guard breaks the loop.
+  const syncRoleOnceRef = useRef<string | null>(null);
   useEffect(() => {
-    // Only run for authenticated internal users whose profiles have loaded
-    if (
-      firebaseUser &&
-      userProfileData?.role &&
-      Array.isArray(ROLES_INTERNAL) &&
-      ROLES_INTERNAL.includes(userProfileData.role)
-    ) {
-      const syncRoleDocuments = async () => {
-        try {
-          const idToken = await firebaseUser.getIdToken();
-          await fetch("/api/admin/sync-my-role", {
-            method: "POST",
-            headers: { Authorization: `Bearer ${idToken}` },
-          });
-          // We don't need to do anything with the response, this is a background sync
-        } catch (error) {
-          console.warn("Failed to sync role documents on client side:", error);
-        }
-      };
-      syncRoleDocuments();
+    const role = userProfileData?.role;
+    if (!firebaseUser || !role || !ROLES_INTERNAL.includes(role)) return;
+
+    const uid = firebaseUser.uid;
+    const sessionKey = `sync-role:${uid}`;
+
+    if (syncRoleOnceRef.current === uid) return;
+    if (typeof window !== "undefined" && sessionStorage.getItem(sessionKey) === "done") {
+      syncRoleOnceRef.current = uid;
+      return;
     }
-  }, [firebaseUser, userProfileData]);
+
+    syncRoleOnceRef.current = uid;
+    // eslint-disable-next-line no-console
+    console.log("[SYNC_MY_ROLE_CALL]", uid);
+
+    (async () => {
+      try {
+        const idToken = await firebaseUser.getIdToken();
+        await fetch("/api/admin/sync-my-role", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        if (typeof window !== "undefined") sessionStorage.setItem(sessionKey, "done");
+      } catch (error) {
+        console.warn("Failed to sync role documents on client side:", error);
+        // Allow a retry later this session if it genuinely failed.
+        syncRoleOnceRef.current = null;
+      }
+    })();
+  }, [firebaseUser, userProfileData?.role]);
 
   const refreshUserProfile = useCallback(() => {
     mutate();

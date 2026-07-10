@@ -10,6 +10,10 @@ import {
 } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import type { EmployeeProfile, AttendanceEvent, AttendanceSite } from '@/lib/types';
+import {
+  getEventEmployeeUid, getEventDateKey, getEventType,
+  getEventTimestamp, resolvePhotoUrl, validateAttendanceLocation, classifyFieldCondition,
+} from '@/lib/attendance-helpers';
 
 export type PeriodMode = 'calendar' | 'payroll' | 'custom';
 
@@ -31,6 +35,8 @@ export interface HolidayDetail {
   date: string;
   type: 'national_holiday' | 'collective_leave' | 'company_holiday';
   name: string;
+  /** Brand ids this holiday applies to, or ["all"] / undefined for every brand. */
+  appliesToBrandIds?: string[];
 }
 
 export interface AttendanceDetail {
@@ -50,6 +56,7 @@ export interface CalendarAttendanceDetail {
   dayName: string;
   status:
     | 'Belum Berjalan'
+    | 'Belum Tap In'
     | 'Libur Nasional'
     | 'Cuti Bersama'
     | 'Libur Perusahaan'
@@ -77,6 +84,24 @@ export interface CalendarAttendanceDetail {
   tapInTime: string | null;
   tapOutTime: string | null;
   keterangan: string;
+  /** Actual worked minutes — only set when BOTH tap-in and tap-out exist for this day; null otherwise (never "0" for an incomplete day). */
+  workMinutes: number | null;
+  hasPhoto: boolean;
+  /** Same vocabulary as Monitoring Absensi's LocationValidation.badges primary signal (e.g. "Radius Sesuai", "Perlu Review"). */
+  locationValidationStatus: string | null;
+  hrdReviewStatus: 'valid_auto' | 'needs_review' | 'approved' | 'rejected' | 'revision_requested' | null;
+  conditionCategory: string | null;
+  conditionNote: string | null;
+  /** Payroll-facing one-line remark — plays the same role as Monitoring Absensi's "Catatan Sistem". */
+  payrollRemark: string;
+  /** Minutes actually counted toward payroll for this day (0 for an unresolved incomplete day — see payrollIsFinal). */
+  payrollMinutesRecognized: number;
+  /** false = tap-in with no tap-out and no HRD decision yet ("belum final"). */
+  payrollIsFinal: boolean;
+  /** true only once payrollIsFinal is false AND the day is already in the past — i.e. genuinely needs an HRD decision. */
+  payrollNeedsReview: boolean;
+  /** attendance_events doc id for this day's tap-in — lets the UI write an HRD payroll decision to the right doc. */
+  tapInEventId: string | null;
 }
 
 export interface AlphaDetail {
@@ -135,6 +160,20 @@ export interface PayrollRecapRow {
   // Work stats
   totalJamKerja: number;
   totalMenitLembur?: number;
+  /** Total valid working days across the WHOLE period (including future dates) x daily target minutes. */
+  targetPeriodeMinutes: number;
+  /** Total valid working days up to today x daily target minutes — what should be worked so far. */
+  targetBerjalanMinutes: number;
+  /** Sum of workMinutes for every day with a complete tap-in+tap-out, regardless of HRD approval. */
+  jamAktualMinutes: number;
+  /** Sum of minutes actually counted toward payroll — complete days, plus any incomplete day HRD has explicitly approved (full day / default checkout / manual checkout). */
+  jamDiakuiPayrollMinutes: number;
+  /** jamDiakuiPayrollMinutes - targetBerjalanMinutes (can be negative). */
+  selisihBerjalanMinutes: number;
+  /** Days with a tap-in but no tap-out and no HRD decision yet — not yet final for payroll. */
+  hariBelumFinal: number;
+  /** Subset of hariBelumFinal that are already in the past (today's in-progress day doesn't count here). */
+  hariBelumTapOut: number;
 
   // Detail izin/cuti/dinas untuk modal
   leaveDetails: LeaveDetail[];
@@ -164,8 +203,10 @@ export function calculatePayrollPeriod(
     endDate = endOfMonth(new Date(year, month, 1));
     displayLabel = startDate.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
   } else if (mode === 'payroll') {
-    startDate = new Date(year, month - 1, 26, 0, 0, 0);
-    endDate = new Date(year, month, 25, 23, 59, 59);
+    // Payroll period runs the 19th of the previous month through the 20th of
+    // the selected month (e.g. selecting July -> 19 June - 20 July).
+    startDate = new Date(year, month - 1, 19, 0, 0, 0);
+    endDate = new Date(year, month, 20, 23, 59, 59);
     displayLabel = `Payroll ${new Date(year, month, 1).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}`;
   } else {
     startDate = customStart ? startOfDay(customStart) : startOfMonth(new Date());
@@ -178,13 +219,39 @@ export function calculatePayrollPeriod(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-export function getWorkingDays(startDate: Date, endDate: Date, holidays: Array<string | HolidayDetail> = []): number {
+/**
+ * Whether `date` is an active working day for the given site — uses the
+ * site's configured `activeDays` (from Pengaturan Situs Absensi) when
+ * available, falling back to plain Sat/Sun when the site has none configured.
+ */
+export function isSiteActiveDay(site: AttendanceSite | null | undefined, date: Date): boolean {
+  const activeDays = (site as any)?.activeDays as string[] | undefined;
+  if (!activeDays || activeDays.length === 0) return !isWeekend(date);
+  const JS_DAY_TO_SCHEDULE_DAY = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  return activeDays.includes(JS_DAY_TO_SCHEDULE_DAY[date.getDay()]);
+}
+
+export function getWorkingDays(
+  startDate: Date,
+  endDate: Date,
+  holidays: Array<string | HolidayDetail> = [],
+  attendanceSite?: AttendanceSite | null,
+  /** true (default) = "Target Berjalan" (capped at today); false = "Target Periode" (the whole period, including future days). */
+  capToToday = true,
+): number {
   try {
     const today = startOfDay(new Date());
-    const activeEnd = isBefore(today, startOfDay(endDate)) ? today : startOfDay(endDate);
+    const activeEnd = capToToday && isBefore(today, startOfDay(endDate)) ? today : startOfDay(endDate);
     if (isBefore(activeEnd, startOfDay(startDate))) return 0;
+    const holidayDates = new Set(
+      holidays.map(h => (typeof h === 'string' ? h : h.date)),
+    );
     const allDays = eachDayOfInterval({ start: startOfDay(startDate), end: startOfDay(endDate) });
-    return allDays.filter(d => d <= activeEnd && !isWeekend(d)).length;
+    return allDays.filter(d =>
+      d <= activeEnd &&
+      isSiteActiveDay(attendanceSite, d) &&
+      !holidayDates.has(format(d, 'yyyy-MM-dd')),
+    ).length;
   } catch {
     return 0;
   }
@@ -393,21 +460,17 @@ function resolveResignDate(employee: any): Date | null {
   } catch { return null; }
 }
 
+/**
+ * Resolves an event's calendar date the same way Monitoring Absensi does
+ * (see getEventDateKey in attendance-helpers.ts — dateKey/attendanceDate/
+ * localDate, falling back to createdAt/timestamp/tsServer/tsClient in
+ * Asia/Jakarta) plus a couple of legacy field names specific to older
+ * payroll-only event shapes.
+ */
 function getEventDateStr(event: any): string | null {
-  if (event.dateKey) return event.dateKey;
   if (event.date && typeof event.date === 'string') return event.date;
   if (event.datetime?.date) return event.datetime.date;
-  const ts = event.timestamp || event.ts || event.tsServer || event.tsClient || event.createdAt;
-  if (!ts) return null;
-  try {
-    let d: Date;
-    if (ts instanceof Date) d = ts;
-    else if (typeof ts === 'number') d = new Date(ts);
-    else if (typeof ts === 'string') d = new Date(ts);
-    else if (typeof ts.toDate === 'function') d = ts.toDate();
-    else return null;
-    return format(d, 'yyyy-MM-dd');
-  } catch { return null; }
+  return getEventDateKey(event) || null;
 }
 
 function getEventTimeStr(event: any): string {
@@ -557,6 +620,146 @@ function resolveAttendancePolicy(site: AttendanceSite | null) {
     lateToleranceMinutes,
     effectiveLateLimitTime: minutesToTime(startMinutes + lateToleranceMinutes),
     effectiveLateLimitMinutes: startMinutes + lateToleranceMinutes,
+  };
+}
+
+/**
+ * Actual worked minutes for a day — computed from real tap-in/tap-out
+ * timestamps (never trusts an external `workDurationMinutes` field, which is
+ * frequently absent and was why Total Jam always showed "-"), minus any
+ * overlap with the site's break window.
+ */
+function minutesBetweenMinusBreak(inTs: Date, outTs: Date, site: AttendanceSite | null, dateStr: string): number | null {
+  let minutes = Math.round((outTs.getTime() - inTs.getTime()) / 60000);
+  if (minutes <= 0) return null;
+
+  const breakStart = (site as any)?.breakStart;
+  const breakEnd = (site as any)?.breakEnd;
+  if (breakStart && breakEnd) {
+    try {
+      const [bsH, bsM] = String(breakStart).split(':').map(Number);
+      const [beH, beM] = String(breakEnd).split(':').map(Number);
+      const breakStartTs = new Date(`${dateStr}T00:00:00`);
+      breakStartTs.setHours(bsH, bsM, 0, 0);
+      const breakEndTs = new Date(`${dateStr}T00:00:00`);
+      breakEndTs.setHours(beH, beM, 0, 0);
+      const overlapStart = Math.max(inTs.getTime(), breakStartTs.getTime());
+      const overlapEnd = Math.min(outTs.getTime(), breakEndTs.getTime());
+      if (overlapEnd > overlapStart) {
+        minutes -= Math.round((overlapEnd - overlapStart) / 60000);
+      }
+    } catch { /* ignore malformed break times */ }
+  }
+  return Math.max(0, minutes);
+}
+
+/**
+ * Actual worked minutes for a day — computed from real tap-in/tap-out
+ * timestamps (never trusts an external `workDurationMinutes` field, which is
+ * frequently absent and was why Total Jam always showed "-"), minus any
+ * overlap with the site's break window.
+ */
+function computeWorkMinutes(inEv: any, outEv: any, site: AttendanceSite | null, dateStr: string): number | null {
+  const inTs = getEventTimestamp(inEv);
+  const outTs = getEventTimestamp(outEv);
+  if (!inTs || !outTs) return null;
+  return minutesBetweenMinusBreak(inTs, outTs, site, dateStr);
+}
+
+export type PayrollDayDecision = 'full_day' | 'default_checkout' | 'manual_checkout' | 'rejected' | 'needs_clarification';
+
+/**
+ * Resolves how many minutes count toward payroll for a day with a tap-in.
+ * A complete tap-in+tap-out day is always final. An incomplete day (no
+ * tap-out) contributes 0 minutes and is NOT final until HRD makes an
+ * explicit decision — it is never auto-assumed to be a full 8-hour day.
+ */
+function resolvePayrollDayMinutes(
+  inEv: any,
+  outEv: any,
+  dateStr: string,
+  site: AttendanceSite | null,
+  dailyTargetMinutes: number,
+  todayStr: string,
+): { minutes: number; isFinal: boolean; needsReview: boolean } {
+  if (outEv) {
+    const minutes = computeWorkMinutes(inEv, outEv, site, dateStr) ?? 0;
+    return { minutes, isFinal: true, needsReview: false };
+  }
+
+  const decision: PayrollDayDecision | undefined = (inEv as any)?.payrollDayDecision;
+  if (decision === 'rejected') return { minutes: 0, isFinal: true, needsReview: false };
+  if (decision === 'full_day') return { minutes: dailyTargetMinutes, isFinal: true, needsReview: false };
+  if (decision === 'default_checkout' || decision === 'manual_checkout') {
+    const checkoutTime = decision === 'default_checkout'
+      ? (site as any)?.shift?.endTime || '17:00'
+      : (inEv as any)?.payrollManualCheckoutTime;
+    const inTs = getEventTimestamp(inEv);
+    if (inTs && checkoutTime) {
+      try {
+        const [h, m] = String(checkoutTime).split(':').map(Number);
+        const outTs = new Date(`${dateStr}T00:00:00`);
+        outTs.setHours(h, m, 0, 0);
+        const minutes = minutesBetweenMinusBreak(inTs, outTs, site, dateStr) ?? 0;
+        return { minutes, isFinal: true, needsReview: false };
+      } catch { /* fall through to not-final below */ }
+    }
+  }
+
+  // No tap-out and no HRD decision yet — not final. Only a genuinely past
+  // day counts as "perlu review"; today's still-in-progress day is simply
+  // pending (see 'Belum Tap In'/'Sedang Bekerja' handling in calendarDetails).
+  return { minutes: 0, isFinal: false, needsReview: dateStr < todayStr };
+}
+
+/** Formats minutes as "5j 16m" — used for Total Jam everywhere instead of a bare hour count. */
+export function formatWorkMinutes(minutes: number | null | undefined): string {
+  if (minutes == null || minutes <= 0) return '-';
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m > 0 ? `${h}j ${m}m` : `${h}j`;
+}
+
+interface ConditionInfo {
+  hasPhoto: boolean;
+  locationValidationStatus: string | null;
+  hrdReviewStatus: CalendarAttendanceDetail['hrdReviewStatus'];
+  conditionCategory: string | null;
+  conditionNote: string | null;
+}
+
+/**
+ * Same condition/review signals Monitoring Absensi computes for a tap-in
+ * event (photo presence, location validation, field-condition category, HRD
+ * review status) — reused here so Rekap Payroll shows the same picture
+ * instead of only a bare Hadir/Terlambat/Alpha status.
+ */
+function computeConditionInfo(inEv: any, outEv: any, site: AttendanceSite | null, lateMinutes: number): ConditionInfo {
+  if (!inEv) {
+    return { hasPhoto: false, locationValidationStatus: null, hrdReviewStatus: null, conditionCategory: null, conditionNote: null };
+  }
+  const photoUrl = resolvePhotoUrl(inEv) || (outEv ? resolvePhotoUrl(outEv) : null);
+  const hasPhoto = !!photoUrl;
+  const siteRadiusConfig = site
+    ? { office: (site as any).office, radiusM: (site as any).checkInRadiusMeters ?? (site as any).radiusM, validAddressKeywords: (site as any).validAddressKeywords }
+    : null;
+  const locationValidation = validateAttendanceLocation(inEv, siteRadiusConfig);
+  const fieldCondition = classifyFieldCondition(inEv, locationValidation);
+  const locationNeedsReview = !locationValidation.isValidAuto;
+  const photoMissing = !hasPhoto;
+  const lateNeedsReview = lateMinutes > 15;
+  const specialCondition = fieldCondition.category !== 'normal' ? fieldCondition.reasonText || fieldCondition.categoryLabel : null;
+
+  const existingReview = (inEv as any)?.hrdReviewStatus || (outEv as any)?.hrdReviewStatus;
+  const hrdReviewStatus: ConditionInfo['hrdReviewStatus'] = existingReview ||
+    (specialCondition || locationNeedsReview || photoMissing || lateNeedsReview ? 'needs_review' : 'valid_auto');
+
+  return {
+    hasPhoto,
+    locationValidationStatus: locationValidation.badges[0] || null,
+    hrdReviewStatus,
+    conditionCategory: fieldCondition.category !== 'normal' ? fieldCondition.categoryLabel : null,
+    conditionNote: fieldCondition.reasonText || null,
   };
 }
 
@@ -960,6 +1163,13 @@ function normalizeHolidayDetails(holidays: Array<string | HolidayDetail>): Holid
   });
 }
 
+/** A holiday with no `appliesToBrandIds` (or containing "all") applies company-wide. */
+function holidayAppliesToBrand(holiday: HolidayDetail, brandId: string | null): boolean {
+  if (!holiday.appliesToBrandIds || holiday.appliesToBrandIds.length === 0) return true;
+  if (holiday.appliesToBrandIds.includes('all')) return true;
+  return !!brandId && holiday.appliesToBrandIds.includes(brandId);
+}
+
 const WEEKEND_DINAS_STATUSES: ReadonlySet<string> = new Set([
   'Dinas + Akhir Pekan',
   'Dinas + Akhir Pekan + Tepat Waktu',
@@ -983,13 +1193,14 @@ function isWorkdayStatus(status: CalendarAttendanceDetail['status']): boolean {
   if (WEEKDAY_HOLIDAY_DINAS_STATUSES.has(status)) return true;
   // Dinas on weekends: NOT a regular workday, only counted in dinas separately
   if (WEEKEND_DINAS_STATUSES.has(status)) return false;
-  return !['Belum Berjalan', 'Libur Nasional', 'Cuti Bersama', 'Libur Perusahaan', 'Akhir Pekan'].includes(status);
+  return !['Belum Berjalan', 'Belum Tap In', 'Libur Nasional', 'Cuti Bersama', 'Libur Perusahaan', 'Akhir Pekan'].includes(status);
 }
 
-function getEventKind(type: string): 'in' | 'out' | null {
-  const t = String(type).toLowerCase().trim();
-  if (t === 'check-in' || t === 'tapin' || t === 'tap_in' || t === 'in') return 'in';
-  if (t === 'check-out' || t === 'tapout' || t === 'tap_out' || t === 'out') return 'out';
+/** Same event-type normalization as Monitoring Absensi's getEventType (eventType/type/action/tapType/checkType, incl. clock_in/out). */
+function getEventKind(event: any): 'in' | 'out' | null {
+  const t = getEventType(event);
+  if (t === 'tap_in') return 'in';
+  if (t === 'tap_out') return 'out';
   return null;
 }
 
@@ -1104,17 +1315,12 @@ export function generateEmployeePayrollRecap(
       hadirDetails: [], alphaDetails: [], calendarDetails: [],
       pulangAwal: 0, lupaHapIn: 0, lupaHapOut: 0,
       izin: 0, cuti: 0, dinas: 0, alpha: 0, totalJamKerja: 0,
+      targetPeriodeMinutes: 0, targetBerjalanMinutes: 0, jamAktualMinutes: 0,
+      jamDiakuiPayrollMinutes: 0, selisihBerjalanMinutes: 0, hariBelumFinal: 0, hariBelumTapOut: 0,
       leaveDetails: [], effectiveStart: period.startDate, effectiveEnd: period.endDate,
       isPartial: false, notYetActive: true,
     };
   }
-
-  const holidayDetails = normalizeHolidayDetails(holidays);
-  const holidayMap = new Map(holidayDetails.map(h => [h.date, h]));
-  const holidayDates = holidayDetails.map(h => h.date);
-  const today = startOfDay(new Date());
-  const todayStr = format(today, 'yyyy-MM-dd');
-  const hariKerja = getWorkingDays(effectiveStart, effectiveEnd, holidayDetails);
 
   // ── Filter events: date range FIRST, then employee match ──
   const myEvents = allEvents.filter(e => {
@@ -1128,9 +1334,11 @@ export function generateEmployeePayrollRecap(
       if (d < startOfDay(effectiveStart) || d > endOfDay(effectiveEnd)) return false;
     } catch { return false; }
 
-    // Employee match by UID (primary)
-    const evUid = ev.uid || ev.userId || ev.employeeUid;
-    if (evUid && evUid === employeeId) return true;
+    // Employee match by UID (primary) — same priority as Monitoring Absensi's
+    // getEventEmployeeUid (employeeUid > uid > userId > employeeId), checked
+    // against every candidate id for this employee, not just the primary one.
+    const evUid = getEventEmployeeUid(ev);
+    if (evUid && employeeIds.includes(evUid)) return true;
 
     // Employee match by normalized NIK (secondary, only when NIK is available)
     if (normalizedEmployeeNumber) {
@@ -1143,13 +1351,39 @@ export function generateEmployeePayrollRecap(
   const attendanceSite = resolveAttendanceSite(employee, myEvents, attendanceSites);
   const attendancePolicy = resolveAttendancePolicy(attendanceSite);
 
+  // Daily target derived from the site's own shift length (minus break) when
+  // configured; falls back to a flat 8 jam/hari otherwise. Computed early so
+  // both the calendarDetails builder (per-day HRD-approved minutes) and the
+  // Target Periode/Berjalan totals below can share it.
+  const dailyTargetMinutes = (() => {
+    const start = parseTimeToMinutes(attendancePolicy.startTime);
+    const end = parseTimeToMinutes(attendancePolicy.endTime);
+    if (start == null || end == null || end <= start) return 8 * 60;
+    let span = end - start;
+    const breakStart = parseTimeToMinutes((attendanceSite as any)?.breakStart);
+    const breakEnd = parseTimeToMinutes((attendanceSite as any)?.breakEnd);
+    if (breakStart != null && breakEnd != null && breakEnd > breakStart) span -= (breakEnd - breakStart);
+    return span > 0 ? span : 8 * 60;
+  })();
+
+  // Holidays scoped to this employee's brand — a holiday with
+  // appliesToBrandIds set to a specific brand shouldn't affect employees at
+  // other brands (appliesToBrandIds: ["all"] or unset applies everywhere).
+  const employeeBrandId = resolveBrandId(employee);
+  const holidayDetails = normalizeHolidayDetails(holidays).filter(h => holidayAppliesToBrand(h, employeeBrandId));
+  const holidayMap = new Map(holidayDetails.map(h => [h.date, h]));
+  const holidayDates = holidayDetails.map(h => h.date);
+  const today = startOfDay(new Date());
+  const todayStr = format(today, 'yyyy-MM-dd');
+  const hariKerja = getWorkingDays(effectiveStart, effectiveEnd, holidayDetails, attendanceSite);
+
   // ── Build per-day maps ──
   const checkInByDay = new Map<string, any>();
   const checkOutByDay = new Map<string, any>();
 
   for (const ev of myEvents) {
     const dateStr = getEventDateStr(ev as any) || '';
-    const kind = getEventKind((ev as any).type || '');
+    const kind = getEventKind(ev);
     if (kind === 'in' && dateStr && hasValidTapInTime(ev) && !checkInByDay.has(dateStr)) checkInByDay.set(dateStr, ev);
     if (kind === 'out' && !checkOutByDay.has(dateStr)) checkOutByDay.set(dateStr, ev);
   }
@@ -1200,7 +1434,7 @@ export function generateEmployeePayrollRecap(
     const outEv = checkOutByDay.get(dateStr);
     totalMenitLembur += Number((inEv as any).overtimeMinutes || (outEv as any)?.overtimeMinutes || 0);
     if (!outEv) continue;
-    const workDur = (inEv as any).workDurationMinutes || (outEv as any).workDurationMinutes;
+    const workDur = computeWorkMinutes(inEv, outEv, attendanceSite, dateStr);
     if (workDur) totalMinutes += workDur;
   }
 
@@ -1210,7 +1444,7 @@ export function generateEmployeePayrollRecap(
     if (!inEv) continue;
     const timing = attendanceTimingByDay.get(dateStr) || calculateAttendanceTiming(getEventTimeStr(inEv), attendancePolicy);
     if (!isValidAttendanceTiming(timing)) continue;
-    const workDur = (inEv as any)?.workDurationMinutes || (outEv as any)?.workDurationMinutes;
+    const workDur = computeWorkMinutes(inEv, outEv, attendanceSite, dateStr);
     hadirDetails.push({
       date: dateStr,
       dayName: getDayName(new Date(dateStr)),
@@ -1220,7 +1454,7 @@ export function generateEmployeePayrollRecap(
       source: getEventSource(inEv || outEv),
       notes: (inEv as any)?.notes || (outEv as any)?.notes || timing.notes,
       lateMinutes: timing.lateMinutes || undefined,
-      workDurationMinutes: workDur || undefined,
+      workDurationMinutes: workDur ?? undefined,
     });
   }
 
@@ -1248,13 +1482,16 @@ export function generateEmployeePayrollRecap(
   const effectiveWorkingDays = eachDayOfInterval({
     start: startOfDay(effectiveStart),
     end: startOfDay(effectiveEnd),
-  }).filter(d => d <= today && !isWeekend(d) && !holidayDates.includes(format(d, 'yyyy-MM-dd')));
+  }).filter(d => d <= today && isSiteActiveDay(attendanceSite, d) && !holidayDates.includes(format(d, 'yyyy-MM-dd')));
 
   let alpha = 0;
   const alphaDetails: AlphaDetail[] = [];
   for (const day of effectiveWorkingDays) {
     const dateStr = format(day, 'yyyy-MM-dd');
     if (dateStr > todayStr) continue;
+    // Today is still in progress — no tap-in yet doesn't mean Alpha, it
+    // means "Belum Tap In" (handled in the calendarDetails builder below).
+    if (dateStr === todayStr) continue;
     if (hadirDays.has(dateStr)) continue;
     const hasPermission = leaveDetails.some(detail => detail.date === dateStr);
     if (hasPermission) continue;
@@ -1299,7 +1536,7 @@ export function generateEmployeePayrollRecap(
       if (holiday?.type === 'national_holiday') return ` Bertepatan dengan Libur Nasional: ${holiday.name}.`;
       if (holiday?.type === 'collective_leave')  return ` Bertepatan dengan Cuti Bersama: ${holiday.name}.`;
       if (holiday?.type === 'company_holiday')   return ` Bertepatan dengan Libur Perusahaan: ${holiday.name}.`;
-      if (isWeekend(day))                        return ' Bertepatan dengan Akhir Pekan.';
+      if (!isSiteActiveDay(attendanceSite, day))  return ' Bertepatan dengan Akhir Pekan / Hari Nonaktif.';
       return '';
     };
 
@@ -1327,7 +1564,7 @@ export function generateEmployeePayrollRecap(
           ? isLate ? 'Dinas + Libur Perusahaan + Terlambat' : 'Dinas + Libur Perusahaan + Tepat Waktu'
           : 'Dinas + Libur Perusahaan';
         keterangan = `${latePrefix}${dinasKet}${holidaySuffix()}`;
-      } else if (isWeekend(day)) {
+      } else if (!isSiteActiveDay(attendanceSite, day)) {
         status = hasAttendance
           ? isLate ? 'Dinas + Akhir Pekan + Terlambat' : 'Dinas + Akhir Pekan + Tepat Waktu'
           : 'Dinas + Akhir Pekan';
@@ -1348,9 +1585,9 @@ export function generateEmployeePayrollRecap(
     } else if (holiday?.type === 'company_holiday') {
       status = 'Libur Perusahaan';
       keterangan = `${holiday.name}.`;
-    } else if (isWeekend(day)) {
+    } else if (!isSiteActiveDay(attendanceSite, day)) {
       status = 'Akhir Pekan';
-      keterangan = 'Akhir pekan.';
+      keterangan = 'Akhir pekan / hari nonaktif untuk site ini.';
     } else if (cuti) {
       status = 'Cuti';
       keterangan = cuti.keterangan || 'Cuti approved.';
@@ -1362,10 +1599,50 @@ export function generateEmployeePayrollRecap(
       keterangan = 'Tidak ada data absen dan tidak ada izin/cuti/dinas approved.';
     } else if (hasAttendance) {
       status = isLate ? 'Terlambat' : 'Tepat Waktu';
-      keterangan = timing?.notes || 'Absen tercatat.';
+      keterangan = outEv
+        ? (timing?.notes || 'Absen tercatat.')
+        : `${timing?.notes ? timing.notes + ' ' : ''}Sedang bekerja sejak ${getEventTimeStr(inEv)}, belum tap out.`;
+    } else if (dateStr === todayStr) {
+      // Today is still in progress and there's no tap-in yet — this is not
+      // Alpha (the working day hasn't finished), it's simply pending.
+      status = 'Belum Tap In';
+      keterangan = 'Belum melakukan tap in untuk hari ini.';
     } else {
       status = 'Alpha';
       keterangan = 'Tidak ada data absen dan tidak ada izin/cuti/dinas approved.';
+    }
+
+    // ── Condition/review signals — same fields Monitoring Absensi surfaces
+    // (photo presence, location validation, field-condition category, HRD
+    // review status) — computed only when there's a tap-in to evaluate.
+    const workMinutes = hasAttendance && outEv ? computeWorkMinutes(inEv, outEv, attendanceSite, dateStr) : null;
+    const conditionInfo: ConditionInfo = hasAttendance
+      ? computeConditionInfo(inEv, outEv, attendanceSite, timing?.lateMinutes || 0)
+      : { hasPhoto: false, locationValidationStatus: null, hrdReviewStatus: null, conditionCategory: null, conditionNote: null };
+    const payrollDay = hasAttendance
+      ? resolvePayrollDayMinutes(inEv, outEv, dateStr, attendanceSite, dailyTargetMinutes, todayStr)
+      : { minutes: 0, isFinal: true, needsReview: false };
+
+    // Short, concise payroll remark — matches Monitoring Absensi's "Catatan
+    // Sistem" style and doubles as the Excel KETERANGAN column text.
+    let payrollRemark = '';
+    if (hasAttendance) {
+      const parts: string[] = [];
+      if (isLate) parts.push(`Terlambat ${timing?.lateMinutes} menit`);
+      if (!outEv) parts.push(payrollDay.needsReview ? 'Belum Tap Out — Perlu Review HRD' : 'Belum tap out');
+      if (conditionInfo.locationValidationStatus && !['Valid Otomatis', 'Radius Sesuai', 'Jalan Cocok'].includes(conditionInfo.locationValidationStatus)) {
+        parts.push('Lokasi perlu review');
+      }
+      if (conditionInfo.conditionCategory) parts.push(`Ada laporan kondisi (${conditionInfo.conditionCategory})`);
+      // Note-only signal — absensi is already counted as Hadir/Selesai above;
+      // this never turns the day into a pending-approval state.
+      if (conditionInfo.hrdReviewStatus === 'needs_review' && outEv) parts.push('Perlu catatan HRD');
+      if (!payrollDay.isFinal) parts.push('Belum final untuk payroll');
+      if (parts.length === 0) parts.push(outEv ? 'Hadir' : 'Sedang bekerja');
+      payrollRemark = parts.join(' • ');
+      keterangan = payrollRemark;
+    } else {
+      payrollRemark = status;
     }
 
     return {
@@ -1375,6 +1652,17 @@ export function generateEmployeePayrollRecap(
       tapInTime: dateStr > todayStr ? null : inEv ? getEventTimeStr(inEv) : null,
       tapOutTime: dateStr > todayStr ? null : outEv ? getEventTimeStr(outEv) : null,
       keterangan,
+      workMinutes,
+      hasPhoto: conditionInfo.hasPhoto,
+      locationValidationStatus: conditionInfo.locationValidationStatus,
+      hrdReviewStatus: conditionInfo.hrdReviewStatus,
+      conditionCategory: conditionInfo.conditionCategory,
+      conditionNote: conditionInfo.conditionNote,
+      payrollRemark,
+      payrollMinutesRecognized: payrollDay.minutes,
+      payrollIsFinal: payrollDay.isFinal,
+      payrollNeedsReview: payrollDay.needsReview,
+      tapInEventId: inEv?.id || null,
     };
   });
 
@@ -1404,6 +1692,53 @@ export function generateEmployeePayrollRecap(
   const finalMenitTerlambat = finalLateDetails.reduce((sum, detail) => sum + detail.lateMinutes, 0);
   const finalTotalMinutes = finalHadirDetails.reduce((sum, detail) => sum + (detail.workDurationMinutes || 0), 0);
 
+  // ── Target Periode / Target Berjalan / Jam Aktual / Jam Diakui Payroll ──
+  // hariKerja (computed earlier via getWorkingDays, capped at today) is
+  // "Target Berjalan" days; hariKerjaPeriode (uncapped) is "Target Periode"
+  // days — future dates count toward the period target but never toward
+  // "berjalan" or Alpha.
+  const hariKerjaPeriode = getWorkingDays(effectiveStart, effectiveEnd, holidayDetails, attendanceSite, false);
+  const targetPeriodeMinutes = hariKerjaPeriode * dailyTargetMinutes;
+  const targetBerjalanMinutes = hariKerja * dailyTargetMinutes;
+  const jamAktualMinutes = finalTotalMinutes;
+  const jamDiakuiPayrollMinutes = calendarDetails
+    .filter(d => d.date <= todayStr)
+    .reduce((sum, d) => sum + d.payrollMinutesRecognized, 0);
+  const selisihBerjalanMinutes = jamDiakuiPayrollMinutes - targetBerjalanMinutes;
+  const hariBelumFinal = calendarDetails.filter(d => d.date <= todayStr && !d.payrollIsFinal && d.tapInTime).length;
+  const hariBelumTapOut = calendarDetails.filter(d => d.payrollNeedsReview).length;
+
+  // Temporary debug — confirms whether an employee's attendance_events are
+  // actually reaching Rekap Payroll the same way they reach Monitoring
+  // Absensi. Remove once the join-consistency fix is verified in production.
+  if (typeof window !== 'undefined') {
+    // eslint-disable-next-line no-console
+    console.log('[PAYROLL_RECAP_DEBUG]', {
+      employeeName: resolveName(employee),
+      employeeUid: employeeId,
+      selectedPeriodStart: format(effectiveStart, 'yyyy-MM-dd'),
+      selectedPeriodEnd: format(effectiveEnd, 'yyyy-MM-dd'),
+      eventsForEmployee: myEvents,
+      dailyRows: calendarDetails,
+      summary: {
+        hariKerja,
+        hadir: countedHadirDates.size,
+        terlambat: finalLateDetails.length,
+        menitTerlambat: finalMenitTerlambat,
+        izin: countedCalendarDetails.filter(d => d.status === 'Izin').length,
+        cuti: countedCalendarDetails.filter(d => d.status === 'Cuti').length,
+        alpha: finalAlphaDetails.length,
+        targetPeriodeMinutes,
+        targetBerjalanMinutes,
+        jamAktualMinutes,
+        jamDiakuiPayrollMinutes,
+        selisihBerjalanMinutes,
+        hariBelumFinal,
+        hariBelumTapOut,
+      },
+    });
+  }
+
   return {
     employeeId,
     fullName: resolveName(employee),
@@ -1430,6 +1765,13 @@ export function generateEmployeePayrollRecap(
     alpha: finalAlphaDetails.length,
     totalJamKerja: Math.floor(finalTotalMinutes / 60),
     totalMenitLembur,
+    targetPeriodeMinutes,
+    targetBerjalanMinutes,
+    jamAktualMinutes,
+    jamDiakuiPayrollMinutes,
+    selisihBerjalanMinutes,
+    hariBelumFinal,
+    hariBelumTapOut,
     leaveDetails,
     effectiveStart,
     effectiveEnd,

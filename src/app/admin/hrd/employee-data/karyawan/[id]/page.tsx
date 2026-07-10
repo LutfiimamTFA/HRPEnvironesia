@@ -51,13 +51,14 @@ import {
   ATTENDANCE_METHODS,
   ATTENDANCE_METHOD_LABELS,
   ATTENDANCE_LOCATION_MODE_LABELS,
+  normalizeAttendanceMethodBucket,
   type AttendanceSettings,
 } from "@/lib/attendance-methods";
 import { OvertimeStatusBadge } from "@/components/dashboard/karyawan/OvertimeStatusBadge";
 import { AttendanceMethodEditDialog } from "@/components/dashboard/hrd/AttendanceMethodEditDialog";
 import { HrdScopeEmptyState } from "@/components/dashboard/hrd/HrdScopeEmptyState";
 import { useHrdScopedBrands, useHrdScopedCollection } from "@/hooks/useHrdScopedCollection";
-import { useHrdScope } from "@/hooks/useHrdScope";
+import { useHrdScopeContext as useHrdScope } from "@/providers/hrd-scope-provider";
 import { canHrdAccessBrand } from "@/lib/hrd-scope";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -671,6 +672,39 @@ export default function EmployeeDetailPage({
   }, [empDoc, profileDoc, userDoc, brands, isLoading]);
 
   const hrdInfo = profileDoc?.hrdEmploymentInfo || {};
+
+  // ── Temporary debug tool: log every raw source for this employee so a
+  // brand/attendance-method mismatch across collections is visible at a
+  // glance in the console. Remove once the sync bug is confirmed fixed.
+  useEffect(() => {
+    if (isLoading || !employeeId) return;
+    (async () => {
+      let todaysEvents: any[] = [];
+      try {
+        const todayStr = format(new Date(), "yyyy-MM-dd");
+        const evSnap = await getDocs(
+          query(collection(firestore, "attendance_events"), where("datetime.date", "==", todayStr)),
+        );
+        todaysEvents = evSnap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((e: any) => e.uid === employeeId || e.employeeUid === employeeId || e.userId === employeeId);
+      } catch (err) {
+        console.warn("[EMPLOYEE_SYNC_DEBUG] failed to load today's attendance_events:", err);
+      }
+
+      // eslint-disable-next-line no-console
+      console.groupCollapsed(`[EMPLOYEE_SYNC_DEBUG] ${employeeId}`);
+      console.log("users/{uid}:", userDoc);
+      console.log("employee_profiles/{uid}:", profileDoc);
+      console.log("employees/{uid}:", empDoc);
+      console.log("attendanceMethod source (normalized bucket):", {
+        raw: profileDoc?.attendanceMethod ?? (profileDoc as any)?.attendanceConfig?.method ?? (hrdInfo as any)?.attendanceMethod,
+        normalizedEmployeeRow: normalizedData,
+      });
+      console.log("attendance_events (today):", todaysEvents);
+      console.groupEnd();
+    })();
+  }, [isLoading, employeeId, userDoc, profileDoc, empDoc, hrdInfo, normalizedData, firestore]);
 
   const employmentDefaultValues = useMemo(
     () => ({
@@ -1777,10 +1811,20 @@ export default function EmployeeDetailPage({
     if (!firebaseUser || !userProfile || !employeeId) return;
     try {
       const profileRef = doc(firestore, "employee_profiles", employeeId);
+      // Write the canonical bucket ("web_absen"/"id_card"/"manual") alongside
+      // the raw settings.method value — Kelola Metode Absensi and Monitoring
+      // Absensi both read the canonical bucket, so a mismatch here is what
+      // caused Web Absen employees set from this dialog to disappear there.
+      const bucket = normalizeAttendanceMethodBucket(settings.method) || "manual";
+      const bucketLabel = bucket === "web_absen" ? "Web Absen" : bucket === "id_card" ? "ID Card" : "Manual";
       await setDoc(
         profileRef,
         {
-          attendanceMethod: settings.method,
+          attendanceMethod: bucket,
+          attendanceMethodLabel: bucketLabel,
+          attendanceConfig: { method: bucket, methodLabel: bucketLabel },
+          attendanceMethodUpdatedAt: serverTimestamp(),
+          attendanceMethodUpdatedBy: firebaseUser.uid,
           attendanceRequired: settings.required,
           attendanceLocationMode: settings.locationMode,
           attendanceSiteIds: settings.siteIds,
@@ -1985,17 +2029,25 @@ export default function EmployeeDetailPage({
 
   const structuralPos = hrdStruktur?.structuralPosition || normalizedData?.structuralPosition || "";
 
-  const brandLabel = hrdInfo.brandName ||
-    (empDoc as any)?.brandName ||
-    (empDoc as any)?.brand ||
-    "Belum diisi";
+  // Canonical brand label: always read from normalizeEmployeeRow() output (the
+  // single source of truth shared with the list page) instead of hrdInfo
+  // directly — hrdInfo.brandName can go stale independently of the top-level
+  // employee_profiles.brandId/brandName fields, which is what caused the list
+  // page and this detail page to show two different brands for the same person.
+  const brandLabel = normalizedData?.brandName && normalizedData.brandName !== "Brand belum diatur"
+    ? normalizedData.brandName
+    : hrdInfo.brandName ||
+      (empDoc as any)?.brandName ||
+      (empDoc as any)?.brand ||
+      "Belum diisi";
 
   const divisionLabel = isManagementLevel(structuralPos)
     ? "Tidak berlaku untuk Direksi"
-    : hrdInfo.divisionName ||
-        (empDoc as any)?.divisionName ||
-        normalizedData?.divisi ||
-        "Belum diisi";
+    : (normalizedData?.divisi && normalizedData.divisi !== "Divisi belum diatur"
+        ? normalizedData.divisi
+        : hrdInfo.divisionName ||
+          (empDoc as any)?.divisionName ||
+          "Belum diisi");
   const positionLabel =
     hrdInfo.workRole ||
     (empDoc as any)?.workRole ||

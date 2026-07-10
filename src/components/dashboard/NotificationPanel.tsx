@@ -10,6 +10,7 @@ import {
 import {
   collection,
   query,
+  where,
   orderBy,
   doc,
   writeBatch,
@@ -152,15 +153,26 @@ export function NotificationPanel() {
   const { data: userNotifications, isLoading: isUserLoading, mutate: mutateUser } =
     useCollection<Notification>(notificationsQuery);
 
-  // HRD-level notifications (only for hrd / super-admin)
+  // HRD-level notifications (only for hrd / super-admin). HRD is split
+  // per-brand — only read notifications addressed to this HRD (recipientUid),
+  // never a global list of every HRD's notifications. Super Admin keeps full
+  // visibility (no recipientUid filter; allowed via isSuperAdmin() rule).
   const hrdNotificationsQuery = useMemoFirebase(() => {
     if (!userProfile?.role || !["hrd", "super-admin"].includes(userProfile.role))
       return null;
+    if (userProfile.role === "super-admin") {
+      return query(
+        collection(firestore, "hrd_notifications"),
+        orderBy("createdAt", "desc"),
+      );
+    }
+    if (!userProfile.uid) return null;
     return query(
       collection(firestore, "hrd_notifications"),
+      where("recipientUid", "==", userProfile.uid),
       orderBy("createdAt", "desc"),
     );
-  }, [userProfile?.role, firestore]);
+  }, [userProfile?.role, userProfile?.uid, firestore]);
   const { data: hrdNotifications, isLoading: isHrdLoading, mutate: mutateHrd } =
     useCollection<Notification>(hrdNotificationsQuery);
 

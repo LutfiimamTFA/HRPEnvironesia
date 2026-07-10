@@ -17,6 +17,7 @@ const createSchema = z.object({
       scopeType: z.enum(["selected_companies", "all_companies"]).default("selected_companies"),
       allowedBrandIds: z.array(z.string()).default([]),
       allowedBrandNames: z.array(z.string()).default([]),
+      allowedPayrollGroupIds: z.array(z.string()).default([]),
     })
     .optional(),
 });
@@ -148,6 +149,10 @@ export async function POST(req: NextRequest) {
               parseResult.data.hrdScope?.scopeType === "all_companies"
                 ? []
                 : parseResult.data.hrdScope?.allowedBrandNames || [],
+            allowedPayrollGroupIds:
+              parseResult.data.hrdScope?.scopeType === "all_companies"
+                ? []
+                : parseResult.data.hrdScope?.allowedPayrollGroupIds || [],
           }
         : null;
 

@@ -211,19 +211,25 @@ export function BankChangeRequestModal({
         },
       );
 
-      // Kirim notifikasi ke HRD
+      // Kirim notifikasi ke HRD — diselesaikan server-side (Admin SDK) karena
+      // karyawan tidak boleh membaca roles_hrd untuk menentukan HRD tujuan;
+      // server yang me-resolve HRD sesuai brand karyawan lalu mengisi recipientUid.
       try {
-        await addDoc(collection(firestore, "hrd_notifications"), {
-          type: "bank_change_request",
-          title: "Pengajuan Perubahan Rekening Baru",
-          message: `${initialProfile.fullName || firebaseUser.displayName || "Karyawan"} mengajukan perubahan data rekening payroll. Mohon diperiksa.`,
-          employeeUid: firebaseUser.uid,
-          employeeName:
-            initialProfile.fullName || firebaseUser.displayName || "",
-          requestId: docRef.id,
-          isRead: false,
-          link: `/admin/hrd/employee-data/bank-requests`,
-          createdAt: serverTimestamp(),
+        const idToken = await firebaseUser.getIdToken();
+        await fetch("/api/notifications/hrd-notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({
+            type: "bank_change_request",
+            module: "employee",
+            title: "Pengajuan Perubahan Rekening Baru",
+            message: `${initialProfile.fullName || firebaseUser.displayName || "Karyawan"} mengajukan perubahan data rekening payroll. Mohon diperiksa.`,
+            targetType: "user",
+            targetId: docRef.id,
+            actionUrl: "/admin/hrd/employee-data/bank-requests",
+            brandId: (initialProfile as any).brandId ?? null,
+            brandName: (initialProfile as any).brandName ?? null,
+          }),
         });
       } catch (notifErr) {
         console.error("Gagal kirim notifikasi ke HRD", notifErr);

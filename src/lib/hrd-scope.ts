@@ -6,6 +6,13 @@ export type HrdScope = {
   scopeType: HrdScopeType;
   allowedBrandIds: string[];
   allowedBrandNames: string[];
+  /**
+   * payroll_groups/{id} this HRD was granted via group selection. Purely a
+   * convenience record of "how allowedBrandIds got populated" — access
+   * control itself is still enforced entirely through allowedBrandIds, so a
+   * stale/missing entry here never widens or narrows what the HRD can see.
+   */
+  allowedPayrollGroupIds: string[];
   active?: boolean;
   updatedAt?: Timestamp | { seconds: number; nanoseconds: number } | null;
   updatedBy?: string | null;
@@ -20,6 +27,7 @@ export const DEFAULT_HRD_SCOPE: HrdScope = {
   scopeType: "selected_companies",
   allowedBrandIds: [],
   allowedBrandNames: [],
+  allowedPayrollGroupIds: [],
   active: true,
 };
 
@@ -34,6 +42,9 @@ export function normalizeHrdScope(value: Partial<HrdScope> | null | undefined): 
       : [],
     allowedBrandNames: Array.isArray(value?.allowedBrandNames)
       ? value.allowedBrandNames.filter((name): name is string => typeof name === "string" && name.trim().length > 0)
+      : [],
+    allowedPayrollGroupIds: Array.isArray(value?.allowedPayrollGroupIds)
+      ? value.allowedPayrollGroupIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
       : [],
     active: value?.active !== false,
     updatedAt: value?.updatedAt ?? null,

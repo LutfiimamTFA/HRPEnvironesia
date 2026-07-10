@@ -305,28 +305,71 @@ export function LeaveSubmissionClient() {
   const isLoadingColleagues = false;
   const handoverOptions: any[] = [];
 
-  // Fetch requests submitted by current user
-  const requestsQuery = useMemoFirebase(() => {
+  // Fetch requests submitted by current user only — never a global list.
+  // employeeUid is the PRIMARY ownership field (it's the actual Firebase
+  // Auth UID, and the one firestore.rules' isLeaveRequestOwner() checks
+  // first) — employeeId historically stored the same uid value on old docs
+  // but is really meant for an internal employee code, and is kept here only
+  // as a compatibility fallback for documents written before employeeUid
+  // existed. requesterUid/uid are additional alternate owner fields some
+  // older writes used. Each field gets its own scoped query, merged by doc
+  // id — never an unfiltered collection(...) query, which is what
+  // firestore.rules rejects outright for a karyawan account.
+  const employeeUidQuery = useMemoFirebase(() => {
     if (!userProfile?.uid) return null;
-    return query(
-      collection(firestore, "leave_requests"),
-      where("employeeId", "==", userProfile.uid),
-    );
+    return query(collection(firestore, "leave_requests"), where("employeeUid", "==", userProfile.uid));
   }, [userProfile?.uid, firestore]);
-  const {
-    data: requests,
-    isLoading: isLoadingRequests,
-    mutate: mutateRequests,
-  } = useCollection<LeaveRequest>(requestsQuery);
+  const requesterUidQuery = useMemoFirebase(() => {
+    if (!userProfile?.uid) return null;
+    return query(collection(firestore, "leave_requests"), where("requesterUid", "==", userProfile.uid));
+  }, [userProfile?.uid, firestore]);
+  const uidQuery = useMemoFirebase(() => {
+    if (!userProfile?.uid) return null;
+    return query(collection(firestore, "leave_requests"), where("uid", "==", userProfile.uid));
+  }, [userProfile?.uid, firestore]);
+  const userIdQuery = useMemoFirebase(() => {
+    if (!userProfile?.uid) return null;
+    return query(collection(firestore, "leave_requests"), where("userId", "==", userProfile.uid));
+  }, [userProfile?.uid, firestore]);
+  // Compatibility-only: old documents that predate employeeUid/requesterUid/uid.
+  const employeeIdQuery = useMemoFirebase(() => {
+    if (!userProfile?.uid) return null;
+    return query(collection(firestore, "leave_requests"), where("employeeId", "==", userProfile.uid));
+  }, [userProfile?.uid, firestore]);
+
+  const { data: byEmployeeUid, isLoading: isLoadingByEmployeeUid, mutate: mutateByEmployeeUid } = useCollection<LeaveRequest>(employeeUidQuery);
+  const { data: byRequesterUid, isLoading: isLoadingByRequesterUid, mutate: mutateByRequesterUid } = useCollection<LeaveRequest>(requesterUidQuery);
+  const { data: byUid, isLoading: isLoadingByUid, mutate: mutateByUid } = useCollection<LeaveRequest>(uidQuery);
+  const { data: byUserId, isLoading: isLoadingByUserId, mutate: mutateByUserId } = useCollection<LeaveRequest>(userIdQuery);
+  const { data: byEmployeeId, isLoading: isLoadingByEmployeeId, mutate: mutateByEmployeeId } = useCollection<LeaveRequest>(employeeIdQuery);
+
+  useEffect(() => {
+    if (!userProfile?.uid) return;
+    console.log("[LEAVE_REQUEST_QUERY_DEBUG]", {
+      component: "LeaveSubmissionClient",
+      uid: userProfile.uid,
+      email: userProfile.email,
+      roleKey: userProfile.role,
+      queryMode: "employee",
+      fieldUsed: "employeeUid",
+      fallbackFieldsUsed: ["requesterUid", "uid", "userId", "employeeId"],
+    });
+  }, [userProfile?.uid, userProfile?.email, userProfile?.role]);
+
+  const isLoadingRequests = isLoadingByEmployeeUid || isLoadingByRequesterUid || isLoadingByUid || isLoadingByUserId || isLoadingByEmployeeId;
+  const mutateRequests = () => { mutateByEmployeeUid(); mutateByRequesterUid(); mutateByUid(); mutateByUserId(); mutateByEmployeeId(); };
 
   const sortedRequests = useMemo(() => {
-    if (!requests) return [];
-    return [...requests].sort((a, b) => {
+    const merged = new Map<string, LeaveRequest>();
+    for (const r of [...(byEmployeeUid || []), ...(byRequesterUid || []), ...(byUid || []), ...(byUserId || []), ...(byEmployeeId || [])]) {
+      if (r.id) merged.set(r.id, r);
+    }
+    return Array.from(merged.values()).sort((a, b) => {
       const aTime = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
       const bTime = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
       return bTime - aTime;
     });
-  }, [requests]);
+  }, [byEmployeeUid, byRequesterUid, byUid, byUserId, byEmployeeId]);
 
   // Self-healing / automatic balance initialization via secure API route
   useEffect(() => {
@@ -561,71 +604,19 @@ export function LeaveSubmissionClient() {
     employeeProfile,
   ]);
 
-  // Check same division overlap warning
+  // Same-division overlap warning — DISABLED client-side. This used to run
+  // where("divisionName","==",division) across ALL of leave_requests, which
+  // is a list query that can return other employees' documents. Firestore
+  // rules correctly restrict a karyawan account to reading only their own
+  // leave_requests docs, so that query was rejected outright with
+  // permission-denied for every employee, not just filtered down — Firestore
+  // denies a list query entirely if any potential result fails the rule,
+  // it doesn't silently drop the disallowed docs. Showing this warning again
+  // would require a server-side API (using the Admin SDK, which isn't bound
+  // by these rules) rather than a direct client Firestore query.
   const [divisionOverlapWarning, setDivisionOverlapWarning] = useState<
     string | null
   >(null);
-  useEffect(() => {
-    if (
-      !watchStartDate ||
-      !watchEndDate ||
-      !userProfile ||
-      !firestore ||
-      watchEndDate < watchStartDate
-    ) {
-      setDivisionOverlapWarning(null);
-      return;
-    }
-
-    const checkDivisionOverlap = async () => {
-      try {
-        const division =
-          employeeProfile?.division || userProfile.division || "";
-        if (!division || division === "N/A") return;
-
-        const q = query(
-          collection(firestore, "leave_requests"),
-          where("divisionName", "==", division),
-          where("status", "in", [
-            "pending_manager",
-            "pending_manager_review",
-            "pending_hrd",
-            "pending_hrd_review",
-            "approved",
-            "active_leave",
-          ]),
-        );
-        const snapshot = await getDocs(q);
-        const overlaps: string[] = [];
-
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data() as LeaveRequest;
-          if (data.employeeId === userProfile.uid) return;
-
-          const startA = watchStartDate.getTime();
-          const endA = watchEndDate.getTime();
-          const startB = data.startDate.toDate().getTime();
-          const endB = data.endDate.toDate().getTime();
-
-          if (startA <= endB && startB <= endA) {
-            overlaps.push(data.employeeName);
-          }
-        });
-
-        if (overlaps.length > 0) {
-          setDivisionOverlapWarning(
-            `Peringatan: Karyawan satu divisi (${overlaps.join(", ")}) juga mengajukan cuti di tanggal yang berdekatan/sama.`,
-          );
-        } else {
-          setDivisionOverlapWarning(null);
-        }
-      } catch (e) {
-        console.error("Failed to check division overlap:", e);
-      }
-    };
-
-    checkDivisionOverlap();
-  }, [watchStartDate, watchEndDate, userProfile, employeeProfile, firestore]);
 
   const handleCreate = () => {
     setSelectedRequest(null);
@@ -798,8 +789,17 @@ export function LeaveSubmissionClient() {
       const isDivisionManager = structuralPosition === "division_manager";
 
       const payload: any = {
-        employeeId: userProfile.uid,
-        employeeUid: userProfile.uid, // Required by Firestore Security Rules to map to auth.uid
+        // employeeUid is the actual Firebase Auth UID — the field
+        // firestore.rules' isLeaveRequestOwner() checks first, and the one
+        // this component's own read queries filter by. employeeId is kept
+        // for display/internal employee code purposes only (falls back to
+        // the uid if no code is on file yet) — it is NOT the ownership
+        // field, even though older docs used to (incorrectly) rely on it.
+        employeeUid: userProfile.uid,
+        requesterUid: userProfile.uid, // Alternate ownership field some rules/tools check
+        uid: userProfile.uid, // Alternate ownership field some rules/tools check
+        userId: userProfile.uid, // Alternate ownership field some rules/tools check
+        employeeId: (employeeProfile as any)?.employeeId || userProfile.uid,
         employeeName: userProfile.fullName,
         brandId: Array.isArray(employeeProfile?.brandId)
           ? employeeProfile.brandId[0]

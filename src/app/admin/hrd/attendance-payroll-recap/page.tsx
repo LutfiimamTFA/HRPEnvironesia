@@ -30,20 +30,30 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
-import { collection, collectionGroup, where } from "firebase/firestore";
+import { useCollection, useFirestore, useMemoFirebase, setDocumentNonBlocking } from "@/firebase";
+import { collection, collectionGroup, where, doc, getDoc, serverTimestamp } from "firebase/firestore";
+import { useAuth } from "@/providers/auth-provider";
+import { useToast } from "@/hooks/use-toast";
 import { format, eachDayOfInterval } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
-import { Download, AlertCircle, RotateCcw, CalendarDays, Info, Eye, FileSpreadsheet, Clock, MapPin, Briefcase } from "lucide-react";
+import { Download, AlertCircle, RotateCcw, CalendarDays, Info, Eye, FileSpreadsheet, Clock, MapPin, Briefcase, MoreVertical, CheckCircle2, XCircle, HelpCircle, Loader2, ChevronUp, ChevronDown } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import type { EmployeeProfile, Brand } from "@/lib/types";
+import type { EmployeeProfile, Brand, PayrollTemplate } from "@/lib/types";
+import {
+  loadTemplateWorkbook,
+  writeWorkbookToBlob,
+  fillPayrollTemplateSheet,
+  buildPayrollTemplateDayRows,
+} from "@/lib/payroll-template";
 import {
   calculatePayrollPeriod,
   generatePayrollRecap,
+  formatWorkMinutes,
   INDONESIA_PUBLIC_HOLIDAYS_2026,
   mergeEmployeeIdentity,
   type HolidayDetail,
@@ -52,11 +62,32 @@ import {
   type LeaveDetail,
 } from "@/lib/payroll-recap";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { useHrdScopedBrands, useHrdScopedCollection } from "@/hooks/useHrdScopedCollection";
+
+type ExportStepStatus = "pending" | "active" | "done" | "error";
+interface ExportStepState { label: string; status: ExportStepStatus; }
+
+const EXPORT_STEP_LABELS = [
+  "Validasi akses HRD",
+  "Mengambil data absensi",
+  "Mengecek Payroll Group",
+  "Mengambil template Google Drive",
+  "Menyalin style template",
+  "Menulis data detail",
+  "Mengisi total karyawan",
+  "Mengisi Rekap F&A",
+  "Membuat file Excel",
+  "Mengunduh file",
+];
+
+function makeInitialExportSteps(): ExportStepState[] {
+  return EXPORT_STEP_LABELS.map((label) => ({ label, status: "pending" as ExportStepStatus }));
+}
 import { HrdScopeEmptyState } from "@/components/dashboard/hrd/HrdScopeEmptyState";
 
 const PERIOD_MODES: Array<{ value: PeriodMode; label: string }> = [
-  { value: "payroll", label: "Periode Payroll (26–25)" },
+  { value: "payroll", label: "Periode Payroll (19–20)" },
   { value: "calendar", label: "Bulan Kalender" },
   { value: "custom", label: "Custom Range" },
 ];
@@ -374,6 +405,7 @@ function matchesCalendarFilter(status: string, filter: CalendarFilterValue) {
   if (filter === "Terlambat") return ["Terlambat", "Dinas + Terlambat"].includes(status);
   if (filter === "Izin/Cuti/Dinas") return ["Izin", "Cuti"].includes(status) || status.startsWith("Dinas");
   if (filter === "Libur") return ["Libur Nasional", "Cuti Bersama", "Libur Perusahaan", "Akhir Pekan"].includes(status);
+  if (filter === "Belum Berjalan") return ["Belum Berjalan", "Belum Tap In"].includes(status);
   return status === filter;
 }
 
@@ -384,6 +416,7 @@ function CalendarSummaryTable({
   onFilterChange,
   onSearchChange,
   leaveDetails = [],
+  onDecision,
 }: {
   rows: PayrollRecapRow["calendarDetails"];
   filter: CalendarFilterValue;
@@ -391,6 +424,7 @@ function CalendarSummaryTable({
   onFilterChange: (value: CalendarFilterValue) => void;
   onSearchChange: (value: string) => void;
   leaveDetails?: LeaveDetail[];
+  onDecision?: (dateStr: string, eventId: string, decision: string, manualCheckoutTime?: string) => void;
 }) {
   const dinasMeta = useMemo(() => buildDinasMeta(leaveDetails), [leaveDetails]);
 
@@ -489,9 +523,62 @@ function CalendarSummaryTable({
                           <DinasDetailPopover detail={dinasDetail} index={mIdx} total={total} />
                         </div>
                       ) : (
-                        <span className="line-clamp-2 text-xs leading-5 text-slate-700 dark:text-slate-300 max-w-xs">
-                          {day.keterangan || "-"}
-                        </span>
+                        <div className="max-w-xs flex items-start justify-between gap-1.5">
+                          <div className="min-w-0">
+                            <span className="line-clamp-2 text-xs leading-5 text-slate-700 dark:text-slate-300">
+                              {day.keterangan || "-"}
+                            </span>
+                            {day.tapInTime && (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${day.hasPhoto ? "border-emerald-200 text-emerald-700 dark:border-emerald-800 dark:text-emerald-400" : "border-slate-200 text-slate-400"}`}>
+                                  {day.hasPhoto ? "Foto Ada" : "Foto Tidak Ada"}
+                                </Badge>
+                                {day.locationValidationStatus && (
+                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">{day.locationValidationStatus}</Badge>
+                                )}
+                                {day.hrdReviewStatus === "needs_review" && (
+                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-amber-200 text-amber-700 dark:border-amber-800 dark:text-amber-400">Perlu Review</Badge>
+                                )}
+                                {day.conditionCategory && (
+                                  <Badge className="text-[10px] px-1.5 py-0 bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">{day.conditionCategory}</Badge>
+                                )}
+                                {!day.payrollIsFinal && (
+                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-slate-300 text-slate-500">Belum Final</Badge>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          {!day.payrollIsFinal && day.tapInEventId && onDecision && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0">
+                                  <MoreVertical className="h-3.5 w-3.5" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => onDecision(day.date, day.tapInEventId!, "full_day")}>
+                                  <CheckCircle2 className="mr-2 h-3.5 w-3.5 text-emerald-600" /> Setujui sebagai full day
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => onDecision(day.date, day.tapInEventId!, "default_checkout")}>
+                                  <Clock className="mr-2 h-3.5 w-3.5 text-teal-600" /> Setujui s.d. jam pulang default
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => {
+                                  const manual = window.prompt("Jam pulang manual (HH:mm)", "17:00");
+                                  if (manual) onDecision(day.date, day.tapInEventId!, "manual_checkout", manual);
+                                }}>
+                                  <Clock className="mr-2 h-3.5 w-3.5 text-blue-600" /> Setujui dengan jam pulang manual
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => onDecision(day.date, day.tapInEventId!, "needs_clarification")}>
+                                  <HelpCircle className="mr-2 h-3.5 w-3.5 text-purple-600" /> Minta klarifikasi
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => onDecision(day.date, day.tapInEventId!, "rejected")} className="text-red-600 focus:text-red-600">
+                                  <XCircle className="mr-2 h-3.5 w-3.5" /> Tolak / tidak dihitung
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
+                        </div>
                       )}
                     </TableCell>
                   </TableRow>
@@ -510,11 +597,13 @@ function AttendancePayrollDetailModal({
   period,
   open,
   onClose,
+  onDecision,
 }: {
   row: PayrollRecapRow | null;
   period: { startDate: Date; endDate: Date };
   open: boolean;
   onClose: () => void;
+  onDecision?: (dateStr: string, eventId: string, decision: string, manualCheckoutTime?: string) => void;
 }) {
   const [calendarFilter, setCalendarFilter] = useState<CalendarFilterValue>("Semua");
   const [calendarSearch, setCalendarSearch] = useState("");
@@ -570,9 +659,29 @@ function AttendancePayrollDetailModal({
               </div>
             ))}
           </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+            {[
+              { label: "Target Periode", value: formatWorkMinutes(row.targetPeriodeMinutes), subtext: "seluruh periode" },
+              { label: "Target Berjalan", value: formatWorkMinutes(row.targetBerjalanMinutes), subtext: "s.d. hari ini" },
+              { label: "Jam Aktual", value: formatWorkMinutes(row.jamAktualMinutes), subtext: "tap in–out lengkap" },
+              { label: "Jam Diakui Payroll", value: formatWorkMinutes(row.jamDiakuiPayrollMinutes), subtext: "final untuk payroll" },
+              {
+                label: "Selisih Berjalan", value: `${row.selisihBerjalanMinutes >= 0 ? "+" : "-"}${formatWorkMinutes(Math.abs(row.selisihBerjalanMinutes))}`,
+                subtext: row.selisihBerjalanMinutes < 0 ? "kurang dari target" : "sesuai/lebih target",
+              },
+              { label: "Hari Belum Final", value: String(row.hariBelumFinal), subtext: "belum tap out" },
+              { label: "Hari Perlu Review", value: String(row.hariBelumTapOut), subtext: "sudah lewat, belum tap out" },
+            ].map(card => (
+              <div key={card.label} className="rounded-md border border-teal-100 bg-teal-50/50 px-3 py-2 dark:border-teal-900/40 dark:bg-teal-950/20">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-teal-700 dark:text-teal-400">{card.label}</p>
+                <p className="mt-1 text-base font-bold leading-none text-slate-900 dark:text-white">{card.value}</p>
+                <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{card.subtext}</p>
+              </div>
+            ))}
+          </div>
           <div className="mt-3 flex items-center gap-2 rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-300">
             <Info className="h-3.5 w-3.5 shrink-0" />
-            <span>Rekap dihitung berdasarkan periode payroll yang dipilih. Tanggal masa depan belum masuk perhitungan.</span>
+            <span>Jam Diakui Payroll hanya menghitung hari dengan tap in &amp; tap out lengkap, atau yang sudah diputuskan HRD. Hari tanpa tap out tidak otomatis dihitung 8 jam.</span>
           </div>
         </div>
         <div className="min-h-0 flex-1 px-5 py-4">
@@ -589,6 +698,7 @@ function AttendancePayrollDetailModal({
             onFilterChange={setCalendarFilter}
             onSearchChange={setCalendarSearch}
             leaveDetails={row.leaveDetails}
+            onDecision={onDecision}
           />
         </div>
       </DialogContent>
@@ -599,6 +709,8 @@ function AttendancePayrollDetailModal({
 export default function RekapAbsensiPayrollPage() {
   const hasAccess = useRoleGuard(["hrd", "super-admin"]);
   const firestore = useFirestore();
+  const { userProfile, firebaseUser } = useAuth();
+  const { toast } = useToast();
 
   // ── Period state ──
   const [periodMode, setPeriodMode] = useState<PeriodMode>("payroll");
@@ -635,8 +747,24 @@ export default function RekapAbsensiPayrollPage() {
 
   const { data: brands, mutate: refetchBrands } = useHrdScopedBrands();
 
-  const { data: attendanceEvents, isLoading: loadingAttendance, mutate: refetchAttendance } =
-    useHrdScopedCollection<any>("attendance_events", { realtime: false });
+  // payroll_templates is never listed here — firestore.rules only grants HRD
+  // a single-document `get`, not `list`. Individual templates are fetched via
+  // getDoc(doc(...)) inside handleExportByTemplate, one per templateId
+  // actually referenced by the brands this HRD is scoped to.
+
+  // attendance_events is fetched UNSCOPED (not via useHrdScopedCollection),
+  // same as Monitoring Absensi — real events don't reliably carry `brandId`,
+  // so a server-side where("brandId","in",allowedBrandIds) filter silently
+  // dropped events for employees like Daniel, showing him as Alpha in Rekap
+  // Payroll while Monitoring Absensi (already fixed the same way) showed his
+  // tap-in correctly. The HRD scope boundary is enforced downstream instead:
+  // generateEmployeePayrollRecap only ever matches events against employees
+  // already present in `mergedEmployees`, which IS brand-scoped via the
+  // employee_profiles query above.
+  const { data: attendanceEvents, isLoading: loadingAttendance, mutate: refetchAttendance } = useCollection<any>(
+    useMemoFirebase(() => collection(firestore, "attendance_events"), [firestore]),
+    { realtime: false },
+  );
 
   const { data: attendanceSites, mutate: refetchAttendanceSites } = useHrdScopedCollection<any>("attendance_sites", { realtime: false });
 
@@ -697,17 +825,23 @@ export default function RekapAbsensiPayrollPage() {
     });
   }, [employeeProfiles, usersByUid, employeeDocsByUid]);
 
-  // ── Holiday dates ──
+  // ── Holiday dates ── company_holidays schema: { dateKey, name, type, appliesToBrandIds }
   const holidayDetails = useMemo<HolidayDetail[]>(() => {
     const companyHolidayDetails = (companyHolidays || []).flatMap((h: any) => {
       const dates: HolidayDetail[] = [];
       const holidayType = h.type === "national_holiday" || h.type === "collective_leave" ? h.type : "company_holiday";
       const holidayName = h.name || h.title || h.description || "Libur perusahaan";
-      if (h.date) {
+      const appliesToBrandIds = Array.isArray(h.appliesToBrandIds) && h.appliesToBrandIds.length > 0
+        ? h.appliesToBrandIds
+        : ["all"];
+      // dateKey ("YYYY-MM-DD") is the canonical field; `date` kept as a fallback for older docs.
+      const singleDateRaw = h.dateKey || h.date;
+      if (singleDateRaw) {
         dates.push({
-          date: typeof h.date === 'string' ? h.date : format(h.date.toDate?.() || new Date(h.date), 'yyyy-MM-dd'),
+          date: typeof singleDateRaw === 'string' ? singleDateRaw : format(singleDateRaw.toDate?.() || new Date(singleDateRaw), 'yyyy-MM-dd'),
           type: holidayType,
           name: holidayName,
+          appliesToBrandIds,
         });
       }
       if (h.startDate && h.endDate) {
@@ -718,6 +852,7 @@ export default function RekapAbsensiPayrollPage() {
             date: format(d, 'yyyy-MM-dd'),
             type: holidayType,
             name: holidayName,
+            appliesToBrandIds,
           }));
         } catch { /* skip */ }
       }
@@ -874,6 +1009,235 @@ export default function RekapAbsensiPayrollPage() {
     exportSummaryXlsx(recapRows, activePeriod);
   };
 
+  // Exports using each brand's Super-Admin-mapped Excel template (never a
+  // brand-name guess) — brands/{id}.payrollTemplateId + payrollSheetName.
+  // `brands` here is already HRD-scoped (via useHrdScopedBrands), so this can
+  // never reach a brand outside allowedBrandIds.
+  const [isExportingTemplate, setIsExportingTemplate] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportSteps, setExportSteps] = useState<ExportStepState[]>(() => makeInitialExportSteps());
+  const [exportErrorMessage, setExportErrorMessage] = useState<string | null>(null);
+  const [showExportStepDetails, setShowExportStepDetails] = useState(false);
+
+  const markStep = (index: number, status: ExportStepStatus) => {
+    setExportSteps((prev) => prev.map((s, i) => (i === index ? { ...s, status } : i < index ? { ...s, status: "done" } : s)));
+  };
+
+  const handleExportByTemplate = async () => {
+    setExportErrorMessage(null);
+    setExportSteps(makeInitialExportSteps());
+    setShowExportStepDetails(false);
+    setExportModalOpen(true);
+    setIsExportingTemplate(true);
+
+    const fail = (stepIndex: number, message: string) => {
+      markStep(stepIndex, "error");
+      setExportErrorMessage(message);
+    };
+
+    try {
+      // Step 1 — Validasi akses HRD
+      markStep(0, "active");
+      const scopedBrands = (brands || []) as Brand[];
+      const targetBrands = selectedBrand === "all"
+        ? scopedBrands
+        : scopedBrands.filter((b) => b.id === selectedBrand);
+      if (targetBrands.length === 0) {
+        fail(0, "Anda tidak memiliki akses ke perusahaan ini.");
+        return;
+      }
+      markStep(0, "done");
+
+      // Step 2 — Mengambil data absensi (already loaded reactively into recapRows)
+      markStep(1, "active");
+      if (recapRows.length === 0) {
+        fail(1, "Tidak ada data absensi pada periode dan filter yang dipilih.");
+        return;
+      }
+      markStep(1, "done");
+
+      // Step 3 — Mengambil Payroll Group & template mapping
+      markStep(2, "active");
+      const missingMapping = targetBrands.filter((b) => !b.payrollTemplateId || !b.payrollSheetName);
+      if (missingMapping.length > 0) {
+        fail(2, `Template payroll untuk ${missingMapping.map((b) => b.name).join(", ")} belum diatur. Hubungi Super Admin.`);
+        return;
+      }
+      const byTemplate = new Map<string, Brand[]>();
+      targetBrands.forEach((b) => {
+        const key = b.payrollTemplateId!;
+        if (!byTemplate.has(key)) byTemplate.set(key, []);
+        byTemplate.get(key)!.push(b);
+      });
+      markStep(2, "done");
+
+      const monthLabel = format(new Date(selectedYear, selectedMonth, 1), "MMMM_yyyy", { locale: idLocale });
+      const periodTitle = `PAYROLL ${activePeriod.displayLabel.replace(/^payroll\s*/i, "").toUpperCase()}`;
+      const periodRangeLabel = `${format(activePeriod.startDate, "d MMMM yyyy", { locale: idLocale })} - ${format(activePeriod.endDate, "d MMMM yyyy", { locale: idLocale })}`;
+      const monthPayrollLabel = format(new Date(selectedYear, selectedMonth, 1), "MMMM yyyy", { locale: idLocale });
+      // Real export timestamp, Asia/Jakarta — never hardcoded.
+      const exportedAtLabel = `${new Intl.DateTimeFormat("id-ID", {
+        timeZone: "Asia/Jakarta", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit",
+      }).format(new Date())} WIB`;
+
+      for (const [templateId, brandsForTemplate] of byTemplate) {
+        // Single-document read (allowed by firestore.rules for active HRD),
+        // never a collection list — see the comment above the brands query.
+        console.log("[PAYROLL_TEMPLATE_QUERY_DEBUG]", {
+          uid: firebaseUser?.uid,
+          roleKey: userProfile?.role,
+          templateId,
+          method: "getDoc",
+          location: "attendance-payroll-recap/page.tsx:handleExportByTemplate",
+        });
+        const templateSnap = await getDoc(doc(firestore, "payroll_templates", templateId));
+        if (!templateSnap.exists()) {
+          fail(2, `Template untuk ${brandsForTemplate.map((b) => b.name).join(", ")} sudah dihapus. Hubungi Super Admin.`);
+          return;
+        }
+        const template = { id: templateSnap.id, ...(templateSnap.data() as Omit<PayrollTemplate, "id">) };
+
+        // Step 4 — Mengambil file template dari Google Drive
+        markStep(3, "active");
+        if (!firebaseUser) { fail(3, "Sesi tidak valid, silakan login ulang."); return; }
+        const idToken = await firebaseUser.getIdToken();
+        const response = await fetch(`/api/payroll-templates/${template.id}/download`, {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        if (!response.ok) {
+          const errBody = await response.json().catch(() => null);
+          fail(3, errBody?.message || "Gagal mengambil file template dari Google Drive.");
+          return;
+        }
+        const buffer = await response.arrayBuffer();
+        markStep(3, "done");
+
+        // Step 5 — Menyalin style template (loading the workbook itself
+        // brings in every style/merge/column-width from the uploaded file)
+        markStep(4, "active");
+        const workbook = await loadTemplateWorkbook(buffer);
+        markStep(4, "done");
+
+        // Step 6 — Menulis data detail (fillPayrollTemplateSheet also builds
+        // the TOTAL rows and Rekap F&A in the same pass — steps 7/8 below
+        // are reported right after since there's no separate library call
+        // to hang them on, not because the work hasn't happened yet).
+        markStep(5, "active");
+        let anyFilled = false;
+
+        // Brands sharing one sheet (e.g. every brand in one Payroll Group)
+        // MUST be filled in a single fillPayrollTemplateSheet call — that
+        // function always starts writing at the template's own anchor row,
+        // so calling it once per brand on the same sheet would make each
+        // brand's employees overwrite the previous brand's rows instead of
+        // appending after them (this was the "data kecampur" bug).
+        const bySheet = new Map<string, Brand[]>();
+        brandsForTemplate.forEach((b) => {
+          const key = b.payrollSheetName!;
+          if (!bySheet.has(key)) bySheet.set(key, []);
+          bySheet.get(key)!.push(b);
+        });
+
+        for (const [sheetName, brandsForSheet] of bySheet) {
+          const orderedBrandsForSheet = brandsForSheet.slice().sort((x, y) => x.name.localeCompare(y.name, "id"));
+          const employees = orderedBrandsForSheet.flatMap((b) =>
+            recapRows
+              .filter((r) => r.brandId === b.id)
+              .slice()
+              .sort((x, y) => x.fullName.localeCompare(y.fullName, "id"))
+              .map((row) => ({ row, days: buildPayrollTemplateDayRows(row) })),
+          );
+          if (employees.length === 0) continue;
+
+          const groupIdsForSheet = new Set(orderedBrandsForSheet.map((b) => b.payrollGroupId).filter(Boolean));
+          const payrollGroupLabel = groupIdsForSheet.size === 1 ? orderedBrandsForSheet[0].payrollGroupName : undefined;
+          const brandNamesForSheet = orderedBrandsForSheet.map((b) => b.name);
+
+          console.log("[SINGLE_COMPANY_EXPORT_DEBUG]", {
+            brandId: orderedBrandsForSheet[0]?.id,
+            brandName: orderedBrandsForSheet.map((b) => b.name).join(", "),
+            payrollTemplateId: templateId,
+            payrollSheetName: sheetName,
+            sheetNameUsed: sheetName,
+            employeeCount: employees.length,
+            summaryCount: employees.length,
+            firstSummary: employees[0]?.row.fullName,
+          });
+          if (orderedBrandsForSheet.length === 1) {
+            console.log("[SINGLE_COMPANY_EMPLOYEE_DEBUG]", {
+              brandId: orderedBrandsForSheet[0].id,
+              brandName: orderedBrandsForSheet[0].name,
+              employeeCount: employees.length,
+              employeeNames: employees.map((e) => e.row.fullName),
+              summaryCount: employees.length,
+              summaries: employees.map((e) => ({
+                fullName: e.row.fullName,
+                jamDiakuiPayrollMinutes: e.row.jamDiakuiPayrollMinutes,
+                jamAktualMinutes: e.row.jamAktualMinutes,
+                targetPeriodeMinutes: e.row.targetPeriodeMinutes,
+              })),
+            });
+          }
+
+          const result = fillPayrollTemplateSheet(workbook, sheetName, employees, {
+            periodTitle,
+            periodRangeLabel,
+            monthPayrollLabel,
+            exportedAtLabel,
+            companyNames: brandNamesForSheet,
+            payrollGroupLabel,
+          });
+          if (!result.ok) {
+            fail(5, `Gagal mengisi sheet "${sheetName}" untuk ${brandNamesForSheet.join(", ")}: ${result.error}`);
+            return;
+          }
+          anyFilled = true;
+        }
+        markStep(5, "done");
+        markStep(6, "done"); // Mengisi total karyawan
+        markStep(7, "done"); // Mengisi Rekap F&A
+
+        if (!anyFilled) continue;
+
+        // Step 9 — Membuat file Excel
+        markStep(8, "active");
+        const blob = await writeWorkbookToBlob(workbook);
+        markStep(8, "done");
+
+        const codes = new Set(brandsForTemplate.map((b) => b.code || "OTHER"));
+        const groupIds = new Set(brandsForTemplate.map((b) => b.payrollGroupId).filter(Boolean));
+        const groupName = groupIds.size === 1 ? brandsForTemplate[0].payrollGroupName : null;
+        const fileName = codes.size === 1
+          ? `Payroll_${[...codes][0]}_${monthLabel}.xlsx`
+          : groupName
+          ? `Payroll_${groupName.replace(/\s+/g, "_")}_${monthLabel}.xlsx`
+          : `Payroll_HRD_${monthLabel}.xlsx`;
+
+        // Step 10 — Mengunduh file
+        markStep(9, "active");
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        URL.revokeObjectURL(url);
+        markStep(9, "done");
+      }
+
+      toast({ title: "Export berhasil", description: "File payroll berhasil dibuat sesuai template dan brand yang Anda pegang." });
+    } catch (error: any) {
+      setExportSteps((prev) => {
+        const activeIndex = prev.findIndex((s) => s.status === "active");
+        const idx = activeIndex >= 0 ? activeIndex : prev.length - 1;
+        return prev.map((s, i) => (i === idx ? { ...s, status: "error" } : s));
+      });
+      setExportErrorMessage(error.message || "Terjadi kesalahan saat export.");
+      toast({ variant: "destructive", title: "Gagal export sesuai template", description: error.message });
+    } finally {
+      setIsExportingTemplate(false);
+    }
+  };
+
   if (!hasAccess) {
     return <DashboardLayout pageTitle="Rekap Absensi Payroll"><Skeleton className="h-[600px] w-full" /></DashboardLayout>;
   }
@@ -912,6 +1276,15 @@ export default function RekapAbsensiPayrollPage() {
             <Button variant="outline" className="gap-2" onClick={exportPayrollSummary} disabled={recapRows.length === 0}>
               <Download className="h-4 w-4" />
               Export
+            </Button>
+            <Button
+              className="gap-2"
+              onClick={handleExportByTemplate}
+              disabled={recapRows.length === 0 || isExportingTemplate}
+              title="Export memakai template Excel resmi perusahaan (Payroll EGS/GIG), sesuai brand yang Anda pegang."
+            >
+              {isExportingTemplate ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+              Export Sesuai Template Brand
             </Button>
           </div>
         </div>
@@ -1154,7 +1527,27 @@ export default function RekapAbsensiPayrollPage() {
                           ) : <span className="text-sm text-slate-400">—</span>}
                         </TableCell>
                         <TableCell className="text-right text-sm tabular-nums font-medium text-slate-700 dark:text-slate-300">
-                          {row.totalJamKerja > 0 ? `${row.totalJamKerja}h` : <span className="text-slate-400">—</span>}
+                          <div>
+                            <span className="font-semibold">{formatWorkMinutes(row.jamDiakuiPayrollMinutes)}</span>
+                            <span className="text-slate-400"> / {formatWorkMinutes(row.targetBerjalanMinutes)} berjalan</span>
+                          </div>
+                          <div className="text-[10px] font-normal text-slate-400">
+                            Target periode {formatWorkMinutes(row.targetPeriodeMinutes)}
+                          </div>
+                          {(row.hariBelumFinal > 0 || row.hariBelumTapOut > 0) && (
+                            <div className="mt-1 flex flex-wrap justify-end gap-1">
+                              {row.hariBelumTapOut > 0 && (
+                                <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-amber-200 text-amber-700 dark:border-amber-800 dark:text-amber-400">
+                                  {row.hariBelumTapOut} hari perlu review
+                                </Badge>
+                              )}
+                              {row.hariBelumFinal > row.hariBelumTapOut && (
+                                <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-slate-200 text-slate-500">
+                                  Belum Final
+                                </Badge>
+                              )}
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className="text-right pr-4">
                           <Button
@@ -1194,7 +1587,110 @@ export default function RekapAbsensiPayrollPage() {
         period={activePeriod}
         open={!!lateDetailRow}
         onClose={() => setLateDetailRow(null)}
+        onDecision={async (dateStr, eventId, decision, manualCheckoutTime) => {
+          if (!userProfile) return;
+          try {
+            await setDocumentNonBlocking(
+              doc(firestore, "attendance_events", eventId),
+              {
+                payrollDayDecision: decision,
+                payrollManualCheckoutTime: decision === "manual_checkout" ? manualCheckoutTime : null,
+                payrollDecisionByUid: userProfile.uid,
+                payrollDecisionByName: (userProfile as any).displayName || userProfile.fullName || userProfile.email,
+                payrollDecisionAt: serverTimestamp(),
+              },
+              { merge: true },
+            );
+            toast({ title: "Keputusan payroll disimpan", description: `Tanggal ${formatDateId(dateStr)} diperbarui.` });
+            refetchAttendance();
+          } catch (error: any) {
+            toast({ variant: "destructive", title: "Gagal menyimpan keputusan", description: error.message });
+          }
+        }}
       />
+
+      <Dialog open={exportModalOpen} onOpenChange={(open) => { if (!isExportingTemplate) setExportModalOpen(open); }}>
+        <DialogContent
+          className="sm:max-w-[420px] p-5"
+          onInteractOutside={(e) => { if (isExportingTemplate) e.preventDefault(); }}
+          onEscapeKeyDown={(e) => { if (isExportingTemplate) e.preventDefault(); }}
+        >
+          <DialogHeader className="space-y-1">
+            <DialogTitle className="text-base flex items-center gap-2">
+              {exportErrorMessage ? (
+                <><XCircle className="h-5 w-5 text-destructive" /> Export gagal</>
+              ) : !isExportingTemplate ? (
+                <><CheckCircle2 className="h-5 w-5 text-emerald-600" /> Export berhasil</>
+              ) : (
+                "Export Sesuai Template Brand"
+              )}
+            </DialogTitle>
+            <DialogDescription className="text-sm">
+              {exportErrorMessage
+                ? `Gagal di step: ${exportSteps.find((s) => s.status === "error")?.label ?? "-"} — ${exportErrorMessage}`
+                : !isExportingTemplate
+                ? "File payroll berhasil dibuat."
+                : "Sedang membuat file payroll..."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {isExportingTemplate && !exportErrorMessage && (
+            <>
+              <div className="flex items-center gap-3">
+                <Progress
+                  value={Math.round((exportSteps.filter((s) => s.status === "done").length / exportSteps.length) * 100)}
+                  className="h-2 flex-1"
+                />
+                <span className="text-sm font-bold tabular-nums w-10 text-right">
+                  {Math.round((exportSteps.filter((s) => s.status === "done").length / exportSteps.length) * 100)}%
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                {exportSteps.find((s) => s.status === "active")?.label ?? "Memproses..."}
+              </p>
+              <p className="text-xs text-muted-foreground">Memproses data absensi, template, dan rekap F&amp;A.</p>
+            </>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setShowExportStepDetails((v) => !v)}
+            className="flex items-center gap-1 text-xs text-blue-600 hover:underline w-fit"
+          >
+            {showExportStepDetails ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            Lihat detail proses
+          </button>
+
+          {showExportStepDetails && (
+            <div className="space-y-1.5 max-h-56 overflow-y-auto py-1 border-t pt-2">
+              {exportSteps.map((step, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs">
+                  {step.status === "done" && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />}
+                  {step.status === "active" && <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600 shrink-0" />}
+                  {step.status === "error" && <XCircle className="h-3.5 w-3.5 text-destructive shrink-0" />}
+                  {step.status === "pending" && <div className="h-3.5 w-3.5 rounded-full border-2 border-muted shrink-0" />}
+                  <span className={
+                    step.status === "done" ? "text-muted-foreground" :
+                    step.status === "error" ? "text-destructive font-medium" :
+                    step.status === "active" ? "font-semibold" : "text-muted-foreground/60"
+                  }>
+                    {step.label}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!isExportingTemplate && (
+            <div className="flex justify-end pt-1">
+              <Button size="sm" variant={exportErrorMessage ? "destructive" : "default"} onClick={() => setExportModalOpen(false)}>
+                Tutup
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

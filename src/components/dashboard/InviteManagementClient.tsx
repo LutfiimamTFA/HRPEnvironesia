@@ -4,11 +4,12 @@ import { useState, useMemo, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { useCollection, useFirestore, useMemoFirebase, useAuth as useFirebaseAuth } from '@/firebase';
+import { useFirestore, useAuth as useFirebaseAuth } from '@/firebase';
 import { useFeatureFlags } from '@/lib/feature-flags';
-import { collection, query, where } from 'firebase/firestore';
+import { where } from 'firebase/firestore';
 import type { InviteBatch, Brand, UserProfile, InviteContractType } from '@/lib/types';
 import { useAuth } from '@/providers/auth-provider';
+import { useHrdScopedBrands, useHrdScopedCollection } from '@/hooks/useHrdScopedCollection';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
@@ -18,6 +19,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Loader2, PlusCircle, Copy, Trash2, ToggleLeft, ToggleRight,
   Users, Link2, TrendingUp, CheckCircle2, ChevronDown, Search,
@@ -302,20 +304,32 @@ export function InviteManagementClient() {
   const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
   const [batchToDelete, setBatchToDelete] = useState<InviteBatch | null>(null);
 
-  const { data: inviteBatches, isLoading: isLoadingBatches, mutate: mutateBatches } = useCollection<InviteBatch>(
-    useMemoFirebase(() => collection(firestore, 'invite_batches'), [firestore]),
-  );
-  const { data: brands, isLoading: isLoadingBrands } = useCollection<Brand>(
-    useMemoFirebase(() => collection(firestore, 'brands'), [firestore]),
-  );
-  const { data: inviteUsers } = useCollection<UserProfile>(
-    useMemoFirebase(() => query(collection(firestore, 'users'), where('source', '==', 'employee_invite')), [firestore]),
-  );
+  // Scoped to the current HRD's allowedBrandIds — Super Admin (or an HRD with
+  // scopeType "all_companies") still sees everything; a regular HRD's brand
+  // dropdown, batch list, KPI cards, and participants below all derive from
+  // these same three scoped queries, never an unfiltered collection() read.
+  const { data: brands, isLoading: isLoadingBrands } = useHrdScopedBrands();
+  const {
+    data: inviteBatches, isLoading: isLoadingBatches, mutate: mutateBatches,
+    isScopeLoading, isScopeConfigured, emptyStateMessage,
+  } = useHrdScopedCollection<InviteBatch>('invite_batches');
+  const inviteUsersConstraints = useMemo(() => [where('source', '==', 'employee_invite')], []);
+  const { data: inviteUsers } = useHrdScopedCollection<UserProfile>('users', {
+    brandField: 'brandId',
+    constraints: inviteUsersConstraints,
+  });
 
   const form = useForm<GenerateFormValues>({
     resolver: zodResolver(generateSchema),
     defaultValues: { quantity: 10 },
   });
+
+  // HRD scoped to exactly one brand — auto-select it and lock the dropdown
+  // so there's no illusion of choice for a company they don't actually hold.
+  const singleScopedBrand = brands && brands.length === 1 ? brands[0] : null;
+  useEffect(() => {
+    if (singleScopedBrand?.id) form.setValue('brandId', singleScopedBrand.id);
+  }, [singleScopedBrand, form]);
 
   // All batches sorted desc
   const allBatches = useMemo(() => {
@@ -507,6 +521,35 @@ export function InviteManagementClient() {
     toast({ title: 'Link Disalin', description: 'Link undangan telah disalin ke clipboard.' });
   };
 
+  // Wait for role + roles_hrd to resolve before rendering anything — never
+  // flash the unscoped/global view first for an HRD while their scope is
+  // still loading.
+  if (isScopeLoading || isLoadingBrands) {
+    return (
+      <div className="space-y-8">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-32 w-full rounded-xl" />)}
+        </div>
+        <Skeleton className="h-96 w-full rounded-xl" />
+      </div>
+    );
+  }
+
+  if (!isScopeConfigured) {
+    return (
+      <Card className="border-dashed border-2 border-slate-200 dark:border-slate-700 shadow-none rounded-xl">
+        <CardContent className="py-16 flex flex-col items-center gap-3 text-center">
+          <div className="h-12 w-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+            <Users className="h-5 w-5 text-slate-400" />
+          </div>
+          <p className="font-medium text-slate-700 dark:text-slate-300">
+            {emptyStateMessage}
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <>
       <div className="space-y-8">
@@ -562,16 +605,25 @@ export function InviteManagementClient() {
                     <FormField control={form.control} name="brandId" render={({ field }) => (
                       <FormItem>
                         <FormLabel className="text-sm font-semibold">Brand / Perusahaan</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value} disabled={isLoadingBrands}>
-                          <FormControl>
-                            <SelectTrigger className="h-11">
-                              <SelectValue placeholder="Pilih brand" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {brands?.map(b => <SelectItem key={b.id!} value={b.id!}>{b.name}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
+                        {singleScopedBrand ? (
+                          // Only one brand in scope — show it as a locked
+                          // label instead of a dropdown, so it never reads as
+                          // if other companies could be picked.
+                          <div className="h-11 flex items-center px-3 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-sm font-medium text-slate-700 dark:text-slate-300">
+                            {singleScopedBrand.name}
+                          </div>
+                        ) : (
+                          <Select onValueChange={field.onChange} value={field.value} disabled={isLoadingBrands}>
+                            <FormControl>
+                              <SelectTrigger className="h-11">
+                                <SelectValue placeholder="Pilih brand" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {brands?.map(b => <SelectItem key={b.id!} value={b.id!}>{b.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        )}
                         <FormMessage />
                       </FormItem>
                     )} />

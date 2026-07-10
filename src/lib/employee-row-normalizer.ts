@@ -47,10 +47,16 @@ export function normalizeEmployeeRow(
   brands: Brand[] = [],
 ): NormalizedEmployeeRow {
   // 1. Resolve Brand
+  // Canonical source is `employee_profiles` (top-level fields take priority
+  // over the nested hrdEmploymentInfo mirror, which can go stale independently
+  // — that staleness is what caused the list page and detail page to show two
+  // different brands for the same employee). `employees`/`users` are only a
+  // fallback for employees that don't have an employee_profiles doc yet.
   const hrdInfo =
     profile?.hrdEmploymentInfo || employee?.hrdEmploymentInfo || {};
 
   const rawBrandId =
+    profile?.brandId ||
     hrdInfo.brandId ||
     employee?.brandId ||
     employee?.companyId ||
@@ -61,6 +67,7 @@ export function normalizeEmployeeRow(
         : "");
 
   const rawBrandName =
+    profile?.brandName ||
     hrdInfo.brandName ||
     hrdInfo.brand ||
     employee?.brandName ||
@@ -94,7 +101,8 @@ export function normalizeEmployeeRow(
 
   // 2. Resolve Division
   const divisi = String(
-    hrdInfo.divisionName ||
+    profile?.divisionName ||
+      hrdInfo.divisionName ||
       employee?.divisionName ||
       employee?.division ||
       hrdInfo.divisi ||
@@ -103,7 +111,7 @@ export function normalizeEmployeeRow(
   ).trim();
 
   const divisionId = String(
-    hrdInfo.divisionId || employee?.divisionId || "",
+    profile?.divisionId || hrdInfo.divisionId || employee?.divisionId || "",
   ).trim();
 
   // 3. Resolve Jabatan (Position) / Work Role

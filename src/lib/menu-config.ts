@@ -394,6 +394,12 @@ export const ALL_MENU_GROUPS: MenuGroup[] = [
         icon: createElement(Database),
       },
       {
+        key: "admin.payroll_templates",
+        href: "/admin/super-admin/payroll-templates",
+        label: "Template Payroll",
+        icon: createElement(Database),
+      },
+      {
         key: "admin.ecosystem",
         href: "/admin/super-admin/ecosystem",
         label: "Ecosystem",
@@ -672,6 +678,12 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
           key: "admin.master",
           href: "/admin/super-admin/departments-brands",
           label: "Master Data",
+          icon: createElement(Database),
+        },
+        {
+          key: "admin.payroll_templates",
+          href: "/admin/super-admin/payroll-templates",
+          label: "Template Payroll",
           icon: createElement(Database),
         },
         {

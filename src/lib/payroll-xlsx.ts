@@ -31,6 +31,8 @@ const P = {
   purpleFg:    "5B21B6",
   grayBg:      "F1F5F9",
   grayFg:      "475569",
+  yellowBg:    "FEFCE8",
+  yellowFg:    "854D0E",
   slateText:   "1E293B",
   midText:     "64748B",
   border:      "CBD5E1",
@@ -150,6 +152,20 @@ function sStatus(status: string): XlsxStyle {
     alignment: { horizontal: "center", vertical: "center" },
     border:    bdr(),
   };
+}
+
+/** Highlights the Keterangan cell yellow when it flags something needing HRD attention (review/location), regardless of the row's overall status color. */
+function sKeterangan(keterangan: string, fallbackBg?: string): XlsxStyle {
+  const k = keterangan.toLowerCase();
+  if (k.includes("perlu review") || k.includes("menunggu review")) {
+    return {
+      font:      { sz: 10, color: { rgb: P.yellowFg } },
+      fill:      { patternType: "solid", fgColor: { rgb: P.yellowBg } },
+      alignment: { horizontal: "left", vertical: "center", wrapText: true },
+      border:    bdr(),
+    };
+  }
+  return sData(fallbackBg);
 }
 
 function sJenis(jenis: string): XlsxStyle {
@@ -341,6 +357,7 @@ function sheetRincianTanggal(
     if (c === 0)  return sData(P.grayBg, "center");
     if (c === 3)  return sStatus(status);
     if (c === 4 || c === 5) return sData(alt, "center");
+    if (c === 6)  return sKeterangan(String(dataRows[r]?.[6] ?? ""), alt);
     return sData(alt);
   }, 1);
 }

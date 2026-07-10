@@ -33,7 +33,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { UserProfile, ROLES, UserRole, Brand } from "@/lib/types";
+import { UserProfile, ROLES, UserRole, Brand, PayrollGroup } from "@/lib/types";
 import { Loader2, Eye, EyeOff, RefreshCw, Copy, Check } from "lucide-react";
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
 import { useAuth } from "@/providers/auth-provider";
@@ -72,6 +72,7 @@ const createSchema = z
     adminNotes: z.string().optional(),
     hrdScopeType: z.enum(["selected_companies", "all_companies"]).default("selected_companies"),
     hrdAllowedBrandIds: z.array(z.string()).default([]),
+    hrdAllowedPayrollGroupIds: z.array(z.string()).default([]),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: "Password dan konfirmasi password harus sama",
@@ -86,6 +87,7 @@ const editSchema = z.object({
   adminNotes: z.string().optional(),
   hrdScopeType: z.enum(["selected_companies", "all_companies"]).default("selected_companies"),
   hrdAllowedBrandIds: z.array(z.string()).default([]),
+  hrdAllowedPayrollGroupIds: z.array(z.string()).default([]),
 });
 
 type FormValues = z.infer<typeof editSchema> & {
@@ -129,6 +131,8 @@ export function UserFormDialog({
 
   const brandsRef = useMemoFirebase(() => collection(firestore, "brands"), [firestore]);
   const { data: brands, isLoading: loadingBrands } = useCollection<Brand>(brandsRef);
+  const payrollGroupsRef = useMemoFirebase(() => collection(firestore, "payroll_groups"), [firestore]);
+  const { data: payrollGroups } = useCollection<PayrollGroup>(payrollGroupsRef);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(mode === "create" ? createSchema : editSchema) as any,
@@ -149,6 +153,7 @@ export function UserFormDialog({
               adminNotes: "",
               hrdScopeType: user.hrdScope?.scopeType || "selected_companies",
               hrdAllowedBrandIds: user.hrdScope?.allowedBrandIds || [],
+              hrdAllowedPayrollGroupIds: (user.hrdScope as any)?.allowedPayrollGroupIds || [],
             }
           : {
               fullName: "",
@@ -160,6 +165,7 @@ export function UserFormDialog({
               adminNotes: "",
               hrdScopeType: "selected_companies",
               hrdAllowedBrandIds: [],
+              hrdAllowedPayrollGroupIds: [],
             };
       form.reset(defaultValues as any);
     }
@@ -177,10 +183,12 @@ export function UserFormDialog({
         const data = snap.exists() ? snap.data() : user.hrdScope;
         form.setValue("hrdScopeType", data?.scopeType === "all_companies" ? "all_companies" : "selected_companies");
         form.setValue("hrdAllowedBrandIds", Array.isArray(data?.allowedBrandIds) ? data.allowedBrandIds : []);
+        form.setValue("hrdAllowedPayrollGroupIds", Array.isArray(data?.allowedPayrollGroupIds) ? data.allowedPayrollGroupIds : []);
       })
       .catch(() => {
         form.setValue("hrdScopeType", user.hrdScope?.scopeType || "selected_companies");
         form.setValue("hrdAllowedBrandIds", user.hrdScope?.allowedBrandIds || []);
+        form.setValue("hrdAllowedPayrollGroupIds", (user.hrdScope as any)?.allowedPayrollGroupIds || []);
       })
       .finally(() => setLoadingHrdScope(false));
   }, [open, mode, user, firestore, form]);
@@ -235,6 +243,7 @@ export function UserFormDialog({
   const buildHrdScopePayload = (values: FormValues) => {
     const scopeType = (values as any).hrdScopeType === "all_companies" ? "all_companies" : "selected_companies";
     const selectedIds = scopeType === "all_companies" ? [] : ((values as any).hrdAllowedBrandIds || []);
+    const selectedGroupIds = scopeType === "all_companies" ? [] : ((values as any).hrdAllowedPayrollGroupIds || []);
     const brandNameMap = new Map((brands || []).map((brand) => [brand.id, brand.name]));
     return {
       scopeType,
@@ -242,6 +251,10 @@ export function UserFormDialog({
       allowedBrandNames: selectedIds
         .map((brandId: string) => brandNameMap.get(brandId) || brandId)
         .filter(Boolean),
+      // Record of which Payroll Groups were used to populate allowedBrandIds
+      // — access control still runs entirely off allowedBrandIds above, this
+      // is only so the picker can pre-check the right groups next time.
+      allowedPayrollGroupIds: selectedGroupIds,
     };
   };
 
@@ -379,8 +392,34 @@ export function UserFormDialog({
   };
 
   const selectedHrdBrandIds = (form.watch("hrdAllowedBrandIds") || []) as string[];
+  const selectedHrdPayrollGroupIds = (form.watch("hrdAllowedPayrollGroupIds") || []) as string[];
   const hrdScopeType = form.watch("hrdScopeType");
   const showHrdScopeSettings = role === "hrd";
+
+  // Selecting a Payroll Group is a shortcut that fills in its member brands —
+  // allowedBrandIds is still what's actually enforced, so unchecking a group
+  // only removes brands that aren't also covered by another selected group.
+  const toggleHrdPayrollGroup = (group: PayrollGroup, checked: boolean) => {
+    const currentGroupIds = new Set(selectedHrdPayrollGroupIds);
+    const currentBrandIds = new Set(selectedHrdBrandIds);
+    const groupBrandIds = group.brandIds || [];
+
+    if (checked) {
+      currentGroupIds.add(group.id!);
+      groupBrandIds.forEach((id) => currentBrandIds.add(id));
+    } else {
+      currentGroupIds.delete(group.id!);
+      const stillCovered = new Set(
+        (payrollGroups || [])
+          .filter((g) => g.id !== group.id && currentGroupIds.has(g.id!))
+          .flatMap((g) => g.brandIds || []),
+      );
+      groupBrandIds.forEach((id) => { if (!stillCovered.has(id)) currentBrandIds.delete(id); });
+    }
+
+    form.setValue("hrdAllowedPayrollGroupIds", Array.from(currentGroupIds));
+    form.setValue("hrdAllowedBrandIds", Array.from(currentBrandIds));
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -644,6 +683,29 @@ export function UserFormDialog({
                           </FormItem>
                         )}
                       />
+
+                      {hrdScopeType !== "all_companies" && (payrollGroups || []).length > 0 && (
+                        <FormItem>
+                          <FormLabel className="font-semibold text-sm">Payroll Group (opsional, isi cepat)</FormLabel>
+                          <FormDescription className="text-xs">
+                            Memilih Payroll Group otomatis mencentang semua brand anggotanya di bawah. Checklist brand di bawah tetap bisa diubah manual.
+                          </FormDescription>
+                          <div className="rounded-lg border bg-background p-3 grid grid-cols-1 md:grid-cols-2 gap-2">
+                            {(payrollGroups || []).map((group) => (
+                              <label key={group.id} className="flex items-start gap-2 rounded-md border p-2 text-sm hover:bg-muted/50">
+                                <Checkbox
+                                  checked={selectedHrdPayrollGroupIds.includes(group.id!)}
+                                  onCheckedChange={(checked) => toggleHrdPayrollGroup(group, !!checked)}
+                                />
+                                <span className="leading-tight">
+                                  <span className="block font-medium">{group.name}</span>
+                                  <span className="block text-[11px] text-muted-foreground">{(group.brandNames || []).join(", ")}</span>
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        </FormItem>
+                      )}
 
                       {hrdScopeType !== "all_companies" && (
                         <FormField

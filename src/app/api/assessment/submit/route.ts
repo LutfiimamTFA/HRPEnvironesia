@@ -3,6 +3,7 @@ import admin from '@/lib/firebase/admin';
 import { Timestamp } from 'firebase-admin/firestore';
 import type { Assessment, AssessmentTemplate, AssessmentQuestion, AssessmentSession } from '@/lib/types';
 import { analyzePersonalityArchetype } from '@/ai/flows/analyze-personality-archetype-flow';
+import { resolveHrdRecipientUids } from '@/lib/server/hrd-recipients';
 
 export const runtime = 'nodejs';
 
@@ -266,30 +267,45 @@ export async function POST(req: NextRequest) {
     }
 
     // --- 10. Notify HRD that personality test was completed ---
+    // Fanned out per-recipient (recipientUid) so only the HRD(s) scoped to
+    // this application's brand see it — never a global broadcast.
     if (session.applicationId) {
       try {
-        await db.collection('hrd_notifications').add({
-          type: 'status_update',
-          module: 'recruitment',
-          title: 'Tes kepribadian selesai',
-          message: `${candidateName || 'Kandidat'} telah menyelesaikan tes kepribadian${jobPosition ? ` untuk posisi ${jobPosition}` : ''}.`,
-          targetType: 'application',
-          targetId: session.applicationId,
-          actionUrl: `/admin/recruitment/applications/${session.applicationId}`,
-          isRead: false,
-          createdAt: Timestamp.now(),
-          createdBy: session.candidateUid,
-          notificationType: 'recruitment',
-          recruitmentEvent: 'personality_test_completed',
-          priority: 'action_required',
-          notifStatus: 'action_required',
-          meta: {
-            applicationId: session.applicationId,
-            candidateUid: session.candidateUid,
-            candidateName,
-            jobTitle: jobPosition,
-          },
-        });
+        const appSnap = await db.collection('applications').doc(session.applicationId).get();
+        const brandId: string | null = appSnap.exists ? (appSnap.data()?.brandId ?? null) : null;
+        const brandName: string | null = appSnap.exists ? (appSnap.data()?.brandName ?? null) : null;
+        const recipientUids = await resolveHrdRecipientUids(db, brandId);
+
+        const batch = db.batch();
+        for (const recipientUid of recipientUids) {
+          const ref = db.collection('hrd_notifications').doc();
+          batch.set(ref, {
+            type: 'status_update',
+            module: 'recruitment',
+            title: 'Tes kepribadian selesai',
+            message: `${candidateName || 'Kandidat'} telah menyelesaikan tes kepribadian${jobPosition ? ` untuk posisi ${jobPosition}` : ''}.`,
+            targetType: 'application',
+            targetId: session.applicationId,
+            actionUrl: `/admin/recruitment/applications/${session.applicationId}`,
+            brandId,
+            brandName,
+            recipientUid,
+            isRead: false,
+            createdAt: Timestamp.now(),
+            createdBy: session.candidateUid,
+            notificationType: 'recruitment',
+            recruitmentEvent: 'personality_test_completed',
+            priority: 'action_required',
+            notifStatus: 'action_required',
+            meta: {
+              applicationId: session.applicationId,
+              candidateUid: session.candidateUid,
+              candidateName,
+              jobTitle: jobPosition,
+            },
+          });
+        }
+        if (recipientUids.length > 0) await batch.commit();
       } catch (notifError) {
         console.error('Failed to send test-completion HRD notification:', notifError);
       }

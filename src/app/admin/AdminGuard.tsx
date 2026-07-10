@@ -21,6 +21,7 @@ import { useMaintenanceGuard } from '@/hooks/useMaintenance';
 import { timestampToMillis } from '@/lib/session-tracking';
 import { getMaintenanceSource } from '@/lib/maintenance';
 import { useToast } from '@/hooks/use-toast';
+import { HrdScopeProvider } from '@/providers/hrd-scope-provider';
 
 /** Paths inside /admin that don't need auth or idle-timeout protection. */
 const PUBLIC_ADMIN_PATHS = ['/admin/login', '/admin/change-password'];
@@ -185,8 +186,11 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
   }
 
   // ── Render: protected page + idle-timeout modal ─────────────────────────
+  // HrdScopeProvider reads roles_hrd/{uid} exactly once here for the whole
+  // dashboard tree — child pages/components consume it via
+  // useHrdScopeContext() instead of each opening their own listener.
   return (
-    <>
+    <HrdScopeProvider>
       {children}
       {showWarning && (
         <IdleTimeoutModal
@@ -195,6 +199,6 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
           onLogoutNow={handleIdleTimeout}
         />
       )}
-    </>
+    </HrdScopeProvider>
   );
 }

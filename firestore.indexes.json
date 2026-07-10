@@ -9,6 +9,15 @@
       ]
     },
     {
+      "collectionGroup": "hrd_notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "recipientUid", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" },
+        { "fieldPath": "__name__", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "bank_change_requests",
       "queryScope": "COLLECTION",
       "fields": [

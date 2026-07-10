@@ -5,6 +5,8 @@ import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
 import {
   collection,
   query,
+  where,
+  or,
   doc,
   serverTimestamp,
   updateDoc,
@@ -257,10 +259,30 @@ export default function ManagerLeaveApprovalPage() {
     }
   };
 
-  // 1. Fetch leave requests (filtered client-side to ensure all fallback manager fields work)
+  // 1. Fetch leave requests — scoped to every field firestore.rules accepts
+  // as "this manager is the approver" (managerId/managerUid/directManagerId/
+  // directManagerUid/approvalTargetUid/directSupervisorUid/currentApproverUid).
+  // An unscoped collection(firestore,"leave_requests") query used to run here
+  // and get rejected outright with permission-denied — Firestore evaluates
+  // `list` rules per potential result document, so a query that COULD return
+  // another employee's request is denied entirely, not silently filtered.
+  // Remaining client-side filtering below (isSelfRequest/isDirectorMode/etc.)
+  // still applies on top of this already-scoped result set.
   const managerRequestsQuery = useMemoFirebase(() => {
     if (!userProfile?.uid) return null;
-    return query(collection(firestore, "leave_requests"));
+    const uid = userProfile.uid;
+    return query(
+      collection(firestore, "leave_requests"),
+      or(
+        where("managerId", "==", uid),
+        where("managerUid", "==", uid),
+        where("directManagerId", "==", uid),
+        where("directManagerUid", "==", uid),
+        where("approvalTargetUid", "==", uid),
+        where("directSupervisorUid", "==", uid),
+        where("currentApproverUid", "==", uid),
+      ),
+    );
   }, [userProfile?.uid, firestore]);
 
   const {

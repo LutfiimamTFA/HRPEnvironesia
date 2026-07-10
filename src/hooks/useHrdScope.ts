@@ -13,6 +13,8 @@ import {
   normalizeHrdScope,
 } from "@/lib/hrd-scope";
 
+const EMPTY_ARRAY: string[] = [];
+
 export function useHrdScope() {
   const firestore = useFirestore();
   const { userProfile, loading: authLoading } = useAuth();
@@ -38,6 +40,7 @@ export function useHrdScope() {
         scopeType: "all_companies",
         allowedBrandIds: [],
         allowedBrandNames: [],
+        allowedPayrollGroupIds: [],
         active: true,
       };
     }
@@ -54,8 +57,13 @@ export function useHrdScope() {
   const isLoading = authLoading || (isHrd && roleLoading);
   const isConfigured = isSuperAdmin || isHrdScopeConfigured(scope);
   const isAllCompanies = scope?.scopeType === "all_companies" && scope.active !== false;
-  const allowedBrandIds = scope?.allowedBrandIds ?? [];
-  const allowedBrandNames = scope?.allowedBrandNames ?? [];
+  // Stable empty-array singletons — `scope?.allowedBrandIds ?? []` would
+  // otherwise create a brand-new [] reference on every render whenever scope
+  // is null, and consumers that put allowedBrandIds directly in a useMemo/
+  // useEffect dependency array (instead of a joined string) would then
+  // recompute/resubscribe every render, which is one of the flicker causes.
+  const allowedBrandIds = useMemo(() => scope?.allowedBrandIds ?? EMPTY_ARRAY, [scope]);
+  const allowedBrandNames = useMemo(() => scope?.allowedBrandNames ?? EMPTY_ARRAY, [scope]);
 
   return {
     scope,

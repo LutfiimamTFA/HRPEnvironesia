@@ -6,16 +6,19 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { getInitials } from '@/lib/utils';
-import { Copy, X, AlertCircle, RotateCw, ShieldAlert } from 'lucide-react';
+import { Copy, X, AlertCircle, RotateCw, ShieldAlert, HeartPulse, CheckCircle2, XCircle, RefreshCw, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { getAttendanceImageUrl } from '@/lib/google-drive-image';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
+import { Textarea } from '@/components/ui/textarea';
+import type { LocationValidation } from '@/lib/attendance-helpers';
 
 interface AttendanceDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   onMarkInvalid?: () => void;
+  onReview?: (status: 'approved' | 'rejected' | 'revision_requested' | 'valid_auto' | 'needs_review', note: string) => void;
   record: {
     id: string;
     name: string;
@@ -27,12 +30,34 @@ interface AttendanceDetailModalProps {
     tapOut: string;
     status: string;
     address: string;
+    addressIn?: string;
+    addressOut?: string;
     photoUrl?: string | null;
     lateMinutes?: number | null;
     earlyLeaveMinutes?: number | null;
+    specialCondition?: string | null;
+    locationValidation?: LocationValidation | null;
+    locationValidationOut?: LocationValidation | null;
+    hrdReviewStatus?: string | null;
+    hrdReviewNote?: string | null;
+    hrdReviewedByName?: string | null;
+    hrdReviewedAt?: any;
     rawEvent?: any; // For accessing original event data with driveFileId, etc
+    rawEventIn?: any;
+    rawEventOut?: any;
   } | null;
 }
+
+// This is a note trail for HRD's awareness, never an approval gate — absensi
+// counts the moment there's a tap-in regardless of this value. Wording is
+// deliberately non-approval (no "menunggu approval"/"belum disetujui").
+const HRD_REVIEW_LABEL: Record<string, string> = {
+  valid_auto: 'Aman',
+  needs_review: 'Perlu Catatan HRD',
+  approved: 'Sudah Dicek HRD',
+  rejected: 'Catatan Diabaikan',
+  revision_requested: 'Diminta Klarifikasi',
+};
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -51,46 +76,76 @@ const getStatusColor = (status: string) => {
   }
 };
 
-export function AttendanceDetailModal({ isOpen, onClose, onMarkInvalid, record }: AttendanceDetailModalProps) {
-  const { toast } = useToast();
+/** Tap-in and tap-out photos are recorded and shown separately — each has its own load/reload state. */
+function PhotoEvidenceBlock({ label, rawEvent }: { label: string; rawEvent?: any }) {
   const [imageError, setImageError] = useState(false);
   const [reloadCount, setReloadCount] = useState(0);
-  const [showDebug] = useState(() => {
-    // Enable debug if URL param debug=1 or user pressed Ctrl+D
-    if (typeof window !== "undefined") {
-      const debugEnabled =
-        new URLSearchParams(window.location.search).get("debug") === "1" ||
-        (window as any).__DEBUG_ATTENDANCE__;
-      if (debugEnabled) {
-        (window as any).__DEBUG_ATTENDANCE__ = true;
-      }
-      return debugEnabled;
-    }
-    return false;
-  });
+
+  const imageUrl = rawEvent ? getAttendanceImageUrl(rawEvent) : null;
+  const hasPhoto = imageUrl && imageUrl !== '-';
+  const isPhotoExpired = rawEvent?.photoExpired === true;
+  const hasPhotoData =
+    rawEvent &&
+    !isPhotoExpired &&
+    (rawEvent.photoUrl ||
+      rawEvent.photoFileId ||
+      rawEvent.fileId ||
+      rawEvent.evidence?.driveFileId ||
+      rawEvent.evidence?.fileId ||
+      rawEvent.evidence?.selfieUrl ||
+      rawEvent.evidence?.directUrl ||
+      rawEvent.photo?.fileId);
+
+  return (
+    <div>
+      <h3 className="text-sm font-semibold text-slate-800 dark:text-white mb-2">{label}</h3>
+      {hasPhoto ? (
+        <div className="relative bg-slate-50 dark:bg-slate-800 rounded-lg overflow-hidden flex items-center justify-center max-h-[280px] border border-slate-200 dark:border-slate-700 p-2">
+          {!imageError ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={`photo-${reloadCount}`}
+              src={imageUrl}
+              alt={label}
+              className="w-full max-h-[280px] object-contain rounded"
+              onError={() => setImageError(true)}
+              loading="lazy"
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-3 p-4 text-center">
+              <AlertCircle className="h-8 w-8 text-slate-400" />
+              <p className="text-xs font-medium text-slate-700 dark:text-slate-300">Foto tidak bisa dimuat</p>
+              <Button variant="outline" size="sm" onClick={() => { setImageError(false); setReloadCount((p) => p + 1); }} className="gap-1.5 h-7 text-xs">
+                <RotateCw className="h-3.5 w-3.5" /> Muat Ulang
+              </Button>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="bg-slate-50 dark:bg-slate-900/20 rounded-lg p-5 text-center border border-slate-200 dark:border-slate-700">
+          <Badge variant="outline" className="mb-1.5 text-xs">
+            {isPhotoExpired ? 'Foto dihapus' : hasPhotoData ? 'Gagal memuat foto' : rawEvent ? 'Foto Tidak Ada' : 'Belum Tap Out'}
+          </Badge>
+          <p className="text-xs text-slate-600 dark:text-slate-400">
+            {isPhotoExpired
+              ? 'Foto dihapus otomatis setelah 7 hari.'
+              : hasPhotoData
+                ? 'Data foto ada tapi tidak bisa dimuat.'
+                : rawEvent
+                  ? 'Bukti foto tidak tersimpan untuk event ini.'
+                  : 'Karyawan belum melakukan tap out.'}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function AttendanceDetailModal({ isOpen, onClose, onMarkInvalid, onReview, record }: AttendanceDetailModalProps) {
+  const { toast } = useToast();
+  const [reviewNote, setReviewNote] = useState('');
 
   if (!record) return null;
-
-  // Get attendance image URL dari API lokal proxy
-  // API akan handle komunikasi dengan Google Drive via Apps Script
-  const imageUrl = record.rawEvent ? getAttendanceImageUrl(record.rawEvent) : null;
-  const hasPhoto = imageUrl && imageUrl !== '-';
-
-  // Check if photo is expired (auto-deleted after 7 days)
-  const isPhotoExpired = record.rawEvent?.photoExpired === true;
-
-  // Check if event has any photo-related data
-  const hasPhotoData =
-    record.rawEvent &&
-    !isPhotoExpired &&
-    (record.rawEvent.photoUrl ||
-      record.rawEvent.photoFileId ||
-      record.rawEvent.fileId ||
-      record.rawEvent.evidence?.driveFileId ||
-      record.rawEvent.evidence?.fileId ||
-      record.rawEvent.evidence?.selfieUrl ||
-      record.rawEvent.evidence?.directUrl ||
-      record.rawEvent.photo?.fileId);
 
   const handleCopyAddress = () => {
     if (record.address && record.address !== '-') {
@@ -137,77 +192,10 @@ export function AttendanceDetailModal({ isOpen, onClose, onMarkInvalid, record }
 
         {/* Main Content */}
         <div className="space-y-5 py-4">
-          {/* A. Foto Bukti Absensi - Priority Position */}
-          <div>
-            <h3 className="text-sm font-semibold text-slate-800 dark:text-white mb-3">Bukti Selfie Absensi</h3>
-            {hasPhoto ? (
-              <div className="space-y-3">
-                {/* Photo Container */}
-                <div className="relative bg-slate-50 dark:bg-slate-800 rounded-lg overflow-hidden flex items-center justify-center max-h-[360px] border border-slate-200 dark:border-slate-700 p-2">
-                  {!imageError ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      key={`photo-${reloadCount}`}
-                      src={imageUrl}
-                      alt="Bukti selfie absensi"
-                      className="w-full max-h-[360px] object-contain rounded"
-                      onError={() => setImageError(true)}
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="flex flex-col items-center justify-center gap-4 p-6 text-center">
-                      <AlertCircle className="h-12 w-12 text-slate-400" />
-                      <div>
-                        <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                          {hasPhotoData ? "Foto tidak bisa dimuat" : "Foto bukti tidak tersedia"}
-                        </p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                          {hasPhotoData
-                            ? "Terjadi masalah saat membaca dari server HRP. Silakan coba muat ulang atau hubungi administrator jika masalah berlanjut."
-                            : "Data foto bukti absensi tidak tersimpan di sistem"}
-                        </p>
-                      </div>
-                      {hasPhotoData && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setImageError(false);
-                            setReloadCount(prev => prev + 1);
-                          }}
-                          className="gap-2"
-                        >
-                          <RotateCw className="h-4 w-4" />
-                          Muat Ulang Foto
-                        </Button>
-                      )}
-                      {showDebug && (
-                        <div className="mt-4 p-3 bg-slate-100 dark:bg-slate-800 rounded text-left text-[10px] font-mono max-h-48 overflow-y-auto w-full">
-                          <p className="font-bold mb-2">DEBUG INFO:</p>
-                          <p>imageUrl: {imageUrl || "null"}</p>
-                          <p>hasPhoto: {String(hasPhoto)}</p>
-                          <p>hasPhotoData: {String(hasPhotoData)}</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-              </div>
-            ) : (
-              <div className="bg-slate-50 dark:bg-slate-900/20 rounded-lg p-6 text-center">
-                <Badge variant="outline" className="mb-2">
-                  {isPhotoExpired ? "Foto dihapus" : hasPhotoData ? "Gagal memuat foto" : "Tidak ada foto"}
-                </Badge>
-                <p className="text-sm text-slate-600 dark:text-slate-400">
-                  {isPhotoExpired
-                    ? "Foto bukti sudah dihapus otomatis setelah 7 hari untuk efisiensi penyimpanan."
-                    : hasPhotoData
-                      ? "Data foto ada tetapi tidak dapat dimuat. Hubungi administrator."
-                      : "Bukti selfie absensi tidak tersedia"}
-                </p>
-              </div>
-            )}
+          {/* A. Foto Bukti Absensi — masuk dan pulang direkam & ditampilkan terpisah */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <PhotoEvidenceBlock label="Foto Tap In" rawEvent={record.rawEventIn} />
+            <PhotoEvidenceBlock label="Foto Tap Out" rawEvent={record.rawEventOut} />
           </div>
 
           {/* B. Ringkasan Absensi */}
@@ -250,30 +238,95 @@ export function AttendanceDetailModal({ isOpen, onClose, onMarkInvalid, record }
             </CardContent>
           </Card>
 
-          {/* C. Lokasi */}
+          {/* C. Lokasi — masuk dan pulang terpisah, dengan jarak/radius/selisih. Ini catatan, bukan penghalang absen. */}
           <Card className="border-slate-200 dark:border-slate-700">
-            <CardContent className="pt-4">
-              <h3 className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-2">Lokasi Absensi</h3>
-              <div className="flex items-start gap-2">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-slate-800 dark:text-slate-100 leading-relaxed break-words">
-                    {record.address || '—'}
-                  </p>
+            <CardContent className="pt-4 space-y-4">
+              <div>
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1">Lokasi Tap In</h3>
+                    <p className="text-sm text-slate-800 dark:text-slate-100 leading-relaxed break-words">
+                      {record.addressIn || record.address || '—'}
+                    </p>
+                  </div>
+                  {(record.addressIn || record.address) && (record.addressIn || record.address) !== '-' && (
+                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0 shrink-0" onClick={handleCopyAddress} title="Salin alamat">
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                 </div>
-                {record.address && record.address !== '-' && record.address !== '—' && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 w-6 p-0 shrink-0"
-                    onClick={handleCopyAddress}
-                    title="Salin alamat"
-                  >
-                    <Copy className="h-3.5 w-3.5" />
-                  </Button>
+                {record.locationValidation && (
+                  <>
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {record.locationValidation.badges.map((b) => (
+                        <Badge key={b} variant="outline" className="text-xs">{b}</Badge>
+                      ))}
+                    </div>
+                    {record.locationValidation.distanceM !== null && (
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5">
+                        Jarak dari kantor: {record.locationValidation.distanceM} m
+                        {record.locationValidation.radiusM !== null && ` • Radius ditetapkan: ${record.locationValidation.radiusM} m`}
+                        {record.locationValidation.excessM !== null && record.locationValidation.excessM > 0 && ` • Selisih: +${record.locationValidation.excessM} m`}
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
+
+              {record.tapOut && record.tapOut !== '-' && (
+                <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
+                  <h3 className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1">Lokasi Tap Out</h3>
+                  <p className="text-sm text-slate-800 dark:text-slate-100 leading-relaxed break-words">
+                    {record.addressOut || '—'}
+                  </p>
+                  {record.locationValidationOut && (
+                    <>
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {record.locationValidationOut.badges.map((b) => (
+                          <Badge key={`out-${b}`} variant="outline" className="text-xs">{b}</Badge>
+                        ))}
+                      </div>
+                      {record.locationValidationOut.distanceM !== null && (
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5">
+                          Jarak dari kantor: {record.locationValidationOut.distanceM} m
+                          {record.locationValidationOut.radiusM !== null && ` • Radius ditetapkan: ${record.locationValidationOut.radiusM} m`}
+                          {record.locationValidationOut.excessM !== null && record.locationValidationOut.excessM > 0 && ` • Selisih: +${record.locationValidationOut.excessM} m`}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
+
+          {/* Kondisi Khusus */}
+          {record.specialCondition && (
+            <Card className="border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/10">
+              <CardContent className="pt-4">
+                <h3 className="text-xs font-semibold text-purple-700 dark:text-purple-300 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                  <HeartPulse className="h-3.5 w-3.5" /> Laporan Kondisi Khusus
+                </h3>
+                <p className="text-sm text-slate-800 dark:text-slate-100">{record.specialCondition}</p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Keputusan HRD (jika sudah direview) */}
+          {record.hrdReviewStatus && (
+            <Card className="border-slate-200 dark:border-slate-700">
+              <CardContent className="pt-4">
+                <h3 className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-2">Catatan HRD Sebelumnya</h3>
+                <Badge className="mb-2">{HRD_REVIEW_LABEL[record.hrdReviewStatus] ?? record.hrdReviewStatus}</Badge>
+                {record.hrdReviewNote && (
+                  <p className="text-sm text-slate-700 dark:text-slate-300 mt-1">{record.hrdReviewNote}</p>
+                )}
+                {record.hrdReviewedByName && (
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">oleh {record.hrdReviewedByName}</p>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* D. Identitas */}
           <Card className="border-slate-200 dark:border-slate-700">
@@ -301,6 +354,38 @@ export function AttendanceDetailModal({ isOpen, onClose, onMarkInvalid, record }
               </div>
             </CardContent>
           </Card>
+
+          {/* Catatan HRD — absensi sudah dihitung terlepas dari catatan ini; ini bukan approval */}
+          {onReview && (
+            <Card className="border-slate-200 dark:border-slate-700">
+              <CardContent className="pt-4 space-y-3">
+                <div>
+                  <h3 className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">Catatan HRD</h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Absensi tetap dihitung. Catatan ini hanya untuk keperluan HRD, bukan persetujuan.</p>
+                </div>
+                <Textarea
+                  placeholder="Catatan (opsional)..."
+                  value={reviewNote}
+                  onChange={(e) => setReviewNote(e.target.value)}
+                  className="text-sm min-h-[70px]"
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => onReview('needs_review', reviewNote)}>
+                    <ShieldCheck className="h-4 w-4" /> Tambah Catatan
+                  </Button>
+                  <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => onReview('approved', reviewNote)}>
+                    <CheckCircle2 className="h-4 w-4" /> Tandai Sudah Dicek
+                  </Button>
+                  <Button size="sm" variant="outline" className="gap-1.5 text-purple-700 border-purple-200 hover:bg-purple-50 dark:text-purple-400 dark:border-purple-800" onClick={() => onReview('revision_requested', reviewNote)}>
+                    <RefreshCw className="h-4 w-4" /> Minta Klarifikasi
+                  </Button>
+                  <Button size="sm" variant="outline" className="gap-1.5 text-slate-600 border-slate-200 hover:bg-slate-50 dark:text-slate-400 dark:border-slate-800" onClick={() => onReview('rejected', reviewNote)}>
+                    <XCircle className="h-4 w-4" /> Abaikan Catatan
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Footer */}
