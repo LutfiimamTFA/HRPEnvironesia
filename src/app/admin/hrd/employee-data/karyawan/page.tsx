@@ -319,7 +319,7 @@ interface KelolaMtdAbsensiModalProps {
   currentUserUid: string;
   currentUserName: string;
   db: import("firebase/firestore").Firestore;
-  onSuccess: () => void;
+  onSuccess: () => void | Promise<void>;
 }
 
 function KelolaMtdAbsensiModal({
@@ -404,33 +404,93 @@ function KelolaMtdAbsensiModal({
   };
 
   // ── save helper ──
+  // Resolves the root-level brandId useHrdScopedCollection("employee_profiles")
+  // actually filters on — without it, a merge-set write can succeed yet the
+  // document permanently falls outside the HRD-scoped query result set, which
+  // is exactly why the modal/table kept showing stale data after a
+  // "successful" save.
+  const resolveBrandInfo = (emp: MergedEmployee | undefined) => {
+    const brandId =
+      emp?.brandId ||
+      (emp?.employeeProfile as any)?.brandId ||
+      emp?.employeeProfile?.hrdEmploymentInfo?.brandId ||
+      null;
+    const brandName =
+      emp?.brandName ||
+      (emp?.employeeProfile as any)?.brandName ||
+      emp?.employeeProfile?.hrdEmploymentInfo?.brand ||
+      null;
+    return { brandId, brandName };
+  };
+
   const saveMethod = async (uids: string[], method: "web_absen" | "id_card" | "manual") => {
     setSaving(true);
     try {
-      const batch = writeBatch(db as any);
       const methodLabel = method === "web_absen" ? "Web Absen" : method === "id_card" ? "ID Card" : "Manual";
+      const byUid = new Map(employees.map((e) => [e.uid, e]));
+
+      const targets: Array<{ uid: string; fullName: string; email: string; brandId: string; brandName: string }> = [];
+      const skipped: string[] = [];
       uids.forEach((uid) => {
+        const emp = byUid.get(uid);
+        const { brandId, brandName } = resolveBrandInfo(emp);
+        if (!emp || !brandId) {
+          skipped.push(emp?.fullName || uid);
+          return;
+        }
+        targets.push({ uid, fullName: emp.fullName, email: emp.email, brandId, brandName: brandName || "" });
+      });
+
+      if (targets.length === 0) {
+        toast({
+          variant: "destructive",
+          title: "Tidak dapat menyimpan",
+          description: skipped.length > 0
+            ? `Brand karyawan belum diatur: ${skipped.join(", ")}. Lengkapi data brand terlebih dahulu.`
+            : "Tidak ada karyawan valid yang dipilih.",
+        });
+        return;
+      }
+
+      const batch = writeBatch(db as any);
+      const now = serverTimestamp();
+      targets.forEach(({ uid, fullName, email, brandId, brandName }) => {
         const ref = doc(db as any, "employee_profiles", uid);
         batch.set(ref, {
+          uid,
+          fullName,
+          email,
+          brandId,
+          brandName,
           attendanceMethod: method,
           attendanceMethodLabel: methodLabel,
-          attendanceConfig: { method, methodLabel },
-          attendanceMethodUpdatedAt: serverTimestamp(),
+          attendanceConfig: { method, methodLabel, enabled: true },
+          attendanceMethodUpdatedAt: now,
           attendanceMethodUpdatedBy: currentUserUid,
           // Legacy fields kept for backward compatibility with older reads.
-          attendanceUpdatedAt: serverTimestamp(),
+          attendanceUpdatedAt: now,
           attendanceUpdatedBy: currentUserUid,
           attendanceUpdatedByName: currentUserName,
+          updatedAt: now,
         }, { merge: true });
       });
       await batch.commit();
-      toast({ title: "Berhasil disimpan", description: `Metode absensi ${uids.length} karyawan diperbarui.` });
-      onSuccess();
+
+      if (skipped.length > 0) {
+        toast({
+          variant: "destructive",
+          title: "Sebagian karyawan dilewati",
+          description: `Brand belum diatur untuk: ${skipped.join(", ")}.`,
+        });
+      }
+      toast({ title: "Berhasil disimpan", description: `Metode absensi ${targets.length} karyawan diperbarui.` });
+      await onSuccess();
       setSelected(new Set());
       setBulkMethod("");
       setConfirmOpen(false);
       setSingleEdit(null);
-    } catch {
+    } catch (error) {
+      console.error("[KelolaMtdAbsensiModal] Gagal menyimpan metode absensi:", error);
       toast({ variant: "destructive", title: "Gagal menyimpan", description: "Terjadi kesalahan. Coba lagi." });
     } finally {
       setSaving(false);
@@ -971,7 +1031,7 @@ export default function KaryawanDataPage() {
     mutate,
   } = useHrdScopedCollection<EmployeeMasterData>("employees");
 
-  const { data: employeeProfiles, isLoading: profilesLoading } =
+  const { data: employeeProfiles, isLoading: profilesLoading, mutate: mutateEmployeeProfiles } =
     useHrdScopedCollection<EmployeeProfile>("employee_profiles");
 
   const { data: brands, isLoading: brandsLoading } = useHrdScopedBrands();
@@ -2216,7 +2276,7 @@ export default function KaryawanDataPage() {
         currentUserUid={userProfile?.uid || ""}
         currentUserName={userProfile?.fullName || userProfile?.email || ""}
         db={firestore}
-        onSuccess={() => mutate?.()}
+        onSuccess={() => mutateEmployeeProfiles?.()}
       />
 
       {selectedReviewEmp && selectedReviewReq && (

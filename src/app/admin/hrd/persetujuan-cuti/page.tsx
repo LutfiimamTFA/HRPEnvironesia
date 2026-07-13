@@ -964,8 +964,88 @@ export default function HrdLeaveApprovalPage() {
     return (
       <Card className="border-slate-100 dark:border-slate-800 shadow-md rounded-2xl overflow-hidden">
         <CardContent className="p-0">
-          <div className="overflow-x-auto w-full">
-            <Table className="w-full min-w-[1200px]">
+          {/* Mobile card list (< md) — same data/logic as the desktop table below, just laid out as stacked cards instead of a squeezed table. */}
+          <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
+            {list.length > 0 ? (
+              list.map(r => {
+                const profile = employeeProfilesMap.get(r.employeeId);
+                const rBrand = r.brandName || profile?.hrdEmploymentInfo?.brandName || profile?.hrdEmploymentInfo?.brand || '-';
+                const rDivision = r.divisionName || profile?.hrdEmploymentInfo?.divisionName || profile?.hrdEmploymentInfo?.division || '-';
+                const jobTitle = getRequesterPositionLabel(r);
+                const canAction = r.status === 'pending_hrd' || r.status === 'pending_hrd_review';
+                return (
+                  <div key={r.id} className="p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-slate-850 dark:text-white font-black text-sm truncate">{r.employeeName}</p>
+                        <p className="text-xs font-semibold text-slate-500 capitalize truncate">{jobTitle}</p>
+                      </div>
+                      {getApprovalFlowBadge(r)}
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                      <div>
+                        <p className="text-[9px] uppercase font-black text-slate-400 tracking-wider">Brand / Divisi</p>
+                        <p className="font-bold text-slate-600 dark:text-slate-300 truncate">{rBrand}</p>
+                        <p className="text-[10px] text-slate-400 font-semibold truncate">{rDivision}</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] uppercase font-black text-slate-400 tracking-wider">Jenis Cuti</p>
+                        <p className="font-bold text-indigo-500 capitalize">
+                          Cuti {r.leaveType === 'tahunan' ? 'Tahunan' : r.leaveType === 'besar' ? 'Besar' : r.leaveType === 'menikah' ? 'Menikah' : r.leaveType === 'melahirkan' ? 'Melahirkan' : 'Tahunan'}
+                        </p>
+                      </div>
+                      <div className="col-span-2">
+                        <p className="text-[9px] uppercase font-black text-slate-400 tracking-wider">Periode</p>
+                        <p className="font-semibold text-slate-500">
+                          {format(r.startDate.toDate(), 'dd MMM yyyy', { locale: idLocale })} - {format(r.endDate.toDate(), 'dd MMM yyyy', { locale: idLocale })}
+                          <span className="ml-1.5 font-black text-slate-700 dark:text-slate-200">({r.durationDays} Hari)</span>
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] uppercase font-black text-slate-400 tracking-wider">Status Atasan</p>
+                        <Badge variant="outline" className={`mt-0.5 px-2 py-0.5 rounded-full text-[9px] font-black border uppercase tracking-wider ${getSupervisorStatusBadgeClass(r)}`}>
+                          {getSupervisorStatusLabel(r)}
+                        </Badge>
+                      </div>
+                      <div>
+                        <p className="text-[9px] uppercase font-black text-slate-400 tracking-wider">Status HRD</p>
+                        <Badge variant="outline" className={`mt-0.5 px-2 py-0.5 rounded-full text-[9px] font-black border uppercase tracking-wider ${getHrdStatusBadgeClass(r)}`}>
+                          {getHrdStatusLabel(r)}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      <Button variant="ghost" size="sm" onClick={() => handleViewDetails(r)} className="rounded-xl hover:bg-slate-100 font-bold text-xs gap-1">
+                        <Eye className="h-3.5 w-3.5" /> Detail
+                      </Button>
+                      {canAction && (
+                        <>
+                          <Button variant="outline" size="sm" onClick={() => handleOpenAction('approve', r)} className="rounded-xl border-emerald-500/20 hover:bg-emerald-950/20 text-emerald-600 font-bold text-xs">
+                            Setujui
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => handleOpenAction('reject', r)} className="rounded-xl border-red-500/20 hover:bg-red-950/20 text-red-600 font-bold text-xs">
+                            Tolak
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => handleOpenAction('revise', r)} className="rounded-xl border-amber-500/20 hover:bg-amber-950/20 text-amber-600 font-bold text-xs">
+                            Revisi
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="h-44 flex flex-col items-center justify-center gap-2 text-center px-4">
+                <CheckCircle2 className="h-10 w-10 text-slate-400 opacity-40" />
+                <p className="text-sm font-bold text-slate-500">{emptyMessage}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Desktop/tablet table (>= md) */}
+          <div className="hidden md:block overflow-x-auto w-full min-w-0">
+            <Table className="w-full min-w-[1100px]">
               <TableHeader className="bg-slate-50/20 dark:bg-slate-900/10">
                 <TableRow>
                   <TableHead className="pl-6 py-4 font-bold text-slate-850 dark:text-slate-200">Karyawan</TableHead>
@@ -1105,29 +1185,29 @@ export default function HrdLeaveApprovalPage() {
   return (
     <DashboardLayout pageTitle="Workspace Monitoring Cuti HRD">
       {/* FULL-WIDTH premium layout wrapping after sidebar */}
-      <div className="w-full space-y-6 px-4 md:px-8 max-w-[1600px] mx-auto animate-in fade-in duration-500">
-        
+      <div className="w-full min-w-0 max-w-none overflow-x-hidden space-y-5 md:space-y-6 px-3 sm:px-4 md:px-6 lg:px-8 xl:max-w-[1600px] xl:mx-auto animate-in fade-in duration-500">
+
         {/* Header Section */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 py-2 border-b border-slate-100 dark:border-slate-800">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-gradient-to-br from-indigo-500 to-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-600/10">
-              <Calendar className="h-7 w-7" />
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-4 py-2 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            <div className="shrink-0 p-3 bg-gradient-to-br from-indigo-500 to-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-600/10">
+              <Calendar className="h-6 w-6 sm:h-7 sm:w-7" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Workspace Cuti & Saldo Karyawan</h1>
-                <Badge className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-black border border-indigo-100/80 hover:bg-indigo-50 text-[10px] uppercase">HRD Workspace</Badge>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">Workspace Cuti & Saldo Karyawan</h1>
+                <Badge className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-black border border-indigo-100/80 hover:bg-indigo-50 text-[10px] uppercase shrink-0">HRD Workspace</Badge>
               </div>
-              <p className="text-xs text-slate-400 font-semibold mt-0.5">Pantau realisasi cuti, finalisasi approval secara otomatis, dan kelola audit mutasi lintas brand.</p>
+              <p className="text-xs text-slate-400 font-semibold mt-0.5 line-clamp-2">Pantau realisasi cuti, finalisasi approval secara otomatis, dan kelola audit mutasi lintas brand.</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <Button
               variant="outline"
               onClick={() => setShowFilters(!showFilters)}
               className={`rounded-xl font-bold text-xs gap-1.5 px-4 h-10 border transition-all ${
                 showFilters || filterBrand !== 'all' || filterDivision !== 'all' || filterStatus !== 'all'
-                  ? 'border-indigo-600 text-indigo-600 bg-indigo-50/40' 
+                  ? 'border-indigo-600 text-indigo-600 bg-indigo-50/40'
                   : 'hover:bg-slate-50'
               }`}
             >
@@ -1137,10 +1217,10 @@ export default function HrdLeaveApprovalPage() {
         </div>
 
         {/* TOP SUMMARY CARDS PANEL */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4">
           
           <Card className="border-indigo-100/60 dark:border-indigo-950/40 shadow-sm hover:shadow-md transition-all bg-gradient-to-br from-indigo-500/5 to-transparent relative overflow-hidden group">
-            <CardContent className="pt-6">
+            <CardContent className="pt-4 sm:pt-6">
               <div className="flex justify-between items-start">
                 <div>
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Menunggu Approval HRD</p>
@@ -1155,7 +1235,7 @@ export default function HrdLeaveApprovalPage() {
           </Card>
 
           <Card className="border-emerald-100/60 dark:border-emerald-950/40 shadow-sm hover:shadow-md transition-all bg-gradient-to-br from-emerald-500/5 to-transparent relative overflow-hidden group">
-            <CardContent className="pt-6">
+            <CardContent className="pt-4 sm:pt-6">
               <div className="flex justify-between items-start">
                 <div>
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Disetujui Bulan Ini</p>
@@ -1170,7 +1250,7 @@ export default function HrdLeaveApprovalPage() {
           </Card>
 
           <Card className="border-blue-100/60 dark:border-blue-950/40 shadow-sm hover:shadow-md transition-all bg-gradient-to-br from-blue-500/5 to-transparent relative overflow-hidden group">
-            <CardContent className="pt-6">
+            <CardContent className="pt-4 sm:pt-6">
               <div className="flex justify-between items-start">
                 <div>
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Cuti Aktif Hari Ini</p>
@@ -1185,7 +1265,7 @@ export default function HrdLeaveApprovalPage() {
           </Card>
 
           <Card className="border-violet-100/60 dark:border-violet-950/40 shadow-sm hover:shadow-md transition-all bg-gradient-to-br from-violet-500/5 to-transparent relative overflow-hidden group">
-            <CardContent className="pt-6">
+            <CardContent className="pt-4 sm:pt-6">
               <div className="flex justify-between items-start">
                 <div>
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Hari Terpakai</p>
@@ -1203,7 +1283,7 @@ export default function HrdLeaveApprovalPage() {
           </Card>
 
           <Card className="border-amber-100/60 dark:border-amber-950/40 shadow-sm hover:shadow-md transition-all bg-gradient-to-br from-amber-500/5 to-transparent relative overflow-hidden group">
-            <CardContent className="pt-6">
+            <CardContent className="pt-4 sm:pt-6">
               <div className="flex justify-between items-start">
                 <div>
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Saldo Hampir Habis (≤2)</p>
@@ -1410,24 +1490,26 @@ export default function HrdLeaveApprovalPage() {
           </Card>
         )}
           {/* WORKSPACE TABS SECTION */}
-        <Tabs defaultValue="pending" className="w-full">
-          <TabsList className="grid w-full grid-cols-6 rounded-2xl bg-slate-100 dark:bg-slate-950 p-1 mb-6 h-12 shadow-sm border border-slate-200/40">
-            <TabsTrigger value="pending" className="rounded-xl font-bold text-xs gap-1.5 transition-all py-2">
-              Butuh Tindakan HRD
-              <Badge className="bg-indigo-600 text-white font-black text-[9px] rounded-full px-1.5 py-0.5">{needHrdActionList.length}</Badge>
-            </TabsTrigger>
-            <TabsTrigger value="manager" className="rounded-xl font-bold text-xs gap-1.5 transition-all py-2">
-              Manager Divisi
-              <Badge className="bg-slate-500 text-white font-black text-[9px] rounded-full px-1.5 py-0.5">{managerRequestsList.length}</Badge>
-            </TabsTrigger>
-            <TabsTrigger value="staff" className="rounded-xl font-bold text-xs gap-1.5 transition-all py-2">
-              Staff
-              <Badge className="bg-slate-500 text-white font-black text-[9px] rounded-full px-1.5 py-0.5">{staffRequestsList.length}</Badge>
-            </TabsTrigger>
-            <TabsTrigger value="history" className="rounded-xl font-bold text-xs transition-all py-2">Semua Pengajuan</TabsTrigger>
-            <TabsTrigger value="balances" className="rounded-xl font-bold text-xs transition-all py-2">Saldo & Hak Cuti</TabsTrigger>
-            <TabsTrigger value="adjustments" className="rounded-xl font-bold text-xs transition-all py-2">Mutasi Saldo Cuti</TabsTrigger>
-          </TabsList>
+        <Tabs defaultValue="pending" className="w-full min-w-0">
+          <div className="w-full min-w-0 overflow-x-auto [scrollbar-width:thin] mb-6 rounded-2xl bg-slate-100 dark:bg-slate-950 shadow-sm border border-slate-200/40">
+            <TabsList className="inline-flex h-12 w-max min-w-full items-center gap-1 bg-transparent p-1 px-2">
+              <TabsTrigger value="pending" className="shrink-0 whitespace-nowrap rounded-xl font-bold text-xs gap-1.5 transition-all py-2">
+                Butuh Tindakan HRD
+                <Badge className="bg-indigo-600 text-white font-black text-[9px] rounded-full px-1.5 py-0.5">{needHrdActionList.length}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="manager" className="shrink-0 whitespace-nowrap rounded-xl font-bold text-xs gap-1.5 transition-all py-2">
+                Manager Divisi
+                <Badge className="bg-slate-500 text-white font-black text-[9px] rounded-full px-1.5 py-0.5">{managerRequestsList.length}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="staff" className="shrink-0 whitespace-nowrap rounded-xl font-bold text-xs gap-1.5 transition-all py-2">
+                Staff
+                <Badge className="bg-slate-500 text-white font-black text-[9px] rounded-full px-1.5 py-0.5">{staffRequestsList.length}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="history" className="shrink-0 whitespace-nowrap rounded-xl font-bold text-xs transition-all py-2">Semua Pengajuan</TabsTrigger>
+              <TabsTrigger value="balances" className="shrink-0 whitespace-nowrap rounded-xl font-bold text-xs transition-all py-2">Saldo & Hak Cuti</TabsTrigger>
+              <TabsTrigger value="adjustments" className="shrink-0 whitespace-nowrap rounded-xl font-bold text-xs transition-all py-2">Mutasi Saldo Cuti</TabsTrigger>
+            </TabsList>
+          </div>
 
           {/* TAB 1: BUTUH TINDAKAN HRD */}
           <TabsContent value="pending" className="space-y-6 focus:outline-none">
