@@ -240,7 +240,7 @@ function findSectionTitleCell(sheet: ExcelJS.Worksheet, needle: string, lastRow:
  * export — Payroll GIG-style templates in particular are known to leave
  * this sub-header empty.
  */
-function detectFinanceSectionInSheet(sheet: ExcelJS.Worksheet, titleNeedle: string, fallbackHeaderFillArgb: string): FinanceDetectionResult {
+function detectFinanceSectionInSheet(sheet: ExcelJS.Worksheet, titleNeedle: string, fallbackHeaderFillArgb: string, avoidColumnsUpTo: number): FinanceDetectionResult {
   const lastCol = Math.max(sheet.columnCount || 1, 1);
   const lastRow = Math.max(sheet.rowCount || 1, 1);
   const title = findSectionTitleCell(sheet, titleNeedle, lastRow, lastCol);
@@ -262,8 +262,11 @@ function detectFinanceSectionInSheet(sheet: ExcelJS.Worksheet, titleNeedle: stri
         if (synonyms.some((s) => text === s || text.includes(s))) rowColumns[key] = c;
       }
     }
-    // Require both name and totalJam so an unrelated "No" column elsewhere is never mistaken for this section.
-    if (rowColumns.name != null && rowColumns.totalJam != null) {
+    // Require both name and totalJam so an unrelated "No" column elsewhere is never mistaken for this section,
+    // AND every matched column must sit strictly to the right of the daily block — otherwise a stray match
+    // could alias one of the daily table's own columns (e.g. "Nama Karyawan" is a real daily-block header too).
+    const allColsSafe = Object.values(rowColumns).every((c) => (c as number) > avoidColumnsUpTo);
+    if (rowColumns.name != null && rowColumns.totalJam != null && allColsSafe) {
       headerRow = r;
       columns = rowColumns;
       break;
@@ -277,10 +280,14 @@ function detectFinanceSectionInSheet(sheet: ExcelJS.Worksheet, titleNeedle: stri
     // of failing. NO right at the title's column, Nama Karyawan next, Total
     // Jam after that; a synthetic label row is written 1 row below the
     // title so the sheet still reads correctly even though the template
-    // itself didn't label these columns.
+    // itself didn't label these columns. Never lands inside (or touching)
+    // the daily block's own columns — e.g. writing "1"/"2" into what turns
+    // out to be the daily table's own "Noted" column was exactly the bug
+    // reported for the Greenlab single-company template.
     usedFallbackColumns = true;
+    const safeStartCol = Math.max(title.col, avoidColumnsUpTo + 1);
     headerRow = title.row + 1;
-    columns = { no: title.col, name: title.col + 1, totalJam: title.col + 2 };
+    columns = { no: safeStartCol, name: safeStartCol + 1, totalJam: safeStartCol + 2 };
     const labelRow = sheet.getRow(headerRow);
     const noCell = labelRow.getCell(columns.no!);
     const nameCell = labelRow.getCell(columns.name!);
@@ -323,12 +330,13 @@ function detectFinanceSectionInSheet(sheet: ExcelJS.Worksheet, titleNeedle: stri
  * other sheet in the workbook — some single-company templates keep these
  * sections on a separate tab from the daily detail sheet.
  */
-function detectFinanceSection(workbook: ExcelJS.Workbook, primarySheet: ExcelJS.Worksheet, titleNeedle: string, fallbackHeaderFillArgb: string): FinanceDetectionResult {
-  const primaryResult = detectFinanceSectionInSheet(primarySheet, titleNeedle, fallbackHeaderFillArgb);
+function detectFinanceSection(workbook: ExcelJS.Workbook, primarySheet: ExcelJS.Worksheet, titleNeedle: string, fallbackHeaderFillArgb: string, avoidColumnsUpTo: number): FinanceDetectionResult {
+  const primaryResult = detectFinanceSectionInSheet(primarySheet, titleNeedle, fallbackHeaderFillArgb, avoidColumnsUpTo);
   if (primaryResult.status !== 'not-found') return primaryResult;
   for (const ws of workbook.worksheets) {
     if (ws === primarySheet) continue;
-    const result = detectFinanceSectionInSheet(ws, titleNeedle, fallbackHeaderFillArgb);
+    // Other sheets don't share the primary sheet's daily block, so there's nothing to avoid colliding with.
+    const result = detectFinanceSectionInSheet(ws, titleNeedle, fallbackHeaderFillArgb, 0);
     if (result.status !== 'not-found') return result;
   }
   return { status: 'not-found' };
@@ -477,18 +485,24 @@ function shortenRemark(day: CalendarAttendanceDetail, lateMinutes: number | null
 
   // Attendance-based days (Terlambat / Tepat Waktu) — build from the same
   // structured signals Monitoring Absensi uses, just kept to short tags.
+  // Condition reports use the ACTUAL note text ("Kondisi: Ban bocor") rather
+  // than a generic "Ada Kondisi" — HRD/Finance can't act on a label that
+  // doesn't say what the condition was.
   const parts: string[] = [];
   if (lateMinutes) parts.push(`Terlambat ${lateMinutes}m`);
   if (!day.tapOutTime) parts.push('Belum Tap Out');
   const locationFlag = day.locationValidationStatus
     && !['Valid Otomatis', 'Radius Sesuai', 'Jalan Cocok'].includes(day.locationValidationStatus);
   if (locationFlag) parts.push('Lokasi Review');
-  if (day.conditionCategory) parts.push('Ada Kondisi');
+  const conditionLabel = day.conditionCategory
+    ? `Kondisi: ${(day.conditionNote || day.conditionCategory).trim()}`
+    : null;
+  if (conditionLabel) parts.push(conditionLabel);
   if (day.hrdReviewStatus === 'needs_review' && day.tapOutTime) parts.push('Perlu Catatan HRD');
 
   if (parts.length === 0) return 'Hadir';
   if (parts.length === 1) return parts[0];
-  if (parts.some((p) => p.startsWith('Terlambat')) && parts.includes('Ada Kondisi')) return 'Terlambat + Kondisi';
+  if (parts.some((p) => p.startsWith('Terlambat')) && conditionLabel) return `${parts.find((p) => p.startsWith('Terlambat'))} + ${conditionLabel}`;
   if (parts.includes('Belum Tap Out') && parts.includes('Lokasi Review')) return 'Tap Out + Review';
   return parts.slice(0, 2).join(' + ');
 }
@@ -781,7 +795,27 @@ export function fillPayrollTemplateSheet(
   let summaryRow = summaryDataStartRow;
   let summaryIndex = 0;
 
-  for (const employee of employees) {
+  // Defensive re-grouping: every employee's block must be written fully
+  // (all their days, in date order, then their TOTAL row) before the next
+  // employee starts — never interleaved. Re-sorting here (rather than
+  // trusting the caller already did it) is what actually guarantees this,
+  // since this is the loop that determines physical row order in the sheet.
+  const sortedEmployees = [...employees]
+    .sort((a, b) => a.row.fullName.localeCompare(b.row.fullName, 'id'))
+    .map((employee) => ({ ...employee, days: [...employee.days].sort((a, b) => a.dayNumber - b.dayNumber) }));
+
+  console.log('[GREENLAB_SINGLE_EXPORT_GROUPING_DEBUG]', {
+    employeeCount: sortedEmployees.length,
+    employees: sortedEmployees.map((e) => e.row.fullName),
+    groupedRows: sortedEmployees.map((e) => ({
+      employeeName: e.row.fullName,
+      rowCount: e.days.length,
+      firstDate: e.days[0]?.date,
+      lastDate: e.days[e.days.length - 1]?.date,
+    })),
+  });
+
+  for (const employee of sortedEmployees) {
     const rowsWritten: number[] = [];
 
     for (const day of employee.days) {
@@ -962,8 +996,8 @@ export function fillPayrollTemplateSheet(
   // text (blank, merged, or worded differently — seen on Payroll GIG),
   // detectFinanceSectionInSheet falls back to a fixed column offset from
   // the title instead of failing the export.
-  const rekapForFinance = detectFinanceSection(workbook, sheet, 'rekap for finance', 'FFFEF08A'); // soft yellow
-  const fixRekap = detectFinanceSection(workbook, sheet, 'fix rekap', 'FFBBF7D0'); // soft green
+  const rekapForFinance = detectFinanceSection(workbook, sheet, 'rekap for finance', 'FFFEF08A', detected.maxDailyColumn); // soft yellow
+  const fixRekap = detectFinanceSection(workbook, sheet, 'fix rekap', 'FFBBF7D0', detected.maxDailyColumn); // soft green
 
   // Tahap 7: REKAP FOR FINANCE and FIX REKAP must start data on the SAME
   // row for the same employee — if both sections were found independently
@@ -993,7 +1027,7 @@ export function fillPayrollTemplateSheet(
   if (rekapForFinance.status === 'found') {
     const { columns, dataStartRow: financeDataStartRow, sheet: financeSheet } = rekapForFinance.section;
     let row = financeDataStartRow;
-    employees.forEach((employee, i) => {
+    sortedEmployees.forEach((employee, i) => {
       const { row: r2 } = employee;
       const actual = pickActualMinutes(r2);
       const target = r2.targetPeriodeMinutes;
@@ -1009,7 +1043,7 @@ export function fillPayrollTemplateSheet(
   if (fixRekap.status === 'found') {
     const { columns, dataStartRow: fixDataStartRow, sheet: fixSheet } = fixRekap.section;
     let row = fixDataStartRow;
-    employees.forEach((employee, i) => {
+    sortedEmployees.forEach((employee, i) => {
       const { row: r2 } = employee;
       const actual = pickActualMinutes(r2);
       const target = r2.targetPeriodeMinutes;

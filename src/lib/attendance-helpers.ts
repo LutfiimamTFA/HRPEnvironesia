@@ -740,6 +740,41 @@ export interface FieldConditionResult {
   categoryLabel: string;
   /** The employee's own free-text explanation, if any. */
   reasonText: string | null;
+  /** Direct image URL for a proof photo, if the event carries one under any of the known field names. */
+  proofPhotoUrl: string | null;
+  /** Non-image attachment URLs (documents/PDFs) the event may carry alongside/instead of a photo. */
+  attachmentUrls: string[];
+}
+
+/** Priority-ordered read of every field name a "kondisi khusus" report has been seen using for its free-text explanation — there is no separate attendance_condition_reports collection in this app, this reads straight off the tap-in/tap-out event. */
+export function getConditionText(source: any): string {
+  return (
+    source?.note ||
+    source?.reason ||
+    source?.conditionNote ||
+    source?.description ||
+    source?.specialCondition ||
+    source?.reasonText ||
+    source?.employeeNote ||
+    source?.conditionTypeLabel ||
+    "Kondisi dilaporkan"
+  );
+}
+
+/** Reads every known proof-photo/attachment field name off an attendance event. */
+function extractConditionEvidence(event: any): { proofPhotoUrl: string | null; attachmentUrls: string[] } {
+  const proofPhotoUrl: string | null =
+    event?.proofPhotoUrl || event?.proofPhotoPath || event?.conditionPhotoUrl ||
+    event?.photoUrl || event?.imageUrl || event?.evidenceUrl || null;
+
+  const rawAttachments = event?.attachmentUrls || event?.attachments || null;
+  const attachmentUrls: string[] = Array.isArray(rawAttachments)
+    ? rawAttachments
+      .map((a: any) => (typeof a === "string" ? a : a?.fileUrl || a?.url || null))
+      .filter((u: any): u is string => !!u)
+    : [];
+
+  return { proofPhotoUrl, attachmentUrls };
 }
 
 export function classifyFieldCondition(
@@ -750,12 +785,13 @@ export function classifyFieldCondition(
     event?.fieldConditionCategory || event?.conditionCategory || event?.kondisiLapangan || null;
   const reasonText: string | null =
     event?.specialCondition || event?.reasonText || event?.conditionNote || event?.employeeNote || null;
+  const { proofPhotoUrl, attachmentUrls } = extractConditionEvidence(event);
 
   if (explicitCategory) {
     const normalized = explicitCategory.toString().toLowerCase().replace(/\s+/g, "_");
     if (normalized in FIELD_CONDITION_LABEL) {
       const category = normalized as FieldConditionCategory;
-      return { category, categoryLabel: FIELD_CONDITION_LABEL[category], reasonText };
+      return { category, categoryLabel: FIELD_CONDITION_LABEL[category], reasonText, proofPhotoUrl, attachmentUrls };
     }
   }
 
@@ -763,16 +799,16 @@ export function classifyFieldCondition(
     const normalizedReason = reasonText.toLowerCase();
     for (const [category, keywords] of FIELD_CONDITION_KEYWORDS) {
       if (keywords.some((kw) => normalizedReason.includes(kw))) {
-        return { category, categoryLabel: FIELD_CONDITION_LABEL[category], reasonText };
+        return { category, categoryLabel: FIELD_CONDITION_LABEL[category], reasonText, proofPhotoUrl, attachmentUrls };
       }
     }
   }
 
   if (locationValidation && !locationValidation.isValidAuto) {
-    return { category: "lokasi_perlu_review", categoryLabel: FIELD_CONDITION_LABEL.lokasi_perlu_review, reasonText };
+    return { category: "lokasi_perlu_review", categoryLabel: FIELD_CONDITION_LABEL.lokasi_perlu_review, reasonText, proofPhotoUrl, attachmentUrls };
   }
 
-  return { category: "normal", categoryLabel: FIELD_CONDITION_LABEL.normal, reasonText };
+  return { category: "normal", categoryLabel: FIELD_CONDITION_LABEL.normal, reasonText, proofPhotoUrl, attachmentUrls };
 }
 
 /**

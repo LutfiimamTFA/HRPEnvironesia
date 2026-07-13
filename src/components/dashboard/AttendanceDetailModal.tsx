@@ -6,10 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { getInitials } from '@/lib/utils';
-import { Copy, X, AlertCircle, RotateCw, ShieldAlert, HeartPulse, CheckCircle2, XCircle, RefreshCw, ShieldCheck } from 'lucide-react';
+import { Copy, X, AlertCircle, RotateCw, ShieldAlert, HeartPulse, CheckCircle2, XCircle, RefreshCw, ShieldCheck, FileText } from 'lucide-react';
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { getAttendanceImageUrl } from '@/lib/google-drive-image';
+import { getAttendanceImageUrl, getConditionProofImageSrc } from '@/lib/google-drive-image';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { Textarea } from '@/components/ui/textarea';
 import type { LocationValidation } from '@/lib/attendance-helpers';
@@ -139,6 +139,55 @@ function PhotoEvidenceBlock({ label, rawEvent }: { label: string; rawEvent?: any
       )}
     </div>
   );
+}
+
+/**
+ * Kondisi-khusus evidence preview — separate from the tap-in/tap-out photo
+ * shown elsewhere in this modal. `src` is expected to already be either a
+ * direct-servable URL or an /api/attendance-photo?fileId=... proxy link
+ * (never a raw Google Drive webViewLink/share URL — those require the
+ * viewer to be signed into the same Google account and silently fail in an
+ * <img> tag, which is why photos kept showing "Buka File" before).
+ *
+ * Always renders the <img> — never a file-card by default. Only if the
+ * <img> itself fails to load does a small, secondary fallback line appear;
+ * there is deliberately no prominent "Buka File" button as the primary UI.
+ */
+function ConditionProofPreview({ src }: { src: string }) {
+  const [failed, setFailed] = useState(false);
+
+  if (failed) {
+    return (
+      <div className="mt-3 space-y-1">
+        <p className="text-xs text-slate-500 dark:text-slate-400">Foto sedang diproses atau tidak dapat dimuat.</p>
+        <a
+          href={src}
+          target="_blank"
+          rel="noreferrer"
+          className="text-xs font-medium text-purple-600 dark:text-purple-400 hover:underline"
+        >
+          Lihat file asli
+        </a>
+      </div>
+    );
+  }
+
+  return (
+    <a href={src} target="_blank" rel="noreferrer" className="block mt-3">
+      <img
+        src={src}
+        alt="Bukti kondisi"
+        onError={() => setFailed(true)}
+        className="w-full max-h-[260px] rounded-[10px] border border-slate-200 dark:border-slate-700 bg-white object-contain cursor-zoom-in"
+      />
+    </a>
+  );
+}
+
+/** True only when the report explicitly declares a non-image mimeType — unknown/missing mimeType still tries to render as a photo (Drive/Storage URLs often carry no mimeType at all). */
+function isExplicitlyNonImage(report: any): boolean {
+  const mimeType: string | undefined = report?.mimeType || report?.attachments?.[0]?.mimeType;
+  return !!mimeType && !mimeType.startsWith('image/');
 }
 
 export function AttendanceDetailModal({ isOpen, onClose, onMarkInvalid, onReview, record }: AttendanceDetailModalProps) {
@@ -301,16 +350,99 @@ export function AttendanceDetailModal({ isOpen, onClose, onMarkInvalid, onReview
           </Card>
 
           {/* Kondisi Khusus */}
-          {record.specialCondition && (
-            <Card className="border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/10">
-              <CardContent className="pt-4">
-                <h3 className="text-xs font-semibold text-purple-700 dark:text-purple-300 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                  <HeartPulse className="h-3.5 w-3.5" /> Laporan Kondisi Khusus
-                </h3>
-                <p className="text-sm text-slate-800 dark:text-slate-100">{record.specialCondition}</p>
-              </CardContent>
-            </Card>
-          )}
+          {record.specialCondition && (() => {
+            // There is no separate attendance_condition_reports collection in this
+            // app yet — the report lives directly on the tap-in/tap-out event, so
+            // evidence fields (if the source system ever writes them) are read
+            // straight off rawEvent/rawEventIn/rawEventOut. getConditionProofImageSrc
+            // deliberately ignores that object's shared photoUrl/driveFileId fields
+            // (those belong to Foto Tap In/Tap Out) and only reads condition-specific
+            // field names, so it never resolves to the tap-in photo.
+            const report = record.rawEvent || record.rawEventIn || record.rawEventOut || {};
+            const tapInPhotoUrl = record.rawEventIn ? getAttendanceImageUrl(record.rawEventIn) : null;
+            const tapOutPhotoUrl = record.rawEventOut ? getAttendanceImageUrl(record.rawEventOut) : null;
+            const conditionProofUrl = getConditionProofImageSrc(report);
+            const nonImageFile = isExplicitlyNonImage(report);
+
+            console.log('[ATTENDANCE_DETAIL_PHOTO_DEBUG]', {
+              employeeName: record.name,
+              dateKey: record.id,
+              tapInPhotoUrl,
+              tapOutPhotoUrl,
+              conditionReportId: record.id,
+              conditionNote: record.specialCondition,
+              conditionProofUrl,
+              conditionProofFields: {
+                proofPhotoUrl: report?.proofPhotoUrl,
+                conditionProofPhotoUrl: report?.conditionProofPhotoUrl,
+                reportProofPhotoUrl: report?.reportProofPhotoUrl,
+                evidenceUrl: report?.evidenceUrl,
+                attachmentUrls: report?.attachmentUrls,
+                attachments: report?.attachments,
+              },
+            });
+
+            // Full field sweep so it's obvious from the console which exact
+            // field name the Web Absen write actually used, in case it's a
+            // spelling/nesting this helper doesn't yet check.
+            console.log('[HRP_CONDITION_SYNC_DEBUG]', {
+              employeeName: record.name,
+              employeeUid: record.rawEvent?.uid || record.rawEventIn?.uid || record.rawEventOut?.uid,
+              dateKey: record.id,
+              attendanceEventId: record.rawEventIn?.id || record.rawEventOut?.id || record.id,
+              attendanceEvent: report,
+              conditionFields: {
+                proofPhotoUrl: report?.proofPhotoUrl,
+                conditionProofPhotoUrl: report?.conditionProofPhotoUrl,
+                conditionPhotoUrl: report?.conditionPhotoUrl,
+                evidencePhotoUrl: report?.evidencePhotoUrl,
+                photoUrl: report?.photoUrl,
+                imageUrl: report?.imageUrl,
+                attachmentUrls: report?.attachmentUrls,
+                attachments: report?.attachments,
+              },
+              eventConditionFields: {
+                conditionReport: report?.conditionReport,
+                conditionProofPhotoUrl: report?.conditionProofPhotoUrl,
+                conditionPhotoUrl: report?.conditionPhotoUrl,
+                conditionEvidenceUrl: report?.conditionEvidenceUrl,
+                conditionAttachmentUrls: report?.conditionAttachmentUrls,
+              },
+              resolvedConditionProofUrl: conditionProofUrl,
+              tapInPhotoUrl,
+            });
+
+            const imageSrc = conditionProofUrl;
+
+            return (
+              <Card className="border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/10">
+                <CardContent className="pt-4">
+                  <h3 className="text-xs font-semibold text-purple-700 dark:text-purple-300 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                    <HeartPulse className="h-3.5 w-3.5" /> Laporan Kondisi Khusus
+                  </h3>
+                  <p className="text-sm text-slate-800 dark:text-slate-100">{record.specialCondition}</p>
+
+                  {imageSrc && !nonImageFile ? (
+                    <ConditionProofPreview src={imageSrc} />
+                  ) : imageSrc && nonImageFile ? (
+                    <a
+                      href={imageSrc}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-3 flex items-center gap-2 rounded-lg border border-purple-200 dark:border-purple-800 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-semibold text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors w-fit"
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      {report?.attachments?.[0]?.fileName || 'Buka File'}
+                    </a>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 italic">
+                      Tidak ada bukti foto kondisi yang diunggah.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })()}
 
           {/* Keputusan HRD (jika sudah direview) */}
           {record.hrdReviewStatus && (

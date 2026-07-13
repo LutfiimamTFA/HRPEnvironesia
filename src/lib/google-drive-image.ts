@@ -119,6 +119,93 @@ export function getAttendanceImageUrl(event: any): string | null {
 }
 
 /**
+ * Get an embeddable <img> src for a "kondisi khusus" condition report's proof
+ * photo — mirrors getAttendanceImageUrl's Drive-proxy pattern above rather
+ * than ever pointing <img> straight at a Drive webViewLink/share URL (those
+ * require the viewer to be signed into the same Google account and fail
+ * silently in an <img> tag). Reuses the same /api/attendance-photo proxy
+ * (already validates the requester and fetches the file server-side via the
+ * app's existing Drive access) instead of a separate route, since the two
+ * proxy the exact same thing — a Drive file by id.
+ */
+export function getConditionProofImageSrc(report: any): string | null {
+  if (!report) return null;
+  const attachment = report.attachments?.[0] || {};
+  // Web Absen may nest the condition report under the event instead of
+  // flattening it (attendance_condition_reports doc doesn't exist as a
+  // separate collection in this app yet, so whatever shape it wrote ends up
+  // nested on the event as `conditionReport`).
+  const nested = report.conditionReport || {};
+  const nestedAttachment = nested.attachments?.[0] || {};
+
+  // IMPORTANT: never read report.photoUrl / report.selfieUrl / report.driveFileId /
+  // report.fileId / report.evidence.* here. This function is sometimes handed the
+  // same tap-in/tap-out event object getAttendanceImageUrl() already reads (there is
+  // no dedicated attendance_condition_reports collection yet) — reusing those shared
+  // fields silently resolved the condition photo to the Foto Tap In photo.
+  // Only condition-specific field names (top-level, nested `conditionReport`, or
+  // `condition`-prefixed on the event) are used below.
+  const driveFileId: string | null =
+    attachment.driveFileId ||
+    nestedAttachment.driveFileId ||
+    extractDriveFileId(report.driveWebViewLink) ||
+    extractDriveFileId(report.driveWebContentLink) ||
+    extractDriveFileId(report.proofPhotoUrl) ||
+    extractDriveFileId(report.conditionProofPhotoUrl) ||
+    extractDriveFileId(report.reportProofPhotoUrl) ||
+    extractDriveFileId(report.conditionPhotoUrl) ||
+    extractDriveFileId(report.evidencePhotoUrl) ||
+    extractDriveFileId(report.evidenceUrl) ||
+    extractDriveFileId(report.conditionEvidenceUrl) ||
+    extractDriveFileId(report.specialConditionPhotoUrl) ||
+    extractDriveFileId(attachment.fileUrl) ||
+    extractDriveFileId(attachment.url) ||
+    extractDriveFileId(attachment.downloadUrl) ||
+    extractDriveFileId(report.attachmentUrls?.[0]) ||
+    extractDriveFileId(report.conditionAttachmentUrls?.[0]) ||
+    extractDriveFileId(nested.proofPhotoUrl) ||
+    extractDriveFileId(nested.conditionPhotoUrl) ||
+    extractDriveFileId(nested.evidencePhotoUrl) ||
+    extractDriveFileId(nested.photoUrl) ||
+    extractDriveFileId(nested.imageUrl) ||
+    extractDriveFileId(nestedAttachment.fileUrl) ||
+    extractDriveFileId(nested.attachmentUrls?.[0]) ||
+    null;
+
+  if (driveFileId) {
+    return `/api/attendance-photo?fileId=${encodeURIComponent(driveFileId)}`;
+  }
+
+  // Not a Drive link (or no fileId could be extracted) — safe to use directly,
+  // e.g. a Firebase Storage download URL.
+  const directUrl: string =
+    report.proofPhotoUrl ||
+    report.conditionProofPhotoUrl ||
+    report.reportProofPhotoUrl ||
+    report.conditionPhotoUrl ||
+    report.evidencePhotoUrl ||
+    report.evidenceUrl ||
+    report.conditionEvidenceUrl ||
+    report.specialConditionPhotoUrl ||
+    attachment.fileUrl ||
+    attachment.url ||
+    attachment.downloadUrl ||
+    report.attachmentUrls?.[0] ||
+    report.conditionAttachmentUrls?.[0] ||
+    nested.proofPhotoUrl ||
+    nested.conditionPhotoUrl ||
+    nested.evidencePhotoUrl ||
+    nested.photoUrl ||
+    nested.imageUrl ||
+    nestedAttachment.fileUrl ||
+    nestedAttachment.url ||
+    nested.attachmentUrls?.[0] ||
+    '';
+
+  return directUrl || null;
+}
+
+/**
  * Get Google Drive link untuk fallback "buka di Drive"
  */
 export function getGoogleDriveLink(event: any): string | null {

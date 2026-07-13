@@ -596,7 +596,7 @@ export function AttendanceMonitoringClient() {
         else if (locationValidation.radiusStatus === 'signifikan' && locationValidation.excessM !== null) noteExtras.push(`Melebihi radius ${locationValidation.excessM} m`);
       }
       if (fieldCondition && fieldCondition.category !== 'normal') {
-        noteExtras.push(fieldCondition.reasonText ? `Alasan: ${fieldCondition.reasonText}` : fieldCondition.categoryLabel);
+        noteExtras.push(fieldCondition.reasonText ? `Kondisi: ${fieldCondition.reasonText}` : `Kondisi: ${fieldCondition.categoryLabel}`);
       }
       if (hrdReviewStatus === 'needs_review') noteExtras.push('Perlu catatan HRD');
       if (checkInEvent) noteExtras.push(photoUrlIn ? 'Foto masuk ada' : 'Foto masuk tidak ada');
