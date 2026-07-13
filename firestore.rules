@@ -634,7 +634,39 @@ service cloud.firestore {
       allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
       allow delete: if isSuperAdmin() || (isHrd() && hrdCanReadBrandData(resource.data));
     }
-    
+
+    // Written by the Web Absen app when a staff member submits a "laporan
+    // kondisi khusus" (special condition report), including its proof photo
+    // fields (conditionProofPhotoUrl/proofPhotoUrl/driveFileId/etc). HRP's
+    // Monitoring Absensi reads this collection to render that photo — it must
+    // never be confused with attendance_events (tap-in/tap-out) reads above.
+    match /attendance_condition_reports/{reportId} {
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+
+      allow get: if isSignedIn() && (
+        resource.data.uid == request.auth.uid ||
+        resource.data.employeeUid == request.auth.uid ||
+        isHrd() ||
+        isSuperAdmin()
+      );
+
+      allow list: if isSignedIn() && (
+        isHrd() ||
+        isSuperAdmin()
+      );
+
+      allow update: if isSignedIn() && (
+        isSuperAdmin() ||
+        isHrd() ||
+        (
+          resource.data.uid == request.auth.uid &&
+          resource.data.reviewStatus == 'pending'
+        )
+      );
+
+      allow delete: if isSuperAdmin();
+    }
+
     match /overtime_submissions/{submissionId} {
       function isSubmissionOwner() {
         return request.auth.uid == resource.data.uid;

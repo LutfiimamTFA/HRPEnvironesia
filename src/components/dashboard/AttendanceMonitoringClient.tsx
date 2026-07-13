@@ -125,6 +125,54 @@ interface AttendanceRecord {
   rawEvent?: any;
   rawEventIn?: any;
   rawEventOut?: any;
+  /** The matching attendance_condition_reports doc (proof photo lives here, never on rawEvent/rawEventIn/rawEventOut). */
+  conditionReport?: any | null;
+  rawConditionReport?: any | null;
+}
+
+/**
+ * Match a staff's "laporan kondisi khusus" (attendance_condition_reports doc)
+ * to their attendance row for the selected date — tries the explicit link
+ * fields the event stores first, then falls back to uid+date matching.
+ */
+function getConditionReportForEmployee({
+  reports,
+  employeeUid,
+  dateKey,
+  checkInEvent,
+  checkOutEvent,
+}: {
+  reports: any[];
+  employeeUid: string;
+  dateKey: string | null;
+  checkInEvent: any;
+  checkOutEvent: any;
+}): any | null {
+  const eventLinkedIds = [
+    checkInEvent?.checkInConditionReportId,
+    checkOutEvent?.checkOutConditionReportId,
+    ...(checkInEvent?.linkedConditionReportIds || []),
+    ...(checkOutEvent?.linkedConditionReportIds || []),
+  ].filter(Boolean);
+
+  if (eventLinkedIds.length) {
+    const byLinkedId = reports.find((r) => eventLinkedIds.includes(r.id));
+    if (byLinkedId) return byLinkedId;
+  }
+
+  const byLinkedAttendance = reports.find((r) =>
+    r.linkedAttendanceId &&
+    (r.linkedAttendanceId === checkInEvent?.id || r.linkedAttendanceId === checkOutEvent?.id)
+  );
+  if (byLinkedAttendance) return byLinkedAttendance;
+
+  const byUidDate = reports.find((r) =>
+    (r.uid === employeeUid || r.employeeUid === employeeUid) &&
+    (r.reportDate === dateKey || r.dateKey === dateKey)
+  );
+  if (byUidDate) return byUidDate;
+
+  return null;
 }
 
 function MonitoringSkeleton() {
@@ -210,10 +258,44 @@ export function AttendanceMonitoringClient() {
   const isLoadingEvents = isLoadingDateKeyEvents || isLoadingRangeEvents;
   const mutateEvents = () => { mutateDateKeyEvents(); mutateRangeEvents(); };
 
+  // Web Absen writes "laporan kondisi khusus" (special condition report) proof
+  // photos to their own collection, keyed by reportDate — never to
+  // attendance_events. Fetched unscoped (like attendance_events above) since
+  // these docs don't reliably carry brandId either; visibility is enforced by
+  // only joining a report to a row whose employee already passed HRD scoping.
+  const conditionReportsQuery = useMemoFirebase(() => {
+    if (!selectedDateString) return null;
+    return query(collection(firestore, 'attendance_condition_reports'), where('reportDate', '==', selectedDateString));
+  }, [firestore, selectedDateString]);
+  const { data: conditionReportsByReportDate, isLoading: isLoadingConditionReportsA } = useCollection<any>(conditionReportsQuery);
+
+  const conditionReportsDateKeyQuery = useMemoFirebase(() => {
+    if (!selectedDateString) return null;
+    return query(collection(firestore, 'attendance_condition_reports'), where('dateKey', '==', selectedDateString));
+  }, [firestore, selectedDateString]);
+  const { data: conditionReportsByDateKey, isLoading: isLoadingConditionReportsB } = useCollection<any>(conditionReportsDateKeyQuery);
+
+  const conditionReports = useMemo(() => {
+    const byId = new Map<string, any>();
+    for (const r of conditionReportsByReportDate || []) byId.set((r as any).id, r);
+    for (const r of conditionReportsByDateKey || []) if (!byId.has((r as any).id)) byId.set((r as any).id, r);
+    return Array.from(byId.values());
+  }, [conditionReportsByReportDate, conditionReportsByDateKey]);
+
+  const isLoadingConditionReports = isLoadingConditionReportsA || isLoadingConditionReportsB;
+
+  if (typeof window !== 'undefined') {
+    console.log('[CONDITION_REPORTS_QUERY_DEBUG]', {
+      selectedDateString,
+      conditionReportsCount: conditionReports?.length,
+      firstConditionReport: conditionReports?.[0],
+    });
+  }
+
   const leaveConstraints = useMemo(() => [where('status', 'in', ['approved', 'active_leave'])], []);
   const { data: leaveRequests, isLoading: isLoadingLeaves } = useHrdScopedCollection<any>('leave_requests', { constraints: leaveConstraints });
 
-  const isLoading = isLoadingConfig || isLoadingProfiles || isLoadingUsers || isLoadingBrands || isLoadingEvents || isLoadingLeaves;
+  const isLoading = isLoadingConfig || isLoadingProfiles || isLoadingUsers || isLoadingBrands || isLoadingEvents || isLoadingLeaves || isLoadingConditionReports;
 
   // HRD with exactly one allowed brand — pin the filter, don't render a dropdown at all.
   const singleBrand = !isSuperAdmin && !isAllCompanies && (scopedBrands?.length ?? 0) === 1 ? scopedBrands![0] : null;
@@ -295,6 +377,16 @@ export function AttendanceMonitoringClient() {
       seenUids.add(uid);
       return true;
     });
+
+    // ── Condition reports (attendance_condition_reports) scoped to this HRD's
+    // visible employees only — never show a condition report belonging to an
+    // employee outside allowedBrandIds, even though the query itself is unscoped.
+    const visibleEmployeeUids = new Set(
+      dedupedProfiles.map((p: any) => resolveProfileUid(p)).filter(Boolean) as string[]
+    );
+    const scopedConditionReports = (conditionReports || []).filter((r: any) =>
+      visibleEmployeeUids.has(r.uid) || visibleEmployeeUids.has(r.employeeUid)
+    );
 
     // ── NIK lookup: normalizedNik → profile ─────────────────────────────────
     const profileByNik = new Map<string, any>();
@@ -528,7 +620,37 @@ export function AttendanceMonitoringClient() {
         workDurationMinutes = differenceInMinutes(tapOutTimestamp, tapInTimestamp);
       }
 
-      const specialCondition = (checkInEvent as any)?.specialCondition || (checkOutEvent as any)?.specialCondition || null;
+      const conditionReport = getConditionReportForEmployee({
+        reports: scopedConditionReports,
+        employeeUid: profileUid,
+        dateKey: selectedDateString,
+        checkInEvent,
+        checkOutEvent,
+      });
+
+      const specialCondition =
+        conditionReport?.conditionNote ||
+        conditionReport?.note ||
+        conditionReport?.reasonLabel ||
+        (checkInEvent as any)?.specialCondition ||
+        (checkOutEvent as any)?.specialCondition ||
+        null;
+
+      if (typeof window !== 'undefined' && (conditionReport || specialCondition)) {
+        console.log('[CONDITION_JOIN_DEBUG]', {
+          employeeName: resolvedName,
+          employeeUid: profileUid,
+          dateKey: selectedDateString,
+          checkInConditionReportId: (checkInEvent as any)?.checkInConditionReportId,
+          linkedConditionReportIds: (checkInEvent as any)?.linkedConditionReportIds,
+          conditionReportFound: !!conditionReport,
+          conditionReportId: conditionReport?.id,
+          conditionProofPhotoUrl: conditionReport?.conditionProofPhotoUrl,
+          proofPhotoUrl: conditionReport?.proofPhotoUrl,
+          conditionProofFileId: conditionReport?.conditionProofFileId,
+          driveFileId: conditionReport?.driveFileId,
+        });
+      }
       const siteRadiusConfig = siteForBrand
         ? {
             office: siteForBrand.office,
@@ -646,6 +768,8 @@ export function AttendanceMonitoringClient() {
         rawEvent: checkInEvent || checkOutEvent,
         rawEventIn: checkInEvent || null,
         rawEventOut: checkOutEvent || null,
+        conditionReport,
+        rawConditionReport: conditionReport,
       });
     }
 
@@ -663,7 +787,7 @@ export function AttendanceMonitoringClient() {
     };
 
     return { tableData: rows, summaryStats: stats };
-  }, [allEmployeeProfiles, allUsers, attendanceEvents, sites, scopedBrands, effectiveBrandFilter, date, leaveRequests]);
+  }, [allEmployeeProfiles, allUsers, attendanceEvents, sites, scopedBrands, effectiveBrandFilter, date, leaveRequests, conditionReports]);
 
   // Apply tab + search filter
   const filteredRows = useMemo(() => {

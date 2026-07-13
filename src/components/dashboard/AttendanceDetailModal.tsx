@@ -45,6 +45,9 @@ interface AttendanceDetailModalProps {
     rawEvent?: any; // For accessing original event data with driveFileId, etc
     rawEventIn?: any;
     rawEventOut?: any;
+    /** The matching attendance_condition_reports doc — the ONLY source for the condition proof photo. */
+    conditionReport?: any | null;
+    rawConditionReport?: any | null;
   } | null;
 }
 
@@ -351,64 +354,23 @@ export function AttendanceDetailModal({ isOpen, onClose, onMarkInvalid, onReview
 
           {/* Kondisi Khusus */}
           {record.specialCondition && (() => {
-            // There is no separate attendance_condition_reports collection in this
-            // app yet — the report lives directly on the tap-in/tap-out event, so
-            // evidence fields (if the source system ever writes them) are read
-            // straight off rawEvent/rawEventIn/rawEventOut. getConditionProofImageSrc
-            // deliberately ignores that object's shared photoUrl/driveFileId fields
-            // (those belong to Foto Tap In/Tap Out) and only reads condition-specific
-            // field names, so it never resolves to the tap-in photo.
-            const report = record.rawEvent || record.rawEventIn || record.rawEventOut || {};
+            // The condition report's proof photo lives ONLY in the joined
+            // attendance_condition_reports doc (record.rawConditionReport,
+            // joined in AttendanceMonitoringClient by uid+date/linkedId) — it
+            // must never fall back to rawEvent/rawEventIn/rawEventOut, since
+            // those are the tap-in/tap-out event and reading photo fields off
+            // them is exactly what caused the condition photo to show the
+            // Foto Tap In photo before.
+            const report = record.rawConditionReport || record.conditionReport || null;
             const tapInPhotoUrl = record.rawEventIn ? getAttendanceImageUrl(record.rawEventIn) : null;
             const tapOutPhotoUrl = record.rawEventOut ? getAttendanceImageUrl(record.rawEventOut) : null;
-            const conditionProofUrl = getConditionProofImageSrc(report);
-            const nonImageFile = isExplicitlyNonImage(report);
+            const conditionProofUrl = report ? getConditionProofImageSrc(report) : null;
+            const nonImageFile = report ? isExplicitlyNonImage(report) : false;
 
-            console.log('[ATTENDANCE_DETAIL_PHOTO_DEBUG]', {
-              employeeName: record.name,
-              dateKey: record.id,
-              tapInPhotoUrl,
-              tapOutPhotoUrl,
-              conditionReportId: record.id,
-              conditionNote: record.specialCondition,
+            console.log('[HRP_CONDITION_MODAL_DEBUG]', {
+              specialCondition: record.specialCondition,
+              rawConditionReport: record.rawConditionReport,
               conditionProofUrl,
-              conditionProofFields: {
-                proofPhotoUrl: report?.proofPhotoUrl,
-                conditionProofPhotoUrl: report?.conditionProofPhotoUrl,
-                reportProofPhotoUrl: report?.reportProofPhotoUrl,
-                evidenceUrl: report?.evidenceUrl,
-                attachmentUrls: report?.attachmentUrls,
-                attachments: report?.attachments,
-              },
-            });
-
-            // Full field sweep so it's obvious from the console which exact
-            // field name the Web Absen write actually used, in case it's a
-            // spelling/nesting this helper doesn't yet check.
-            console.log('[HRP_CONDITION_SYNC_DEBUG]', {
-              employeeName: record.name,
-              employeeUid: record.rawEvent?.uid || record.rawEventIn?.uid || record.rawEventOut?.uid,
-              dateKey: record.id,
-              attendanceEventId: record.rawEventIn?.id || record.rawEventOut?.id || record.id,
-              attendanceEvent: report,
-              conditionFields: {
-                proofPhotoUrl: report?.proofPhotoUrl,
-                conditionProofPhotoUrl: report?.conditionProofPhotoUrl,
-                conditionPhotoUrl: report?.conditionPhotoUrl,
-                evidencePhotoUrl: report?.evidencePhotoUrl,
-                photoUrl: report?.photoUrl,
-                imageUrl: report?.imageUrl,
-                attachmentUrls: report?.attachmentUrls,
-                attachments: report?.attachments,
-              },
-              eventConditionFields: {
-                conditionReport: report?.conditionReport,
-                conditionProofPhotoUrl: report?.conditionProofPhotoUrl,
-                conditionPhotoUrl: report?.conditionPhotoUrl,
-                conditionEvidenceUrl: report?.conditionEvidenceUrl,
-                conditionAttachmentUrls: report?.conditionAttachmentUrls,
-              },
-              resolvedConditionProofUrl: conditionProofUrl,
               tapInPhotoUrl,
             });
 
