@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { NotificationPanel } from "./NotificationPanel";
+import { NotificationDevicesDialog } from "./NotificationDevicesDialog";
 import { collection, query, where, doc } from "firebase/firestore";
 import type { Notification } from "@/lib/types";
 import { signOutWithSessionStatus } from "@/lib/session-tracking";
@@ -97,6 +98,7 @@ function UserNav() {
   const { userProfile } = useAuth();
   const auth = useFirebaseAuth();
   const router = useRouter();
+  const [isDevicesDialogOpen, setIsDevicesDialogOpen] = React.useState(false);
   const firestore = useFirestore();
 
   const profileDocRef = useMemoFirebase(
@@ -186,11 +188,21 @@ function UserNav() {
         <DropdownMenuItem onSelect={handleAccountSettings}>
           Pengaturan Akun
         </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => setIsDevicesDialogOpen(true)}>
+          Perangkat Notifikasi
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem className="text-destructive" onSelect={handleLogout}>
           Keluar
         </DropdownMenuItem>
       </DropdownMenuContent>
+      {userProfile.uid && (
+        <NotificationDevicesDialog
+          isOpen={isDevicesDialogOpen}
+          onClose={() => setIsDevicesDialogOpen(false)}
+          uid={userProfile.uid}
+        />
+      )}
     </DropdownMenu>
   );
 }

@@ -621,6 +621,13 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
     
+    // Web Push device tokens — strictly owner-only (a device token is
+    // effectively a personal credential; no HRD/super-admin read access is
+    // needed here, unlike most other collections in this file).
+    match /push_subscriptions/{uid}/devices/{deviceId} {
+      allow read, write: if isSignedIn() && request.auth.uid == uid;
+    }
+
     // --- Monitoring & Attendance Rules ---
     match /attendance_sites/{siteId} {
       allow read: if isSuperAdmin() || (isHrd() && hrdCanAccessSiteData(resource.data));

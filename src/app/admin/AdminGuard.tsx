@@ -87,7 +87,10 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
 
     if (!userProfile) {
       console.log('[session-debug]', { reason: 'auth_null', pathname });
-      router.replace('/admin/login');
+      // Preserves the deep link (e.g. from a push notification click while
+      // logged out) so AdminLoginForm can send the user back after they sign in.
+      const returnUrl = pathname && pathname !== '/admin' ? `?returnUrl=${encodeURIComponent(pathname)}` : '';
+      router.replace(`/admin/login${returnUrl}`);
       return;
     }
 

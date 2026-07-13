@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
+import { PushActivationCard } from "./PushActivationCard";
 
 // ─── Tab definitions ────────────────────────────────────────────────────────
 
@@ -252,6 +253,9 @@ export function NotificationPanel() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Web Push activation status — pinned to the very top of the dropdown */}
+      {userProfile?.uid && <PushActivationCard uid={userProfile.uid} />}
+
       {/* Header */}
       <div className="p-4 border-b">
         <div className="flex justify-between items-center mb-3">

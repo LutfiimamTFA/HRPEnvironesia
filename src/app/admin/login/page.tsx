@@ -3,19 +3,23 @@
 import { AdminLoginForm } from '@/components/auth/AdminLoginForm';
 import { useAuth } from '@/providers/auth-provider';
 import { Loader2, Users, Clock, FileText } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
 import Image from 'next/image';
 
 export default function AdminLoginPage() {
   const { userProfile, loading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     if (!loading && userProfile && userProfile.role !== 'kandidat') {
-      router.replace('/admin');
+      // If a push notification (or any deep link) sent the user here while
+      // logged out, honor returnUrl instead of always landing on /admin.
+      const returnUrl = searchParams.get('returnUrl');
+      router.replace(returnUrl ? decodeURIComponent(returnUrl) : '/admin');
     }
-  }, [userProfile, loading, router]);
+  }, [userProfile, loading, router, searchParams]);
 
   if (loading || (userProfile && userProfile.role !== 'kandidat')) {
     return (
