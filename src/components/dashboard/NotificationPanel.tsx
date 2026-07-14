@@ -14,6 +14,7 @@ import {
   orderBy,
   doc,
   writeBatch,
+  serverTimestamp,
 } from "firebase/firestore";
 import type { Notification, NotificationType } from "@/lib/types";
 import { useMemo, useState } from "react";
@@ -220,7 +221,7 @@ export function NotificationPanel() {
         notif._source === "hrd"
           ? doc(firestore, "hrd_notifications", notif.id!)
           : doc(firestore, "users", userProfile.uid, "notifications", notif.id!);
-      await updateDocumentNonBlocking(ref, { isRead: true, notifStatus: "read" });
+      await updateDocumentNonBlocking(ref, { isRead: true, notifStatus: "read", readAt: serverTimestamp(), updatedAt: serverTimestamp() });
     } catch {
       toast({ variant: "destructive", title: "Error", description: "Gagal menandai notifikasi." });
     }
@@ -237,7 +238,7 @@ export function NotificationPanel() {
         notif._source === "hrd"
           ? doc(firestore, "hrd_notifications", notif.id!)
           : doc(firestore, "users", userProfile.uid, "notifications", notif.id!);
-      batch.update(ref, { isRead: true, notifStatus: "read" });
+      batch.update(ref, { isRead: true, notifStatus: "read", readAt: serverTimestamp(), updatedAt: serverTimestamp() });
     });
 
     try {
@@ -272,14 +273,14 @@ export function NotificationPanel() {
           )}
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 overflow-x-auto pb-0.5 scrollbar-hide">
+        {/* Tabs — wrap to a new line instead of a cramped horizontal scrollbar */}
+        <div className="flex flex-wrap gap-1.5">
           {TABS.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
               className={cn(
-                "flex items-center gap-1 shrink-0 px-2.5 py-1 rounded-full text-xs font-medium transition-colors",
+                "flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-colors",
                 activeTab === tab.key
                   ? "bg-teal-600 text-white"
                   : "bg-muted text-muted-foreground hover:bg-muted/80",

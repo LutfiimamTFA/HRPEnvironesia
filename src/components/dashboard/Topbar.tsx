@@ -282,17 +282,18 @@ export function Topbar({ pageTitle, actionArea }: TopbarProps) {
               variant="outline"
               size="icon"
               className="h-10 w-10 relative"
+              aria-label={`Notifikasi, ${unreadCount} belum dibaca`}
             >
               <Bell className="h-5 w-5" />
               {unreadCount > 0 && (
-                <span className="absolute top-1 right-1 flex h-4 w-4">
+                <span className="absolute top-0.5 right-0.5 flex h-4 min-w-[16px] px-0.5">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-4 w-4 bg-primary text-xs text-primary-foreground items-center justify-center">
-                    {unreadCount > 9 ? "9+" : unreadCount}
+                  <span className="relative inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-primary px-0.5 text-[10px] font-semibold leading-none text-primary-foreground">
+                    {unreadCount > 99 ? "99+" : unreadCount}
                   </span>
                 </span>
               )}
-              <span className="sr-only">Notifications</span>
+              <span className="sr-only">Notifikasi</span>
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-80 h-[50vh] p-0" align="end">

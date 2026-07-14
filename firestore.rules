@@ -1589,9 +1589,20 @@ service cloud.firestore {
     match /hrd_notifications/{notifId} {
       allow get, list: if isSuperAdmin() ||
         (isSignedIn() && resource.data.get('recipientUid', null) == request.auth.uid);
+      // NOTE: intentionally left as isSignedIn() rather than restricted to
+      // Super Admin/server-only writes — ~15 existing client components
+      // (overtime/leave review dialogs, recruitment flows, account settings,
+      // business trip, etc.) still call sendHrdNotification() directly from
+      // the browser and would break immediately if create were locked down
+      // here. Server-side writes (Cloud Functions, /api/notifications/hrd-notify)
+      // use the Admin SDK, which bypasses rules entirely regardless of this line.
       allow create: if isSignedIn();
+      // The owning HRD may only ever flip their own read state — never rewrite
+      // title/message/targetUrl/etc on a notification addressed to them.
       allow update: if isSuperAdmin() ||
-        (isSignedIn() && resource.data.get('recipientUid', null) == request.auth.uid);
+        (isSignedIn() && resource.data.get('recipientUid', null) == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['isRead', 'readAt', 'updatedAt', 'notifStatus']));
       allow delete: if isSuperAdmin();
     }
   }

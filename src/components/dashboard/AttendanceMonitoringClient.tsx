@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useCollection, useFirestore, useMemoFirebase, deleteDocumentNonBlocking, setDocumentNonBlocking } from '@/firebase';
 import { collection, query, where, doc, serverTimestamp } from 'firebase/firestore';
 import type { EmployeeProfile, AttendanceEvent, AttendanceSite } from '@/lib/types';
@@ -125,17 +125,47 @@ interface AttendanceRecord {
   rawEvent?: any;
   rawEventIn?: any;
   rawEventOut?: any;
-  /** The matching attendance_condition_reports doc (proof photo lives here, never on rawEvent/rawEventIn/rawEventOut). */
+  /** The matching attendance_condition_reports docs — check-in and check-out are two independent reports and must never collapse into (or fall back to) each other. Proof photos live here, never on rawEvent/rawEventIn/rawEventOut. */
   conditionReport?: any | null;
   rawConditionReport?: any | null;
+  rawConditionReportIn?: any | null;
+  rawConditionReportOut?: any | null;
+}
+
+/** report.reportType is the canonical field; conditionType is an older alias some docs still use. */
+function getConditionReportType(report: any): string | null {
+  return report?.reportType || report?.conditionType || null;
+}
+
+/** report.dateKey is canonical; reportDate is an older alias. */
+function getConditionReportDateKey(report: any): string | null {
+  return report?.dateKey || report?.reportDate || null;
+}
+
+function conditionReportMatchesEmployee(report: any, employeeUid: string): boolean {
+  return report?.employeeUid === employeeUid || report?.uid === employeeUid || report?.userId === employeeUid;
+}
+
+/** Newest first, by reportedAt (when the staff actually filed it) falling back to createdAt. */
+function sortConditionReportsByRecency(reports: any[]): any[] {
+  return [...reports].sort((a, b) => {
+    const at = a?.reportedAt?.toMillis?.() ?? a?.createdAt?.toMillis?.() ?? 0;
+    const bt = b?.reportedAt?.toMillis?.() ?? b?.createdAt?.toMillis?.() ?? 0;
+    return bt - at;
+  });
 }
 
 /**
- * Match a staff's "laporan kondisi khusus" (attendance_condition_reports doc)
- * to their attendance row for the selected date — tries the explicit link
- * fields the event stores first, then falls back to uid+date matching.
+ * Matches a staff's "laporan kondisi khusus" (attendance_condition_reports
+ * docs) to their attendance row for the selected date — check-in and
+ * check-out are resolved completely independently so a check-in report can
+ * never be shown as (or silently replace) the check-out report or vice versa.
+ * Each side tries the event's own linked-id field first (but only accepts it
+ * if the linked doc's own type actually matches — a bad link shouldn't cross
+ *-contaminate the other side), then falls back to uid+date+type matching,
+ * picking the most recent report when more than one exists for that type.
  */
-function getConditionReportForEmployee({
+function getConditionReportsForEmployee({
   reports,
   employeeUid,
   dateKey,
@@ -147,32 +177,44 @@ function getConditionReportForEmployee({
   dateKey: string | null;
   checkInEvent: any;
   checkOutEvent: any;
-}): any | null {
-  const eventLinkedIds = [
+}): { checkIn: any | null; checkOut: any | null } {
+  const matchingForEmployeeDate = reports.filter(
+    (r) => conditionReportMatchesEmployee(r, employeeUid) && getConditionReportDateKey(r) === dateKey,
+  );
+
+  const checkInCandidates = sortConditionReportsByRecency(
+    matchingForEmployeeDate.filter((r) => getConditionReportType(r) === 'check_in'),
+  );
+  const checkOutCandidates = sortConditionReportsByRecency(
+    matchingForEmployeeDate.filter((r) => getConditionReportType(r) === 'check_out'),
+  );
+
+  const checkInLinkedIds = [
     checkInEvent?.checkInConditionReportId,
-    checkOutEvent?.checkOutConditionReportId,
+    checkInEvent?.conditionReportId,
     ...(checkInEvent?.linkedConditionReportIds || []),
+  ].filter(Boolean);
+  const checkOutLinkedIds = [
+    checkOutEvent?.checkOutConditionReportId,
+    checkOutEvent?.conditionReportId,
     ...(checkOutEvent?.linkedConditionReportIds || []),
   ].filter(Boolean);
 
-  if (eventLinkedIds.length) {
-    const byLinkedId = reports.find((r) => eventLinkedIds.includes(r.id));
-    if (byLinkedId) return byLinkedId;
-  }
+  const byLinkedId = (ids: string[]) => reports.find((r) => ids.includes(r.id)) || null;
 
-  const byLinkedAttendance = reports.find((r) =>
-    r.linkedAttendanceId &&
-    (r.linkedAttendanceId === checkInEvent?.id || r.linkedAttendanceId === checkOutEvent?.id)
-  );
-  if (byLinkedAttendance) return byLinkedAttendance;
+  const linkedCheckIn = byLinkedId(checkInLinkedIds);
+  const linkedCheckOut = byLinkedId(checkOutLinkedIds);
 
-  const byUidDate = reports.find((r) =>
-    (r.uid === employeeUid || r.employeeUid === employeeUid) &&
-    (r.reportDate === dateKey || r.dateKey === dateKey)
-  );
-  if (byUidDate) return byUidDate;
+  const checkIn =
+    (linkedCheckIn && getConditionReportType(linkedCheckIn) === 'check_in' ? linkedCheckIn : null) ||
+    checkInCandidates[0] ||
+    null;
+  const checkOut =
+    (linkedCheckOut && getConditionReportType(linkedCheckOut) === 'check_out' ? linkedCheckOut : null) ||
+    checkOutCandidates[0] ||
+    null;
 
-  return null;
+  return { checkIn, checkOut };
 }
 
 function MonitoringSkeleton() {
@@ -210,7 +252,9 @@ export function AttendanceMonitoringClient() {
   const { userProfile } = useAuth();
 
   // --- HRD scope (Super Admin sees everything; HRD only their allowedBrandIds) ---
-  const { isSuperAdmin, isConfigured, isAllCompanies, allowedBrandIds, emptyStateMessage } = useHrdScopeContext();
+  const { isSuperAdmin, isConfigured, isAllCompanies, allowedBrandIds, emptyStateMessage, isLoading: isHrdScopeLoading, scope: hrdScope } = useHrdScopeContext();
+  const hrdScopeReady = !isHrdScopeLoading;
+  const hrdScopeType = hrdScope?.scopeType ?? null;
   const { data: scopedBrands, isLoading: isLoadingBrands } = useHrdScopedBrands();
 
   // --- Data Fetching — all brand-scoped via roles_hrd/{uid}.allowedBrandIds ---
@@ -259,21 +303,72 @@ export function AttendanceMonitoringClient() {
   const mutateEvents = () => { mutateDateKeyEvents(); mutateRangeEvents(); };
 
   // Web Absen writes "laporan kondisi khusus" (special condition report) proof
-  // photos to their own collection, keyed by reportDate — never to
-  // attendance_events. Fetched unscoped (like attendance_events above) since
-  // these docs don't reliably carry brandId either; visibility is enforced by
-  // only joining a report to a row whose employee already passed HRD scoping.
+  // photos to their own collection, keyed by reportDate + root-level brandId.
+  // A date-only query used to be issued here regardless of HRD scope — since
+  // Firestore rejects a `list` outright when the query can't prove every
+  // possible matching doc is readable, an HRD limited to specific brands
+  // (e.g. Greenlab) got a hard permission-denied instead of a filtered
+  // result. The query must always carry the same brand constraint the rules
+  // check, and must not run at all before roles_hrd has finished loading.
   const conditionReportsQuery = useMemoFirebase(() => {
-    if (!selectedDateString) return null;
-    return query(collection(firestore, 'attendance_condition_reports'), where('reportDate', '==', selectedDateString));
-  }, [firestore, selectedDateString]);
-  const { data: conditionReportsByReportDate, isLoading: isLoadingConditionReportsA } = useCollection<any>(conditionReportsQuery);
+    if (!selectedDateString || !hrdScopeReady) return null;
 
+    const reportsRef = collection(firestore, 'attendance_condition_reports');
+
+    // Super Admin or an HRD explicitly scoped to every company.
+    if (isSuperAdmin || hrdScopeType === 'all_companies') {
+      return query(reportsRef, where('reportDate', '==', selectedDateString));
+    }
+
+    // Scope still resolving to an empty brand list — never fall back to a
+    // date-only query in this state, that's exactly the bug being fixed.
+    if (!allowedBrandIds?.length) return null;
+
+    if (allowedBrandIds.length === 1) {
+      return query(
+        reportsRef,
+        where('reportDate', '==', selectedDateString),
+        where('brandId', '==', allowedBrandIds[0]),
+      );
+    }
+
+    return query(
+      reportsRef,
+      where('reportDate', '==', selectedDateString),
+      where('brandId', 'in', allowedBrandIds.slice(0, 30)),
+    );
+  }, [firestore, selectedDateString, hrdScopeReady, hrdScopeType, isSuperAdmin, allowedBrandIds]);
+  const { data: conditionReportsByReportDate, isLoading: isLoadingConditionReportsA, error: conditionReportsErrorA } = useCollection<any>(conditionReportsQuery);
+
+  // Older docs written before `reportDate` existed only carry `dateKey` — same
+  // brand-scoping rules apply, so this mirrors the query above exactly rather
+  // than reusing a single query object (the field name differs).
   const conditionReportsDateKeyQuery = useMemoFirebase(() => {
-    if (!selectedDateString) return null;
-    return query(collection(firestore, 'attendance_condition_reports'), where('dateKey', '==', selectedDateString));
-  }, [firestore, selectedDateString]);
-  const { data: conditionReportsByDateKey, isLoading: isLoadingConditionReportsB } = useCollection<any>(conditionReportsDateKeyQuery);
+    if (!selectedDateString || !hrdScopeReady) return null;
+
+    const reportsRef = collection(firestore, 'attendance_condition_reports');
+
+    if (isSuperAdmin || hrdScopeType === 'all_companies') {
+      return query(reportsRef, where('dateKey', '==', selectedDateString));
+    }
+
+    if (!allowedBrandIds?.length) return null;
+
+    if (allowedBrandIds.length === 1) {
+      return query(
+        reportsRef,
+        where('dateKey', '==', selectedDateString),
+        where('brandId', '==', allowedBrandIds[0]),
+      );
+    }
+
+    return query(
+      reportsRef,
+      where('dateKey', '==', selectedDateString),
+      where('brandId', 'in', allowedBrandIds.slice(0, 30)),
+    );
+  }, [firestore, selectedDateString, hrdScopeReady, hrdScopeType, isSuperAdmin, allowedBrandIds]);
+  const { data: conditionReportsByDateKey, isLoading: isLoadingConditionReportsB, error: conditionReportsErrorB } = useCollection<any>(conditionReportsDateKeyQuery);
 
   const conditionReports = useMemo(() => {
     const byId = new Map<string, any>();
@@ -283,14 +378,24 @@ export function AttendanceMonitoringClient() {
   }, [conditionReportsByReportDate, conditionReportsByDateKey]);
 
   const isLoadingConditionReports = isLoadingConditionReportsA || isLoadingConditionReportsB;
+  const conditionReportsError = conditionReportsErrorA || conditionReportsErrorB || null;
 
-  if (typeof window !== 'undefined') {
-    console.log('[CONDITION_REPORTS_QUERY_DEBUG]', {
-      selectedDateString,
-      conditionReportsCount: conditionReports?.length,
-      firstConditionReport: conditionReports?.[0],
-    });
-  }
+  useEffect(() => {
+    if (!conditionReportsError) return;
+    // Never let this take down the rest of Monitoring Absen — attendance
+    // data above is unaffected; only the condition-report join degrades.
+    console.error(
+      '[AttendanceMonitoring] Gagal membaca laporan kondisi',
+      {
+        code: (conditionReportsError as any)?.code,
+        message: conditionReportsError.message,
+        selectedDate: selectedDateString,
+        allowedBrandIds,
+        hrdScopeType,
+      },
+      conditionReportsError,
+    );
+  }, [conditionReportsError, selectedDateString, allowedBrandIds, hrdScopeType]);
 
   const leaveConstraints = useMemo(() => [where('status', 'in', ['approved', 'active_leave'])], []);
   const { data: leaveRequests, isLoading: isLoadingLeaves } = useHrdScopedCollection<any>('leave_requests', { constraints: leaveConstraints });
@@ -620,7 +725,11 @@ export function AttendanceMonitoringClient() {
         workDurationMinutes = differenceInMinutes(tapOutTimestamp, tapInTimestamp);
       }
 
-      const conditionReport = getConditionReportForEmployee({
+      // Check-in and check-out condition reports are resolved completely
+      // independently — never a single `.find()` across all reports, which is
+      // exactly what previously let a check-in report silently stand in for
+      // (or hide) the check-out report.
+      const { checkIn: conditionReportIn, checkOut: conditionReportOut } = getConditionReportsForEmployee({
         reports: scopedConditionReports,
         employeeUid: profileUid,
         dateKey: selectedDateString,
@@ -629,26 +738,28 @@ export function AttendanceMonitoringClient() {
       });
 
       const specialCondition =
-        conditionReport?.conditionNote ||
-        conditionReport?.note ||
-        conditionReport?.reasonLabel ||
+        conditionReportIn?.conditionNote ||
+        conditionReportIn?.note ||
+        conditionReportIn?.reasonLabel ||
+        conditionReportOut?.conditionNote ||
+        conditionReportOut?.note ||
+        conditionReportOut?.reasonLabel ||
         (checkInEvent as any)?.specialCondition ||
         (checkOutEvent as any)?.specialCondition ||
         null;
 
-      if (typeof window !== 'undefined' && (conditionReport || specialCondition)) {
+      if (typeof window !== 'undefined' && (conditionReportIn || conditionReportOut || specialCondition)) {
         console.log('[CONDITION_JOIN_DEBUG]', {
           employeeName: resolvedName,
           employeeUid: profileUid,
           dateKey: selectedDateString,
           checkInConditionReportId: (checkInEvent as any)?.checkInConditionReportId,
+          checkOutConditionReportId: (checkOutEvent as any)?.checkOutConditionReportId,
           linkedConditionReportIds: (checkInEvent as any)?.linkedConditionReportIds,
-          conditionReportFound: !!conditionReport,
-          conditionReportId: conditionReport?.id,
-          conditionProofPhotoUrl: conditionReport?.conditionProofPhotoUrl,
-          proofPhotoUrl: conditionReport?.proofPhotoUrl,
-          conditionProofFileId: conditionReport?.conditionProofFileId,
-          driveFileId: conditionReport?.driveFileId,
+          conditionReportInFound: !!conditionReportIn,
+          conditionReportInId: conditionReportIn?.id,
+          conditionReportOutFound: !!conditionReportOut,
+          conditionReportOutId: conditionReportOut?.id,
         });
       }
       const siteRadiusConfig = siteForBrand
@@ -768,8 +879,13 @@ export function AttendanceMonitoringClient() {
         rawEvent: checkInEvent || checkOutEvent,
         rawEventIn: checkInEvent || null,
         rawEventOut: checkOutEvent || null,
-        conditionReport,
-        rawConditionReport: conditionReport,
+        // Kept for any older reader that expects one combined report — prefers
+        // check-in only because that was this field's prior behavior; the
+        // modal itself must use rawConditionReportIn/Out below, never this.
+        conditionReport: conditionReportIn || conditionReportOut || null,
+        rawConditionReport: conditionReportIn || conditionReportOut || null,
+        rawConditionReportIn: conditionReportIn,
+        rawConditionReportOut: conditionReportOut,
       });
     }
 
@@ -999,6 +1115,12 @@ export function AttendanceMonitoringClient() {
         </div>
       </div>
 
+      {conditionReportsError && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+          Laporan kondisi khusus tidak dapat dimuat untuk sebagian/seluruh brand (izin akses ditolak). Data absensi utama tetap tampil normal.
+        </div>
+      )}
+
       {isLoading ? <MonitoringSkeleton /> : (
         <>
           {/* Summary Cards */}
@@ -1151,9 +1273,53 @@ export function AttendanceMonitoringClient() {
                       ) : <span className="text-[12px] text-slate-400">—</span>}
                     </TableCell>
 
-                    {/* Kondisi Lapangan + Alasan Karyawan */}
-                    <TableCell className="py-3 max-w-[190px]">
-                      {row.fieldCondition && row.fieldCondition.category !== 'normal' ? (
+                    {/* Kondisi — Masuk dan Pulang are two independent
+                        attendance_condition_reports docs (row.rawConditionReportIn/Out,
+                        joined per-employee/date/type in the useMemo above);
+                        one must never stand in for or hide the other. */}
+                    <TableCell className="py-3 max-w-[260px]">
+                      {row.rawConditionReportIn || row.rawConditionReportOut ? (
+                        <div className="space-y-1.5">
+                          {row.rawConditionReportIn && (
+                            <div>
+                              <div className="flex items-center gap-1 flex-wrap">
+                                <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 text-[10px] px-1.5 py-0">Masuk</Badge>
+                                <span className="text-[12px] font-medium text-slate-700 dark:text-slate-200">
+                                  {row.rawConditionReportIn.reasonLabel || row.rawConditionReportIn.categoryLabel || row.rawConditionReportIn.conditionCategory || 'Kondisi khusus'}
+                                </span>
+                              </div>
+                              {(row.rawConditionReportIn.note || row.rawConditionReportIn.conditionNote) && (
+                                <p
+                                  className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug line-clamp-2"
+                                  title={row.rawConditionReportIn.note || row.rawConditionReportIn.conditionNote}
+                                >
+                                  {row.rawConditionReportIn.note || row.rawConditionReportIn.conditionNote}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                          {row.rawConditionReportOut && (
+                            <div>
+                              <div className="flex items-center gap-1 flex-wrap">
+                                <Badge variant="outline" className="border-orange-300 text-orange-700 dark:border-orange-800 dark:text-orange-400 text-[10px] px-1.5 py-0">Pulang</Badge>
+                                <span className="text-[12px] font-medium text-slate-700 dark:text-slate-200">
+                                  {row.rawConditionReportOut.reasonLabel || row.rawConditionReportOut.categoryLabel || row.rawConditionReportOut.conditionCategory || 'Kondisi khusus'}
+                                </span>
+                              </div>
+                              {(row.rawConditionReportOut.note || row.rawConditionReportOut.conditionNote) && (
+                                <p
+                                  className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug line-clamp-2"
+                                  title={row.rawConditionReportOut.note || row.rawConditionReportOut.conditionNote}
+                                >
+                                  {row.rawConditionReportOut.note || row.rawConditionReportOut.conditionNote}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ) : row.fieldCondition && row.fieldCondition.category !== 'normal' ? (
+                        // Fallback for rows with no dedicated attendance_condition_reports
+                        // doc yet, only a free-text specialCondition on the event itself.
                         <>
                           <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 text-xs px-2 py-0.5">
                             {row.fieldCondition.categoryLabel}

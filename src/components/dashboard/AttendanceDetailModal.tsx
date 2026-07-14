@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { getInitials } from '@/lib/utils';
-import { Copy, X, AlertCircle, RotateCw, ShieldAlert, HeartPulse, CheckCircle2, XCircle, RefreshCw, ShieldCheck, FileText } from 'lucide-react';
+import { Copy, X, AlertCircle, RotateCw, ShieldAlert, CheckCircle2, XCircle, RefreshCw, ShieldCheck, FileText, LogIn, LogOut } from 'lucide-react';
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { getAttendanceImageUrl, getConditionProofImageSrc } from '@/lib/google-drive-image';
@@ -45,9 +45,11 @@ interface AttendanceDetailModalProps {
     rawEvent?: any; // For accessing original event data with driveFileId, etc
     rawEventIn?: any;
     rawEventOut?: any;
-    /** The matching attendance_condition_reports doc — the ONLY source for the condition proof photo. */
+    /** The matching attendance_condition_reports docs — check-in and check-out are independent and must render as two separate cards, never merged/fell-back into each other. */
     conditionReport?: any | null;
     rawConditionReport?: any | null;
+    rawConditionReportIn?: any | null;
+    rawConditionReportOut?: any | null;
   } | null;
 }
 
@@ -176,12 +178,12 @@ function ConditionProofPreview({ src }: { src: string }) {
   }
 
   return (
-    <a href={src} target="_blank" rel="noreferrer" className="block mt-3">
+    <a href={src} target="_blank" rel="noreferrer" className="block mt-3" title="Klik untuk lihat ukuran penuh">
       <img
         src={src}
         alt="Bukti kondisi"
         onError={() => setFailed(true)}
-        className="w-full max-h-[260px] rounded-[10px] border border-slate-200 dark:border-slate-700 bg-white object-contain cursor-zoom-in"
+        className="w-full h-[220px] rounded-[10px] border border-slate-200 dark:border-slate-700 bg-white object-cover cursor-zoom-in"
       />
     </a>
   );
@@ -191,6 +193,110 @@ function ConditionProofPreview({ src }: { src: string }) {
 function isExplicitlyNonImage(report: any): boolean {
   const mimeType: string | undefined = report?.mimeType || report?.attachments?.[0]?.mimeType;
   return !!mimeType && !mimeType.startsWith('image/');
+}
+
+function formatConditionReportTime(report: any): string | null {
+  const ts = report?.reportedAt || report?.createdAt;
+  if (!ts?.toDate) return null;
+  try {
+    return ts.toDate().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
+  } catch {
+    return null;
+  }
+}
+
+const CONDITION_CARD_VARIANTS = {
+  check_in: {
+    label: 'Kondisi Saat Masuk',
+    badge: 'MASUK',
+    icon: LogIn,
+    cardClass: 'border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/10',
+    headingClass: 'text-blue-700 dark:text-blue-300',
+    badgeClass: 'bg-blue-600 text-white',
+  },
+  check_out: {
+    label: 'Kondisi Saat Pulang',
+    badge: 'PULANG',
+    icon: LogOut,
+    cardClass: 'border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/10',
+    headingClass: 'text-orange-700 dark:text-orange-300',
+    badgeClass: 'bg-orange-600 text-white',
+  },
+} as const;
+
+/**
+ * Renders exactly one condition report (check-in OR check-out) — the caller
+ * decides which side to render and passes only that report; this component
+ * never falls back to the other side, so a missing check-out report simply
+ * renders nothing instead of quietly showing the check-in data twice.
+ */
+function ConditionReportCard({ type, report, recordId }: { type: 'check_in' | 'check_out'; report: any; recordId: string }) {
+  const variant = CONDITION_CARD_VARIANTS[type];
+  const Icon = variant.icon;
+
+  const imageSrc = getConditionProofImageSrc(report);
+  const nonImageFile = isExplicitlyNonImage(report);
+  const reportedTime = formatConditionReportTime(report);
+  const categoryLabel = report?.categoryLabel || report?.conditionTypeLabel || report?.category || report?.conditionCategory || null;
+  const note = report?.note || report?.conditionNote || report?.reasonLabel || null;
+  const reportLocation = report?.address || report?.location?.address || null;
+  const reviewStatus = report?.reviewStatus || null;
+
+  console.log('[HRP_CONDITION_MODAL_DEBUG]', {
+    type,
+    recordId,
+    reportId: report?.id,
+    reportedTime,
+    categoryLabel,
+    imageSrc,
+  });
+
+  return (
+    <Card className={variant.cardClass}>
+      <CardContent className="pt-4">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <h3 className={`text-xs font-semibold uppercase tracking-wide flex items-center gap-1.5 ${variant.headingClass}`}>
+            <Icon className="h-3.5 w-3.5" /> {variant.label}
+          </h3>
+          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${variant.badgeClass}`}>{variant.badge}</span>
+        </div>
+
+        {reportedTime && (
+          <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Dilaporkan {reportedTime}</p>
+        )}
+        {categoryLabel && (
+          <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{categoryLabel}</p>
+        )}
+        {note && (
+          <p className="text-sm text-slate-700 dark:text-slate-300 mt-0.5">Catatan: {note}</p>
+        )}
+        {reportLocation && (
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Lokasi: {reportLocation}</p>
+        )}
+        {reviewStatus && (
+          <Badge variant="outline" className="mt-1.5 text-[10px]">{reviewStatus}</Badge>
+        )}
+
+        {imageSrc && !nonImageFile ? (
+          <ConditionProofPreview src={imageSrc} />
+        ) : imageSrc && nonImageFile ? (
+          <a
+            href={imageSrc}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-3 flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors w-fit"
+          >
+            <FileText className="h-3.5 w-3.5" />
+            {report?.attachments?.[0]?.fileName || 'Buka File'}
+          </a>
+        ) : (
+          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 italic">
+            Tidak ada bukti foto kondisi yang diunggah.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 export function AttendanceDetailModal({ isOpen, onClose, onMarkInvalid, onReview, record }: AttendanceDetailModalProps) {
@@ -352,59 +458,16 @@ export function AttendanceDetailModal({ isOpen, onClose, onMarkInvalid, onReview
             </CardContent>
           </Card>
 
-          {/* Kondisi Khusus */}
-          {record.specialCondition && (() => {
-            // The condition report's proof photo lives ONLY in the joined
-            // attendance_condition_reports doc (record.rawConditionReport,
-            // joined in AttendanceMonitoringClient by uid+date/linkedId) — it
-            // must never fall back to rawEvent/rawEventIn/rawEventOut, since
-            // those are the tap-in/tap-out event and reading photo fields off
-            // them is exactly what caused the condition photo to show the
-            // Foto Tap In photo before.
-            const report = record.rawConditionReport || record.conditionReport || null;
-            const tapInPhotoUrl = record.rawEventIn ? getAttendanceImageUrl(record.rawEventIn) : null;
-            const tapOutPhotoUrl = record.rawEventOut ? getAttendanceImageUrl(record.rawEventOut) : null;
-            const conditionProofUrl = report ? getConditionProofImageSrc(report) : null;
-            const nonImageFile = report ? isExplicitlyNonImage(report) : false;
-
-            console.log('[HRP_CONDITION_MODAL_DEBUG]', {
-              specialCondition: record.specialCondition,
-              rawConditionReport: record.rawConditionReport,
-              conditionProofUrl,
-              tapInPhotoUrl,
-            });
-
-            const imageSrc = conditionProofUrl;
-
-            return (
-              <Card className="border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/10">
-                <CardContent className="pt-4">
-                  <h3 className="text-xs font-semibold text-purple-700 dark:text-purple-300 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                    <HeartPulse className="h-3.5 w-3.5" /> Laporan Kondisi Khusus
-                  </h3>
-                  <p className="text-sm text-slate-800 dark:text-slate-100">{record.specialCondition}</p>
-
-                  {imageSrc && !nonImageFile ? (
-                    <ConditionProofPreview src={imageSrc} />
-                  ) : imageSrc && nonImageFile ? (
-                    <a
-                      href={imageSrc}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-3 flex items-center gap-2 rounded-lg border border-purple-200 dark:border-purple-800 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-semibold text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors w-fit"
-                    >
-                      <FileText className="h-3.5 w-3.5" />
-                      {report?.attachments?.[0]?.fileName || 'Buka File'}
-                    </a>
-                  ) : (
-                    <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 italic">
-                      Tidak ada bukti foto kondisi yang diunggah.
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })()}
+          {/* Kondisi Saat Masuk / Kondisi Saat Pulang — two fully independent
+              reports (attendance_condition_reports), each rendered only if it
+              actually exists. Never merged into one generic "Laporan Kondisi
+              Khusus" card, and a missing side never falls back to the other. */}
+          {record.rawConditionReportIn && (
+            <ConditionReportCard type="check_in" report={record.rawConditionReportIn} recordId={record.id} />
+          )}
+          {record.rawConditionReportOut && (
+            <ConditionReportCard type="check_out" report={record.rawConditionReportOut} recordId={record.id} />
+          )}
 
           {/* Keputusan HRD (jika sudah direview) */}
           {record.hrdReviewStatus && (

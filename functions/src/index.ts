@@ -3,6 +3,8 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
 import { runBackup, loadBackupSettings, BackupType, BackupFormat } from './backup';
 
+export { onConditionReportCreated } from './notifications';
+
 // ── Firebase Admin init ───────────────────────────────────────────────────────
 // Runs inside Firebase — auto-uses project's default service account for Firestore.
 // Google Drive API credentials are loaded from Firebase Secrets below.
