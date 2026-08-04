@@ -89,7 +89,7 @@ export interface CalendarAttendanceDetail {
   hasPhoto: boolean;
   /** Same vocabulary as Monitoring Absensi's LocationValidation.badges primary signal (e.g. "Radius Sesuai", "Perlu Review"). */
   locationValidationStatus: string | null;
-  hrdReviewStatus: 'valid_auto' | 'needs_review' | 'approved' | 'rejected' | 'revision_requested' | null;
+  hrdReviewStatus: 'valid_auto' | 'needs_review' | 'approved' | 'rejected' | 'revision_requested' | 'acknowledged' | null;
   conditionCategory: string | null;
   conditionNote: string | null;
   /** Payroll-facing one-line remark — plays the same role as Monitoring Absensi's "Catatan Sistem". */

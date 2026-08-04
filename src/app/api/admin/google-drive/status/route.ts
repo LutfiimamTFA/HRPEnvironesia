@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { google } from 'googleapis';
 import { Readable } from 'stream';
 import admin from '@/lib/firebase/admin';
 import { verifySuperAdmin, isAuthError } from '@/lib/api/verify-super-admin';
+import { buildOAuthDriveClient, markDriveConnectionExpired, DriveAccessError } from '@/lib/server/google-drive-oauth';
 
 export const runtime = 'nodejs';
+
+const TOKEN_EXPIRED_TEST_MESSAGE = 'Token Google Drive kedaluwarsa/dicabut. Sambungkan ulang akun Google Drive.';
 
 // Cek env OAuth tanpa expose value
 function getOAuthEnvStatus() {
@@ -20,33 +22,19 @@ function getOAuthEnvStatus() {
   };
 }
 
-async function buildOAuthClient() {
-  const clientId     = process.env.GOOGLE_OAUTH_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
-  const redirectUri  = process.env.GOOGLE_OAUTH_REDIRECT_URI;
-  if (!clientId || !clientSecret || !redirectUri) return null;
-
-  try {
-    const oauthDoc = await admin.firestore().collection('system_settings').doc('google_drive_oauth').get();
-    if (!oauthDoc.exists) return null;
-    const refreshToken = oauthDoc.data()?.refreshToken as string | undefined;
-    if (!refreshToken) return null;
-    const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
-    oauth2Client.setCredentials({ refresh_token: refreshToken });
-    return oauth2Client;
-  } catch (err: any) {
-    console.error('[google-drive/status] buildOAuthClient error:', err.message);
-    return null;
-  }
-}
-
+// "OAuth Terhubung" harus mencerminkan koneksi yang benar-benar berfungsi,
+// bukan sekadar "ada dokumen refreshToken di Firestore" — token itu bisa
+// sudah invalid_grant (revoked/expired) tanpa ada yang memutus koneksinya
+// secara eksplisit di UI. GET ini selalu melakukan live-check ke Drive
+// ketika Firestore bilang "connected", dan menurunkan statusnya sendiri
+// (via markDriveConnectionExpired) begitu terbukti invalid_grant — supaya
+// badge di Backup & Export tidak pernah berbohong ke Super Admin.
 export async function GET(req: NextRequest) {
   const actor = await verifySuperAdmin(req);
   if (isAuthError(actor)) return NextResponse.json({ error: actor.error }, { status: actor.status });
 
   const envStatus = getOAuthEnvStatus();
 
-  // Jika admin SDK belum siap, return status minimal tanpa crash
   let settings: Record<string, any> = {};
   try {
     const settingsSnap = await admin.firestore().collection('system_settings').doc('backup_export').get();
@@ -57,6 +45,7 @@ export async function GET(req: NextRequest) {
       ...envStatus,
       driveAuthMode: 'service_account',
       driveConnected: false,
+      connectionStatus: 'unknown',
       driveAccountEmail: null,
       driveConnectedAt: null,
       folderId: process.env.GOOGLE_DRIVE_BACKUP_FOLDER_ID ?? '',
@@ -67,7 +56,7 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const driveConnected    = settings.driveConnected === true;
+  let driveConnected      = settings.driveConnected === true;
   const driveAuthMode     = (settings.driveAuthMode as string) ?? 'service_account';
   const driveAccountEmail = (settings.driveAccountEmail as string) ?? null;
   const driveConnectedAt  = settings.driveConnectedAt ?? null;
@@ -79,33 +68,55 @@ export async function GET(req: NextRequest) {
   let folderLink: string | null = null;
   let tokenValid: boolean | null = null;
   let verifyError: string | null = null;
+  let connectionStatus: 'connected' | 'expired' | 'not_connected' | 'service_account' | 'unverified' =
+    driveAuthMode === 'service_account' ? 'service_account' : driveConnected ? 'connected' : 'not_connected';
 
   if (driveAuthMode === 'oauth_user' && driveConnected && envStatus.oauthConfigured && folderId) {
     try {
-      const oauthClient = await buildOAuthClient();
-      if (!oauthClient) {
-        verifyError = 'Refresh token tidak ditemukan di server.';
-        tokenValid = false;
-      } else {
-        const drive = google.drive({ version: 'v3', auth: oauthClient });
-        try {
-          const folderRes = await drive.files.get({
-            fileId: folderId,
-            fields: 'id,name,webViewLink',
-            supportsAllDrives: true,
-          });
-          folderAccessible = true;
-          folderLink = folderRes.data.webViewLink ?? `https://drive.google.com/drive/folders/${folderId}`;
-          tokenValid = true;
-        } catch (err: any) {
-          folderAccessible = false;
-          verifyError = err.message ?? 'Folder tidak dapat diakses';
-          tokenValid = String(err.message).includes('invalid_grant') ? false : null;
+      const drive = await buildOAuthDriveClient();
+      try {
+        const folderRes = await drive.files.get({
+          fileId: folderId,
+          fields: 'id,name,webViewLink',
+          supportsAllDrives: true,
+        });
+        folderAccessible = true;
+        folderLink = folderRes.data.webViewLink ?? `https://drive.google.com/drive/folders/${folderId}`;
+        tokenValid = true;
+        connectionStatus = 'connected';
+      } catch (err: any) {
+        folderAccessible = false;
+        const msg = String(err?.message ?? 'Folder tidak dapat diakses');
+        verifyError = msg;
+        if (/invalid_grant/i.test(msg)) {
+          await markDriveConnectionExpired(msg);
+          tokenValid = false;
+          driveConnected = false;
+          connectionStatus = 'expired';
+        } else {
+          // Token itself refreshed fine, folder is just unreachable (wrong
+          // account added, folder moved/trashed, etc.) — not the same
+          // failure mode as an expired token, so don't downgrade the badge.
+          tokenValid = null;
+          connectionStatus = 'unverified';
         }
       }
-    } catch (err: any) {
-      verifyError = err.message;
-      tokenValid = false;
+    } catch (err) {
+      if (err instanceof DriveAccessError) {
+        verifyError = err.message;
+        if (err.code === 'token_expired') {
+          tokenValid = false;
+          driveConnected = false;
+          connectionStatus = 'expired';
+        } else {
+          tokenValid = false;
+          connectionStatus = 'not_connected';
+        }
+      } else {
+        verifyError = (err as any)?.message ?? 'Gagal memverifikasi koneksi Google Drive.';
+        tokenValid = false;
+        connectionStatus = 'unverified';
+      }
     }
   }
 
@@ -113,6 +124,7 @@ export async function GET(req: NextRequest) {
     ...envStatus,
     driveAuthMode,
     driveConnected,
+    connectionStatus,
     driveAccountEmail,
     driveConnectedAt: driveConnectedAt?.toDate?.()?.toISOString?.() ?? driveConnectedAt,
     folderId,
@@ -140,21 +152,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'GOOGLE_DRIVE_BACKUP_FOLDER_ID belum dikonfigurasi.' }, { status: 400 });
   }
 
+  let drive;
   try {
-    const oauthDoc = await admin.firestore().collection('system_settings').doc('google_drive_oauth').get();
-    const refreshToken = oauthDoc.data()?.refreshToken as string | undefined;
-    if (!refreshToken) {
-      return NextResponse.json({ error: 'Refresh token tidak tersedia. Hubungkan Google Drive terlebih dahulu.' }, { status: 400 });
+    drive = await buildOAuthDriveClient();
+  } catch (err) {
+    if (err instanceof DriveAccessError && err.code === 'token_expired') {
+      return NextResponse.json({ success: false, error: TOKEN_EXPIRED_TEST_MESSAGE, code: 'token_expired' }, { status: 502 });
     }
+    if (err instanceof DriveAccessError) {
+      return NextResponse.json({ success: false, error: err.message, code: err.code }, { status: 400 });
+    }
+    return NextResponse.json({ success: false, error: 'Gagal menghubungkan ke Google Drive.' }, { status: 502 });
+  }
 
-    const oauth2Client = new google.auth.OAuth2(
-      process.env.GOOGLE_OAUTH_CLIENT_ID,
-      process.env.GOOGLE_OAUTH_CLIENT_SECRET,
-      process.env.GOOGLE_OAUTH_REDIRECT_URI,
-    );
-    oauth2Client.setCredentials({ refresh_token: refreshToken });
-    const drive = google.drive({ version: 'v3', auth: oauth2Client });
-
+  try {
     const content = `HRP Drive Test — ${new Date().toISOString()} — by ${actor.email}`;
     const stream = new Readable();
     stream.push(content);
@@ -174,6 +185,10 @@ export async function POST(req: NextRequest) {
     });
   } catch (err: any) {
     const msg = String(err.message ?? '');
+    if (/invalid_grant/i.test(msg)) {
+      await markDriveConnectionExpired(msg);
+      return NextResponse.json({ success: false, error: TOKEN_EXPIRED_TEST_MESSAGE, code: 'token_expired' }, { status: 502 });
+    }
     const isQuota = msg.toLowerCase().includes('quota');
     const isPermission = msg.toLowerCase().includes('permission') || msg.toLowerCase().includes('forbidden');
     return NextResponse.json({

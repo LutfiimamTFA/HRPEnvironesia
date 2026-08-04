@@ -1099,14 +1099,27 @@ export default function RekapAbsensiPayrollPage() {
 
         // Step 4 — Mengambil file template dari Google Drive
         markStep(3, "active");
+        console.log("[PAYROLL_TEMPLATE_EXPORT_DEBUG]", {
+          templateId: template.id,
+          templateName: template.name,
+          sheetNames: template.sheetNames,
+          driveFileId: template.driveFileId,
+          driveWebViewLink: template.driveWebViewLink,
+          brandsForTemplate: brandsForTemplate.map((b) => ({ id: b.id, name: b.name, payrollSheetName: b.payrollSheetName })),
+        });
         if (!firebaseUser) { fail(3, "Sesi tidak valid, silakan login ulang."); return; }
+        if (!template.driveFileId) {
+          fail(3, `Template "${template.name}" belum memiliki fileId Google Drive. Upload ulang template dari menu Template Payroll.`);
+          return;
+        }
         const idToken = await firebaseUser.getIdToken();
         const response = await fetch(`/api/payroll-templates/${template.id}/download`, {
           headers: { Authorization: `Bearer ${idToken}` },
         });
         if (!response.ok) {
           const errBody = await response.json().catch(() => null);
-          fail(3, errBody?.message || "Gagal mengambil file template dari Google Drive.");
+          const reason = errBody?.message || "Gagal terhubung ke Google Drive.";
+          fail(3, `Template "${template.name}" ditemukan, tetapi file Excel tidak bisa diambil dari Google Drive. ${reason} Silakan klik "Test Ambil Template" di menu Template Payroll atau upload ulang template.`);
           return;
         }
         const buffer = await response.arrayBuffer();

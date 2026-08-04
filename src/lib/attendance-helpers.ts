@@ -79,24 +79,161 @@ export function resolveScheduleForDay(
  * Picks the attendance_sites doc that applies to a given employee's brand —
  * so "karyawan PT A ikut site PT A, karyawan PT B ikut site PT B" instead of
  * Monitoring Absensi using whichever site happens to be first/active.
+ *
+ * Tries, in order:
+ *  1. brandId against every id-shaped field a site doc might carry
+ *     (brandIds/brandId, plus companyIds/allowedBrandIds/companyId — some
+ *     older docs used company-flavored field names before "brand" was
+ *     standardized). Never brandName here — names drift in spelling/casing
+ *     and shouldn't be the primary key.
+ *  2. brandName (case/whitespace-insensitive) against brandNames/companyNames
+ *     — a fallback for older site docs that were never migrated to store ids.
+ *  3. If exactly one active site exists at all, use it — a single-site org
+ *     has nothing else it could mean. This does NOT apply when there are
+ *     multiple active sites and none match: returning "whichever is first"
+ *     there would silently apply a different brand's hours/tolerance, which
+ *     is worse than surfacing "no site resolved" and letting the caller
+ *     flag it for Super Admin to fix the site's brandIds.
  */
 export function resolveSiteForBrand(
   sites: AttendanceSite[] | null | undefined,
   brandId: string | null | undefined,
+  brandName?: string | null,
 ): AttendanceSite | null {
   if (!sites || sites.length === 0) return null;
+  const activeSites = sites.filter((s) => s.isActive);
+  if (activeSites.length === 0) return null;
+
   if (brandId) {
-    const matched = sites.find(
-      (s) => s.isActive && (s.brandIds?.includes(brandId) || s.brandId === brandId),
-    );
-    if (matched) return matched;
+    const byId = activeSites.find((site) => {
+      const siteAny = site as any;
+      const ids: string[] = [
+        ...(site.brandIds || []),
+        ...(siteAny.companyIds || []),
+        ...(siteAny.allowedBrandIds || []),
+        site.brandId,
+        siteAny.companyId,
+      ].filter(Boolean);
+      return ids.includes(brandId);
+    });
+    if (byId) return byId;
   }
-  return sites.find((s) => s.isActive) || null;
+
+  if (brandName) {
+    const normalized = String(brandName).toLowerCase().trim();
+    const byName = activeSites.find((site) => {
+      const siteAny = site as any;
+      const names: string[] = [
+        ...(site.brandNames || []),
+        ...(siteAny.companyNames || []),
+        siteAny.brandName,
+        siteAny.companyName,
+      ].filter(Boolean).map((v) => String(v).toLowerCase().trim());
+      return names.includes(normalized);
+    });
+    if (byName) return byName;
+  }
+
+  if (activeSites.length === 1) return activeSites[0];
+  return null;
 }
 
 /** Looks up a single brand's display name — never returns the raw id. */
 export function getBrandDisplayName(brandId: string, brandMap: Map<string, string>): string | null {
   return brandMap.get(brandId) || null;
+}
+
+type TimeLike = string | Date | { toDate: () => Date } | null | undefined;
+
+/**
+ * Converts a "time of day" value into minutes-since-midnight in Asia/Jakarta
+ * — the one timezone attendance lateness is ever evaluated in. Accepts
+ * "HH:mm" / "HH:mm:ss" strings (site schedule fields), a JS Date, or a
+ * Firestore Timestamp (anything with `.toDate()`).
+ *
+ * Date/Timestamp values are read via `Intl.DateTimeFormat(... timeZone:
+ * 'Asia/Jakarta')`, never `Date#getHours()/getMinutes()` — those read the
+ * *runtime's* local timezone, which for a Next.js "use client" component is
+ * whatever the server-rendering process is set to (often UTC on Vercel), not
+ * WIB. A tap-in stored as 08:30 WIB would read back as getHours()===1 during
+ * that server pass, silently producing lateMinutes=0 — this was the actual
+ * remaining cause of "08:30 masih tampil Normal" after the schedule-fallback
+ * bug was fixed, since the wrong hour was being compared, not a missing
+ * schedule. Returns null (never 0) when unparseable, so callers can tell
+ * "couldn't determine" apart from "midnight".
+ */
+export function timeToMinutes(value: TimeLike): number | null {
+  if (value == null) return null;
+
+  if (typeof value === 'string') {
+    const match = value.trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (!match) return null;
+    const hour = Number(match[1]);
+    const minute = Number(match[2]);
+    if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
+    return hour * 60 + minute;
+  }
+
+  const date = typeof (value as any)?.toDate === 'function' ? (value as any).toDate() : value;
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Jakarta',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const hour = Number(parts.find((p) => p.type === 'hour')?.value);
+  const minute = Number(parts.find((p) => p.type === 'minute')?.value);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
+  return hour * 60 + minute;
+}
+
+export interface AttendanceLateStatusResult {
+  isLate: boolean;
+  /** null means "cannot be determined" (missing tap-in or scheduledStartTime) — never coerce to 0/"Normal" in a UI. */
+  lateMinutes: number | null;
+  statusLabel: 'Terlambat' | 'Normal';
+  /** Gated by latestCheckInWithoutReview alone — completely independent from lateMinutes/tolerance above. */
+  needsTimeReview: boolean;
+}
+
+/**
+ * THE single lateness calculation for the whole app — Monitoring Absensi's
+ * table and the Detail modal must both display fields computed by this
+ * function (store the result on the record once, read it everywhere else),
+ * never recompute independently and never fall back to a stored event's own
+ * lateMinutes/status field.
+ */
+export function calculateAttendanceLateStatus({
+  tapInTime,
+  scheduledStartTime,
+  lateToleranceMinutes,
+  latestCheckInWithoutReview,
+}: {
+  tapInTime: TimeLike;
+  scheduledStartTime: string | null | undefined;
+  lateToleranceMinutes: number | null | undefined;
+  latestCheckInWithoutReview?: string | null;
+}): AttendanceLateStatusResult {
+  const tapInMinutes = timeToMinutes(tapInTime);
+  const scheduledStartMinutes = timeToMinutes(scheduledStartTime);
+  // `?? 0`, never `|| 0` — a genuine 0-menit tolerance must stay 0, not get
+  // silently replaced by some other default because 0 is falsy.
+  const tolerance = typeof lateToleranceMinutes === 'number' && !Number.isNaN(lateToleranceMinutes) ? lateToleranceMinutes : 0;
+
+  if (tapInMinutes === null || scheduledStartMinutes === null) {
+    return { isLate: false, lateMinutes: null, statusLabel: 'Normal', needsTimeReview: false };
+  }
+
+  const lateThresholdMinutes = scheduledStartMinutes + tolerance;
+  const lateMinutes = Math.max(0, tapInMinutes - lateThresholdMinutes);
+  const isLate = lateMinutes > 0;
+
+  const cutoffMinutes = timeToMinutes(latestCheckInWithoutReview ?? null);
+  const needsTimeReview = cutoffMinutes !== null && tapInMinutes > cutoffMinutes;
+
+  return { isLate, lateMinutes, statusLabel: isLate ? 'Terlambat' : 'Normal', needsTimeReview };
 }
 
 /**

@@ -34,6 +34,8 @@ import {
   classifyFieldCondition,
   resolveSiteForBrand,
   resolveScheduleForDay,
+  calculateAttendanceLateStatus,
+  timeToMinutes,
   type LocationValidation,
   type FieldConditionResult,
 } from '@/lib/attendance-helpers';
@@ -66,6 +68,7 @@ const HRD_REVIEW_LABEL: Record<string, string> = {
   approved: 'Sudah Dicek HRD',
   rejected: 'Catatan Diabaikan',
   revision_requested: 'Diminta Klarifikasi',
+  acknowledged: 'Terima Kasih',
 };
 
 const HRD_REVIEW_BADGE_CLASS: Record<string, string> = {
@@ -74,6 +77,7 @@ const HRD_REVIEW_BADGE_CLASS: Record<string, string> = {
   approved: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
   rejected: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
   revision_requested: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',
+  acknowledged: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300',
 };
 
 interface AttendanceRecord {
@@ -104,6 +108,30 @@ interface AttendanceRecord {
   address: string;
   location: { lat: number; lng: number } | null;
   lateMinutes: number | null;
+  /**
+   * The single source of truth for lateness, computed once here by
+   * calculateAttendanceLateStatus and read verbatim by AttendanceDetailModal
+   * — never recomputed there, and never derived from an event's own stored
+   * lateMinutes/status. `calculatedLateMinutes`/`lateMinutes` above are
+   * always the same value; both exist so the field name matches whichever
+   * caller is reading it.
+   */
+  calculatedLateMinutes: number | null;
+  calculatedAttendanceStatus: 'Terlambat' | 'Normal' | null;
+  calculatedIsLate: boolean;
+  attendanceSiteId: string | null;
+  attendanceSiteName: string | null;
+  /** "Jam Masuk" actually used for the calc above — null means no schedule could be resolved for this brand/day (scheduleMissing). */
+  scheduledStartTime: string | null;
+  scheduledEndTime: string | null;
+  lateToleranceMinutesUsed: number;
+  latestCheckInWithoutReview: string | null;
+  /** True when there's genuinely no resolvable site/schedule for this brand+day — calculatedLateMinutes is null in that case, never coerce it to "Normal". */
+  scheduleMissing: boolean;
+  /** No attendance_sites doc matched this employee's brand at all — Super Admin needs to add the brand to a site's brandIds. Distinct from dayInactive. */
+  siteMissing: boolean;
+  /** A site WAS matched, but this weekday has no workSchedules/shift entry — a normal "not a working day" state, not a misconfiguration. */
+  dayInactive: boolean;
   earlyLeaveMinutes: number | null;
   workDurationMinutes: number | null;
   isInvalid: boolean;
@@ -229,9 +257,13 @@ function MonitoringSkeleton() {
 }
 
 function isPerluReview(row: AttendanceRecord): boolean {
+  // Lateness-driven review is already folded into hrdReviewStatus (gated by
+  // the site's latestCheckInWithoutReview cutoff, or the 15-menit fallback
+  // when that isn't configured) — a separate flat `lateMinutes > 15` check
+  // here would re-flag a merely-late-but-not-yet-past-cutoff tap-in (e.g.
+  // 08:30 against a 09:00 cutoff) even though it's correctly valid_auto.
   return row.isInvalid ||
     row.hrdReviewStatus === 'needs_review' ||
-    (row.lateMinutes !== null && row.lateMinutes > 15) ||
     (row.status === 'Selesai' && row.workDurationMinutes !== null && row.workDurationMinutes < 420);
 }
 
@@ -651,8 +683,33 @@ export function AttendanceMonitoringClient() {
       const tapInTimestamp = checkInEvent ? getEventTimestamp(checkInEvent) : null;
       const tapOutTimestamp = checkOutEvent ? getEventTimestamp(checkOutEvent) : null;
 
-      const siteForBrand = resolveSiteForBrand(sites as any, profileBrandId);
+      const siteForBrand = resolveSiteForBrand(sites as any, profileBrandId, resolvedBrand);
       const daySchedule = resolveScheduleForDay(siteForBrand as any, selectedDayOfWeek);
+
+      if (typeof window !== 'undefined') {
+        // eslint-disable-next-line no-console
+        console.log('[ATTENDANCE_SITE_MATCH_DEBUG]', {
+          employeeName: resolvedName,
+          employeeUid: profileUid,
+          employeeBrandId: profileBrandId,
+          employeeBrandName: resolvedBrand,
+          sites: (sites || []).map((s: any) => ({
+            siteName: s.name,
+            isActive: s.isActive,
+            brandIds: s.brandIds,
+            brandId: s.brandId,
+            brandNames: s.brandNames,
+          })),
+          matchedSite: siteForBrand?.name ?? null,
+        });
+        if (!siteForBrand) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            '[ATTENDANCE_SITE_MATCH_DEBUG] Tidak ada site aktif yang brandIds-nya cocok dengan brand karyawan.',
+            { employeeName: resolvedName, employeeBrandId: profileBrandId, employeeBrandName: resolvedBrand },
+          );
+        }
+      }
 
       const isInvalid = !!(checkInEvent?.isInvalid || checkOutEvent?.isInvalid);
 
@@ -678,22 +735,65 @@ export function AttendanceMonitoringClient() {
         status = 'Belum Tap In';
       }
 
-      const graceMins = (siteForBrand as any)?.lateToleranceMinutes ?? (siteForBrand as any)?.shift?.graceLateMinutes ?? 0;
+      const graceMins: number = Number((siteForBrand as any)?.lateToleranceMinutes ?? (siteForBrand as any)?.shift?.graceLateMinutes ?? 0);
+      const latestCheckInWithoutReview: string | null = (siteForBrand as any)?.latestCheckInWithoutReview ?? null;
+      const scheduledStartTime: string | null = daySchedule?.startTime ?? null;
 
-      let lateMinutes: number | null = null;
-      if (tapInTimestamp && daySchedule) {
-        const shiftStart = new Date(tapInTimestamp);
-        const [startHour, startMinute] = daySchedule.startTime.split(':').map(Number);
-        shiftStart.setHours(startHour, startMinute + graceMins, 0, 0);
-        if (tapInTimestamp > shiftStart) {
-          lateMinutes = differenceInMinutes(tapInTimestamp, shiftStart);
-        }
-      } else if (tapInTimestamp) {
-        const shiftStart = new Date(tapInTimestamp);
-        shiftStart.setHours(9, 0, 0, 0);
-        if (tapInTimestamp > shiftStart) {
-          lateMinutes = differenceInMinutes(tapInTimestamp, shiftStart);
-        }
+      // Jam Masuk (scheduledStartTime) + Toleransi Telat (graceMins) is the
+      // ONLY basis for lateness — never latestCheckInWithoutReview, which is
+      // purely a review-gating cutoff (needsTimeReview below). The one and
+      // only lateness formula lives in calculateAttendanceLateStatus — the
+      // Detail modal reads its result off this row (record.calculatedLateMinutes
+      // etc.) instead of recomputing, so the two screens can never disagree.
+      //
+      // tapInTimestamp is handed to the helper as-is (a real Date/Timestamp
+      // instant) — the helper itself resolves wall-clock hour/minute via
+      // Intl.DateTimeFormat(timeZone:'Asia/Jakarta'), never Date#getHours(),
+      // which reads whatever timezone the JS runtime happens to be in (UTC
+      // during Next.js server rendering on most hosts) rather than WIB.
+      const lateResult = calculateAttendanceLateStatus({
+        tapInTime: tapInTimestamp,
+        scheduledStartTime,
+        lateToleranceMinutes: graceMins,
+        latestCheckInWithoutReview,
+      });
+      const lateMinutes = lateResult.lateMinutes;
+
+      // Two distinct "can't compute lateness" reasons, surfaced separately so
+      // the UI never lumps "brand isn't configured in any site at all" (Super
+      // Admin needs to fix attendance_sites) together with "site found, but
+      // this weekday just isn't a working day for it" (a normal, expected
+      // state — e.g. Sunday against a Mon-Fri site — not a misconfiguration).
+      const siteMissing = !!tapInTimestamp && !siteForBrand;
+      const dayInactive = !!tapInTimestamp && !!siteForBrand && !scheduledStartTime;
+      const scheduleMissing = siteMissing || dayInactive;
+
+      if (typeof window !== 'undefined' && tapInTimestamp) {
+        // eslint-disable-next-line no-console
+        console.log('[ATTENDANCE_LATE_CALC_DEBUG]', {
+          employeeName: resolvedName,
+          dateKey: selectedDateString,
+          dayKey: selectedDayOfWeek,
+          brandId: profileBrandId,
+          tapInTime: safeFormatTime(tapInTimestamp),
+          tapInRaw: (checkInEvent as any)?.createdAt ?? (checkInEvent as any)?.timestamp ?? (checkInEvent as any)?.tsServer ?? null,
+          matchedSiteName: siteForBrand?.name ?? null,
+          workSchedules: (siteForBrand as any)?.workSchedules ?? null,
+          selectedSchedule: daySchedule,
+          scheduledStartTime,
+          lateToleranceMinutes: graceMins,
+          latestCheckInWithoutReview,
+          scheduledStartMinutes: timeToMinutes(scheduledStartTime),
+          lateThresholdMinutes: timeToMinutes(scheduledStartTime) != null ? (timeToMinutes(scheduledStartTime) as number) + graceMins : null,
+          tapInMinutes: timeToMinutes(tapInTimestamp),
+          calculatedLateMinutes: lateResult.lateMinutes,
+          calculatedStatus: lateResult.statusLabel,
+          siteMissing,
+          dayInactive,
+          scheduleMissing,
+          storedLateMinutes: (checkInEvent as any)?.lateMinutes,
+          storedStatus: (checkInEvent as any)?.status,
+        });
       }
 
       // Pulang awal/lebih lambat are informational statuses only — there is
@@ -784,10 +884,21 @@ export function AttendanceMonitoringClient() {
       const photoUrl = photoUrlIn || photoUrlOut;
       const locationNeedsReview = !!(locationValidation && !locationValidation.isValidAuto && tapInTimestamp);
       const photoMissing = !!checkInEvent && !photoUrlIn;
-      const lateNeedsReview = lateMinutes !== null && lateMinutes > 15;
+
+      // "Perlu review karena jam" is gated by latestCheckInWithoutReview — a
+      // wall-clock cutoff, completely independent from lateMinutes/tolerance
+      // above (lateResult.needsTimeReview, computed by the same helper via
+      // the same Asia/Jakarta-safe time parsing). A tap-in can be late
+      // (lateMinutes > 0) without needing review yet (still before the
+      // cutoff). Sites that haven't configured latestCheckInWithoutReview
+      // fall back to the old flat 15-minute heuristic instead of never
+      // flagging lateness for review at all.
+      const lateNeedsReview = latestCheckInWithoutReview
+        ? lateResult.needsTimeReview
+        : (lateMinutes !== null && lateMinutes > 15);
 
       const hrdReviewStatus = (checkInEvent as any)?.hrdReviewStatus || (checkOutEvent as any)?.hrdReviewStatus ||
-        (specialCondition || locationNeedsReview || photoMissing || lateNeedsReview
+        (specialCondition || locationNeedsReview || photoMissing || lateNeedsReview || scheduleMissing
           ? 'needs_review'
           : (tapInTimestamp ? 'valid_auto' : null));
 
@@ -799,8 +910,11 @@ export function AttendanceMonitoringClient() {
       if (locationNeedsReview) reviewReasons.push('Lokasi');
       if (lateNeedsReview) reviewReasons.push('Terlambat');
       if (photoMissing) reviewReasons.push('Foto');
+      if (siteMissing) reviewReasons.push('Site Belum Diatur');
+      else if (dayInactive) reviewReasons.push('Hari Nonaktif');
 
       const reviewReasonLabel =
+        hrdReviewStatus === 'acknowledged' ? HRD_REVIEW_LABEL.acknowledged :
         hrdReviewStatus === 'approved' ? HRD_REVIEW_LABEL.approved :
         hrdReviewStatus === 'rejected' ? HRD_REVIEW_LABEL.rejected :
         hrdReviewStatus === 'revision_requested' ? HRD_REVIEW_LABEL.revision_requested :
@@ -821,6 +935,8 @@ export function AttendanceMonitoringClient() {
       // capped at 3 so the cell stays a readable 2-line summary.
       const noteExtras: string[] = [];
       if (lateMinutes !== null && lateMinutes > 0) noteExtras.push(`Terlambat ${lateMinutes} menit`);
+      if (siteMissing) noteExtras.push('Site absensi belum diatur untuk brand ini');
+      else if (dayInactive) noteExtras.push('Hari ini nonaktif di jadwal site');
       if (earlyLeaveMinutes !== null && earlyLeaveMinutes > 0) noteExtras.push(`Pulang awal ${earlyLeaveMinutes} menit`);
       if (lateLeaveMinutes !== null && lateLeaveMinutes > 0) noteExtras.push(`Pulang lebih lambat ${lateLeaveMinutes} menit`);
       if (locationValidation && tapInTimestamp) {
@@ -862,6 +978,18 @@ export function AttendanceMonitoringClient() {
         address: resolveAddress(checkInEvent) || resolveAddress(checkOutEvent),
         location: (checkInEvent as any)?.location || null,
         lateMinutes,
+        calculatedLateMinutes: lateResult.lateMinutes,
+        calculatedAttendanceStatus: lateResult.lateMinutes === null ? null : lateResult.statusLabel,
+        calculatedIsLate: lateResult.isLate,
+        attendanceSiteId: siteForBrand?.id ?? null,
+        attendanceSiteName: siteForBrand?.name ?? null,
+        scheduledStartTime,
+        scheduledEndTime: daySchedule?.endTime ?? null,
+        lateToleranceMinutesUsed: graceMins,
+        latestCheckInWithoutReview,
+        scheduleMissing,
+        siteMissing,
+        dayInactive,
         earlyLeaveMinutes,
         workDurationMinutes,
         isInvalid,
@@ -954,7 +1082,7 @@ export function AttendanceMonitoringClient() {
   // tap-in, regardless of what HRD notes down. reviewOnly:true marks this
   // whole workflow as "for HRD's awareness", not a gate the record must pass.
   const handleHrdReview = async (
-    hrdStatus: 'approved' | 'rejected' | 'revision_requested' | 'valid_auto' | 'needs_review',
+    hrdStatus: 'approved' | 'rejected' | 'revision_requested' | 'valid_auto' | 'needs_review' | 'acknowledged',
     note: string,
     row: AttendanceRecord | null = selectedRecord,
   ) => {
@@ -970,6 +1098,7 @@ export function AttendanceMonitoringClient() {
           doc(firestore, 'attendance_events', id),
           {
             hrdReviewStatus: hrdStatus,
+            hrdReviewLabel: HRD_REVIEW_LABEL[hrdStatus] ?? hrdStatus,
             hrdReviewNote: note || null,
             hrdReviewedByUid: userProfile.uid,
             hrdReviewedByName: (userProfile as any).displayName || userProfile.fullName || userProfile.email,
@@ -981,7 +1110,7 @@ export function AttendanceMonitoringClient() {
           { merge: true },
         )
       ));
-      toast({ title: `Catatan tersimpan: ${HRD_REVIEW_LABEL[hrdStatus]?.toLowerCase() ?? 'diperbarui'}.` });
+      toast({ title: hrdStatus === 'acknowledged' ? 'Catatan HRD berhasil disimpan.' : `Catatan tersimpan: ${HRD_REVIEW_LABEL[hrdStatus]?.toLowerCase() ?? 'diperbarui'}.` });
       mutateEvents();
       setIsDetailModalOpen(false);
     } catch (error: any) {

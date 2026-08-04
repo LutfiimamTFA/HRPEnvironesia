@@ -2134,7 +2134,9 @@ export type AttendanceEvent = {
   /** Optional "kondisi khusus" note the employee attaches to a tap-in/out (e.g. health/urgent condition). */
   specialCondition?: string | null;
   /** HRD review of this specific tap event — separate from `isInvalid` (Tandai Tidak Valid, payroll-exclusion). */
-  hrdReviewStatus?: "valid_auto" | "needs_review" | "approved" | "rejected" | "revision_requested";
+  hrdReviewStatus?: "valid_auto" | "needs_review" | "approved" | "rejected" | "revision_requested" | "acknowledged";
+  /** Human-readable snapshot of hrdReviewStatus at write time, e.g. "Terima Kasih" — informational only, never read for logic. */
+  hrdReviewLabel?: string | null;
   hrdReviewNote?: string | null;
   hrdReviewedByUid?: string | null;
   hrdReviewedByName?: string | null;

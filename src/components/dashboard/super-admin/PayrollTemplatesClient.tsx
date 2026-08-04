@@ -19,11 +19,39 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, Upload, Trash2, Pencil, ChevronDown, ChevronUp, FileSpreadsheet, Users2 } from 'lucide-react';
+import { Loader2, Upload, Trash2, Pencil, ChevronDown, ChevronUp, FileSpreadsheet, Users2, FlaskConical, CheckCircle2, XCircle } from 'lucide-react';
+
+type TemplateTestResult = { success: boolean; message: string } | null;
 
 function TemplateRow({ template, brands, onDelete }: { template: PayrollTemplate; brands: Brand[]; onDelete: () => void }) {
+  const { firebaseUser } = useAuth();
   const [expanded, setExpanded] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<TemplateTestResult>(null);
   const usedBy = brands.filter((b) => b.payrollTemplateId === template.id);
+
+  // Metadata being present in Firestore doesn't mean the .xlsx is actually
+  // fetchable from Drive — this only checks the fields, the button below
+  // (handleTest) is what actually proves the file can be downloaded.
+  const missingFileId = !template.driveFileId;
+
+  const handleTest = async () => {
+    if (!firebaseUser) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const idToken = await firebaseUser.getIdToken();
+      const response = await fetch(`/api/payroll-templates/${template.id}/test`, {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      const result = await response.json();
+      setTestResult({ success: response.ok && result.success, message: result.message || (response.ok ? 'Berhasil.' : 'Gagal mengambil template.') });
+    } catch (error: any) {
+      setTestResult({ success: false, message: error?.message || 'Gagal menguji pengambilan template.' });
+    } finally {
+      setTesting(false);
+    }
+  };
 
   return (
     <div className="border border-slate-200 dark:border-slate-800 rounded-lg">
@@ -34,11 +62,20 @@ function TemplateRow({ template, brands, onDelete }: { template: PayrollTemplate
             <p className="font-medium text-sm truncate">{template.name}</p>
             <p className="text-xs text-muted-foreground truncate">{template.fileName}</p>
           </div>
+          {missingFileId ? (
+            <Badge variant="destructive" className="shrink-0 text-[10px]">FileId kosong — upload ulang</Badge>
+          ) : (
+            <Badge variant="outline" className="shrink-0 text-[10px] text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800">File siap digunakan</Badge>
+          )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {template.driveWebViewLink && (
             <a href={template.driveWebViewLink} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline">Lihat di Drive</a>
           )}
+          <Button variant="outline" size="sm" onClick={handleTest} disabled={testing || missingFileId} className="h-8 text-xs">
+            {testing ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <FlaskConical className="h-3.5 w-3.5 mr-1.5" />}
+            Test Ambil Template
+          </Button>
           <Button variant="ghost" size="sm" onClick={() => setExpanded((v) => !v)}>
             {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </Button>
@@ -47,6 +84,18 @@ function TemplateRow({ template, brands, onDelete }: { template: PayrollTemplate
           </Button>
         </div>
       </div>
+      {testResult && (
+        <div className="px-3 pb-3">
+          <Alert className={testResult.success
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200'
+            : 'border-destructive/40 bg-destructive/5 text-destructive'}>
+            <div className="flex items-start gap-2">
+              {testResult.success ? <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" /> : <XCircle className="h-4 w-4 mt-0.5 shrink-0" />}
+              <AlertDescription className="text-xs">{testResult.message}</AlertDescription>
+            </div>
+          </Alert>
+        </div>
+      )}
       {expanded && (
         <div className="border-t border-slate-200 dark:border-slate-800 p-3 space-y-3 text-sm">
           <div>

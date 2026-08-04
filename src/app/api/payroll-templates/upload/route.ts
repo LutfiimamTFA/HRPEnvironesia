@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { google } from "googleapis";
 import { Readable } from "stream";
 import * as XLSX from "xlsx";
 import admin from "@/lib/firebase/admin";
 import { FieldValue } from "firebase-admin/firestore";
+import { buildOAuthDriveClient, DriveAccessError } from "@/lib/server/google-drive-oauth";
 
 export const runtime = "nodejs";
 
@@ -12,33 +12,6 @@ export const runtime = "nodejs";
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
 const PAYROLL_TEMPLATE_FOLDER_NAME = "HRP Payroll Templates";
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-const DRIVE_NOT_CONNECTED_MESSAGE =
-  "Google Drive belum terhubung. Hubungkan Google Drive terlebih dahulu di menu Backup & Export.";
-
-// Payroll templates must be uploaded using the Super Admin's connected OAuth
-// Google Drive account (the same connection used by Backup & Export), never
-// a service account — service accounts have no storage quota of their own.
-async function buildOAuthDriveClient() {
-  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
-  const redirectUri = process.env.GOOGLE_OAUTH_REDIRECT_URI;
-  if (!clientId || !clientSecret || !redirectUri) {
-    throw new Error(DRIVE_NOT_CONNECTED_MESSAGE);
-  }
-
-  const oauthDoc = await admin.firestore().collection("system_settings").doc("google_drive_oauth").get();
-  const refreshToken = oauthDoc.data()?.refreshToken as string | undefined;
-  if (!refreshToken) {
-    throw new Error(DRIVE_NOT_CONNECTED_MESSAGE);
-  }
-
-  const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
-  oauth2Client.setCredentials({ refresh_token: refreshToken });
-  // Force a refresh now so an expired/near-expiry access token doesn't fail mid-upload.
-  await oauth2Client.getAccessToken();
-
-  return google.drive({ version: "v3", auth: oauth2Client });
-}
 
 async function getOrCreatePayrollTemplateFolder(drive: any): Promise<string> {
   const envFolderId = process.env.GOOGLE_DRIVE_PAYROLL_TEMPLATE_FOLDER_ID;
@@ -129,12 +102,11 @@ export async function POST(req: NextRequest) {
     let drive;
     try {
       drive = await buildOAuthDriveClient();
-    } catch (err: any) {
-      const msg = String(err?.message || "");
-      return NextResponse.json(
-        { success: false, message: msg === DRIVE_NOT_CONNECTED_MESSAGE ? msg : "Upload gagal karena koneksi Google Drive perlu diperbarui." },
-        { status: msg === DRIVE_NOT_CONNECTED_MESSAGE ? 400 : 502 },
-      );
+    } catch (err) {
+      if (err instanceof DriveAccessError) {
+        return NextResponse.json({ success: false, message: err.message, code: err.code }, { status: err.code === "not_connected" ? 400 : 502 });
+      }
+      return NextResponse.json({ success: false, message: "Upload gagal karena koneksi Google Drive perlu diperbarui." }, { status: 502 });
     }
 
     let driveFolderId: string;
