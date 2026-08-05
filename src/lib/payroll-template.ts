@@ -32,7 +32,7 @@ export async function readWorkbookSheetNames(file: File): Promise<string[]> {
 // Detection is by header-cell TEXT, not by fixed row/column position, so
 // this survives the template having its own title rows/merged cells above
 // the header row. ────────────────────────────────────────────────────────
-type ColumnKey = 'dayNumber' | 'employeeName' | 'date' | 'tapIn' | 'tapOut' | 'workHours' | 'lateness' | 'manual' | 'remark';
+type ColumnKey = 'dayNumber' | 'employeeName' | 'date' | 'tapIn' | 'tapOut' | 'scheduledStart' | 'lateThreshold' | 'workHours' | 'lateness' | 'manual' | 'remark';
 
 const HEADER_SYNONYMS: Record<ColumnKey, string[]> = {
   dayNumber: ['jumlah hari'],
@@ -40,6 +40,14 @@ const HEADER_SYNONYMS: Record<ColumnKey, string[]> = {
   date: ['tanggal', 'date'],
   tapIn: ['jam kehadiran', 'jam masuk'],
   tapOut: ['jam pulang', 'jam selesai'],
+  // Opt-in only — a template needs a column literally labeled one of these
+  // (e.g. "Jadwal Masuk") for either to ever get filled. No such column
+  // means columns.scheduledStart/lateThreshold stay undefined and the write
+  // loop below just skips them; nothing is inserted into a template that
+  // doesn't already have the column, so this never risks corrupting an
+  // existing template's layout.
+  scheduledStart: ['jadwal masuk', 'jam masuk kantor', 'jam kantor', 'jadwal kehadiran'],
+  lateThreshold: ['batas normal', 'batas telat', 'batas keterlambatan', 'batas toleransi'],
   workHours: ['jam kerja', 'at hour'],
   lateness: ['keterlambatan'],
   manual: ['manual'],
@@ -458,6 +466,10 @@ export interface PayrollTemplateDayRow {
   date: string; // formatted display date
   tapIn: string;
   tapOut: string;
+  /** e.g. "08:00" or "-" — this day's own resolved jam masuk kantor, only filled if the template has a matching column (see HEADER_SYNONYMS.scheduledStart). */
+  scheduledStart: string;
+  /** e.g. "08:02" or "-" — scheduledStart + toleransi, the actual cutoff a tap-in is compared against. */
+  lateThreshold: string;
   workHours: string; // formatted, e.g. "5j 16m" or "-"
   lateness: string; // e.g. "104" or "-"
   manual: string; // manual correction note, if any
@@ -465,9 +477,14 @@ export interface PayrollTemplateDayRow {
 }
 
 /**
- * Collapses the long, multi-clause payroll remark (meant for the website's
- * detail view) down to a short, single label fit for one Excel cell — full
- * detail stays available on the website, never stacked into the sheet.
+ * Short, single-status label for the Excel KETERANGAN cell — deliberately
+ * just the headline state (Hadir/Terlambat/Belum Tap Out/Alpha/...), never
+ * the location/kondisi/HRD-confirmation detail that used to get appended
+ * here. Those details already live in Monitoring Absensi and the Detail
+ * Absensi modal; stacking them into this cell too just made the payroll
+ * sheet noisy without adding anything Finance/HRD needs from THIS view. The
+ * late minute count itself is never dropped by this simplification — it
+ * stays intact in the separate KETERLAMBATAN cell (see buildPayrollTemplateDayRows).
  */
 function shortenRemark(day: CalendarAttendanceDetail, lateMinutes: number | null): string {
   const status = day.status;
@@ -479,49 +496,55 @@ function shortenRemark(day: CalendarAttendanceDetail, lateMinutes: number | null
   if (status.includes('Libur Perusahaan')) return 'Libur Perusahaan';
   if (status === 'Cuti') return 'Cuti';
   if (status === 'Izin') return 'Izin';
-  if (status.startsWith('Dinas')) return status.includes('Terlambat') ? 'Dinas + Terlambat' : 'Dinas';
+  if (status.startsWith('Dinas')) return 'Dinas';
   if (status === 'Alpha') return 'Alpha';
   if (status === 'Belum Tap In') return 'Belum Tap In';
 
-  // Attendance-based days (Terlambat / Tepat Waktu) — build from the same
-  // structured signals Monitoring Absensi uses, just kept to short tags.
-  // Condition reports use the ACTUAL note text ("Kondisi: Ban bocor") rather
-  // than a generic "Ada Kondisi" — HRD/Finance can't act on a label that
-  // doesn't say what the condition was. Every applicable part is joined —
-  // never truncated to 1-2 parts or collapsed into a fixed phrase like "Tap
-  // Out + Review", which used to silently drop "Terlambat Xm" from the cell
-  // whenever a late day also had a missing tap-out or a location flag.
-  const parts: string[] = [];
-  if (lateMinutes) parts.push(`Terlambat ${lateMinutes}m`);
-  if (!day.tapOutTime) parts.push('Belum Tap Out');
-  const locationFlag = day.locationValidationStatus
-    && !['Valid Otomatis', 'Radius Sesuai', 'Jalan Cocok'].includes(day.locationValidationStatus);
-  if (locationFlag) parts.push('Lokasi Review');
-  const conditionLabel = day.conditionCategory
-    ? `Kondisi: ${(day.conditionNote || day.conditionCategory).trim()}`
-    : null;
-  if (conditionLabel) parts.push(conditionLabel);
-  if (day.hrdReviewStatus === 'needs_review' && day.tapOutTime) parts.push('Perlu Catatan HRD');
-  if (day.hrdConfirmationStatus === 'received') parts.push('Diterima HRD');
-  else if (day.hrdConfirmationStatus === 'noted') parts.push('Ada Catatan HRD');
-
-  return parts.length ? parts.join(' + ') : 'Hadir';
+  // Attendance-based days (Terlambat / Tepat Waktu) — status ringkas saja.
+  if (!day.tapOutTime) return 'Belum Tap Out';
+  if (lateMinutes && lateMinutes > 0) return 'Terlambat';
+  return 'Hadir';
 }
 
 /** Builds the per-day rows for one employee from their PayrollRecapRow, in the shape the template filler expects. */
 export function buildPayrollTemplateDayRows(row: PayrollRecapRow): PayrollTemplateDayRow[] {
   return row.calendarDetails.map((d, i) => {
-    const lateMinutes = row.lateDetails.find((l) => l.date === d.date)?.lateMinutes ?? null;
+    // calendarDetails.calculatedLateMinutes is the day's own
+    // calculateAttendanceLateStatus result — the same number the Detail
+    // modal shows. lateDetails only ever held late days as a side list, so
+    // it's kept purely as a fallback for any caller still relying on it,
+    // never the primary source.
+    const lateMinutes = d.calculatedLateMinutes ?? row.lateDetails.find((l) => l.date === d.date)?.lateMinutes ?? null;
+    const latenessCell = lateMinutes != null && lateMinutes > 0 ? `${lateMinutes} menit` : '-';
+    const remarkCell = shortenRemark(d, lateMinutes);
+
+    if (typeof window !== 'undefined' && d.tapInTime) {
+      console.log('[PAYROLL_EXPORT_ROW_DEBUG]', {
+        employeeName: row.fullName,
+        date: d.date,
+        tapIn: d.tapInTime,
+        tapOut: d.tapOutTime,
+        scheduledStartTime: d.scheduledStartTime,
+        lateToleranceMinutes: d.lateToleranceMinutes,
+        lateThresholdTime: d.lateThresholdTime,
+        calculatedLateMinutes: d.calculatedLateMinutes,
+        latenessCell,
+        remarkCell,
+      });
+    }
+
     return {
       dayNumber: i + 1,
       employeeName: row.fullName,
       date: format(new Date(d.date), 'dd/MM/yyyy'),
       tapIn: d.tapInTime || '-',
       tapOut: d.tapOutTime || '-',
+      scheduledStart: d.scheduledStartTime || '-',
+      lateThreshold: d.lateThresholdTime || '-',
       workHours: d.workMinutes != null ? formatWorkMinutes(d.workMinutes) : '-',
-      lateness: lateMinutes != null && lateMinutes > 0 ? `${lateMinutes} menit` : '-',
+      lateness: latenessCell,
       manual: d.payrollIsFinal ? '' : 'Belum final — perlu catatan HRD',
-      remark: shortenRemark(d, lateMinutes),
+      remark: remarkCell,
     };
   });
 }
@@ -534,7 +557,7 @@ export function buildPayrollTemplateDayRows(row: PayrollRecapRow): PayrollTempla
 // "Terlambat + Kondisi" gets the late color, not a generic one.
 const REMARK_COLOR: Array<{ test: (remark: string) => boolean; argb: string }> = [
   { test: (r) => r.startsWith('Terlambat'), argb: 'FFFFEDD5' }, // soft orange
-  { test: (r) => r.startsWith('Belum Tap Out') || r === 'Lokasi Review' || r === 'Tap Out + Review', argb: 'FFFEF9C3' }, // soft yellow
+  { test: (r) => r === 'Belum Tap Out', argb: 'FFFEF9C3' }, // soft yellow
   { test: (r) => r === 'Izin' || r === 'Cuti' || r.startsWith('Dinas'), argb: 'FFE0E7FF' }, // soft blue/purple
   { test: (r) => r === 'Alpha', argb: 'FFFEE2E2' }, // soft red
   { test: (r) => r === 'Libur Nasional' || r === 'Cuti Bersama', argb: 'FFFCE7F3' }, // soft pink
@@ -827,6 +850,8 @@ export function fillPayrollTemplateSheet(
         ['date', day.date],
         ['tapIn', day.tapIn],
         ['tapOut', day.tapOut],
+        ['scheduledStart', day.scheduledStart],
+        ['lateThreshold', day.lateThreshold],
         ['workHours', day.workHours],
         ['lateness', day.lateness],
         ['manual', day.manual],

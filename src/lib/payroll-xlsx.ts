@@ -446,7 +446,7 @@ function sheetKeterlambatan(row: PayrollRecapRow): XLSX.WorkSheet {
         fd(d.date),
         fday(d.date),
         d.tapInTime,
-        d.scheduledStartTime || "-",
+        d.lateThresholdTime || d.scheduledStartTime || "-",
         d.lateMinutes,
         `Terlambat ${d.lateMinutes} menit dari batas toleransi.`,
       ]);

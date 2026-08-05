@@ -44,7 +44,10 @@ export interface LateDetail {
   date: string;          // YYYY-MM-DD
   tapInTime: string;     // HH:mm
   lateMinutes: number;
-  scheduledStartTime?: string; // HH:mm — derived as tapInTime minus lateMinutes
+  /** The site's actual jam masuk for this weekday, e.g. "08:00" — NOT the tolerance-adjusted cutoff (see lateThresholdTime). */
+  scheduledStartTime?: string;
+  /** scheduledStartTime + lateToleranceMinutes, e.g. "08:02" — the real cutoff tapInTime is compared against. */
+  lateThresholdTime?: string;
 }
 
 export interface HolidayDetail {
@@ -120,6 +123,22 @@ export interface CalendarAttendanceDetail {
   payrollNeedsReview: boolean;
   /** attendance_events doc id for this day's tap-in — lets the UI write an HRD payroll decision to the right doc. */
   tapInEventId: string | null;
+
+  // ── Per-day lateness inputs/outputs, carried on the row itself so every
+  // Excel consumer (buildPayrollTemplateDayRows, the plain xlsx export) can
+  // read the SAME already-computed number instead of re-deriving it from
+  // lateDetails (which only ever held late days) or recomputing anything. ──
+  /** This day's own resolved schedule start, e.g. "08:00" — via resolveScheduleForDay for THIS date's weekday, not a single flat policy for the whole period. Null if no site/schedule could be resolved. */
+  scheduledStartTime: string | null;
+  /** Grace minutes applied on top of scheduledStartTime, from the site doc. */
+  lateToleranceMinutes: number | null;
+  /** scheduledStartTime + lateToleranceMinutes, e.g. "08:02" — the actual cutoff a tap-in is compared against. Never the same value as scheduledStartTime. */
+  lateThresholdTime: string | null;
+  /** calculateAttendanceLateStatus's lateMinutes for this day — null means "cannot be determined" (no site/schedule), never coerced to 0. */
+  calculatedLateMinutes: number | null;
+  calculatedAttendanceStatus: 'Normal' | 'Terlambat' | null;
+  attendanceSiteId: string | null;
+  attendanceSiteName: string | null;
 }
 
 export interface AlphaDetail {
@@ -1272,6 +1291,26 @@ export function generateEmployeePayrollRecap(
   const employeeBrandName = resolveBrandName(employee, brandMap);
   const attendanceSite = resolveSiteForBrand(attendanceSites, employeeBrandId, employeeBrandName);
 
+  if (typeof window !== 'undefined') {
+    console.log('[PAYROLL_RECAP_SITE_LATE_DEBUG]', {
+      employeeName: resolveName(employee),
+      employeeBrandId,
+      employeeBrandName,
+      attendanceSites: (attendanceSites || []).map((site: any) => ({
+        id: site.id,
+        name: site.name || site.siteName,
+        isActive: site.isActive,
+        brandId: site.brandId,
+        brandIds: site.brandIds,
+        brandNames: site.brandNames,
+        workSchedules: site.workSchedules,
+        lateToleranceMinutes: site.lateToleranceMinutes,
+      })),
+      matchedSiteId: (attendanceSite as any)?.id || null,
+      matchedSiteName: (attendanceSite as any)?.name || (attendanceSite as any)?.siteName || null,
+    });
+  }
+
   // Daily target derived from the site's own shift length (minus break) when
   // configured; falls back to a flat 8 jam/hari otherwise. Uses a representative
   // (Monday, or the first configured workSchedules group) schedule purely for
@@ -1351,7 +1390,10 @@ export function generateEmployeePayrollRecap(
         date: dateStr,
         tapInTime,
         lateMinutes: lateResult.lateMinutes,
-        scheduledStartTime: effectiveLimitMinutes != null ? minutesToTime(effectiveLimitMinutes) : undefined,
+        // jam masuk kantor (e.g. "08:00") — distinct from lateThresholdTime
+        // below (e.g. "08:02"), which is the tolerance-adjusted cutoff.
+        scheduledStartTime: schedule?.startTime ?? undefined,
+        lateThresholdTime: effectiveLimitMinutes != null ? minutesToTime(effectiveLimitMinutes) : undefined,
       });
     }
 
@@ -1469,6 +1511,13 @@ export function generateEmployeePayrollRecap(
     const hasAttendance = hadirDays.has(dateStr);
     const lateResult = inEv ? lateResultByDay.get(dateStr) : undefined;
     const isLate = !!lateResult?.isLate;
+    // This day's own schedule/threshold — recomputed (cheap, pure) rather
+    // than threaded through a second map, so calendarDetails always carries
+    // the exact inputs calculateAttendanceLateStatus used for THIS date.
+    const daySchedule = resolveDaySchedule(attendanceSite, dateStr);
+    const dayStartMinutes = parseTimeToMinutes(daySchedule.schedule?.startTime ?? null);
+    const dayThresholdMinutes = dayStartMinutes != null ? dayStartMinutes + daySchedule.graceMins : null;
+    const dayLateThresholdTime = dayThresholdMinutes != null ? minutesToTime(dayThresholdMinutes) : null;
     let status: CalendarAttendanceDetail['status'] = 'Alpha';
     let keterangan = '';
 
@@ -1596,14 +1645,14 @@ export function generateEmployeePayrollRecap(
     }
 
     if (typeof window !== 'undefined' && hasAttendance) {
-      const debugSchedule = resolveDaySchedule(attendanceSite, dateStr);
       console.log('[PAYROLL_EXPORT_LATE_DEBUG]', {
         employeeName: resolveName(employee),
         dateKey: dateStr,
         checkInTime: inEv ? getEventTimeStr(inEv) : null,
         checkOutTime: outEv ? getEventTimeStr(outEv) : null,
-        scheduledStartTime: debugSchedule.schedule?.startTime ?? null,
-        lateToleranceMinutes: debugSchedule.graceMins,
+        scheduledStartTime: daySchedule.schedule?.startTime ?? null,
+        lateToleranceMinutes: daySchedule.graceMins,
+        lateThresholdTime: dayLateThresholdTime,
         calculatedLateMinutes: lateResult?.lateMinutes ?? null,
         calculatedAttendanceStatus: lateResult?.statusLabel ?? null,
         locationNeedsReview: conditionInfo.locationValidationStatus
@@ -1635,6 +1684,13 @@ export function generateEmployeePayrollRecap(
       payrollIsFinal: payrollDay.isFinal,
       payrollNeedsReview: payrollDay.needsReview,
       tapInEventId: inEv?.id || null,
+      scheduledStartTime: hasAttendance ? (daySchedule.schedule?.startTime ?? null) : null,
+      lateToleranceMinutes: hasAttendance ? daySchedule.graceMins : null,
+      lateThresholdTime: hasAttendance ? dayLateThresholdTime : null,
+      calculatedLateMinutes: hasAttendance ? (lateResult?.lateMinutes ?? null) : null,
+      calculatedAttendanceStatus: hasAttendance ? (lateResult?.statusLabel ?? null) : null,
+      attendanceSiteId: (attendanceSite as any)?.id ?? null,
+      attendanceSiteName: (attendanceSite as any)?.name || (attendanceSite as any)?.siteName || null,
     };
   });
 

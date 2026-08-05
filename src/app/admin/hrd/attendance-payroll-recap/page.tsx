@@ -766,7 +766,18 @@ export default function RekapAbsensiPayrollPage() {
     { realtime: false },
   );
 
-  const { data: attendanceSites, mutate: refetchAttendanceSites } = useHrdScopedCollection<any>("attendance_sites", { realtime: false });
+  // attendance_sites stores brandIds as an array (one site can serve several
+  // brands) — the default "single" brandField mode only matches a scalar
+  // `brandId`, so multi-brand sites silently never matched here even though
+  // Monitoring Absensi (which uses this same array mode) found them fine.
+  // That's why Rekap Payroll could resolve no site/schedule for an employee
+  // whose Detail modal already showed a correct lateness number.
+  const { data: attendanceSites, mutate: refetchAttendanceSites } = useHrdScopedCollection<any>("attendance_sites", {
+    brandField: "brandIds",
+    brandFieldMode: "array",
+    legacyBrandField: "brandId",
+    realtime: false,
+  });
 
   const { data: permissionRequests, mutate: refetchPermissionRequests } = useHrdScopedCollection<any>("permission_requests", { realtime: false });
 
