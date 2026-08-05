@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { useCollection, useFirestore, useMemoFirebase, deleteDocumentNonBlocking, setDocumentNonBlocking } from '@/firebase';
-import { collection, query, where, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import type { EmployeeProfile, AttendanceEvent, AttendanceSite } from '@/lib/types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { GoogleDatePicker } from '@/components/ui/google-date-picker';
@@ -10,8 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Skeleton } from '../ui/skeleton';
 import { format, startOfDay, endOfDay, differenceInMinutes } from 'date-fns';
 import { Badge } from '../ui/badge';
-import { Search, MoreVertical, CheckCircle2, XCircle, RefreshCw, ShieldCheck } from 'lucide-react';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Search } from 'lucide-react';
 import { DeleteConfirmationDialog } from './DeleteConfirmationDialog';
 import { MarkAttendanceInvalidDialog } from './MarkAttendanceInvalidDialog';
 import { useToast } from '@/hooks/use-toast';
@@ -39,6 +38,7 @@ import {
   type LocationValidation,
   type FieldConditionResult,
 } from '@/lib/attendance-helpers';
+import { buildAttendanceSummary } from '@/lib/attendance-summary';
 import type { WorkScheduleDay } from '@/lib/types';
 
 const JS_DAY_TO_SCHEDULE_DAY: WorkScheduleDay[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -69,6 +69,12 @@ const HRD_REVIEW_LABEL: Record<string, string> = {
   rejected: 'Catatan Diabaikan',
   revision_requested: 'Diminta Klarifikasi',
   acknowledged: 'Terima Kasih',
+  // Konfirmasi HRD (Detail modal): 'received' = laporan diterima (Terima
+  // Kasih), 'noted' = HRD menulis catatan lewat Batalin. Neither blocks or
+  // changes whether the attendance itself counts — same non-approval intent
+  // as every other status here.
+  received: 'Laporan Diterima HRD',
+  noted: 'Ada Catatan HRD',
 };
 
 const HRD_REVIEW_BADGE_CLASS: Record<string, string> = {
@@ -78,7 +84,51 @@ const HRD_REVIEW_BADGE_CLASS: Record<string, string> = {
   rejected: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
   revision_requested: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',
   acknowledged: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300',
+  received: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300',
+  noted: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
 };
+
+interface HrdReviewEntry {
+  status: string;
+  note: string | null;
+  reviewedByName: string | null;
+  reviewedAt: any;
+}
+
+/**
+ * Reads one side's HRD confirmation off its own event doc — checkIn's
+ * confirmation lives at `hrdConfirmation.checkIn` on the tap-in doc,
+ * checkOut's at `hrdConfirmation.checkOut` on the tap-out doc, written by
+ * handleHrdConfirmationSide below. 'received' stores its human-readable text
+ * under `message`, 'noted' stores HRD's own text under `note` — normalized
+ * here into one `note` field so the Detail modal doesn't need to know which
+ * status uses which underlying field name.
+ *
+ * Falls back to the pre-migration flat fields (hrdReviewStatus/hrdReviewNote/
+ * hrdReviewedByName/hrdReviewedAt) for any event written before Firestore
+ * rules were locked down to the hrdConfirmation.* shape, so older
+ * confirmations don't just disappear from the UI.
+ */
+function readHrdConfirmation(event: any, side: 'checkIn' | 'checkOut'): HrdReviewEntry | null {
+  const confirmation = event?.hrdConfirmation?.[side];
+  if (confirmation?.status) {
+    return {
+      status: confirmation.status,
+      note: confirmation.status === 'received' ? (confirmation.message ?? null) : (confirmation.note ?? null),
+      reviewedByName: confirmation.receivedByName ?? confirmation.notedByName ?? null,
+      reviewedAt: confirmation.receivedAt ?? confirmation.notedAt ?? null,
+    };
+  }
+  if (event?.hrdReviewStatus) {
+    return {
+      status: event.hrdReviewStatus,
+      note: event.hrdReviewNote ?? null,
+      reviewedByName: event.hrdReviewedByName ?? null,
+      reviewedAt: event.hrdReviewedAt ?? null,
+    };
+  }
+  return null;
+}
 
 interface AttendanceRecord {
   id: string;
@@ -142,6 +192,9 @@ interface AttendanceRecord {
   hrdReviewNote?: string | null;
   hrdReviewedByName?: string | null;
   hrdReviewedAt?: any;
+  /** Per-side HRD review, read straight off each event's own doc — never merged with the other side. Used by the Detail modal's two independent Catatan HRD sections. */
+  hrdReviewCheckIn: HrdReviewEntry | null;
+  hrdReviewCheckOut: HrdReviewEntry | null;
   /** Short auto-generated explanation of the row's state — lets HRD read "why" without opening detail. */
   systemNote: string;
   /** Which specific things triggered "Perlu Review" (e.g. "Lokasi", "Terlambat", "Foto", "Kondisi Khusus"). */
@@ -256,6 +309,31 @@ function MonitoringSkeleton() {
   );
 }
 
+/** systemNote is built as "headline • extra1 • extra2 …" — split for a clean 2-line table cell instead of one long line that gets clamped mid-word. */
+function splitSystemNote(note: string): { headline: string; extra: string } {
+  const [headline = '', ...rest] = note.split(' • ');
+  return { headline, extra: rest.join(' • ') };
+}
+
+/** Kondisi column: a single short badge instead of the full per-side breakdown (still available in the Detail modal). */
+function getKondisiSummary(row: AttendanceRecord): string | null {
+  const hasCondition = !!(row.rawConditionReportIn || row.rawConditionReportOut || (row.fieldCondition && row.fieldCondition.category !== 'normal'));
+  if (hasCondition) return 'Kondisi Khusus';
+  if (row.locationValidation && !row.locationValidation.isValidAuto) return 'Lokasi Review';
+  return null;
+}
+
+/** Catatan HRD column: a single short badge instead of the full reviewReasonLabel sentence (e.g. "Perlu Catatan HRD: Lokasi, Terlambat, Kondisi Khusus"). */
+function getCatatanHrdSummary(row: AttendanceRecord): string | null {
+  if (row.hrdReviewStatus === 'needs_review') {
+    return `Perlu Catatan: ${row.reviewReasons[0] ?? 'Review'}`;
+  }
+  if (row.hrdReviewStatus === 'received' || row.hrdReviewStatus === 'acknowledged') return 'Laporan Diterima HRD';
+  if (row.hrdReviewStatus === 'noted') return 'Ada Catatan HRD';
+  if (row.hrdReviewStatus) return 'Sudah Dicek HRD';
+  return null;
+}
+
 function isPerluReview(row: AttendanceRecord): boolean {
   // Lateness-driven review is already folded into hrdReviewStatus (gated by
   // the site's latestCheckInWithoutReview cutoff, or the 15-menit fallback
@@ -290,7 +368,18 @@ export function AttendanceMonitoringClient() {
   const { data: scopedBrands, isLoading: isLoadingBrands } = useHrdScopedBrands();
 
   // --- Data Fetching — all brand-scoped via roles_hrd/{uid}.allowedBrandIds ---
-  const { data: sites, isLoading: isLoadingConfig } = useHrdScopedCollection<AttendanceSite>('attendance_sites');
+  // attendance_sites stores brandIds as an array (one site can serve several
+  // brands) — the default "single" brandField mode only matches `brandId`
+  // (legacy first-element-only field), so a brand present in brandIds[1+]
+  // but not brandIds[0] would silently never come back here, even though
+  // Firestore rules (hrdCanAccessSiteData) already allow reading it. This
+  // mirrors the rules' own array-aware matching, plus a legacy fallback for
+  // any site doc that predates the brandIds field and only has brandId.
+  const { data: sites, isLoading: isLoadingConfig } = useHrdScopedCollection<AttendanceSite>('attendance_sites', {
+    brandField: 'brandIds',
+    brandFieldMode: 'array',
+    legacyBrandField: 'brandId',
+  });
 
   const { data: allEmployeeProfiles, isLoading: isLoadingProfiles } = useHrdScopedCollection<EmployeeProfile>('employee_profiles');
 
@@ -475,9 +564,15 @@ export function AttendanceMonitoringClient() {
     // ── Helper: get brand ID with comprehensive fallback ────────────────────
     const resolveBrandId = (p: any): string | null => {
       // Top-level employee_profiles.brandId is canonical (matches the field
-      // the HRD-scope query itself filters on) — hrdEmploymentInfo is only a
-      // fallback for older docs that never got the top-level field written.
-      const id = p.brandId || p.hrdEmploymentInfo?.brandId;
+      // the HRD-scope query itself filters on) — every other variant below
+      // is a fallback for older docs that stored it under a different name
+      // (companyId instead of brandId) or nested under hrdEmploymentInfo/
+      // employmentInfo instead of top-level.
+      const id =
+        p.brandId || p.companyId || p.brandID || p.companyID ||
+        p.hrdEmploymentInfo?.brandId || p.hrdEmploymentInfo?.companyId ||
+        p.employmentInfo?.brandId || p.employmentInfo?.companyId ||
+        null;
       if (id && typeof id === 'string') return id;
       return null;
     };
@@ -693,19 +788,22 @@ export function AttendanceMonitoringClient() {
           employeeUid: profileUid,
           employeeBrandId: profileBrandId,
           employeeBrandName: resolvedBrand,
-          sites: (sites || []).map((s: any) => ({
-            siteName: s.name,
+          allowedBrandIds,
+          loadedSites: (sites || []).map((s: any) => ({
+            id: s.id,
+            name: s.name,
             isActive: s.isActive,
-            brandIds: s.brandIds,
             brandId: s.brandId,
+            brandIds: s.brandIds,
             brandNames: s.brandNames,
           })),
-          matchedSite: siteForBrand?.name ?? null,
+          matchedSiteId: siteForBrand?.id ?? null,
+          matchedSiteName: siteForBrand?.name ?? null,
         });
         if (!siteForBrand) {
           // eslint-disable-next-line no-console
           console.warn(
-            '[ATTENDANCE_SITE_MATCH_DEBUG] Tidak ada site aktif yang brandIds-nya cocok dengan brand karyawan.',
+            '[ATTENDANCE_SITE_MATCH_DEBUG] Brand karyawan belum terhubung ke site absensi.',
             { employeeName: resolvedName, employeeBrandId: profileBrandId, employeeBrandName: resolvedBrand },
           );
         }
@@ -897,7 +995,16 @@ export function AttendanceMonitoringClient() {
         ? lateResult.needsTimeReview
         : (lateMinutes !== null && lateMinutes > 15);
 
-      const hrdReviewStatus = (checkInEvent as any)?.hrdReviewStatus || (checkOutEvent as any)?.hrdReviewStatus ||
+      // Absen Berangkat and Absen Pulang are genuinely separate
+      // attendance_events docs — the Detail modal's two Konfirmasi HRD
+      // sections each read/write only their own side's doc via
+      // hrdConfirmation.checkIn / hrdConfirmation.checkOut. Computed first
+      // (before the combined hrdReviewStatus below, which just ORs the two
+      // together for the table's single badge/needs-review logic).
+      const hrdReviewCheckIn = checkInEvent ? readHrdConfirmation(checkInEvent, 'checkIn') : null;
+      const hrdReviewCheckOut = checkOutEvent ? readHrdConfirmation(checkOutEvent, 'checkOut') : null;
+
+      const hrdReviewStatus = hrdReviewCheckIn?.status || hrdReviewCheckOut?.status ||
         (specialCondition || locationNeedsReview || photoMissing || lateNeedsReview || scheduleMissing
           ? 'needs_review'
           : (tapInTimestamp ? 'valid_auto' : null));
@@ -914,6 +1021,8 @@ export function AttendanceMonitoringClient() {
       else if (dayInactive) reviewReasons.push('Hari Nonaktif');
 
       const reviewReasonLabel =
+        hrdReviewStatus === 'received' ? HRD_REVIEW_LABEL.received :
+        hrdReviewStatus === 'noted' ? HRD_REVIEW_LABEL.noted :
         hrdReviewStatus === 'acknowledged' ? HRD_REVIEW_LABEL.acknowledged :
         hrdReviewStatus === 'approved' ? HRD_REVIEW_LABEL.approved :
         hrdReviewStatus === 'rejected' ? HRD_REVIEW_LABEL.rejected :
@@ -1000,6 +1109,8 @@ export function AttendanceMonitoringClient() {
         hrdReviewNote: (checkInEvent as any)?.hrdReviewNote || (checkOutEvent as any)?.hrdReviewNote || null,
         hrdReviewedByName: (checkInEvent as any)?.hrdReviewedByName || (checkOutEvent as any)?.hrdReviewedByName || null,
         hrdReviewedAt: (checkInEvent as any)?.hrdReviewedAt || (checkOutEvent as any)?.hrdReviewedAt || null,
+        hrdReviewCheckIn,
+        hrdReviewCheckOut,
         systemNote,
         reviewReasons,
         reviewReasonLabel,
@@ -1017,21 +1128,60 @@ export function AttendanceMonitoringClient() {
       });
     }
 
+    // Summary cards are computed by the same buildAttendanceSummary() helper
+    // Dashboard Karyawan uses — this is the fix for the two pages showing
+    // different numbers for the same date/scope. `rows` above (the table)
+    // still uses its own richer per-row join (NIK/email fallback matching,
+    // photos, condition-report cards, etc.) since that detail is out of
+    // scope for a shared numeric summary; for the uid-matched majority of
+    // records the two will agree, since both are built on the same
+    // resolveSiteForBrand/resolveScheduleForDay/calculateAttendanceLateStatus
+    // primitives.
+    const scopedAllowedBrandIds = effectiveBrandFilter !== 'all' ? [effectiveBrandFilter] : allowedBrandIds;
+    // A specific brand chosen in the filter must narrow the summary even for
+    // Super Admin / "all companies" HRD — isSuperAdmin/isAllCompanies mean
+    // "skip the brand check", so both must be neutralized once a single
+    // brand is selected, or the filter would visibly do nothing for those
+    // roles.
+    const summary = buildAttendanceSummary({
+      employees: allEmployeeProfiles,
+      attendanceEvents,
+      attendanceSites: sites as any,
+      conditionReports,
+      leaveRequests,
+      selectedDate: date ?? new Date(),
+      allowedBrandIds: scopedAllowedBrandIds,
+      isSuperAdmin: isSuperAdmin && effectiveBrandFilter === 'all',
+      isAllCompanies: isAllCompanies && effectiveBrandFilter === 'all',
+    });
+
     const stats = {
-      total: rows.length,
-      hadir: rows.filter(r => r.status === 'Selesai' || r.status === 'Sedang Bekerja').length,
-      belumTapIn: rows.filter(r => r.status === 'Belum Tap In').length,
-      sedangBekerja: rows.filter(r => r.status === 'Sedang Bekerja').length,
-      selesai: rows.filter(r => r.status === 'Selesai').length,
-      terlambat: rows.filter(r => r.lateMinutes !== null && r.lateMinutes > 0).length,
-      tidakValid: rows.filter(r => r.isInvalid).length,
-      perluReview: rows.filter(isPerluReview).length,
-      kondisiKhusus: rows.filter(r => !!r.specialCondition).length,
-      validOtomatis: rows.filter(r => r.hrdReviewStatus === 'valid_auto').length,
+      total: summary.totalWebAbsen,
+      hadir: summary.sudahAbsenBerangkat,
+      belumTapIn: summary.belumAbsenBerangkat,
+      sedangBekerja: summary.sedangBekerja,
+      selesai: summary.sudahAbsenPulang,
+      terlambat: summary.terlambat,
+      tidakValid: summary.tidakValid,
+      perluReview: summary.perluReviewHRD,
+      kondisiKhusus: summary.kondisiKhusus,
+      validOtomatis: summary.validOtomatis,
     };
 
+    if (typeof window !== 'undefined') {
+      // eslint-disable-next-line no-console
+      console.log('[ATTENDANCE_SUMMARY_SYNC_DEBUG]', {
+        page: 'monitoring',
+        dateKey: summary.dateKey,
+        role: isSuperAdmin ? 'super-admin' : 'hrd',
+        allowedBrandIds: scopedAllowedBrandIds,
+        summary,
+        eventUids: (attendanceEvents || []).map((e: any) => getEventEmployeeUid(e)),
+      });
+    }
+
     return { tableData: rows, summaryStats: stats };
-  }, [allEmployeeProfiles, allUsers, attendanceEvents, sites, scopedBrands, effectiveBrandFilter, date, leaveRequests, conditionReports]);
+  }, [allEmployeeProfiles, allUsers, attendanceEvents, sites, scopedBrands, effectiveBrandFilter, date, leaveRequests, conditionReports, allowedBrandIds, isSuperAdmin, isAllCompanies]);
 
   // Apply tab + search filter
   const filteredRows = useMemo(() => {
@@ -1057,6 +1207,19 @@ export function AttendanceMonitoringClient() {
     });
   }, [tableData, statusTab, searchQuery]);
 
+  // selectedRecord is a snapshot taken when the Detail modal opens (see
+  // handleOpenDetail) — without this, a write that succeeds via
+  // handleHrdConfirmationSide re-fetches attendance_events into tableData,
+  // but the modal keeps rendering the stale pre-write snapshot (toast fires,
+  // Firestore updates, buttons never disappear). Re-sync it to the matching
+  // row every time tableData recomputes, so the open modal always reflects
+  // the latest hrdReviewCheckIn/hrdReviewCheckOut without a page reload.
+  useEffect(() => {
+    if (!selectedRecord) return;
+    const latest = tableData.find((row) => row.id === selectedRecord.id);
+    if (latest && latest !== selectedRecord) setSelectedRecord(latest);
+  }, [tableData, selectedRecord]);
+
   const handleMarkInvalid = async (attendanceUid: string, reason: string, note: string) => {
     if (!firestore || !userProfile) throw new Error('Tidak terautentikasi');
     const attendanceRef = doc(firestore, 'attendance_events', attendanceUid);
@@ -1077,44 +1240,131 @@ export function AttendanceMonitoringClient() {
     mutateEvents();
   };
 
-  // Writes a CATATAN, not an approval decision. isCounted/requiresHrdApproval
-  // never change here — absensi is already counted the moment there's a
-  // tap-in, regardless of what HRD notes down. reviewOnly:true marks this
-  // whole workflow as "for HRD's awareness", not a gate the record must pass.
-  const handleHrdReview = async (
-    hrdStatus: 'approved' | 'rejected' | 'revision_requested' | 'valid_auto' | 'needs_review' | 'acknowledged',
-    note: string,
+  // Detail modal's two independent Konfirmasi HRD sections (Absen Berangkat /
+  // Absen Pulang) call this instead of handleHrdReview above — each side
+  // writes ONLY its own attendance_events doc (tapInId for checkIn, tapOutId
+  // for checkOut), so confirming one side can never touch, overwrite, or
+  // clear whatever HRD already recorded for the other side.
+  //
+  // status is 'received' (Terima Kasih — laporan sudah diterima) or 'noted'
+  // (Batalin + catatan wajib — laporan belum bisa diterima, tapi absensi
+  // TETAP dihitung; this is documentation, never an approval gate — see
+  // isCounted/requiresHrdApproval below, unchanged either way).
+  // Firestore rules now only let HRD write hrdConfirmation, hrdConfirmationUpdatedAt,
+  // hrdConfirmationUpdatedByUid, hrdConfirmationUpdatedByName on attendance_events — every
+  // other field (hrdReviewStatus, isCounted, status, lateMinutes, ...) is rejected. So this
+  // writes ONLY hrdConfirmation.checkIn / hrdConfirmation.checkOut via updateDoc + dot-path
+  // keys, never a full-document setDoc merge that could carry other fields along.
+  //
+  // action is 'received' (Terima Kasih — laporan sudah diterima) or 'noted'
+  // (Beri Catatan HRD — laporan tetap diterima dan tetap dihitung, tapi ada
+  // catatan). Neither ever touches the attendance record itself (status,
+  // keterlambatan, tap in/out, payroll, isCounted) — this is a note trail on
+  // top of an attendance that already counts, not an approval gate.
+  const handleHrdConfirmationSide = async (
+    side: 'checkIn' | 'checkOut',
+    action: 'received' | 'noted',
+    noteText: string,
     row: AttendanceRecord | null = selectedRecord,
   ) => {
     if (!firestore || !userProfile || !row) return;
-    const ids = [row.tapInId, row.tapOutId].filter(Boolean) as string[];
-    if (ids.length === 0) {
+    // checkIn -> tap-in event id, checkOut -> tap-out event id, never crossed —
+    // the two sides are separate attendance_events docs.
+    const eventId = side === 'checkIn' ? row.tapInId : row.tapOutId;
+    if (!eventId) {
       toast({ variant: 'destructive', title: 'Tidak ada catatan absensi untuk dicatat.' });
       return;
     }
+    if (action === 'noted' && !noteText.trim()) {
+      toast({ variant: 'destructive', title: 'Catatan HRD wajib diisi.' });
+      return;
+    }
+
+    const sideLabel = side === 'checkIn' ? 'berangkat' : 'pulang';
+    const currentUserUid = userProfile.uid;
+    const currentUserName = (userProfile as any).displayName || userProfile.fullName || userProfile.email || 'HRD';
+    const employeeName = row.name;
+
+    const confirmationEntry =
+      action === 'received'
+        ? {
+            status: 'received' as const,
+            message: `Laporan absen ${sideLabel} ${employeeName} sudah diterima.`,
+            receivedByUid: currentUserUid,
+            receivedByName: currentUserName,
+            receivedAt: serverTimestamp(),
+          }
+        : {
+            status: 'noted' as const,
+            note: noteText.trim(),
+            notedByUid: currentUserUid,
+            notedByName: currentUserName,
+            notedAt: serverTimestamp(),
+          };
+
+    const confirmationKey = side === 'checkIn' ? 'hrdConfirmation.checkIn' : 'hrdConfirmation.checkOut';
+    const payload = {
+      [confirmationKey]: confirmationEntry,
+      hrdConfirmationUpdatedAt: serverTimestamp(),
+      hrdConfirmationUpdatedByUid: currentUserUid,
+      hrdConfirmationUpdatedByName: currentUserName,
+    };
+
+    console.log('[HRD_CONFIRMATION_UPDATE_DEBUG]', {
+      eventId,
+      side,
+      action,
+      employeeName,
+      currentUserUid,
+      payload,
+    });
+
     try {
-      await Promise.all(ids.map((id) =>
-        setDocumentNonBlocking(
-          doc(firestore, 'attendance_events', id),
-          {
-            hrdReviewStatus: hrdStatus,
-            hrdReviewLabel: HRD_REVIEW_LABEL[hrdStatus] ?? hrdStatus,
-            hrdReviewNote: note || null,
-            hrdReviewedByUid: userProfile.uid,
-            hrdReviewedByName: (userProfile as any).displayName || userProfile.fullName || userProfile.email,
-            hrdReviewedAt: serverTimestamp(),
-            isCounted: true,
-            requiresHrdApproval: false,
-            reviewOnly: true,
-          },
-          { merge: true },
-        )
-      ));
-      toast({ title: hrdStatus === 'acknowledged' ? 'Catatan HRD berhasil disimpan.' : `Catatan tersimpan: ${HRD_REVIEW_LABEL[hrdStatus]?.toLowerCase() ?? 'diperbarui'}.` });
+      await updateDoc(doc(firestore, 'attendance_events', eventId), payload);
+      toast({
+        title: action === 'received'
+          ? `Laporan absen ${sideLabel} sudah diterima.`
+          : 'Catatan HRD berhasil disimpan.',
+      });
+
+      // Optimistic local patch — selectedRecord is a snapshot taken when the
+      // modal opened, and mutateEvents() below has to round-trip a Firestore
+      // fetch before tableData (and the useEffect that resyncs selectedRecord
+      // to it) catches up. Without this, the write succeeds and the toast
+      // fires, but the section still shows the Terima Kasih/Beri Catatan HRD
+      // buttons until that round-trip lands. serverTimestamp() itself resolves
+      // server-side, so `reviewedAt` here is a local-clock stand-in shaped
+      // like a Firestore Timestamp (`.toDate()`) purely so formatReviewedAt
+      // in the modal can render it immediately; the real value arrives on the
+      // next snapshot and overwrites this via the tableData resync effect.
+      const optimisticEntry: HrdReviewEntry = {
+        status: action,
+        note: (action === 'received' ? (confirmationEntry as any).message : (confirmationEntry as any).note) ?? null,
+        reviewedByName: currentUserName,
+        reviewedAt: { toDate: () => new Date() },
+      };
+      setSelectedRecord((prev) => {
+        if (!prev || prev.id !== row.id) return prev;
+        const next = {
+          ...prev,
+          hrdReviewCheckIn: side === 'checkIn' ? optimisticEntry : prev.hrdReviewCheckIn,
+          hrdReviewCheckOut: side === 'checkOut' ? optimisticEntry : prev.hrdReviewCheckOut,
+        };
+        console.log('[HRD_CONFIRMATION_LOCAL_STATE_UPDATED]', {
+          eventId,
+          side,
+          action,
+          selectedRecordAfterUpdate: next,
+        });
+        return next;
+      });
+
+      // Realtime listener (mutateEvents) re-fetches attendance_events and the
+      // Detail modal re-derives hrdReviewCheckIn/hrdReviewCheckOut from it —
+      // no full page reload needed for the modal to reflect the new status.
       mutateEvents();
-      setIsDetailModalOpen(false);
     } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Gagal menyimpan catatan', description: error.message });
+      toast({ variant: 'destructive', title: 'Gagal menyimpan', description: error.message });
     }
   };
 
@@ -1285,24 +1535,24 @@ export function AttendanceMonitoringClient() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800">
-                  <TableHead className="text-[11px] uppercase font-black text-slate-500 dark:text-slate-400 h-10 px-3.5">Karyawan</TableHead>
-                  <TableHead className="text-[11px] uppercase font-black text-slate-500 dark:text-slate-400 h-10">Brand / Divisi</TableHead>
-                  <TableHead className="text-[11px] uppercase font-black text-slate-500 dark:text-slate-400 h-10">Tap In</TableHead>
-                  <TableHead className="text-[11px] uppercase font-black text-slate-500 dark:text-slate-400 h-10">Tap Out</TableHead>
-                  <TableHead className="text-[11px] uppercase font-black text-slate-500 dark:text-slate-400 h-10">Status</TableHead>
-                  <TableHead className="text-[11px] uppercase font-black text-slate-500 dark:text-slate-400 h-10">Catatan Sistem</TableHead>
-                  <TableHead className="text-[11px] uppercase font-black text-slate-500 dark:text-slate-400 h-10">Bukti Foto</TableHead>
-                  <TableHead className="text-[11px] uppercase font-black text-slate-500 dark:text-slate-400 h-10">Validasi Lokasi</TableHead>
-                  <TableHead className="text-[11px] uppercase font-black text-slate-500 dark:text-slate-400 h-10">Kondisi</TableHead>
-                  <TableHead className="text-[11px] uppercase font-black text-slate-500 dark:text-slate-400 h-10">Catatan HRD</TableHead>
-                  <TableHead className="text-right text-[11px] uppercase font-black text-slate-500 dark:text-slate-400 h-10 pr-3.5">Aksi</TableHead>
+                  <TableHead className="w-[160px] text-[11px] uppercase font-black text-slate-500 dark:text-slate-400 h-10 px-3.5">Karyawan</TableHead>
+                  <TableHead className="w-[190px] text-[11px] uppercase font-black text-slate-500 dark:text-slate-400 h-10">Brand / Divisi</TableHead>
+                  <TableHead className="w-[70px] text-[11px] uppercase font-black text-slate-500 dark:text-slate-400 h-10">Tap In</TableHead>
+                  <TableHead className="w-[70px] text-[11px] uppercase font-black text-slate-500 dark:text-slate-400 h-10">Tap Out</TableHead>
+                  <TableHead className="w-[150px] text-[11px] uppercase font-black text-slate-500 dark:text-slate-400 h-10">Status</TableHead>
+                  <TableHead className="w-[240px] text-[11px] uppercase font-black text-slate-500 dark:text-slate-400 h-10">Catatan Sistem</TableHead>
+                  <TableHead className="w-[150px] text-[11px] uppercase font-black text-slate-500 dark:text-slate-400 h-10">Bukti Foto</TableHead>
+                  <TableHead className="w-[130px] text-[11px] uppercase font-black text-slate-500 dark:text-slate-400 h-10">Validasi Lokasi</TableHead>
+                  <TableHead className="w-[130px] text-[11px] uppercase font-black text-slate-500 dark:text-slate-400 h-10">Kondisi</TableHead>
+                  <TableHead className="w-[160px] text-[11px] uppercase font-black text-slate-500 dark:text-slate-400 h-10">Catatan HRD</TableHead>
+                  <TableHead className="w-[90px] text-center text-[11px] uppercase font-black text-slate-500 dark:text-slate-400 h-10 pr-3.5">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredRows.length > 0 ? filteredRows.map((row, idx) => (
                   <TableRow
                     key={`${row.id}-${idx}`}
-                    className={`border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${
+                    className={`h-[66px] align-middle border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${
                       row.isInvalid ? 'opacity-60' : row.hrdReviewStatus === 'needs_review' ? 'bg-amber-50/60 dark:bg-amber-900/10' : ''
                     }`}
                   >
@@ -1350,14 +1600,21 @@ export function AttendanceMonitoringClient() {
                       </div>
                     </TableCell>
 
-                    {/* Catatan Sistem — auto summary so HRD reads "why" without opening detail */}
-                    <TableCell className="py-3 max-w-[260px]">
-                      <p className="text-[13px] text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-2">{row.systemNote}</p>
-                      {row.lateMinutes !== null && row.lateMinutes > 0 && (
-                        <Badge variant="outline" className="mt-1 text-xs px-2 py-0.5 border-orange-200 text-orange-700 dark:border-orange-800 dark:text-orange-400">
-                          Terlambat {row.lateMinutes}m
-                        </Badge>
-                      )}
+                    {/* Catatan Sistem — auto summary so HRD reads "why" without opening detail.
+                        Max 2 lines: the primary state, then the important extras — full text
+                        is still available via the native title tooltip on hover. */}
+                    <TableCell className="py-3" title={row.systemNote}>
+                      {(() => {
+                        const { headline, extra } = splitSystemNote(row.systemNote);
+                        return (
+                          <>
+                            <p className="text-[13px] text-slate-700 dark:text-slate-200 leading-snug line-clamp-1">{headline}</p>
+                            {extra && (
+                              <p className="mt-0.5 text-[12px] text-amber-700 dark:text-amber-400 leading-snug line-clamp-1">{extra}</p>
+                            )}
+                          </>
+                        );
+                      })()}
                     </TableCell>
 
                     {/* Bukti Foto — Masuk vs Pulang are shown distinctly, badges only (HRD doesn't need to open each photo here) */}
@@ -1384,136 +1641,56 @@ export function AttendanceMonitoringClient() {
                       )}
                     </TableCell>
 
-                    {/* Validasi Lokasi — badges plus the actual Status Radius reading (meters vs office limit) */}
-                    <TableCell className="py-3 max-w-[200px]">
-                      {row.locationValidation ? (
-                        <>
-                          <div className="flex flex-wrap gap-1">
-                            {row.locationValidation.badges.map((b) => (
-                              <Badge key={b} variant="outline" className="text-xs px-2 py-0.5">{b}</Badge>
-                            ))}
-                          </div>
-                          {row.locationValidation.distanceM !== null && (
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-snug">
-                              {row.locationValidation.radiusSummary}
-                            </p>
-                          )}
-                        </>
-                      ) : <span className="text-[12px] text-slate-400">—</span>}
+                    {/* Validasi Lokasi — one short badge; radius/jarak detail lives in the Detail modal now */}
+                    <TableCell className="py-3">
+                      {row.locationValidation?.badges?.[0] ? (
+                        <Badge variant="outline" className="text-xs px-2 py-0.5">{row.locationValidation.badges[0]}</Badge>
+                      ) : (
+                        <span className="text-[12px] text-slate-400">—</span>
+                      )}
                     </TableCell>
 
-                    {/* Kondisi — Masuk dan Pulang are two independent
-                        attendance_condition_reports docs (row.rawConditionReportIn/Out,
-                        joined per-employee/date/type in the useMemo above);
-                        one must never stand in for or hide the other. */}
-                    <TableCell className="py-3 max-w-[260px]">
-                      {row.rawConditionReportIn || row.rawConditionReportOut ? (
-                        <div className="space-y-1.5">
-                          {row.rawConditionReportIn && (
-                            <div>
-                              <div className="flex items-center gap-1 flex-wrap">
-                                <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 text-[10px] px-1.5 py-0">Masuk</Badge>
-                                <span className="text-[12px] font-medium text-slate-700 dark:text-slate-200">
-                                  {row.rawConditionReportIn.reasonLabel || row.rawConditionReportIn.categoryLabel || row.rawConditionReportIn.conditionCategory || 'Kondisi khusus'}
-                                </span>
-                              </div>
-                              {(row.rawConditionReportIn.note || row.rawConditionReportIn.conditionNote) && (
-                                <p
-                                  className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug line-clamp-2"
-                                  title={row.rawConditionReportIn.note || row.rawConditionReportIn.conditionNote}
-                                >
-                                  {row.rawConditionReportIn.note || row.rawConditionReportIn.conditionNote}
-                                </p>
-                              )}
-                            </div>
-                          )}
-                          {row.rawConditionReportOut && (
-                            <div>
-                              <div className="flex items-center gap-1 flex-wrap">
-                                <Badge variant="outline" className="border-orange-300 text-orange-700 dark:border-orange-800 dark:text-orange-400 text-[10px] px-1.5 py-0">Pulang</Badge>
-                                <span className="text-[12px] font-medium text-slate-700 dark:text-slate-200">
-                                  {row.rawConditionReportOut.reasonLabel || row.rawConditionReportOut.categoryLabel || row.rawConditionReportOut.conditionCategory || 'Kondisi khusus'}
-                                </span>
-                              </div>
-                              {(row.rawConditionReportOut.note || row.rawConditionReportOut.conditionNote) && (
-                                <p
-                                  className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug line-clamp-2"
-                                  title={row.rawConditionReportOut.note || row.rawConditionReportOut.conditionNote}
-                                >
-                                  {row.rawConditionReportOut.note || row.rawConditionReportOut.conditionNote}
-                                </p>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      ) : row.fieldCondition && row.fieldCondition.category !== 'normal' ? (
-                        // Fallback for rows with no dedicated attendance_condition_reports
-                        // doc yet, only a free-text specialCondition on the event itself.
-                        <>
+                    {/* Kondisi — one short badge; full per-side (Masuk/Pulang) breakdown with
+                        notes lives in the Detail modal, never duplicated/truncated here. */}
+                    <TableCell className="py-3">
+                      {(() => {
+                        const kondisi = getKondisiSummary(row);
+                        return kondisi ? (
                           <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 text-xs px-2 py-0.5">
-                            {row.fieldCondition.categoryLabel}
+                            {kondisi}
                           </Badge>
-                          {row.fieldCondition.reasonText && (
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-snug line-clamp-2">
-                              {row.fieldCondition.reasonText}
-                            </p>
-                          )}
-                        </>
-                      ) : (
-                        <span className="text-[12px] text-slate-400">—</span>
-                      )}
+                        ) : (
+                          <span className="text-[12px] text-slate-400">—</span>
+                        );
+                      })()}
                     </TableCell>
 
-                    {/* Review HRD — shows the reason(s), not just "Perlu Review" */}
-                    <TableCell className="py-3 max-w-[210px]">
-                      {row.hrdReviewStatus ? (
-                        <Badge className={`${HRD_REVIEW_BADGE_CLASS[row.hrdReviewStatus] ?? ''} text-xs px-2 py-1 h-auto whitespace-normal text-left leading-snug`}>
-                          {row.reviewReasonLabel}
-                        </Badge>
-                      ) : (
-                        <span className="text-[12px] text-slate-400">—</span>
-                      )}
+                    {/* Catatan HRD — one short badge; the full per-side note/acknowledgement
+                        flow (Absen Masuk / Absen Pulang, Terima Kasih / Batalin) happens only
+                        in the Detail modal, never from an action here. */}
+                    <TableCell className="py-3">
+                      {(() => {
+                        const catatan = getCatatanHrdSummary(row);
+                        return catatan ? (
+                          <Badge className={`${HRD_REVIEW_BADGE_CLASS[row.hrdReviewStatus ?? ''] ?? ''} text-xs px-2 py-0.5`}>
+                            {catatan}
+                          </Badge>
+                        ) : (
+                          <span className="text-[12px] text-slate-400">—</span>
+                        );
+                      })()}
                     </TableCell>
 
-                    {/* Aksi */}
-                    <TableCell className="py-3 text-right pr-3.5">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-xs h-8 px-2.5"
-                          onClick={() => handleOpenDetail(row)}
-                        >
-                          Detail
-                        </Button>
-                        {/* Quick actions — only surfaced for rows that actually need a decision, kept in a small dropdown so the table stays uncluttered */}
-                        {row.hrdReviewStatus === 'needs_review' && (row.tapInId || row.tapOutId) && (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => {
-                                const note = window.prompt('Catatan HRD untuk absensi ini:', '');
-                                if (note) handleHrdReview('needs_review', note, row);
-                              }}>
-                                <ShieldCheck className="h-4 w-4 mr-2 text-slate-600" /> Tambah Catatan
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleHrdReview('approved', '', row)}>
-                                <CheckCircle2 className="h-4 w-4 mr-2 text-blue-600" /> Tandai Sudah Dicek
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleHrdReview('revision_requested', '', row)}>
-                                <RefreshCw className="h-4 w-4 mr-2 text-purple-600" /> Minta Klarifikasi
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleHrdReview('rejected', '', row)} className="text-slate-600 focus:text-slate-600">
-                                <XCircle className="h-4 w-4 mr-2" /> Abaikan Catatan
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        )}
-                      </div>
+                    {/* Aksi — Detail only. All HRD review actions moved into the Detail modal. */}
+                    <TableCell className="py-3 text-center pr-3.5">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-3 text-xs"
+                        onClick={() => handleOpenDetail(row)}
+                      >
+                        Detail
+                      </Button>
                     </TableCell>
                   </TableRow>
                 )) : (
@@ -1560,11 +1737,7 @@ export function AttendanceMonitoringClient() {
         isOpen={isDetailModalOpen}
         onClose={() => { setIsDetailModalOpen(false); setSelectedRecord(null); }}
         record={selectedRecord}
-        onMarkInvalid={selectedRecord && (selectedRecord.tapInId || selectedRecord.tapOutId) && !selectedRecord.isInvalid
-          ? () => handleOpenMarkInvalid(selectedRecord)
-          : undefined
-        }
-        onReview={handleHrdReview}
+        onReviewSide={handleHrdConfirmationSide}
       />
 
       <MarkAttendanceInvalidDialog

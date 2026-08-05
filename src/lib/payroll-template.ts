@@ -487,7 +487,10 @@ function shortenRemark(day: CalendarAttendanceDetail, lateMinutes: number | null
   // structured signals Monitoring Absensi uses, just kept to short tags.
   // Condition reports use the ACTUAL note text ("Kondisi: Ban bocor") rather
   // than a generic "Ada Kondisi" — HRD/Finance can't act on a label that
-  // doesn't say what the condition was.
+  // doesn't say what the condition was. Every applicable part is joined —
+  // never truncated to 1-2 parts or collapsed into a fixed phrase like "Tap
+  // Out + Review", which used to silently drop "Terlambat Xm" from the cell
+  // whenever a late day also had a missing tap-out or a location flag.
   const parts: string[] = [];
   if (lateMinutes) parts.push(`Terlambat ${lateMinutes}m`);
   if (!day.tapOutTime) parts.push('Belum Tap Out');
@@ -499,12 +502,10 @@ function shortenRemark(day: CalendarAttendanceDetail, lateMinutes: number | null
     : null;
   if (conditionLabel) parts.push(conditionLabel);
   if (day.hrdReviewStatus === 'needs_review' && day.tapOutTime) parts.push('Perlu Catatan HRD');
+  if (day.hrdConfirmationStatus === 'received') parts.push('Diterima HRD');
+  else if (day.hrdConfirmationStatus === 'noted') parts.push('Ada Catatan HRD');
 
-  if (parts.length === 0) return 'Hadir';
-  if (parts.length === 1) return parts[0];
-  if (parts.some((p) => p.startsWith('Terlambat')) && conditionLabel) return `${parts.find((p) => p.startsWith('Terlambat'))} + ${conditionLabel}`;
-  if (parts.includes('Belum Tap Out') && parts.includes('Lokasi Review')) return 'Tap Out + Review';
-  return parts.slice(0, 2).join(' + ');
+  return parts.length ? parts.join(' + ') : 'Hadir';
 }
 
 /** Builds the per-day rows for one employee from their PayrollRecapRow, in the shape the template filler expects. */
@@ -518,7 +519,7 @@ export function buildPayrollTemplateDayRows(row: PayrollRecapRow): PayrollTempla
       tapIn: d.tapInTime || '-',
       tapOut: d.tapOutTime || '-',
       workHours: d.workMinutes != null ? formatWorkMinutes(d.workMinutes) : '-',
-      lateness: lateMinutes != null ? String(lateMinutes) : '-',
+      lateness: lateMinutes != null && lateMinutes > 0 ? `${lateMinutes} menit` : '-',
       manual: d.payrollIsFinal ? '' : 'Belum final — perlu catatan HRD',
       remark: shortenRemark(d, lateMinutes),
     };
@@ -842,11 +843,16 @@ export function fillPayrollTemplateSheet(
         if (col == null) continue;
         const cell = targetRow.getCell(col);
         cell.value = value;
-        // Color is applied ONLY to the KETERANGAN cell — every other daily
-        // column stays whatever plain style copyCellStyle just set (no fill).
+        // Color is applied ONLY to the KETERANGAN cell and (when late) the
+        // KETERLAMBATAN cell — every other daily column stays whatever plain
+        // style copyCellStyle just set (no fill), so a late day is flagged
+        // without turning the whole row into visual noise.
         if (key === 'remark') {
           const fill = remarkFillColor(String(value));
           if (fill) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } };
+        }
+        if (key === 'lateness' && String(value) !== '-') {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEDD5' } }; // soft orange
         }
       }
       targetRow.commit();

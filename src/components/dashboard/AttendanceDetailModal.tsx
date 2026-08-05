@@ -7,7 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { cn, getInitials } from '@/lib/utils';
 import {
-  Copy, X, AlertCircle, RotateCw, ShieldAlert, CheckCircle2,
+  Copy, X, AlertCircle, RotateCw, CheckCircle2,
   FileText, LogIn, LogOut, MapPin, Navigation, Clock, ZoomIn,
   Image as ImageIcon,
 } from 'lucide-react';
@@ -19,11 +19,24 @@ import { resolveCoordinates, type LocationValidation } from '@/lib/attendance-he
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { Textarea } from '@/components/ui/textarea';
 
+interface HrdReviewEntry {
+  status: string;
+  note: string | null;
+  reviewedByName: string | null;
+  reviewedAt: any;
+}
+
 interface AttendanceDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onMarkInvalid?: () => void;
-  onReview?: (status: 'approved' | 'rejected' | 'revision_requested' | 'valid_auto' | 'needs_review' | 'acknowledged', note: string) => void;
+  /**
+   * Absen Berangkat and Absen Pulang each get their own confirmation —
+   * status is 'received' (Terima Kasih) or 'noted' (Batalin + mandatory
+   * catatan). The caller writes only that side's own attendance_events doc,
+   * never both, so confirming one side can never overwrite or clear
+   * whatever HRD already recorded for the other.
+   */
+  onReviewSide?: (side: 'checkIn' | 'checkOut', status: 'received' | 'noted', note: string) => void | Promise<void>;
   record: {
     id: string;
     name: string;
@@ -33,6 +46,8 @@ interface AttendanceDetailModalProps {
     attendanceMethod: string;
     tapIn: string;
     tapOut: string;
+    tapInId?: string | null;
+    tapOutId?: string | null;
     status: string;
     address: string;
     addressIn?: string;
@@ -66,10 +81,9 @@ interface AttendanceDetailModalProps {
     specialCondition?: string | null;
     locationValidation?: LocationValidation | null;
     locationValidationOut?: LocationValidation | null;
-    hrdReviewStatus?: string | null;
-    hrdReviewNote?: string | null;
-    hrdReviewedByName?: string | null;
-    hrdReviewedAt?: any;
+    /** Per-side HRD review — read straight off each event's own doc, never merged with the other side. */
+    hrdReviewCheckIn?: HrdReviewEntry | null;
+    hrdReviewCheckOut?: HrdReviewEntry | null;
     rawEvent?: any; // For accessing original event data with driveFileId, etc
     rawEventIn?: any;
     rawEventOut?: any;
@@ -80,18 +94,6 @@ interface AttendanceDetailModalProps {
     rawConditionReportOut?: any | null;
   } | null;
 }
-
-// This is a note trail for HRD's awareness, never an approval gate — absensi
-// counts the moment there's a tap-in regardless of this value. Wording is
-// deliberately non-approval (no "menunggu approval"/"belum disetujui").
-const HRD_REVIEW_LABEL: Record<string, string> = {
-  valid_auto: 'Aman',
-  needs_review: 'Perlu Catatan HRD',
-  approved: 'Sudah Dicek HRD',
-  rejected: 'Catatan Diabaikan',
-  revision_requested: 'Diminta Klarifikasi',
-  acknowledged: 'Terima Kasih',
-};
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -148,6 +150,23 @@ function getLocationSummary(validation?: LocationValidation | null): { label: st
   if (!validation) return { label: 'Tidak ada data', tone: 'gray' };
   if (validation.isValidAuto) return { label: validation.badges[0] ?? 'Sesuai', tone: 'green' };
   return { label: validation.badges[0] ?? 'Perlu Review', tone: 'yellow' };
+}
+
+function formatReviewedAt(ts: any): string {
+  if (!ts?.toDate) return '';
+  try {
+    return ts.toDate().toLocaleString('id-ID', {
+      day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    }) + ' WIB';
+  } catch {
+    return '';
+  }
+}
+
+/** Short "does this side have a kondisi khusus report" summary for the Catatan HRD info rows — the full report itself is still rendered separately below via ConditionReportCard. */
+function getConditionSummaryText(report: any): string {
+  if (!report) return 'Tidak ada';
+  return report.categoryLabel || report.conditionTypeLabel || report.category || report.conditionCategory || report.note || report.conditionNote || 'Ada laporan';
 }
 
 /** True only when the report explicitly declares a non-image mimeType — unknown/missing mimeType still tries to render as a photo (Drive/Storage URLs often carry no mimeType at all). */
@@ -514,9 +533,200 @@ function LocationCard({
   );
 }
 
-export function AttendanceDetailModal({ isOpen, onClose, onMarkInvalid, onReview, record }: AttendanceDetailModalProps) {
+/**
+ * One independent Konfirmasi HRD block — Absen Berangkat and Absen Pulang
+ * each get their own instance, with their own local mode/draft. Never a
+ * shared textarea/status between the two sides, and never a textarea shown
+ * up front — it only appears after HRD explicitly clicks "Beri Catatan
+ * HRD", and even then it's a mandatory note, not an optional comment box.
+ *
+ * Neither button here ever touches the attendance record itself (no
+ * isInvalid, lateMinutes, status, or tap event field) — both "Terima Kasih"
+ * and "Beri Catatan HRD" write only to the confirmation fields on the same
+ * event doc (hrdReviewStatus/hrdReviewNote/...), which is documentation for
+ * HRD, never a gate the attendance has to pass. See handleHrdReviewSide in
+ * AttendanceMonitoringClient.tsx for the exact write.
+ *
+ * This component's local state (mode/noteDraft/showButtons) needs no manual
+ * reset-on-close effect: AttendanceDetailModal returns null while `record`
+ * is null (between closes), which unmounts this component entirely, so a
+ * fresh instance with fresh state is created every time the modal reopens.
+ */
+function HrdConfirmationSection({
+  side, eventId, employeeName, sideLabel, sideLabelLower, descriptionText, available, unavailableText, infoRows,
+  existingReview, firstName, onConfirmReceived, onSubmitNote,
+}: {
+  side: 'checkIn' | 'checkOut';
+  eventId: string | null;
+  employeeName: string;
+  sideLabel: string;
+  sideLabelLower: string;
+  descriptionText: string;
+  available: boolean;
+  unavailableText: string;
+  infoRows: { label: string; value: string }[];
+  existingReview: HrdReviewEntry | null | undefined;
+  firstName: string;
+  onConfirmReceived: () => void | Promise<void>;
+  onSubmitNote: (note: string) => void | Promise<void>;
+}) {
+  const [mode, setMode] = useState<'idle' | 'note'>('idle');
+  const [noteDraft, setNoteDraft] = useState('');
+  const [noteError, setNoteError] = useState(false);
+  // Set only by "Ubah Konfirmasi" — lets HRD see the Terima Kasih/Batalin
+  // buttons again even though a status already exists, without touching
+  // Firestore until they actually pick an action.
+  const [showButtons, setShowButtons] = useState(false);
+  // Guards against double-click while the updateDoc write is in flight —
+  // both buttons disable and the confirm button's label swaps to
+  // "Menyimpan..." until the write settles (success or error).
+  const [isSaving, setIsSaving] = useState(false);
+
+  const isReceived = existingReview?.status === 'received' || existingReview?.status === 'acknowledged';
+  const isNoted = existingReview?.status === 'noted';
+
+  console.log('[HRD_CONFIRMATION_RENDER_DEBUG]', {
+    employeeName,
+    side,
+    eventId,
+    confirmation: existingReview || null,
+  });
+
+  const handleSubmitNote = async () => {
+    if (!noteDraft.trim()) {
+      setNoteError(true);
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await onSubmitNote(noteDraft.trim());
+      setMode('idle');
+      setNoteDraft('');
+      setNoteError(false);
+      setShowButtons(false);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleBack = () => {
+    setMode('idle');
+    setNoteDraft('');
+    setNoteError(false);
+  };
+
+  const handleConfirmReceivedClick = async () => {
+    setIsSaving(true);
+    try {
+      await onConfirmReceived();
+      setShowButtons(false);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <Card className="border-slate-200 dark:border-slate-800">
+      <CardContent className="space-y-3 p-4 sm:p-5">
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Konfirmasi HRD - {sideLabel}</h3>
+          <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">{descriptionText}</p>
+        </div>
+
+        {!available ? (
+          <p className="text-xs italic text-slate-500 dark:text-slate-400">{unavailableText}</p>
+        ) : mode === 'note' ? (
+          <>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-900/10">
+              <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">Catatan HRD</p>
+              <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+                Absensi tetap dihitung. Catatan ini hanya sebagai keterangan HRD untuk laporan absen ini.
+              </p>
+            </div>
+            <Textarea
+              placeholder="Tulis catatan HRD…"
+              value={noteDraft}
+              onChange={(e) => { setNoteDraft(e.target.value); if (noteError) setNoteError(false); }}
+              className="min-h-[80px] text-sm"
+              disabled={isSaving}
+            />
+            {noteError && (
+              <p className="text-xs font-medium text-red-600 dark:text-red-400">Catatan HRD wajib diisi.</p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" className="gap-1.5 bg-slate-800 text-white hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600" onClick={handleSubmitNote} disabled={isSaving}>
+                {isSaving ? 'Menyimpan...' : 'Simpan Catatan'}
+              </Button>
+              <Button size="sm" variant="outline" onClick={handleBack} disabled={isSaving}>
+                Kembali
+              </Button>
+            </div>
+          </>
+        ) : !showButtons && isReceived ? (
+          <div className="rounded-lg border border-teal-200 bg-teal-50 p-3 dark:border-teal-800 dark:bg-teal-900/10">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-teal-600 dark:text-teal-400">Status HRD</p>
+              <Badge className="bg-teal-600 text-white hover:bg-teal-600">Diterima HRD</Badge>
+            </div>
+            <p className="text-sm font-semibold text-teal-800 dark:text-teal-300">Laporan absen {sideLabelLower} diterima</p>
+            {existingReview?.note && (
+              <>
+                <p className="mt-2 text-[10px] font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">Pesan</p>
+                <p className="text-xs text-slate-700 dark:text-slate-300">{existingReview.note}</p>
+              </>
+            )}
+            <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+              Diterima oleh: {existingReview?.reviewedByName || '—'}
+              {formatReviewedAt(existingReview?.reviewedAt) && ` • ${formatReviewedAt(existingReview?.reviewedAt)}`}
+            </p>
+          </div>
+        ) : !showButtons && isNoted ? (
+          <>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-900/10">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">Status HRD</p>
+                <Badge className="bg-amber-600 text-white hover:bg-amber-600">Ada Catatan HRD</Badge>
+              </div>
+              <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Laporan diterima dengan catatan HRD</p>
+              <p className="mt-2 text-[10px] font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">Catatan</p>
+              <p className="text-xs text-slate-700 dark:text-slate-300">{existingReview?.note}</p>
+              <p className="mt-2 text-[11px] font-medium text-slate-600 dark:text-slate-300">Keterangan: Absensi tetap dihitung.</p>
+              <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                Dicatat oleh: {existingReview?.reviewedByName || '—'}
+                {formatReviewedAt(existingReview?.reviewedAt) && ` • ${formatReviewedAt(existingReview?.reviewedAt)}`}
+              </p>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => setShowButtons(true)}>
+              Ubah Konfirmasi
+            </Button>
+          </>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-2.5 rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/40">
+              {infoRows.map((row) => (
+                <div key={row.label}>
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">{row.label}</p>
+                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">{row.value}</p>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" className="gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700" onClick={handleConfirmReceivedClick} disabled={isSaving}>
+                <CheckCircle2 className="h-4 w-4" /> {isSaving ? 'Menyimpan...' : `Terima Kasih, ${firstName} - ${sideLabel}`}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setMode('note')} disabled={isSaving}>
+                Beri Catatan HRD
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+export function AttendanceDetailModal({ isOpen, onClose, onReviewSide, record }: AttendanceDetailModalProps) {
   const { toast } = useToast();
-  const [reviewNote, setReviewNote] = useState('');
   const [lightbox, setLightbox] = useState<{ src: string; caption: string } | null>(null);
 
   // This component stays mounted across opens/closes (the parent always
@@ -524,11 +734,13 @@ export function AttendanceDetailModal({ isOpen, onClose, onMarkInvalid, onReview
   // flips `record` to null), so useState here does NOT reset on its own —
   // without this, closing the modal with the lightbox open left it open in
   // local state, and reopening the modal for a different record made the
-  // stale photo preview pop back up immediately.
+  // stale photo preview pop back up immediately. (Konfirmasi HRD's own
+  // mode/note-draft state lives inside HrdConfirmationSection instead, which
+  // — unlike this component — genuinely does unmount on close since it's
+  // only rendered once `record` is non-null, so it needs no such effect.)
   useEffect(() => {
     if (!isOpen) {
       setLightbox(null);
-      setReviewNote('');
     }
   }, [isOpen]);
 
@@ -553,6 +765,15 @@ export function AttendanceDetailModal({ isOpen, onClose, onMarkInvalid, onReview
   };
 
   const firstName = record.name?.trim().split(/\s+/)[0] || 'Karyawan';
+
+  const handleConfirmReceived = async (side: 'checkIn' | 'checkOut') => {
+    const sideLabel = side === 'checkIn' ? 'berangkat' : 'pulang';
+    await onReviewSide?.(side, 'received', `Terima kasih, ${firstName}. Laporan absen ${sideLabel} sudah diterima HRD.`);
+  };
+
+  const handleSubmitNote = async (side: 'checkIn' | 'checkOut', note: string) => {
+    await onReviewSide?.(side, 'noted', note);
+  };
 
   // Lateness is read from calculateAttendanceLateStatus's result
   // (record.calculated*), computed once in AttendanceMonitoringClient —
@@ -723,22 +944,6 @@ export function AttendanceDetailModal({ isOpen, onClose, onMarkInvalid, onReview
                 <ConditionReportCard type="check_out" report={record.rawConditionReportOut} />
               )}
 
-              {/* Keputusan HRD (jika sudah direview) */}
-              {record.hrdReviewStatus && (
-                <Card className="border-slate-200 dark:border-slate-800">
-                  <CardContent className="p-4 sm:p-5">
-                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Catatan HRD Sebelumnya</h3>
-                    <Badge className="mb-2">{HRD_REVIEW_LABEL[record.hrdReviewStatus] ?? record.hrdReviewStatus}</Badge>
-                    {record.hrdReviewNote && (
-                      <p className="mt-1 text-sm text-slate-700 dark:text-slate-300">{record.hrdReviewNote}</p>
-                    )}
-                    {record.hrdReviewedByName && (
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">oleh {record.hrdReviewedByName}</p>
-                    )}
-                  </CardContent>
-                </Card>
-              )}
-
               {/* Data Identitas */}
               <Card className="border-slate-200 dark:border-slate-800">
                 <CardContent className="p-4 sm:p-5">
@@ -762,62 +967,63 @@ export function AttendanceDetailModal({ isOpen, onClose, onMarkInvalid, onReview
                 </CardContent>
               </Card>
 
-              {/* Catatan HRD — absensi sudah dihitung terlepas dari catatan ini; ini bukan approval */}
-              {onReview && (
-                <Card className="border-slate-200 dark:border-slate-800">
-                  <CardContent className="space-y-3 p-4 sm:p-5">
-                    <div>
-                      <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Catatan HRD</h3>
-                      <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">Catatan ini hanya untuk dokumentasi HRD. Absensi tetap dihitung tanpa perlu persetujuan.</p>
-                    </div>
-                    <Textarea
-                      placeholder="Catatan (opsional)..."
-                      value={reviewNote}
-                      onChange={(e) => setReviewNote(e.target.value)}
-                      className="min-h-[70px] text-sm"
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        size="sm"
-                        className="gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700"
-                        onClick={() => {
-                          const note = reviewNote.trim() || `Terima kasih, ${firstName}. Laporan sudah diterima HRD.`;
-                          onReview('acknowledged', note);
-                        }}
-                      >
-                        <CheckCircle2 className="h-4 w-4" /> Terima Kasih, {firstName}
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => setReviewNote('')}>
-                        Batalin
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
+              {/* Konfirmasi HRD — Absen Berangkat dan Absen Pulang, dua bagian yang
+                  sepenuhnya independen. Absensi sudah dihitung terlepas dari
+                  konfirmasi ini; ini dokumentasi bahwa laporan sudah diterima
+                  (atau perlu catatan), bukan approval/persetujuan. */}
+              {onReviewSide && (
+                <>
+                  <HrdConfirmationSection
+                    side="checkIn"
+                    eventId={record.tapInId ?? null}
+                    employeeName={record.name}
+                    sideLabel="Absen Berangkat"
+                    sideLabelLower="berangkat"
+                    descriptionText="Konfirmasi ini hanya untuk menandai laporan absen berangkat sudah ditinjau HRD. Absensi tetap dihitung."
+                    available={!!record.tapIn && record.tapIn !== '-'}
+                    unavailableText="Absen berangkat belum tersedia."
+                    infoRows={[
+                      { label: 'Jam Berangkat', value: record.tapIn || '—' },
+                      { label: 'Status Berangkat', value: statusLabel },
+                      { label: 'Validasi Lokasi Berangkat', value: locationSummary.label },
+                      { label: 'Kondisi Khusus Berangkat', value: getConditionSummaryText(record.rawConditionReportIn) },
+                    ]}
+                    existingReview={record.hrdReviewCheckIn}
+                    firstName={firstName}
+                    onConfirmReceived={() => handleConfirmReceived('checkIn')}
+                    onSubmitNote={(note) => handleSubmitNote('checkIn', note)}
+                  />
+                  <HrdConfirmationSection
+                    side="checkOut"
+                    eventId={record.tapOutId ?? null}
+                    employeeName={record.name}
+                    sideLabel="Absen Pulang"
+                    sideLabelLower="pulang"
+                    descriptionText="Konfirmasi ini hanya untuk menandai laporan absen pulang sudah ditinjau HRD. Absensi tetap dihitung."
+                    available={hasTapOut}
+                    unavailableText="Absen pulang belum tersedia."
+                    infoRows={[
+                      { label: 'Jam Pulang', value: record.tapOut || '—' },
+                      { label: 'Status Pulang', value: isEarlyLeave ? `Pulang Awal ${record.earlyLeaveMinutes}m` : 'Normal' },
+                      { label: 'Validasi Lokasi Pulang', value: getLocationSummary(record.locationValidationOut).label },
+                      { label: 'Kondisi Khusus Pulang', value: getConditionSummaryText(record.rawConditionReportOut) },
+                    ]}
+                    existingReview={record.hrdReviewCheckOut}
+                    firstName={firstName}
+                    onConfirmReceived={() => handleConfirmReceived('checkOut')}
+                    onSubmitNote={(note) => handleSubmitNote('checkOut', note)}
+                  />
+                </>
               )}
             </div>
           </div>
         </div>
 
         {/* Footer — sticky */}
-        <div className="flex shrink-0 flex-col gap-2 border-t border-slate-200 bg-white px-5 py-3.5 dark:border-slate-800 dark:bg-slate-950 sm:flex-row sm:items-center sm:justify-between sm:px-7 sm:py-4">
-          <div className="flex flex-wrap gap-2">
-            {onMarkInvalid && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1.5 border-amber-200 text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-900/20"
-                onClick={() => { onClose(); setTimeout(() => onMarkInvalid?.(), 100); }}
-              >
-                <ShieldAlert className="h-4 w-4" />
-                Tandai Tidak Valid
-              </Button>
-            )}
-          </div>
-          <div className="flex flex-wrap justify-end gap-2">
-            <Button variant="outline" size="sm" onClick={onClose}>
-              Tutup
-            </Button>
-          </div>
+        <div className="flex shrink-0 items-center justify-end border-t border-slate-200 bg-white px-5 py-3.5 dark:border-slate-800 dark:bg-slate-950 sm:px-7 sm:py-4">
+          <Button variant="outline" size="sm" onClick={onClose}>
+            Tutup
+          </Button>
         </div>
       </DialogContent>
 

@@ -9,11 +9,27 @@ import {
   isWithinInterval, isBefore, isAfter, format, startOfDay, endOfDay,
 } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
-import type { EmployeeProfile, AttendanceEvent, AttendanceSite } from '@/lib/types';
+import type { EmployeeProfile, AttendanceEvent, AttendanceSite, WorkScheduleDay, WorkScheduleGroup } from '@/lib/types';
 import {
   getEventEmployeeUid, getEventDateKey, getEventType,
   getEventTimestamp, resolvePhotoUrl, validateAttendanceLocation, classifyFieldCondition,
+  resolveSiteForBrand, resolveScheduleForDay, calculateAttendanceLateStatus,
+  type AttendanceLateStatusResult,
 } from '@/lib/attendance-helpers';
+
+const JS_DAY_TO_SCHEDULE_DAY: WorkScheduleDay[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+/**
+ * Same weekday resolution Monitoring Absensi/buildAttendanceSummary use for
+ * a `Date`, adapted for payroll-recap's "YYYY-MM-DD" calendar-day strings.
+ * Parsed via Y/M/D components (never `new Date(dateStr)`, which reads as UTC
+ * midnight and can land on the wrong local weekday) so `.getDay()` reflects
+ * the calendar date itself, with no timezone conversion needed.
+ */
+function dayOfWeekFromDateStr(dateStr: string): WorkScheduleDay {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return JS_DAY_TO_SCHEDULE_DAY[new Date(y, (m || 1) - 1, d || 1).getDay()];
+}
 
 export type PeriodMode = 'calendar' | 'payroll' | 'custom';
 
@@ -90,6 +106,8 @@ export interface CalendarAttendanceDetail {
   /** Same vocabulary as Monitoring Absensi's LocationValidation.badges primary signal (e.g. "Radius Sesuai", "Perlu Review"). */
   locationValidationStatus: string | null;
   hrdReviewStatus: 'valid_auto' | 'needs_review' | 'approved' | 'rejected' | 'revision_requested' | 'acknowledged' | null;
+  /** hrdConfirmation.checkIn.status off the tap-in doc (Konfirmasi HRD in the Detail modal) — 'received' = Terima Kasih, 'noted' = Beri Catatan HRD. Distinct vocabulary from the legacy hrdReviewStatus above; never conflated. */
+  hrdConfirmationStatus: 'received' | 'noted' | null;
   conditionCategory: string | null;
   conditionNote: string | null;
   /** Payroll-facing one-line remark — plays the same role as Monitoring Absensi's "Catatan Sistem". */
@@ -530,97 +548,30 @@ function minutesToTime(totalMinutes: number): string {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
-function resolveEmployeeDivisionId(employee: any): string | null {
-  const id = employee.hrdEmploymentInfo?.divisionId || employee.divisionId || employee.divisiId;
-  return typeof id === 'string' && id ? id : null;
+/**
+ * Same schedule/tolerance resolution as Monitoring Absensi/buildAttendanceSummary
+ * for one calendar day — grace minutes and latestCheckInWithoutReview are read
+ * straight off the site doc (never a payroll-only fallback field), and the
+ * schedule itself goes through resolveScheduleForDay so a Mon-Thu vs Friday
+ * split (or any other per-weekday group) is honored instead of one flat
+ * shift for the whole period.
+ */
+function resolveDaySchedule(site: AttendanceSite | null, dateStr: string): {
+  schedule: WorkScheduleGroup | null;
+  graceMins: number;
+  latestCheckInWithoutReview: string | null;
+} {
+  const day = dayOfWeekFromDateStr(dateStr);
+  const schedule = resolveScheduleForDay(site as any, day);
+  const graceMins = Number((site as any)?.lateToleranceMinutes ?? (site as any)?.shift?.graceLateMinutes ?? 0);
+  const latestCheckInWithoutReview: string | null = (site as any)?.latestCheckInWithoutReview ?? null;
+  return { schedule, graceMins: Number.isFinite(graceMins) ? graceMins : 0, latestCheckInWithoutReview };
 }
 
-function siteHasId(site: any, ids: string[]): boolean {
-  const siteId = String(site?.id || site?.siteId || '').trim();
-  return Boolean(siteId && ids.includes(siteId));
-}
-
-function siteMatchesBrand(site: any, brandId: string | null): boolean {
-  if (!brandId) return false;
-  const brandIds = [
-    ...(Array.isArray(site?.brandIds) ? site.brandIds : []),
-    site?.brandId,
-    site?.brand,
-  ].filter(Boolean).map(String);
-  return brandIds.includes(brandId);
-}
-
-function siteMatchesDivision(site: any, divisionId: string | null): boolean {
-  if (!divisionId) return false;
-  const divisionIds = [
-    ...(Array.isArray(site?.divisionIds) ? site.divisionIds : []),
-    site?.divisionId,
-    site?.divisiId,
-  ].filter(Boolean).map(String);
-  return divisionIds.includes(divisionId);
-}
-
-function resolveAttendanceSite(employee: any, events: any[], attendanceSites: AttendanceSite[]): AttendanceSite | null {
-  const activeSites = (attendanceSites || []).filter((site: any) => site?.isActive !== false);
-  if (!activeSites.length) return null;
-
-  const explicitSiteIds = [
-    employee.attendanceSiteId,
-    employee.siteId,
-    employee.hrdEmploymentInfo?.attendanceSiteId,
-    employee.hrdEmploymentInfo?.siteId,
-    ...(Array.isArray(employee.attendanceSiteIds) ? employee.attendanceSiteIds : []),
-    ...(Array.isArray(employee.hrdEmploymentInfo?.attendanceSiteIds) ? employee.hrdEmploymentInfo.attendanceSiteIds : []),
-  ].filter(Boolean).map(String);
-  const byEmployeeSite = activeSites.find(site => siteHasId(site, explicitSiteIds));
-  if (byEmployeeSite) return byEmployeeSite;
-
-  const eventSiteIds = events.map(event => event?.siteId).filter(Boolean).map(String);
-  const byEventSite = activeSites.find(site => siteHasId(site, eventSiteIds));
-  if (byEventSite) return byEventSite;
-
-  const brandId = resolveBrandId(employee);
-  const divisionId = resolveEmployeeDivisionId(employee);
-  const byBrandAndDivision = activeSites.find(site => siteMatchesBrand(site, brandId) && siteMatchesDivision(site, divisionId));
-  if (byBrandAndDivision) return byBrandAndDivision;
-
-  const byBrand = activeSites.find(site => siteMatchesBrand(site, brandId));
-  if (byBrand) return byBrand;
-
-  return activeSites.find((site: any) => site?.isDefault || site?.default || site?.isPrimary) || activeSites[0] || null;
-}
-
-function resolveAttendancePolicy(site: AttendanceSite | null) {
-  const rawSite = site as any;
-  const startTime =
-    rawSite?.workStartTime ||
-    rawSite?.jamMasuk ||
-    rawSite?.startTime ||
-    rawSite?.shift?.startTime ||
-    '09:00';
-  const endTime =
-    rawSite?.workEndTime ||
-    rawSite?.jamPulang ||
-    rawSite?.endTime ||
-    rawSite?.shift?.endTime ||
-    '17:00';
-  const tolerance = Number(
-    rawSite?.lateToleranceMinutes ??
-    rawSite?.batasTelat ??
-    rawSite?.batasToleransiTelat ??
-    rawSite?.batasToleransiMenit ??
-    rawSite?.shift?.graceLateMinutes ??
-    0
-  );
-  const startMinutes = parseTimeToMinutes(startTime) ?? 9 * 60;
-  const lateToleranceMinutes = Number.isFinite(tolerance) && tolerance > 0 ? tolerance : 0;
-  return {
-    startTime: minutesToTime(startMinutes),
-    endTime: String(endTime || '17:00').slice(0, 5),
-    lateToleranceMinutes,
-    effectiveLateLimitTime: minutesToTime(startMinutes + lateToleranceMinutes),
-    effectiveLateLimitMinutes: startMinutes + lateToleranceMinutes,
-  };
+/** "Terlambat X menit dari batas toleransi." / "Absen masuk tercatat tepat waktu." — same wording the old per-employee calculateAttendanceTiming produced, now derived from the shared calculateAttendanceLateStatus result instead of a second calculation. */
+function lateNotesText(lateResult: AttendanceLateStatusResult | null | undefined): string {
+  if (!lateResult || lateResult.lateMinutes === null) return '';
+  return lateResult.isLate ? `Terlambat ${lateResult.lateMinutes} menit dari batas toleransi.` : 'Absen masuk tercatat tepat waktu.';
 }
 
 /**
@@ -734,7 +685,7 @@ interface ConditionInfo {
  * review status) — reused here so Rekap Payroll shows the same picture
  * instead of only a bare Hadir/Terlambat/Alpha status.
  */
-function computeConditionInfo(inEv: any, outEv: any, site: AttendanceSite | null, lateMinutes: number): ConditionInfo {
+function computeConditionInfo(inEv: any, outEv: any, site: AttendanceSite | null, needsTimeReview: boolean): ConditionInfo {
   if (!inEv) {
     return { hasPhoto: false, locationValidationStatus: null, hrdReviewStatus: null, conditionCategory: null, conditionNote: null };
   }
@@ -747,7 +698,9 @@ function computeConditionInfo(inEv: any, outEv: any, site: AttendanceSite | null
   const fieldCondition = classifyFieldCondition(inEv, locationValidation);
   const locationNeedsReview = !locationValidation.isValidAuto;
   const photoMissing = !hasPhoto;
-  const lateNeedsReview = lateMinutes > 15;
+  // Gated by the site's latestCheckInWithoutReview cutoff (via calculateAttendanceLateStatus's
+  // needsTimeReview) — never a hardcoded "> 15 menit" guess, and never used to change lateMinutes itself.
+  const lateNeedsReview = needsTimeReview;
   const specialCondition = fieldCondition.category !== 'normal' ? fieldCondition.reasonText || fieldCondition.categoryLabel : null;
 
   const existingReview = (inEv as any)?.hrdReviewStatus || (outEv as any)?.hrdReviewStatus;
@@ -761,45 +714,6 @@ function computeConditionInfo(inEv: any, outEv: any, site: AttendanceSite | null
     conditionCategory: fieldCondition.category !== 'normal' ? fieldCondition.categoryLabel : null,
     conditionNote: fieldCondition.reasonText || null,
   };
-}
-
-function calculateAttendanceTiming(tapInTime: string | null, policy: ReturnType<typeof resolveAttendancePolicy>) {
-  const tapInMinutes = parseTimeToMinutes(tapInTime);
-  if (tapInMinutes == null) {
-    return {
-      status: 'invalid' as const,
-      lateMinutes: 0,
-      notes: '',
-    };
-  }
-
-  const officialStartMinutes = parseTimeToMinutes(policy.startTime) ?? policy.effectiveLateLimitMinutes;
-  if (tapInMinutes <= officialStartMinutes) {
-    return {
-      status: 'tepat_waktu' as const,
-      lateMinutes: 0,
-      notes: 'Absen masuk tercatat tepat waktu.',
-    };
-  }
-
-  if (tapInMinutes <= policy.effectiveLateLimitMinutes) {
-    return {
-      status: 'tepat_waktu' as const,
-      lateMinutes: 0,
-      notes: 'Masuk dalam batas toleransi.',
-    };
-  }
-
-  const lateMinutes = tapInMinutes - policy.effectiveLateLimitMinutes;
-  return {
-    status: 'terlambat' as const,
-    lateMinutes,
-      notes: `Terlambat ${lateMinutes} menit dari batas toleransi.`,
-  };
-}
-
-function isValidAttendanceTiming(timing: ReturnType<typeof calculateAttendanceTiming> | undefined): boolean {
-  return Boolean(timing && timing.status !== 'invalid');
 }
 
 function getApprovedBy(record: any): string {
@@ -1348,20 +1262,30 @@ export function generateEmployeePayrollRecap(
 
     return false;
   });
-  const attendanceSite = resolveAttendanceSite(employee, myEvents, attendanceSites);
-  const attendancePolicy = resolveAttendancePolicy(attendanceSite);
+  // Site resolution — the exact same call Monitoring Absensi/buildAttendanceSummary
+  // make (resolveSiteForBrand: brandId match, then brandName match, then "only one
+  // active site" fallback). Never a payroll-only site-matching heuristic — that
+  // divergence (own resolveAttendanceSite, own resolveAttendancePolicy ignoring
+  // per-weekday workSchedules) was why Rekap Payroll's lateness silently drifted
+  // to 0 while Monitoring Absensi/Detail modal already showed the correct minutes.
+  const employeeBrandId = resolveBrandId(employee);
+  const employeeBrandName = resolveBrandName(employee, brandMap);
+  const attendanceSite = resolveSiteForBrand(attendanceSites, employeeBrandId, employeeBrandName);
 
   // Daily target derived from the site's own shift length (minus break) when
-  // configured; falls back to a flat 8 jam/hari otherwise. Computed early so
-  // both the calendarDetails builder (per-day HRD-approved minutes) and the
-  // Target Periode/Berjalan totals below can share it.
+  // configured; falls back to a flat 8 jam/hari otherwise. Uses a representative
+  // (Monday, or the first configured workSchedules group) schedule purely for
+  // this duration estimate — actual per-day lateness below always resolves its
+  // OWN day's schedule via resolveScheduleForDay, never this representative one.
+  const representativeSchedule: WorkScheduleGroup | null =
+    resolveScheduleForDay(attendanceSite as any, 'monday') ?? (attendanceSite as any)?.workSchedules?.[0] ?? null;
   const dailyTargetMinutes = (() => {
-    const start = parseTimeToMinutes(attendancePolicy.startTime);
-    const end = parseTimeToMinutes(attendancePolicy.endTime);
+    const start = parseTimeToMinutes(representativeSchedule?.startTime);
+    const end = parseTimeToMinutes(representativeSchedule?.endTime);
     if (start == null || end == null || end <= start) return 8 * 60;
     let span = end - start;
-    const breakStart = parseTimeToMinutes((attendanceSite as any)?.breakStart);
-    const breakEnd = parseTimeToMinutes((attendanceSite as any)?.breakEnd);
+    const breakStart = parseTimeToMinutes(representativeSchedule?.breakStart ?? (attendanceSite as any)?.breakStart);
+    const breakEnd = parseTimeToMinutes(representativeSchedule?.breakEnd ?? (attendanceSite as any)?.breakEnd);
     if (breakStart != null && breakEnd != null && breakEnd > breakStart) span -= (breakEnd - breakStart);
     return span > 0 ? span : 8 * 60;
   })();
@@ -1369,7 +1293,6 @@ export function generateEmployeePayrollRecap(
   // Holidays scoped to this employee's brand — a holiday with
   // appliesToBrandIds set to a specific brand shouldn't affect employees at
   // other brands (appliesToBrandIds: ["all"] or unset applies everywhere).
-  const employeeBrandId = resolveBrandId(employee);
   const holidayDetails = normalizeHolidayDetails(holidays).filter(h => holidayAppliesToBrand(h, employeeBrandId));
   const holidayMap = new Map(holidayDetails.map(h => [h.date, h]));
   const holidayDates = holidayDetails.map(h => h.date);
@@ -1399,22 +1322,36 @@ export function generateEmployeePayrollRecap(
   let totalMinutes = 0;
   let totalMenitLembur = 0;
   const hadirDetails: AttendanceDetail[] = [];
-  const attendanceTimingByDay = new Map<string, ReturnType<typeof calculateAttendanceTiming>>();
+  // THE per-day lateness result — always calculateAttendanceLateStatus (same
+  // function Monitoring Absensi and the Detail modal call), never a
+  // payroll-only reimplementation. Each day resolves its own schedule via
+  // resolveScheduleForDay so a Mon-Thu vs Friday split is honored across the
+  // whole payroll period, not just a single flat policy for the employee.
+  const lateResultByDay = new Map<string, AttendanceLateStatusResult>();
 
   for (const [dateStr, ev] of checkInByDay) {
     hadirDays.add(dateStr);
 
     const tapInTime = getEventTimeStr(ev);
-    const timing = calculateAttendanceTiming(tapInTime, attendancePolicy);
-    attendanceTimingByDay.set(dateStr, timing);
-    if (timing.lateMinutes > 0) {
+    const { schedule, graceMins, latestCheckInWithoutReview } = resolveDaySchedule(attendanceSite, dateStr);
+    const lateResult = calculateAttendanceLateStatus({
+      tapInTime: getEventTimestamp(ev),
+      scheduledStartTime: schedule?.startTime ?? null,
+      lateToleranceMinutes: graceMins,
+      latestCheckInWithoutReview,
+    });
+    lateResultByDay.set(dateStr, lateResult);
+
+    if (lateResult.lateMinutes !== null && lateResult.lateMinutes > 0) {
       terlambat++;
-      menitTerlambat += timing.lateMinutes;
+      menitTerlambat += lateResult.lateMinutes;
+      const startMinutes = parseTimeToMinutes(schedule?.startTime ?? null);
+      const effectiveLimitMinutes = startMinutes != null ? startMinutes + graceMins : null;
       lateDetails.push({
         date: dateStr,
         tapInTime,
-        lateMinutes: timing.lateMinutes,
-        scheduledStartTime: attendancePolicy.effectiveLateLimitTime,
+        lateMinutes: lateResult.lateMinutes,
+        scheduledStartTime: effectiveLimitMinutes != null ? minutesToTime(effectiveLimitMinutes) : undefined,
       });
     }
 
@@ -1442,18 +1379,22 @@ export function generateEmployeePayrollRecap(
     const inEv = checkInByDay.get(dateStr);
     const outEv = checkOutByDay.get(dateStr);
     if (!inEv) continue;
-    const timing = attendanceTimingByDay.get(dateStr) || calculateAttendanceTiming(getEventTimeStr(inEv), attendancePolicy);
-    if (!isValidAttendanceTiming(timing)) continue;
+    const lateResult = lateResultByDay.get(dateStr);
+    // lateMinutes === null means the schedule couldn't be resolved for this
+    // day (no site / no workSchedules match) — same "cannot be determined"
+    // semantics calculateAttendanceLateStatus documents; skip rather than
+    // silently coerce to "tepat waktu" (this mirrors the old isValidAttendanceTiming guard).
+    if (!lateResult || lateResult.lateMinutes === null) continue;
     const workDur = computeWorkMinutes(inEv, outEv, attendanceSite, dateStr);
     hadirDetails.push({
       date: dateStr,
       dayName: getDayName(new Date(dateStr)),
       tapInTime: inEv ? getEventTimeStr(inEv) : null,
       tapOutTime: outEv ? getEventTimeStr(outEv) : null,
-      status: timing.status === 'terlambat' ? 'terlambat' : 'tepat_waktu',
+      status: lateResult.isLate ? 'terlambat' : 'tepat_waktu',
       source: getEventSource(inEv || outEv),
-      notes: (inEv as any)?.notes || (outEv as any)?.notes || timing.notes,
-      lateMinutes: timing.lateMinutes || undefined,
+      notes: (inEv as any)?.notes || (outEv as any)?.notes || lateNotesText(lateResult),
+      lateMinutes: lateResult.lateMinutes || undefined,
       workDurationMinutes: workDur ?? undefined,
     });
   }
@@ -1526,8 +1467,8 @@ export function generateEmployeePayrollRecap(
     const dinas = dinasByDay.get(dateStr);
     const holiday = holidayMap.get(dateStr);
     const hasAttendance = hadirDays.has(dateStr);
-    const timing = inEv ? attendanceTimingByDay.get(dateStr) : undefined;
-    const isLate = timing?.status === 'terlambat';
+    const lateResult = inEv ? lateResultByDay.get(dateStr) : undefined;
+    const isLate = !!lateResult?.isLate;
     let status: CalendarAttendanceDetail['status'] = 'Alpha';
     let keterangan = '';
 
@@ -1547,7 +1488,7 @@ export function generateEmployeePayrollRecap(
       // Dinas takes priority over holiday and weekend; combine status if needed
       const dinasKet = dinas.keterangan || 'Sedang menjalankan perjalanan dinas approved.';
       const attendancePart = isLate ? 'Terlambat' : 'Tepat Waktu';
-      const latePrefix = isLate ? `${timing?.notes || 'Terlambat dari batas toleransi.'} ` : '';
+      const latePrefix = isLate ? `${lateNotesText(lateResult) || 'Terlambat dari batas toleransi.'} ` : '';
 
       if (holiday?.type === 'national_holiday') {
         status = hasAttendance
@@ -1600,8 +1541,8 @@ export function generateEmployeePayrollRecap(
     } else if (hasAttendance) {
       status = isLate ? 'Terlambat' : 'Tepat Waktu';
       keterangan = outEv
-        ? (timing?.notes || 'Absen tercatat.')
-        : `${timing?.notes ? timing.notes + ' ' : ''}Sedang bekerja sejak ${getEventTimeStr(inEv)}, belum tap out.`;
+        ? (lateNotesText(lateResult) || 'Absen tercatat.')
+        : `${lateNotesText(lateResult) ? lateNotesText(lateResult) + ' ' : ''}Sedang bekerja sejak ${getEventTimeStr(inEv)}, belum tap out.`;
     } else if (dateStr === todayStr) {
       // Today is still in progress and there's no tap-in yet — this is not
       // Alpha (the working day hasn't finished), it's simply pending.
@@ -1617,32 +1558,62 @@ export function generateEmployeePayrollRecap(
     // review status) — computed only when there's a tap-in to evaluate.
     const workMinutes = hasAttendance && outEv ? computeWorkMinutes(inEv, outEv, attendanceSite, dateStr) : null;
     const conditionInfo: ConditionInfo = hasAttendance
-      ? computeConditionInfo(inEv, outEv, attendanceSite, timing?.lateMinutes || 0)
+      ? computeConditionInfo(inEv, outEv, attendanceSite, !!lateResult?.needsTimeReview)
       : { hasPhoto: false, locationValidationStatus: null, hrdReviewStatus: null, conditionCategory: null, conditionNote: null };
     const payrollDay = hasAttendance
       ? resolvePayrollDayMinutes(inEv, outEv, dateStr, attendanceSite, dailyTargetMinutes, todayStr)
       : { minutes: 0, isFinal: true, needsReview: false };
+    // checkIn's own hrdConfirmation (written by AttendanceMonitoringClient's
+    // handleHrdConfirmationSide) — 'received' = Terima Kasih, 'noted' = Beri
+    // Catatan HRD with mandatory note. Read straight off the tap-in doc, same
+    // as readHrdConfirmation in Monitoring Absensi.
+    const hrdConfirmationStatus: CalendarAttendanceDetail['hrdConfirmationStatus'] =
+      (inEv as any)?.hrdConfirmation?.checkIn?.status === 'received' ? 'received'
+      : (inEv as any)?.hrdConfirmation?.checkIn?.status === 'noted' ? 'noted'
+      : null;
 
-    // Short, concise payroll remark — matches Monitoring Absensi's "Catatan
-    // Sistem" style and doubles as the Excel KETERANGAN column text.
+    // Payroll remark / Excel KETERANGAN — every applicable signal joined with
+    // " + ", never collapsed/truncated (that truncation, e.g. always showing
+    // "Tap Out + Review" once both flags were set, was exactly what silently
+    // dropped "Terlambat X menit" from the Excel export while Monitoring
+    // Absensi/Detail modal still showed it correctly).
     let payrollRemark = '';
     if (hasAttendance) {
       const parts: string[] = [];
-      if (isLate) parts.push(`Terlambat ${timing?.lateMinutes} menit`);
-      if (!outEv) parts.push(payrollDay.needsReview ? 'Belum Tap Out — Perlu Review HRD' : 'Belum tap out');
+      if (isLate && lateResult?.lateMinutes) parts.push(`Terlambat ${lateResult.lateMinutes} menit`);
+      if (!outEv) parts.push('Belum Tap Out');
       if (conditionInfo.locationValidationStatus && !['Valid Otomatis', 'Radius Sesuai', 'Jalan Cocok'].includes(conditionInfo.locationValidationStatus)) {
-        parts.push('Lokasi perlu review');
+        parts.push('Lokasi Review');
       }
-      if (conditionInfo.conditionCategory) parts.push(`Ada laporan kondisi (${conditionInfo.conditionCategory})`);
-      // Note-only signal — absensi is already counted as Hadir/Selesai above;
-      // this never turns the day into a pending-approval state.
-      if (conditionInfo.hrdReviewStatus === 'needs_review' && outEv) parts.push('Perlu catatan HRD');
+      if (conditionInfo.conditionCategory) parts.push(`Kondisi: ${conditionInfo.conditionNote || conditionInfo.conditionCategory}`);
+      if (hrdConfirmationStatus === 'received') parts.push('Diterima HRD');
+      else if (hrdConfirmationStatus === 'noted') parts.push('Ada Catatan HRD');
       if (!payrollDay.isFinal) parts.push('Belum final untuk payroll');
-      if (parts.length === 0) parts.push(outEv ? 'Hadir' : 'Sedang bekerja');
-      payrollRemark = parts.join(' • ');
+      payrollRemark = parts.length ? parts.join(' + ') : 'Hadir';
       keterangan = payrollRemark;
     } else {
       payrollRemark = status;
+    }
+
+    if (typeof window !== 'undefined' && hasAttendance) {
+      const debugSchedule = resolveDaySchedule(attendanceSite, dateStr);
+      console.log('[PAYROLL_EXPORT_LATE_DEBUG]', {
+        employeeName: resolveName(employee),
+        dateKey: dateStr,
+        checkInTime: inEv ? getEventTimeStr(inEv) : null,
+        checkOutTime: outEv ? getEventTimeStr(outEv) : null,
+        scheduledStartTime: debugSchedule.schedule?.startTime ?? null,
+        lateToleranceMinutes: debugSchedule.graceMins,
+        calculatedLateMinutes: lateResult?.lateMinutes ?? null,
+        calculatedAttendanceStatus: lateResult?.statusLabel ?? null,
+        locationNeedsReview: conditionInfo.locationValidationStatus
+          ? !['Valid Otomatis', 'Radius Sesuai', 'Jalan Cocok'].includes(conditionInfo.locationValidationStatus)
+          : null,
+        hasConditionReport: !!conditionInfo.conditionCategory,
+        payrollNote: payrollRemark,
+        rawEventLateMinutes: (inEv as any)?.lateMinutes,
+        rawEventStatus: (inEv as any)?.status,
+      });
     }
 
     return {
@@ -1656,6 +1627,7 @@ export function generateEmployeePayrollRecap(
       hasPhoto: conditionInfo.hasPhoto,
       locationValidationStatus: conditionInfo.locationValidationStatus,
       hrdReviewStatus: conditionInfo.hrdReviewStatus,
+      hrdConfirmationStatus,
       conditionCategory: conditionInfo.conditionCategory,
       conditionNote: conditionInfo.conditionNote,
       payrollRemark,

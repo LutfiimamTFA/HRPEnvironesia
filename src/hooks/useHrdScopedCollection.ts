@@ -23,6 +23,35 @@ type WithId<T> = T & { id: string };
 
 type ScopedCollectionOptions = {
   brandField?: string;
+  /**
+   * "single" (default) queries brandField with `where(field, "in", chunk)` —
+   * correct for collections that store one brandId per doc. "array" queries
+   * it with `where(field, "array-contains-any", chunk)` instead, for
+   * collections like attendance_sites where one doc can serve multiple
+   * brands via a `brandIds: string[]` field — using "single" mode against
+   * such a field would only ever match `brandIds[0]`, silently missing the
+   * doc for every other brand it actually serves.
+   */
+  brandFieldMode?: "single" | "array";
+  /**
+   * Only used when brandFieldMode === "array". Also queries this singular
+   * field with `where(field, "in", chunk)`, for older docs written before
+   * the array field existed. Results merge with the array-contains-any
+   * query below (deduped by doc id, same as the multi-chunk "in" queries
+   * already are), so both old and new docs come back in one dataset.
+   */
+  legacyBrandField?: string;
+  /**
+   * Skips the brand `where(...)` clause entirely, querying `constraints`
+   * against the full collection (same as the Super Admin path) even for a
+   * brand-scoped HRD. Needed for collections like attendance_events, whose
+   * docs don't reliably carry a brandId at all (they're written by an
+   * external Web Absen app) — brand-scoping that query server-side silently
+   * drops every doc missing the field, instead of the intended "show
+   * everything, then filter by the HRD's already-scoped employee list
+   * client-side" behavior. Caller is responsible for that client-side scope.
+   */
+  unscoped?: boolean;
   constraints?: QueryConstraint[];
   enabled?: boolean;
   realtime?: boolean;
@@ -51,6 +80,9 @@ export function useHrdScopedCollection<T = any>(
   } = useHrdScopeContext();
 
   const brandField = options?.brandField ?? "brandId";
+  const brandFieldMode = options?.brandFieldMode ?? "single";
+  const legacyBrandField = options?.brandFieldMode === "array" ? options?.legacyBrandField : undefined;
+  const unscoped = options?.unscoped ?? false;
   const constraints = useMemo(() => options?.constraints ?? [], [options?.constraints]);
   const enabled = options?.enabled !== false;
   const realtime = options?.realtime !== false;
@@ -68,16 +100,32 @@ export function useHrdScopedCollection<T = any>(
     if (!isConfigured) return [];
 
     const baseRef = collection(firestore, collectionPath) as CollectionReference<DocumentData>;
-    if (isSuperAdmin || isAllCompanies) {
+    if (unscoped || isSuperAdmin || isAllCompanies) {
       return [query(baseRef, ...constraints)];
     }
 
-    return chunkArray(allowedBrandIds, 10).map((brandIds) =>
-      query(baseRef, where(brandField, "in", brandIds), ...constraints),
+    const chunks = chunkArray(allowedBrandIds, 10);
+    const primaryQueries = chunks.map((brandIds) =>
+      query(
+        baseRef,
+        brandFieldMode === "array"
+          ? where(brandField, "array-contains-any", brandIds)
+          : where(brandField, "in", brandIds),
+        ...constraints,
+      ),
     );
+    if (!legacyBrandField) return primaryQueries;
+
+    const legacyQueries = chunks.map((brandIds) =>
+      query(baseRef, where(legacyBrandField, "in", brandIds), ...constraints),
+    );
+    return [...primaryQueries, ...legacyQueries];
   }, [
     allowedBrandIds,
     brandField,
+    brandFieldMode,
+    legacyBrandField,
+    unscoped,
     collectionPath,
     constraints,
     enabled,
