@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import 'leaflet/dist/leaflet.css';
 
 export const metadata: Metadata = {
-  title: 'HRP Environesia — Human Capital Portal',
+  title: 'Environesia HCM',
   description: 'Human Capital Portal Environesia.',
   manifest: '/manifest.json',
 };

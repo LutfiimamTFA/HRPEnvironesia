@@ -21,7 +21,15 @@ const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      "flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1",
+      // Radix's SelectValue placeholder renders as plain text inside this
+      // trigger <button>, not a native <input> — the placeholder:* Tailwind
+      // variant targets ::placeholder and has zero effect on it, so without
+      // this the placeholder silently inherited each usage's normal value
+      // text color (often near-white on a light bg) and looked like an
+      // empty, "broken" dropdown. Radix sets data-placeholder="" on this
+      // same trigger element whenever no value is selected, so targeting it
+      // directly (not the value text color) grays it out everywhere at once.
+      "flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[placeholder]:text-muted-foreground [&>span]:line-clamp-1",
       className
     )}
     {...props}

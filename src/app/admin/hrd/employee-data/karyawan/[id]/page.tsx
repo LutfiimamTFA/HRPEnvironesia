@@ -46,7 +46,19 @@ import type {
   VerificationStatusGroup,
   OvertimeSubmission,
   AttendanceSite,
+  LeavePolicy,
+  LeaveRequest,
 } from "@/lib/types";
+import { LeavePolicySummaryCard } from "@/components/dashboard/LeavePolicySummaryCard";
+import { resolveEmployeeUid, resolveEmployeeBrandId } from "@/lib/leave-policy";
+import {
+  calculateLeaveBalance,
+  getLeaveRequestEmployeeUid,
+  isApprovedLeaveRequest,
+  resolveLeaveRequestDates,
+  resolveLeaveRequestDurationDays,
+  resolveEmployeeLeaveEntitlementDays,
+} from "@/lib/leave-balance";
 import {
   ATTENDANCE_METHODS,
   ATTENDANCE_METHOD_LABELS,
@@ -177,7 +189,33 @@ import {
 } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
 
-const TIPE_KARYAWAN_OPTIONS = ["Magang", "Probation", "Kontrak", "Tetap"];
+const TIPE_KARYAWAN_OPTIONS = ["Magang", "Probation", "Kontrak", "Tetap", "Freelance"];
+
+/**
+ * "Jenis Kontrak / Tipe" (employeeType) is read by dozens of places in this
+ * file as one of exactly TIPE_KARYAWAN_OPTIONS's 5 strings — but older
+ * employee_profiles docs were written by other tools/imports and can hold a
+ * differently-cased or differently-worded variant (e.g. "kontrak", "PKWT",
+ * "karyawan tetap"). Radix's Select only shows the placeholder when the
+ * value is "" — a non-empty value that doesn't match any SelectItem renders
+ * as neither the placeholder NOR a label, just a blank trigger. Normalizing
+ * every known variant to a canonical option here (and falling back to ""
+ * — which correctly shows the placeholder — for anything unrecognized)
+ * is what prevents that blank-but-technically-has-a-value state.
+ */
+function normalizeEmployeeTypeValue(value: any): string {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (!raw) return "";
+  if (["kontrak", "contract", "pkwt"].includes(raw)) return "Kontrak";
+  if (["tetap", "permanent", "karyawan tetap", "pkwtt"].includes(raw)) return "Tetap";
+  if (["probation", "masa percobaan", "percobaan"].includes(raw)) return "Probation";
+  if (["magang", "internship", "intern"].includes(raw)) return "Magang";
+  if (["freelance", "lepas", "freelancer"].includes(raw)) return "Freelance";
+  // Already-canonical values (any casing) pass straight through instead of
+  // being discarded — e.g. a value literally stored as "Kontrak" already.
+  const canonical = TIPE_KARYAWAN_OPTIONS.find((o) => o.toLowerCase() === raw);
+  return canonical || "";
+}
 
 const STATUS_KERJA_OPTIONS = [
   "Training",
@@ -238,6 +276,13 @@ function formatCurrency(value: string | number): string {
 function parseCurrency(value: string): number {
   const numValue = value.replace(/\D/g, "");
   return numValue ? parseInt(numValue, 10) : 0;
+}
+
+/** Hak Cuti / Jatah Cuti input — strips anything that isn't a digit (so "12.5", "12,5", "-1", "abc" all collapse to a clean integer), then clamps to [0, 99]. Returns "" only when the field was actually cleared, so it can still fail required-validation instead of silently becoming 0. */
+function normalizeIntegerInput(value: string): string | number {
+  const cleaned = String(value).replace(/[^\d]/g, "");
+  if (cleaned === "") return "";
+  return Math.max(0, Math.min(99, parseInt(cleaned, 10)));
 }
 
 const DataRow = ({
@@ -547,6 +592,12 @@ export default function EmployeeDetailPage({
 
   const [isSaving, setIsSaving] = useState(false);
   const [editingSection, setEditingSection] = useState<string | null>(null);
+  // True once HRD has typed into "Hak Cuti / Jatah Cuti" directly in the
+  // Ubah Kontrak form — once set, the contractDurationMonths→jatahCuti
+  // auto-default sync below stops touching the field, so a manual value
+  // (e.g. 10 for a 12-month contract) never gets silently overwritten back
+  // to the duration default on a later re-render/duration tweak.
+  const [isLeaveEntitlementManualOverride, setIsLeaveEntitlementManualOverride] = useState(false);
   const [activeTab, setActiveTab] = useState("ringkasan");
   const [divisions, setDivisions] = useState<any[]>([]);
   const [managers, setManagers] = useState<any[]>([]);
@@ -602,6 +653,93 @@ export default function EmployeeDetailPage({
   // Fetch attendance sites
   const { data: sitesData, isLoading: sitesLoading } =
     useHrdScopedCollection<AttendanceSite>("attendance_sites");
+
+  // Leave policy + this employee's own leave_requests — for LeavePolicySummaryCard.
+  const { data: leavePoliciesData } = useHrdScopedCollection<LeavePolicy>("leave_policies", {
+    brandField: "brandIds",
+    brandFieldMode: "array",
+  });
+  const leaveRequestConstraints = useMemo(() => {
+    if (!employeeId) return [];
+    return [where("employeeUid", "==", employeeId)];
+  }, [employeeId]);
+  // unscoped: true — this query is already scoped to ONE employee via the
+  // employeeUid constraint above, so the default brandId "in" filter is
+  // redundant and, combined with the employeeUid "==" constraint, requires a
+  // composite index that doesn't exist — for a non-superadmin HRD viewer that
+  // makes the whole query throw and silently leaves employeeLeaveRequests
+  // empty (Cuti Terpakai showing 0 while Workspace Cuti's unfiltered query,
+  // which needs no composite index, shows the real count). Firestore
+  // security rules still gate per-doc read access regardless of this filter.
+  const { data: employeeLeaveRequests } = useHrdScopedCollection<LeaveRequest>("leave_requests", {
+    constraints: leaveRequestConstraints,
+    enabled: Boolean(employeeId),
+    unscoped: true,
+  });
+
+  // THE live leave balance for this employee — same calculateLeaveBalance()
+  // every other page (Detail Pengajuan Cuti, LeavePolicySummaryCard) calls,
+  // so "Sisa Cuti" here can never drift from what those pages show. Recomputes
+  // automatically whenever leave_requests/leave_policies' realtime listeners
+  // emit a new snapshot (e.g. right after HRD approves a request elsewhere) —
+  // no manual refresh/refetch step needed.
+  const employeeLeaveBalance = useMemo(
+    () => calculateLeaveBalance({ employee: profileDoc, leaveRequests: employeeLeaveRequests, leavePolicies: leavePoliciesData }),
+    [profileDoc, employeeLeaveRequests, leavePoliciesData],
+  );
+
+  if (typeof window !== "undefined" && profileDoc) {
+    console.log("[EMPLOYEE_LEAVE_BALANCE_SYNC_DEBUG]", {
+      employeeName: (profileDoc as any)?.fullName || (profileDoc as any)?.namaLengkap || null,
+      employeeUid: resolveEmployeeUid(profileDoc),
+      brandId: resolveEmployeeBrandId(profileDoc),
+      policy: employeeLeaveBalance.found
+        ? { id: employeeLeaveBalance.policyId, name: employeeLeaveBalance.policyName, resetType: employeeLeaveBalance.resetType }
+        : (employeeLeaveBalance.reason === "contract_incomplete" ? employeeLeaveBalance.policy : null),
+      periodStart: employeeLeaveBalance.found ? employeeLeaveBalance.periodStart : null,
+      periodEnd: employeeLeaveBalance.found ? employeeLeaveBalance.periodEnd : null,
+      entitlementDays: employeeLeaveBalance.found ? employeeLeaveBalance.entitlementDays : null,
+      carryOverDays: employeeLeaveBalance.found ? employeeLeaveBalance.carryOverDays : null,
+      usedDays: employeeLeaveBalance.found ? employeeLeaveBalance.usedDays : null,
+      pendingDays: employeeLeaveBalance.found ? employeeLeaveBalance.pendingDays : null,
+      remainingDays: employeeLeaveBalance.found ? employeeLeaveBalance.remainingDays : null,
+      source: "calculateLeaveBalance",
+    });
+
+    // Per-request diagnostic for the "Ubah Cuti" form specifically — lets us
+    // tell apart a JOIN failure (matchedLeaveRequests empty even though the
+    // employee clearly has leave history) from a STATUS-RECOGNITION failure
+    // (matched, but isApproved is false for a request that's visibly
+    // "Disetujui HRD" elsewhere in the app).
+    console.log("[LEAVE_EDIT_FORM_BALANCE_DEBUG]", {
+      employeeName: (profileDoc as any)?.fullName || (profileDoc as any)?.namaLengkap || null,
+      employeeUid: resolveEmployeeUid(profileDoc),
+      brandId: resolveEmployeeBrandId(profileDoc),
+      policy: employeeLeaveBalance.found
+        ? { id: employeeLeaveBalance.policyId, name: employeeLeaveBalance.policyName, resetType: employeeLeaveBalance.resetType }
+        : (employeeLeaveBalance.reason === "contract_incomplete" ? employeeLeaveBalance.policy : null),
+      periodStart: employeeLeaveBalance.found ? employeeLeaveBalance.periodStart : null,
+      periodEnd: employeeLeaveBalance.found ? employeeLeaveBalance.periodEnd : null,
+      entitlementDays: employeeLeaveBalance.found ? employeeLeaveBalance.entitlementDays : null,
+      carryOverDays: employeeLeaveBalance.found ? employeeLeaveBalance.carryOverDays : null,
+      matchedLeaveRequests: (employeeLeaveRequests || []).map((r: any) => {
+        const { start, end } = resolveLeaveRequestDates(r);
+        return {
+          id: r.id,
+          employeeUid: getLeaveRequestEmployeeUid(r),
+          status: r.status ?? null,
+          hrdApprovalStatus: r.hrdApprovalStatus ?? null,
+          startDate: start,
+          endDate: end,
+          durationDays: resolveLeaveRequestDurationDays(r),
+          isApproved: isApprovedLeaveRequest(r),
+        };
+      }),
+      usedDays: employeeLeaveBalance.found ? employeeLeaveBalance.usedDays : null,
+      pendingDays: employeeLeaveBalance.found ? employeeLeaveBalance.pendingDays : null,
+      remainingDays: employeeLeaveBalance.found ? employeeLeaveBalance.remainingDays : null,
+    });
+  }
 
   useEffect(() => {
     if (sitesData) {
@@ -746,13 +884,12 @@ export default function EmployeeDetailPage({
       divisionId: normalizedData?.divisionId || "",
       structuralPosition: normalizedData?.structuralPosition || "",
       workRole: normalizedData?.workRole || "",
-      employeeType:
+      employeeType: normalizeEmployeeTypeValue(
         normalizedData?.employeeType || normalizedData?.tipeKaryawan || "",
+      ),
       employmentStatus:
         normalizedData?.employmentStatus || normalizedData?.statusKerja || "",
       directSupervisorUid: normalizedData?.directSupervisorUid || "",
-      structureEffectiveDate: format(new Date(), "yyyy-MM-dd"),
-      structureChangeReason: "",
 
       // Payroll
       gajiPokok: hrdInfo.gajiPokok || 0,
@@ -784,17 +921,13 @@ export default function EmployeeDetailPage({
       izin: hrdInfo.izin || 0,
       sakit: hrdInfo.sakit || 0,
       alpha: hrdInfo.alpha || 0,
-      jatahCuti: hrdInfo.jatahCuti || 12,
-      sisaCuti: hrdInfo.sisaCuti || 12,
+      jatahCuti: resolveEmployeeLeaveEntitlementDays(profileDoc),
       carryOverCuti: (hrdInfo as any).carryOverCuti || 0,
-      cutiEffectiveDate: format(new Date(), "yyyy-MM-dd"),
-      cutiChangeReason: "",
 
       asetPerusahaan: hrdInfo.asetPerusahaan || "",
       catatanBenefit: hrdInfo.catatanBenefit || "",
       catatanInternalHrd: hrdInfo.catatanInternalHrd || "",
       catatanAdministrasi: hrdInfo.catatanAdministrasi || "",
-      tanggalEfektif: format(new Date(), "yyyy-MM-dd"),
       // New contract fields
       contractCycleStatus:
         hrdInfo.contractCycleStatus || hrdInfo.statusKontrak || "Draft",
@@ -838,7 +971,7 @@ export default function EmployeeDetailPage({
         historyDate: format(new Date(), "yyyy-MM-dd"),
       },
     }),
-    [normalizedData, hrdInfo],
+    [normalizedData, hrdInfo, profileDoc],
   );
 
   const form = useForm<any>({
@@ -856,7 +989,56 @@ export default function EmployeeDetailPage({
 
     lastResetKeyRef.current = resetKey;
     form.reset(employmentDefaultValues);
-  }, [isLoading, employeeId, employmentDefaultValues, form]);
+    // Seed from what was actually persisted last time, not always false —
+    // otherwise reopening Ubah Kontrak for a contract HRD already hand-set
+    // (e.g. 10 hari on a 12-month contract) would silently snap the field
+    // back to the duration default the instant the modal opens.
+    setIsLeaveEntitlementManualOverride((hrdInfo as any)?.leaveEntitlementSource === "manual_hrd");
+  }, [isLoading, employeeId, employmentDefaultValues, form, hrdInfo]);
+
+  // Auto-default "Hak Cuti / Jatah Cuti" from contract duration in the Ubah
+  // Kontrak form — defaultLeaveEntitlementDays = contractDurationMonths (1
+  // bulan kontrak = 1 hari cuti). Only fires while editing the kontrak
+  // section, only when a duration is actually known, and never once HRD has
+  // manually typed into the field (see isLeaveEntitlementManualOverride).
+  const watchContractDurationMonths = form.watch("contractDurationMonths");
+  useEffect(() => {
+    if (editingSection !== "kontrak") return;
+    if (isLeaveEntitlementManualOverride) return;
+    const months = Number(watchContractDurationMonths) || 0;
+    if (months > 0 && form.getValues("jatahCuti") !== months) {
+      form.setValue("jatahCuti", months, { shouldDirty: true });
+    }
+  }, [watchContractDurationMonths, isLeaveEntitlementManualOverride, editingSection, form]);
+
+  // Fires once each time the Ubah Cuti modal opens, so a report of "modal
+  // shows 15 but Policy Cuti shows 0" can be diagnosed from
+  // resolvedEntitlementDays alone — if it's already 15 here, the bug is
+  // downstream in the card; if it's not, the bug is in what got
+  // persisted/how it's being read.
+  const loggedCutiOpenRef = React.useRef(false);
+  useEffect(() => {
+    if (editingSection === "cuti" && !loggedCutiOpenRef.current && profileDoc) {
+      loggedCutiOpenRef.current = true;
+      console.log("[LEAVE_ENTITLEMENT_SYNC_DEBUG]", {
+        employeeUid: employeeId,
+        employeeName: (profileDoc as any)?.fullName || (profileDoc as any)?.namaLengkap || null,
+        modalValue: form.getValues("jatahCuti"),
+        employeeLeaveEntitlementDays: (profileDoc as any)?.leaveEntitlementDays,
+        employeeAnnualLeaveQuota: (profileDoc as any)?.annualLeaveQuota,
+        employeeJatahCuti: (profileDoc as any)?.jatahCuti,
+        nestedLeaveEntitlementDays: (hrdInfo as any)?.leaveEntitlementDays,
+        resolvedEntitlementDays: resolveEmployeeLeaveEntitlementDays(profileDoc),
+        usedDays: employeeLeaveBalance.found ? employeeLeaveBalance.usedDays : null,
+        carryOverDays: form.getValues("carryOverCuti"),
+        remainingDays: employeeLeaveBalance.found ? employeeLeaveBalance.remainingDays : null,
+        source: "modal_open",
+      });
+    }
+    if (editingSection !== "cuti") {
+      loggedCutiOpenRef.current = false;
+    }
+  }, [editingSection, profileDoc, form, hrdInfo, employeeLeaveBalance, employeeId]);
 
   // Auto-calculate Contract End Date logic
   const watchEmployeeType = form.watch("employeeType");
@@ -1262,45 +1444,98 @@ export default function EmployeeDetailPage({
       }
     }
 
-    // Validasi untuk Ubah Cuti
+    // Validasi untuk Ubah Cuti — Sisa Cuti dan Cuti Terpakai sudah dihitung
+    // otomatis (calculateLeaveBalance), bukan input manual, jadi hanya field
+    // yang benar-benar diedit HRD (Hak Cuti, Carry Over) yang divalidasi di
+    // sini. Tanggal efektif tidak lagi divalidasi/diminta — waktu perubahan
+    // dicatat otomatis via serverTimestamp() saat disimpan (lihat updatedValues).
     if (editingSection === "cuti") {
-      const jatahCuti = (values as any).jatahCuti || 0;
-      const sisaCuti = (values as any).sisaCuti || 0;
-      const cutiEffectiveDate = (values as any).cutiEffectiveDate;
-      const cutiChangeReason = (values as any).cutiChangeReason || "";
+      const jatahCutiRaw = (values as any).jatahCuti;
+      const carryOverCutiRaw = (values as any).carryOverCuti;
 
+      if (jatahCutiRaw === "" || jatahCutiRaw === null || jatahCutiRaw === undefined) {
+        toast({
+          variant: "destructive",
+          title: "Hak Cuti Tidak Valid",
+          description: "Hak cuti wajib diisi.",
+        });
+        return;
+      }
+      const jatahCuti = Number(jatahCutiRaw);
+      if (!Number.isInteger(jatahCuti)) {
+        toast({
+          variant: "destructive",
+          title: "Hak Cuti Tidak Valid",
+          description: "Hak cuti harus berupa bilangan bulat.",
+        });
+        return;
+      }
       if (jatahCuti < 0) {
         toast({
           variant: "destructive",
           title: "Hak Cuti Tidak Valid",
-          description: "Hak cuti tidak boleh negatif.",
+          description: "Hak cuti tidak boleh kurang dari 0.",
         });
         return;
       }
 
-      if (sisaCuti < 0) {
+      const carryOverCuti = Number(carryOverCutiRaw) || 0;
+      if (!Number.isInteger(carryOverCuti)) {
         toast({
           variant: "destructive",
-          title: "Sisa Cuti Tidak Valid",
-          description: "Sisa cuti tidak boleh negatif.",
+          title: "Carry Over Tidak Valid",
+          description: "Carry over harus berupa bilangan bulat.",
+        });
+        return;
+      }
+      if (carryOverCuti < 0) {
+        toast({
+          variant: "destructive",
+          title: "Carry Over Tidak Valid",
+          description: "Sisa tahun lalu (carry over) tidak boleh negatif.",
         });
         return;
       }
 
-      if (!cutiEffectiveDate) {
+    }
+
+    // "Jenis Kontrak / Tipe" wajib dipilih — never persist an empty
+    // employeeType from Ubah Kontrak.
+    if (editingSection === "kontrak" && !(values as any).employeeType) {
+      toast({
+        variant: "destructive",
+        title: "Jenis Kontrak Wajib Dipilih",
+        description: "Jenis kontrak wajib dipilih.",
+      });
+      return;
+    }
+
+    // Validasi Hak Cuti / Jatah Cuti pada form Ubah Kontrak — hanya berlaku
+    // untuk tipe Kontrak, karena field ini hanya dirender di cabang itu.
+    if (editingSection === "kontrak" && (values as any).employeeType === "Kontrak") {
+      const contractJatahCuti = (values as any).jatahCuti;
+      if (contractJatahCuti === "" || contractJatahCuti === null || contractJatahCuti === undefined) {
         toast({
           variant: "destructive",
-          title: "Tanggal Efektif Wajib Diisi",
-          description: "Mohon isi tanggal efektif perubahan cuti.",
+          title: "Hak Cuti Tidak Valid",
+          description: "Hak cuti wajib diisi.",
         });
         return;
       }
-
-      if (!cutiChangeReason || cutiChangeReason.trim().length < 10) {
+      const contractJatahCutiNum = Number(contractJatahCuti);
+      if (!Number.isFinite(contractJatahCutiNum) || contractJatahCutiNum < 0) {
         toast({
           variant: "destructive",
-          title: "Alasan Perubahan Wajib Diisi",
-          description: "Mohon isi alasan perubahan (minimal 10 karakter).",
+          title: "Hak Cuti Tidak Valid",
+          description: "Hak cuti tidak boleh kurang dari 0.",
+        });
+        return;
+      }
+      if (contractJatahCutiNum > 99) {
+        toast({
+          variant: "destructive",
+          title: "Hak Cuti Tidak Valid",
+          description: "Hak cuti tidak boleh lebih dari 99 hari.",
         });
         return;
       }
@@ -1346,6 +1581,8 @@ export default function EmployeeDetailPage({
         directSuperiorSource = "division_manager";
       }
 
+      const hrdDisplayName = (userProfile as any).displayName || (userProfile as any).fullName || userProfile.email || "HRD";
+
       const updatedValues = {
         ...values,
         brand: b ? b.name : (values as any).brandName || "",
@@ -1354,13 +1591,70 @@ export default function EmployeeDetailPage({
         directSupervisorName: isManagementLevel ? null : (s ? s.fullName : (values as any).directSupervisorName || ""),
         directSupervisorUid: isManagementLevel ? null : values.directSupervisorUid,
         directSuperiorSource,
-        // Include cuti fields if updating cuti section
+        // Every Management & Administration save gets the same auto-recorded
+        // change metadata — no UI field for any of this. changeReason/
+        // changeSource are fixed text, not something HRD types in; the real
+        // "what changed" record is the per-field employment_history entries
+        // built from trackChange() further down, which don't need HRD's own
+        // wording to be useful.
+        changeReason: "Perubahan data oleh HRD",
+        changeSource: "hrd_management_form",
+        changedAt: serverTimestamp(),
+        effectiveChangeAt: serverTimestamp(),
+        updatedByUid: userProfile.uid,
+        updatedByName: hrdDisplayName,
+        // Include cuti fields if updating cuti section — only the manually
+        // HRD-edited ones. sisaCuti/cutiTerpakai are never written here; they
+        // are always computed live via calculateLeaveBalance() from these two
+        // plus leave_requests, on every page that displays them. jatahCuti is
+        // also mirrored into annualLeaveQuota/leaveEntitlementDays — nested
+        // AND at the employee_profiles top level in the setDoc call below —
+        // so resolveEmployeeLeaveEntitlementDays() can never land on a stale
+        // top-level 0 that shadows a freshly-saved nested value via `??`.
         ...(editingSection === "cuti" && {
-          jatahCuti: (values as any).jatahCuti,
-          sisaCuti: (values as any).sisaCuti,
-          carryOverCuti: (values as any).carryOverCuti,
+          jatahCuti: Math.trunc(Number((values as any).jatahCuti)) || 0,
+          annualLeaveQuota: Math.trunc(Number((values as any).jatahCuti)) || 0,
+          leaveEntitlementDays: Math.trunc(Number((values as any).jatahCuti)) || 0,
+          carryOverCuti: Math.trunc(Number((values as any).carryOverCuti)) || 0,
+          carryOverLeaveDays: Math.trunc(Number((values as any).carryOverCuti)) || 0,
+          leaveEntitlementSource: "manual_hrd",
+        }),
+        // Hak Cuti / Jatah Cuti edited from the Ubah Kontrak form — same
+        // jatahCuti field the "cuti" section above also writes, so both
+        // entry points always agree. Only included when the kontrak section
+        // is actually what's being saved, and only for the Kontrak branch
+        // where this field is rendered (see the validation guard above).
+        ...(editingSection === "kontrak" && (values as any).employeeType === "Kontrak" && {
+          jatahCuti: Number((values as any).jatahCuti) || 0,
+          annualLeaveQuota: Number((values as any).jatahCuti) || 0,
+          leaveEntitlementDays: Number((values as any).jatahCuti) || 0,
+          leaveEntitlementSource: isLeaveEntitlementManualOverride ? "manual_hrd" : "auto_contract_duration",
+          leaveEntitlementUpdatedAt: serverTimestamp(),
+          leaveEntitlementUpdatedByUid: userProfile.uid,
+          leaveEntitlementUpdatedByName: hrdDisplayName,
+        }),
+        ...(editingSection === "struktur" && {
+          structureUpdatedAt: serverTimestamp(),
         }),
       };
+      // No manual "alasan"/"tanggal efektif" input exists anywhere in this
+      // form anymore — strip any stale value still lingering in RHF state
+      // (e.g. from an old default before these fields were removed from the UI).
+      delete (updatedValues as any).tanggalEfektif;
+      delete (updatedValues as any).structureEffectiveDate;
+      delete (updatedValues as any).structureChangeReason;
+      delete (updatedValues as any).cutiChangeReason;
+      delete (updatedValues as any).catatanAdministrasi;
+      // Defensive: guarantee sisaCuti never persists even if a stale value
+      // still lingers in the form's internal state from an old default.
+      delete (updatedValues as any).sisaCuti;
+      delete (updatedValues as any).remainingLeaveDays;
+      delete (updatedValues as any).cutiTerpakai;
+      delete (updatedValues as any).usedLeaveDays;
+      // Tanggal efektif is no longer a manual field — never persist whatever
+      // stale default lingers in form state; effectiveChangeAt/changedAt
+      // (serverTimestamp) are the real record of when this was changed.
+      delete (updatedValues as any).cutiEffectiveDate;
 
       // Determine what changed for history
       const changes: any[] = [];
@@ -1392,16 +1686,20 @@ export default function EmployeeDetailPage({
           (values as any).jatahCuti,
         );
         trackChange(
-          "sisaCuti",
-          "Sisa Cuti",
-          hrdInfo.sisaCuti,
-          (values as any).sisaCuti,
-        );
-        trackChange(
           "carryOverCuti",
           "Sisa Tahun Lalu (Carry Over)",
           (hrdInfo as any).carryOverCuti,
           (values as any).carryOverCuti,
+        );
+      }
+
+      // Special handling for kontrak section's Hak Cuti / Jatah Cuti field
+      if (editingSection === "kontrak" && (values as any).employeeType === "Kontrak") {
+        trackChange(
+          "jatahCuti",
+          "Hak Cuti / Jatah Cuti (via Ubah Kontrak)",
+          hrdInfo.jatahCuti,
+          (values as any).jatahCuti,
         );
       }
 
@@ -1611,13 +1909,67 @@ export default function EmployeeDetailPage({
 
       // Save to employee_profiles.hrdEmploymentInfo
       const profileRef = doc(firestore, "employee_profiles", employeeId);
+      const isSavingKontrakLeaveEntitlement =
+        editingSection === "kontrak" && (values as any).employeeType === "Kontrak";
+      const isSavingLeaveEntitlement = editingSection === "cuti" || isSavingKontrakLeaveEntitlement;
+      const employeeDisplayName = (profileDoc as any)?.fullName || (profileDoc as any)?.namaLengkap || null;
+
+      if (isSavingKontrakLeaveEntitlement) {
+        console.log("[CONTRACT_LEAVE_ENTITLEMENT_SAVE_DEBUG]", {
+          employeeUid: employeeId,
+          employeeName: employeeDisplayName,
+          contractDurationMonths: (updatedValues as any).contractDurationMonths,
+          contractStartDate: (updatedValues as any).contractStartDate,
+          contractEndDate: (updatedValues as any).contractEndDate,
+          leaveEntitlementDays: (updatedValues as any).jatahCuti,
+          isLeaveEntitlementManualOverride,
+          payload: updatedValues,
+        });
+      }
+      if (isSavingLeaveEntitlement) {
+        console.log("[LEAVE_ENTITLEMENT_SYNC_DEBUG]", {
+          employeeUid: employeeId,
+          employeeName: employeeDisplayName,
+          modalValue: (updatedValues as any).jatahCuti,
+          employeeLeaveEntitlementDays: (profileDoc as any)?.leaveEntitlementDays,
+          employeeAnnualLeaveQuota: (profileDoc as any)?.annualLeaveQuota,
+          employeeJatahCuti: (profileDoc as any)?.jatahCuti,
+          nestedLeaveEntitlementDays: (hrdInfo as any)?.leaveEntitlementDays,
+          resolvedEntitlementDaysBeforeSave: resolveEmployeeLeaveEntitlementDays(profileDoc),
+          usedDays: employeeLeaveBalance.found ? employeeLeaveBalance.usedDays : null,
+          carryOverDays: (updatedValues as any).carryOverCuti,
+          remainingDays: employeeLeaveBalance.found ? employeeLeaveBalance.remainingDays : null,
+        });
+      }
       await setDoc(
         profileRef,
         {
           hrdEmploymentInfo: { ...updatedValues, updatedAt: serverTimestamp() },
+          // Top-level mirrors so every existing employee.annualLeaveQuota /
+          // employee.leaveEntitlementDays / employee.jatahCuti reader (and
+          // resolveEmployeeLeaveEntitlementDays in leave-balance.ts) lands on
+          // the same number regardless of which of those fields it checks
+          // first — only written when this save actually touched Hak Cuti,
+          // from either the Ubah Cuti or Ubah Kontrak entry point. Without
+          // this, a stale top-level 0 from an older write would shadow a
+          // freshly-saved nested value forever, since `??` stops at the
+          // first defined field, not the first non-zero one.
+          ...(isSavingLeaveEntitlement && {
+            annualLeaveQuota: (updatedValues as any).jatahCuti,
+            leaveEntitlementDays: (updatedValues as any).jatahCuti,
+            jatahCuti: (updatedValues as any).jatahCuti,
+            updatedByUid: userProfile.uid,
+            updatedByName: (userProfile as any).displayName || (userProfile as any).fullName || userProfile.email || "HRD",
+          }),
         },
         { merge: true },
       );
+      // Realtime listener on profileDoc already picks this up, but refetch
+      // explicitly too so the Policy Cuti card can never be seen showing a
+      // stale number even for one frame after Simpan Data.
+      if (isSavingLeaveEntitlement) {
+        mutateProfile();
+      }
 
       // Save to employees collection for master data sync
       const empRef = doc(firestore, "employees", employeeId);
@@ -1763,9 +2115,10 @@ export default function EmployeeDetailPage({
           "employment_history",
         );
         for (const change of changes) {
-          // Use cuti-specific fields if available
+          // Cuti section no longer has a manual effective-date input — the
+          // change is always effective at the moment it's saved.
           const effectiveDate = editingSection === "cuti"
-            ? (values as any).cutiEffectiveDate || format(new Date(), "yyyy-MM-dd")
+            ? format(new Date(), "yyyy-MM-dd")
             : updatedValues.tanggalEfektif || format(new Date(), "yyyy-MM-dd");
           const note = editingSection === "cuti"
             ? (values as any).cutiChangeReason || "Update data cuti"
@@ -3502,7 +3855,7 @@ export default function EmployeeDetailPage({
                         />
                         <DataRow
                           label="Hak Cuti Tahunan"
-                          value={`${hrdInfo.leaveQuotaAnnual ?? hrdInfo.jatahCuti ?? 0} Hari`}
+                          value={`${resolveEmployeeLeaveEntitlementDays(profileDoc)} Hari`}
                         />
                       </div>
                     </CardContent>
@@ -3648,77 +4001,23 @@ export default function EmployeeDetailPage({
                     </CardContent>
                   </Card>
 
-                  {/* 4. Kehadiran & Cuti */}
-                  <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl group hover:border-purple-500/30 transition-all duration-300">
-                    <CardHeader className="border-b border-slate-200 dark:border-slate-800/50 flex flex-row items-center justify-between pb-4">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-xl bg-purple-500/10 flex items-center justify-center text-purple-500 border border-purple-500/20">
-                          <ClipboardList className="h-5 w-5" />
-                        </div>
-                        <CardTitle className="text-base font-bold text-slate-900 dark:text-white">
-                          Kehadiran & Cuti
-                        </CardTitle>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 rounded-lg text-slate-500 hover:text-purple-400 hover:bg-purple-500/10"
-                        onClick={() => setEditingSection("cuti")}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                    </CardHeader>
-                    <CardContent className="pt-6">
-                      <div className="grid grid-cols-2 gap-4 mb-6">
-                        <div className="bg-slate-50 dark:bg-slate-900/40 p-3 rounded-2xl border border-slate-200 dark:border-slate-800/50">
-                          <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-1">
-                            Sisa Cuti
-                          </p>
-                          <p className="text-xl font-black text-emerald-400">
-                            {hrdInfo.sisaCuti || 0}{" "}
-                            <span className="text-xs font-normal text-slate-500">
-                              Hari
-                            </span>
-                          </p>
-                        </div>
-                        <div className="bg-slate-50 dark:bg-slate-900/40 p-3 rounded-2xl border border-slate-200 dark:border-slate-800/50">
-                          <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-1">
-                            Jadwal
-                          </p>
-                          <p className="text-sm font-bold text-slate-900 dark:text-white">
-                            {hrdInfo.jadwalKerja || "N/A"}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-2 text-center">
-                        <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800/50">
-                          <p className="text-[9px] text-slate-500 uppercase mb-1">
-                            Hadir
-                          </p>
-                          <p className="text-sm font-bold text-emerald-400">
-                            {hrdInfo.hadir || 0}
-                          </p>
-                        </div>
-                        <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800/50">
-                          <p className="text-[9px] text-slate-500 uppercase mb-1">
-                            Telat
-                          </p>
-                          <p className="text-sm font-bold text-amber-400">
-                            {hrdInfo.terlambat || 0}
-                          </p>
-                        </div>
-                        <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800/50">
-                          <p className="text-[9px] text-slate-500 uppercase mb-1">
-                            Izin/Sakit
-                          </p>
-                          <p className="text-sm font-bold text-blue-400">
-                            {(hrdInfo.izin || 0) + (hrdInfo.sakit || 0)}
-                          </p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  {/* 4. Kebijakan Cuti (Leave Policy) — the old separate "Kehadiran & Cuti"
+                      card duplicated this card's own Sisa Cuti number (one manual, one
+                      live-computed) and added nothing this card doesn't already cover, so
+                      it was removed. Full width (spans the whole row) since it's now the
+                      only card in this section. The Ubah Cuti pencil moved here too — it's
+                      the only entry point into the "cuti" edit form (jatahCuti/carryOverCuti —
+                      no manual reason/date fields, those are auto-recorded on save). */}
+                  {profileDoc && (
+                    <div className="lg:col-span-2 xl:col-span-3">
+                      <LeavePolicySummaryCard
+                        employee={profileDoc}
+                        leavePolicies={leavePoliciesData}
+                        leaveRequests={employeeLeaveRequests}
+                        onEdit={() => setEditingSection("cuti")}
+                      />
+                    </div>
+                  )}
 
                   {/* 5. Karier & Kinerja */}
                   <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 backdrop-blur-xl group hover:border-sky-500/30 transition-all duration-300 xl:col-span-2">
@@ -3851,27 +4150,6 @@ export default function EmployeeDetailPage({
                         <Form {...form}>
                           <form
                             onSubmit={form.handleSubmit((data) => {
-                              // Validate catatan if important fields changed
-                              const importantFieldsChanged =
-                                (data.brandId !== hrdInfo.internshipBrandId && data.brandId !== hrdInfo.brandId) ||
-                                (data.divisionId !== hrdInfo.internshipDivisionId && data.divisionId !== hrdInfo.divisionId) ||
-                                (data.workRole !== hrdInfo.internshipRole) ||
-                                (data.directSupervisorUid !== hrdInfo.internshipMentorUid && data.directSupervisorUid !== hrdInfo.directSupervisorUid) ||
-                                (data.contractStartDate !== hrdInfo.internshipStartDate && data.contractStartDate !== hrdInfo.contractStartDate) ||
-                                (data.contractEndDate !== hrdInfo.internshipEndDate && data.contractEndDate !== hrdInfo.contractEndDate) ||
-                                (data.employmentStatus !== hrdInfo.internshipStatus && data.employmentStatus !== hrdInfo.employmentStatus) ||
-                                (data.gajiPokok !== hrdInfo.gajiPokok && data.gajiPokok !== 0);
-
-                              if (importantFieldsChanged && !data.structureChangeReason?.trim()) {
-                                toast({
-                                  variant: "destructive",
-                                  title: "Catatan / Alasan Perubahan Wajib Diisi",
-                                  description:
-                                    "Mohon isi catatan atau alasan perubahan untuk setiap perubahan data penting.",
-                                });
-                                return;
-                              }
-
                               handleSaveHrd(data);
                             })}
                             className="space-y-6"
@@ -4094,29 +4372,6 @@ export default function EmployeeDetailPage({
                               </div>
                             </div>
 
-                            {/* Catatan / Alasan Perubahan */}
-                            <div>
-                              <h3 className="text-sm font-bold text-slate-300 uppercase mb-4">Catatan & Alasan Perubahan</h3>
-                              <FormField
-                                control={form.control}
-                                name="structureChangeReason"
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel className="text-xs font-bold uppercase text-slate-500">Catatan / Alasan Perubahan *</FormLabel>
-                                    <FormControl>
-                                      <Textarea
-                                        {...field}
-                                        className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
-                                        placeholder="Contoh: Penyesuaian periode magang, perubahan PIC, atau update nominal uang saku."
-                                        rows={4}
-                                      />
-                                    </FormControl>
-                                    <p className="text-xs text-slate-500 mt-2">Wajib diisi jika ada perubahan pada data penempatan, periode, status, atau nominal uang saku.</p>
-                                  </FormItem>
-                                )}
-                              />
-                            </div>
-
                             {/* Action Buttons */}
                             <div className="flex gap-3 pt-4 border-t border-slate-800">
                               <Button type="submit" className="flex-1 bg-emerald-600 hover:bg-emerald-700">
@@ -4167,28 +4422,6 @@ export default function EmployeeDetailPage({
                     <Form {...form}>
                       <form
                         onSubmit={form.handleSubmit((data) => {
-                          // Validation for struktur section
-                          if (editingSection === "struktur") {
-                            if (!data.structureEffectiveDate) {
-                              toast({
-                                variant: "destructive",
-                                title: "Tanggal Efektif Wajib Diisi",
-                                description:
-                                  "Mohon isi tanggal efektif perubahan struktur.",
-                              });
-                              return;
-                            }
-                            if (!data.structureChangeReason?.trim()) {
-                              toast({
-                                variant: "destructive",
-                                title: "Alasan Perubahan Wajib Diisi",
-                                description:
-                                  "Mohon isi alasan perubahan untuk log audit.",
-                              });
-                              return;
-                            }
-                          }
-
                           if (editingSection === "tambah_riwayat") {
                             handleSaveHrd(data, {
                               type:
@@ -4219,8 +4452,8 @@ export default function EmployeeDetailPage({
                                 </div>
                                 <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
                                   Perubahan struktur akan memperbarui penempatan
-                                  karyawan dan tersimpan sebagai riwayat audit
-                                  HRD. Pastikan brand, divisi, jabatan
+                                  karyawan dan tersimpan sebagai catatan
+                                  perubahan. Pastikan brand, divisi, jabatan
                                   struktural, dan atasan langsung sudah sesuai
                                   dengan kebijakan perusahaan.
                                 </p>
@@ -4585,53 +4818,6 @@ export default function EmployeeDetailPage({
                                   )}
                                 />
 
-                                {/* Tanggal Efektif Perubahan */}
-                                <FormField
-                                  control={form.control}
-                                  name="structureEffectiveDate"
-                                  render={({ field }) => (
-                                    <FormItem>
-                                      <FormLabel className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                                        Tanggal Efektif Perubahan *
-                                      </FormLabel>
-                                      <FormControl>
-                                        <Input
-                                          type="date"
-                                          {...field}
-                                          className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white h-12 rounded-xl focus:border-emerald-500/50"
-                                        />
-                                      </FormControl>
-                                      <p className="text-xs text-slate-500 mt-1">
-                                        Tanggal mulai berlakunya perubahan
-                                        struktur karyawan.
-                                      </p>
-                                    </FormItem>
-                                  )}
-                                />
-
-                                {/* Alasan Perubahan - Full Width */}
-                                <FormField
-                                  control={form.control}
-                                  name="structureChangeReason"
-                                  render={({ field }) => (
-                                    <FormItem className="lg:col-span-2">
-                                      <FormLabel className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                                        Alasan Perubahan *
-                                      </FormLabel>
-                                      <FormControl>
-                                        <Textarea
-                                          {...field}
-                                          placeholder="Contoh: Mutasi internal, promosi, penyesuaian struktur, koreksi data HRD"
-                                          className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white min-h-[80px] rounded-xl focus:border-emerald-500/50"
-                                        />
-                                      </FormControl>
-                                      <p className="text-xs text-slate-500 mt-1">
-                                        Alasan ini akan disimpan sebagai log
-                                        audit perubahan struktur.
-                                      </p>
-                                    </FormItem>
-                                  )}
-                                />
                               </div>
                             </div>
                           ) : null}
@@ -4741,6 +4927,13 @@ export default function EmployeeDetailPage({
 
                           {editingSection === "cuti" ? (
                             <div className="space-y-6">
+                              <div className="rounded-xl border border-blue-200 dark:border-blue-800/50 bg-blue-50 dark:bg-blue-900/10 px-4 py-3">
+                                <p className="text-xs text-blue-800 dark:text-blue-300">
+                                  Sisa cuti dihitung otomatis dari pengajuan cuti yang sudah disetujui HRD pada
+                                  periode aktif — bukan angka yang diketik manual.
+                                </p>
+                              </div>
+
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {/* Hak Cuti Tahunan */}
                                 <FormField
@@ -4756,72 +4949,22 @@ export default function EmployeeDetailPage({
                                           type="number"
                                           {...field}
                                           min="0"
-                                          step="0.5"
+                                          max="99"
+                                          step="1"
+                                          inputMode="numeric"
                                           className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white h-12 rounded-xl focus:border-emerald-500/50"
-                                          onChange={(e) =>
-                                            field.onChange(
-                                              e.target.value ? parseFloat(e.target.value) : 0
-                                            )
-                                          }
+                                          onChange={(e) => field.onChange(normalizeIntegerInput(e.target.value))}
                                         />
                                       </FormControl>
                                       <p className="text-xs text-slate-500 mt-1">
-                                        Jumlah hari cuti yang berhak diperoleh per tahun.
+                                        Jumlah hari cuti yang berhak diperoleh per tahun. Bilangan bulat, tanpa desimal.
                                       </p>
                                       <FormMessage />
                                     </FormItem>
                                   )}
                                 />
 
-                                {/* Sisa Cuti */}
-                                <FormField
-                                  control={form.control}
-                                  name="sisaCuti"
-                                  render={({ field }) => (
-                                    <FormItem>
-                                      <FormLabel className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                                        Sisa Cuti *
-                                      </FormLabel>
-                                      <FormControl>
-                                        <Input
-                                          type="number"
-                                          {...field}
-                                          min="0"
-                                          step="0.5"
-                                          className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white h-12 rounded-xl focus:border-emerald-500/50"
-                                          onChange={(e) =>
-                                            field.onChange(
-                                              e.target.value ? parseFloat(e.target.value) : 0
-                                            )
-                                          }
-                                        />
-                                      </FormControl>
-                                      <p className="text-xs text-slate-500 mt-1">
-                                        Jumlah hari cuti yang masih tersisa.
-                                      </p>
-                                      <FormMessage />
-                                    </FormItem>
-                                  )}
-                                />
-
-                                {/* Cuti Terpakai (Readonly Calculated) */}
-                                <div>
-                                  <FormLabel className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                                    Cuti Terpakai
-                                  </FormLabel>
-                                  <div className="mt-2 h-12 px-3 rounded-xl bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 flex items-center">
-                                    <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                                      {(form.watch("jatahCuti") || 0) -
-                                        (form.watch("sisaCuti") || 0)}{" "}
-                                      hari
-                                    </span>
-                                  </div>
-                                  <p className="text-xs text-slate-500 mt-1">
-                                    Otomatis dihitung (Hak - Sisa).
-                                  </p>
-                                </div>
-
-                                {/* Carry Over (Optional) */}
+                                {/* Carry Over */}
                                 <FormField
                                   control={form.control}
                                   name="carryOverCuti"
@@ -4835,71 +4978,61 @@ export default function EmployeeDetailPage({
                                           type="number"
                                           {...field}
                                           min="0"
-                                          step="0.5"
+                                          max="99"
+                                          step="1"
+                                          inputMode="numeric"
                                           className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white h-12 rounded-xl focus:border-emerald-500/50"
-                                          onChange={(e) =>
-                                            field.onChange(
-                                              e.target.value ? parseFloat(e.target.value) : 0
-                                            )
-                                          }
+                                          onChange={(e) => field.onChange(normalizeIntegerInput(e.target.value))}
                                         />
                                       </FormControl>
                                       <p className="text-xs text-slate-500 mt-1">
-                                        Cuti dari tahun sebelumnya yang dibawa ke tahun ini.
+                                        Cuti dari periode sebelumnya yang dibawa ke periode aktif. Bilangan bulat, tanpa desimal.
                                       </p>
                                     </FormItem>
                                   )}
                                 />
+
+                                {/* Cuti Terpakai — read-only, dari leave_requests approved pada periode aktif */}
+                                <div>
+                                  <FormLabel className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                                    Cuti Terpakai
+                                  </FormLabel>
+                                  <div className="mt-2 h-12 px-3 rounded-xl bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 flex items-center">
+                                    <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                                      {employeeLeaveBalance.found ? employeeLeaveBalance.usedDays : 0} hari
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-slate-500 mt-1">
+                                    Dihitung otomatis dari cuti yang sudah disetujui HRD (leave_requests) pada periode aktif.
+                                  </p>
+                                </div>
+
+                                {/* Sisa Cuti Otomatis — read-only */}
+                                <div>
+                                  <FormLabel className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                                    Sisa Cuti Otomatis
+                                  </FormLabel>
+                                  <div className="mt-2 h-12 px-3 rounded-xl bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 flex items-center">
+                                    <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                                      {employeeLeaveBalance.found
+                                        ? employeeLeaveBalance.remainingDays
+                                        : (form.watch("jatahCuti") || 0) + (form.watch("carryOverCuti") || 0)} hari
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-slate-500 mt-1">
+                                    Dihitung otomatis dari hak cuti, carry over, dan cuti yang sudah disetujui.
+                                  </p>
+                                  {employeeLeaveBalance.found && employeeLeaveBalance.pendingDays > 0 && (
+                                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 font-medium">
+                                      Sisa Bisa Diajukan: {employeeLeaveBalance.availableDays} hari (ada {employeeLeaveBalance.pendingDays} hari cuti pending)
+                                    </p>
+                                  )}
+                                </div>
                               </div>
 
-                              {/* Tanggal Efektif Perubahan */}
-                              <FormField
-                                control={form.control}
-                                name="cutiEffectiveDate"
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                                      Tanggal Efektif Perubahan *
-                                    </FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        type="date"
-                                        {...field}
-                                        className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white h-12 rounded-xl focus:border-emerald-500/50"
-                                      />
-                                    </FormControl>
-                                    <p className="text-xs text-slate-500 mt-1">
-                                      Tanggal mulai berlakunya perubahan data cuti.
-                                    </p>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-
-                              {/* Alasan Perubahan */}
-                              <FormField
-                                control={form.control}
-                                name="cutiChangeReason"
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                                      Alasan Perubahan / Log Audit *
-                                    </FormLabel>
-                                    <FormControl>
-                                      <Textarea
-                                        {...field}
-                                        placeholder="Contoh: Koreksi saldo cuti tahun fiskal 2026, Penyesuaian carry over, Penambahan cuti khusus, dll."
-                                        className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white min-h-[100px] rounded-xl focus:border-emerald-500/50"
-                                      />
-                                    </FormControl>
-                                    <p className="text-xs text-slate-500 mt-1">
-                                      Alasan ini akan disimpan sebagai catatan audit untuk
-                                      perubahan data cuti.
-                                    </p>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
+                              <p className="text-[11px] text-slate-500 italic">
+                                Waktu perubahan akan dicatat otomatis saat data disimpan.
+                              </p>
                             </div>
                           ) : null}
 
@@ -4944,7 +5077,7 @@ export default function EmployeeDetailPage({
                                       >
                                         <FormControl>
                                           <SelectTrigger className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                                            <SelectValue />
+                                            <SelectValue placeholder="Pilih jenis kontrak" />
                                           </SelectTrigger>
                                         </FormControl>
                                         <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
@@ -5130,6 +5263,12 @@ export default function EmployeeDetailPage({
                                                 <SelectItem value="12">
                                                   12 Bulan
                                                 </SelectItem>
+                                                <SelectItem value="15">
+                                                  15 Bulan
+                                                </SelectItem>
+                                                <SelectItem value="18">
+                                                  18 Bulan
+                                                </SelectItem>
                                                 <SelectItem value="24">
                                                   24 Bulan
                                                 </SelectItem>
@@ -5244,6 +5383,12 @@ export default function EmployeeDetailPage({
                                                 </SelectItem>
                                                 <SelectItem value="12">
                                                   12 Bulan
+                                                </SelectItem>
+                                                <SelectItem value="15">
+                                                  15 Bulan
+                                                </SelectItem>
+                                                <SelectItem value="18">
+                                                  18 Bulan
                                                 </SelectItem>
                                                 <SelectItem value="24">
                                                   24 Bulan
@@ -5379,6 +5524,12 @@ export default function EmployeeDetailPage({
                                                 <SelectItem value="12">
                                                   12 Bulan
                                                 </SelectItem>
+                                                <SelectItem value="15">
+                                                  15 Bulan
+                                                </SelectItem>
+                                                <SelectItem value="18">
+                                                  18 Bulan
+                                                </SelectItem>
                                                 <SelectItem value="24">
                                                   24 Bulan
                                                 </SelectItem>
@@ -5415,6 +5566,57 @@ export default function EmployeeDetailPage({
                                                 className={`bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white ${form.watch("contractDurationType") !== "custom" ? "opacity-70 cursor-not-allowed" : ""}`}
                                               />
                                             </FormControl>
+                                          </FormItem>
+                                        )}
+                                      />
+                                      <FormField
+                                        control={form.control}
+                                        name="jatahCuti"
+                                        render={({ field }) => (
+                                          <FormItem>
+                                            <FormLabel className="text-xs font-bold text-slate-500">
+                                              Hak Cuti / Jatah Cuti
+                                            </FormLabel>
+                                            <FormControl>
+                                              <div className="relative">
+                                                <Input
+                                                  type="number"
+                                                  {...field}
+                                                  value={field.value ?? ""}
+                                                  min="0"
+                                                  max="99"
+                                                  step="1"
+                                                  inputMode="numeric"
+                                                  placeholder="Contoh: 12"
+                                                  className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white pr-12"
+                                                  onChange={(e) => {
+                                                    field.onChange(normalizeIntegerInput(e.target.value));
+                                                    setIsLeaveEntitlementManualOverride(true);
+                                                  }}
+                                                />
+                                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">
+                                                  hari
+                                                </span>
+                                              </div>
+                                            </FormControl>
+                                            <div className="flex items-center justify-between gap-2 mt-1">
+                                              <p className="text-[10px] text-slate-500 italic">
+                                                Default mengikuti durasi kontrak, namun dapat disesuaikan oleh HRD.
+                                              </p>
+                                              {isLeaveEntitlementManualOverride && Number(watchContractDurationMonths) > 0 && (
+                                                <button
+                                                  type="button"
+                                                  className="text-[10px] font-semibold text-indigo-500 hover:text-indigo-400 underline shrink-0"
+                                                  onClick={() => {
+                                                    form.setValue("jatahCuti", Number(watchContractDurationMonths), { shouldDirty: true });
+                                                    setIsLeaveEntitlementManualOverride(false);
+                                                  }}
+                                                >
+                                                  Gunakan default
+                                                </button>
+                                              )}
+                                            </div>
+                                            <FormMessage />
                                           </FormItem>
                                         )}
                                       />
@@ -5482,7 +5684,7 @@ export default function EmployeeDetailPage({
                                         >
                                           <FormControl>
                                             <SelectTrigger className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                                              <SelectValue />
+                                              <SelectValue placeholder="Pilih sistem kerja" />
                                             </SelectTrigger>
                                           </FormControl>
                                           <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
@@ -5497,6 +5699,9 @@ export default function EmployeeDetailPage({
                                             </SelectItem>
                                             <SelectItem value="Shift">
                                               Shift
+                                            </SelectItem>
+                                            <SelectItem value="Remote">
+                                              Remote
                                             </SelectItem>
                                           </SelectContent>
                                         </Select>
@@ -5886,47 +6091,6 @@ export default function EmployeeDetailPage({
                             </div>
                           ) : null}
 
-                          <div className="pt-6 border-t border-slate-800 space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                              <FormField
-                                control={form.control}
-                                name="tanggalEfektif"
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel className="text-xs font-black text-blue-500 uppercase">
-                                      Tanggal Efektif Perubahan
-                                    </FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        type="date"
-                                        {...field}
-                                        className="bg-blue-500/5 border-blue-500/20"
-                                      />
-                                    </FormControl>
-                                  </FormItem>
-                                )}
-                              />
-                              <FormField
-                                control={form.control}
-                                name="catatanAdministrasi"
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel className="text-xs font-black text-amber-500 uppercase">
-                                      Alasan Perubahan (Log Audit)
-                                    </FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        {...field}
-                                        required
-                                        className="bg-amber-500/5 border-amber-500/20"
-                                        placeholder="Contoh: Penyesuaian Gaji Tahunan"
-                                      />
-                                    </FormControl>
-                                  </FormItem>
-                                )}
-                              />
-                            </div>
-                          </div>
                         </div>
 
                         {/* Sticky Footer */}

@@ -217,6 +217,12 @@ const EMPLOYEE_MONITORING_ITEMS: MenuGroup = {
       icon: createElement(CalendarOff),
     },
     {
+      key: "hrd.leave_policy",
+      href: "/admin/hrd/kebijakan-cuti",
+      label: "Kebijakan Cuti",
+      icon: createElement(ShieldCheck),
+    },
+    {
       key: "monitoring.leave",
       href: "/admin/hrd/monitoring/cuti",
       label: "Cuti",
@@ -936,6 +942,12 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
           href: "/admin/hrd/persetujuan-cuti",
           label: "Persetujuan Cuti",
           icon: createElement(CalendarOff),
+        },
+        {
+          key: "hrd.leave_policy",
+          href: "/admin/hrd/kebijakan-cuti",
+          label: "Kebijakan Cuti",
+          icon: createElement(ShieldCheck),
         },
         {
           key: "monitoring.leave",

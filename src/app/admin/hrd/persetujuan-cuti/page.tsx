@@ -17,7 +17,8 @@ import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { sendLeaveNotification } from '@/lib/leave-notifications';
-import { type LeaveRequest, type LeaveBalance, type LeaveBalanceAdjustment } from '@/lib/types';
+import { type LeaveRequest, type LeaveBalance, type LeaveBalanceAdjustment, type LeavePolicy } from '@/lib/types';
+import { calculateLeaveBalanceForRequest } from '@/lib/leave-balance';
 import {
   Loader2,
   CalendarOff,
@@ -153,6 +154,12 @@ export default function HrdLeaveApprovalPage() {
 
   // 4. Fetch all adjustments
   const { data: adjustments, isLoading: isLoadingAdjustments, mutate: mutateAdjustments } = useHrdScopedCollection<LeaveBalanceAdjustment>('leave_balance_adjustments');
+
+  // 4b. Leave policies — for the live, period-aware "Ringkasan Saldo Cuti" panel (calculateLeaveBalanceForRequest), independent of the OLD leave_balances doc above.
+  const { data: leavePolicies } = useHrdScopedCollection<LeavePolicy>('leave_policies', {
+    brandField: 'brandIds',
+    brandFieldMode: 'array',
+  });
 
   // 5. Fetch master brands and divisions
   const { data: masterBrands } = useHrdScopedBrands();
@@ -569,11 +576,43 @@ export default function HrdLeaveApprovalPage() {
     });
   }, [adjustments, filterSearch, filterBrand, filterDivision, filterMonth, filterYear, filterAdjustmentType, filterAdjustmentChange, employeeProfilesMap]);
 
-  // Selected Employee Balance dynamic lookups for Detail Timeline Dialog
-  const selectedRequestBalance = useMemo(() => {
-    if (!balances || !selectedRequest) return null;
-    return balances.find(b => b.employeeId === selectedRequest.employeeId) || null;
-  }, [balances, selectedRequest]);
+  // Live, period-aware balance for the "Ringkasan Saldo Cuti" panel — same
+  // calculateLeaveBalanceForRequest() Data Karyawan and every other leave
+  // balance display calls. Unlike the OLD leave_balances doc (which for an
+  // ALREADY-APPROVED request already has this request's own days
+  // subtracted), this always excludes the request itself from "days used
+  // before it" — so "Saldo Sebelumnya" reads the balance BEFORE this
+  // request, not after, whether it's pending or already approved.
+  const selectedRequestPolicyBalance = useMemo(() => {
+    if (!selectedRequest) return null;
+    const employeeProfile = employeeProfilesMap.get(selectedRequest.employeeId || (selectedRequest as any).employeeUid);
+    if (!employeeProfile) return null;
+    const result = calculateLeaveBalanceForRequest({
+      employee: employeeProfile,
+      leaveRequests: requests,
+      leavePolicies,
+      request: selectedRequest,
+    });
+
+    console.log('[LEAVE_DETAIL_BALANCE_DEBUG]', {
+      employeeName: resolveEmployeeName(employeeProfile, employeesMap.get(selectedRequest.employeeId), usersMap.get(selectedRequest.employeeId), null),
+      employeeUid: selectedRequest.employeeId,
+      requestId: selectedRequest.id,
+      requestDurationDays: selectedRequest.durationDays,
+      requestStatus: selectedRequest.status,
+      policy: result.found ? { id: result.policy.id, name: result.policy.name, resetType: result.policy.resetType } : (result.reason === 'contract_incomplete' ? result.policy : null),
+      periodStart: result.found ? result.period.periodStart : null,
+      periodEnd: result.found ? result.period.periodEnd : null,
+      entitlementDays: result.found ? result.entitlementDays : null,
+      carryOverDays: result.found ? result.carryOverDays : null,
+      usedDaysBeforeThisRequest: result.found ? result.usedDaysBeforeThisRequest : null,
+      usedDaysIncludingThisRequest: result.found ? result.usedDaysIncludingThisRequest : null,
+      previousBalance: result.found ? result.previousBalance : null,
+      balanceAfterApproval: result.found ? result.balanceAfterApproval : null,
+    });
+
+    return result;
+  }, [selectedRequest, employeeProfilesMap, requests, leavePolicies, employeesMap, usersMap]);
 
   const [isMigrating, setIsMigrating] = useState(false);
 
@@ -1876,26 +1915,32 @@ export default function HrdLeaveApprovalPage() {
               </div>
             </div>
 
-            {/* Enhanced Ringkasan Saldo Section */}
-            {selectedRequest && selectedRequestBalance && (
+            {/* Enhanced Ringkasan Saldo Section — sourced from calculateLeaveBalanceForRequest
+                (src/lib/leave-balance.ts), the SAME function Data Karyawan and every other
+                leave-balance display call, so this can never drift from what those pages show.
+                previousBalance always excludes this request's own days, whether it's pending
+                or already approved — that's what fixes the old "11 / 1 / 11" double-count bug
+                (previousBalance used to read the POST-approval leave_balances.currentBalance
+                directly, which had already been decremented by this very request). */}
+            {selectedRequest && selectedRequestPolicyBalance?.found && (
               <div className="p-5 bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-950/30 dark:to-blue-950/30 border-2 border-indigo-200 dark:border-indigo-800/50 rounded-2xl space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">Ringkasan Saldo Cuti</h3>
-                  <Badge className="bg-indigo-600 text-white font-black text-xs">Periode Aktif</Badge>
+                  <Badge className="bg-indigo-600 text-white font-black text-xs">{selectedRequestPolicyBalance.policy.name}</Badge>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {/* Before */}
                   <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 text-center">
                     <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">Saldo Sebelumnya</p>
-                    <p className="text-4xl font-black text-blue-600 dark:text-blue-400">{selectedRequestBalance.currentBalance}</p>
+                    <p className="text-4xl font-black text-blue-600 dark:text-blue-400">{selectedRequestPolicyBalance.previousBalance}</p>
                     <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold mt-1">Hari Kerja</p>
                   </div>
 
                   {/* Used */}
                   <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 text-center">
                     <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">Saldo Digunakan</p>
-                    <p className="text-4xl font-black text-amber-600 dark:text-amber-400">{selectedRequest.durationDays}</p>
+                    <p className="text-4xl font-black text-amber-600 dark:text-amber-400">{selectedRequestPolicyBalance.usedByThisRequest}</p>
                     <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold mt-1">Hari Kerja</p>
                   </div>
 
@@ -1903,14 +1948,17 @@ export default function HrdLeaveApprovalPage() {
                   <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border-2 border-emerald-300 dark:border-emerald-700 text-center ring-2 ring-emerald-100 dark:ring-emerald-900/20">
                     <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider mb-2">Saldo Setelah Approval</p>
                     <p className="text-4xl font-black text-emerald-600 dark:text-emerald-400">
-                      {['pending_hrd', 'pending_hrd_review'].includes(selectedRequest.status)
-                        ? Math.max(0, selectedRequestBalance.currentBalance - selectedRequest.durationDays)
-                        : selectedRequestBalance.currentBalance
-                      }
+                      {selectedRequestPolicyBalance.balanceAfterApproval}
                     </p>
                     <p className="text-xs text-emerald-600 dark:text-emerald-400 font-bold mt-1">Hari Kerja</p>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {selectedRequest && selectedRequestPolicyBalance && !selectedRequestPolicyBalance.found && selectedRequestPolicyBalance.reason === 'contract_incomplete' && (
+              <div className="p-4 bg-amber-50 dark:bg-amber-900/10 border-2 border-amber-200 dark:border-amber-800/50 rounded-2xl text-sm text-amber-800 dark:text-amber-300 font-semibold">
+                Periode kontrak belum diatur — lengkapi tanggal mulai/selesai kontrak karyawan ini agar sisa cuti dapat dihitung.
               </div>
             )}
 

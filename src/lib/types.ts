@@ -2063,9 +2063,13 @@ export type LocationValidationMode = "radius_only" | "address_only" | "radius_an
 export type AttendanceSite = {
   id?: string;
   name: string;
+  /** Mirrors `name` — written alongside it purely so an external reader expecting this field name (some docs were seen using it) never sees a blank site name; this app's own code always reads `name`. */
+  siteName?: string;
   brandIds?: string[]; // Updated from brandId
   brandId?: string; // Legacy — kept in sync as brandIds[0] so existing Firestore rules (which check singular brandId) keep working.
   brandNames?: string[];
+  /** Legacy — kept in sync as brandNames[0] alongside brandId, for any older reader expecting one name instead of the array. */
+  brandName?: string;
   isActive: boolean;
   office: {
     lat: number;
@@ -2102,7 +2106,12 @@ export type AttendanceSite = {
   earliestCheckOut?: string; // HH:mm
   minimumWorkMinutes?: number;
   createdByUid?: string;
+  createdByName?: string;
+  createdAt?: Timestamp;
+  /** Set only on a site created via "Pecah Site per Brand" — points back at the multi-brand site it was split out of, for audit/traceability. */
+  createdFromSiteId?: string;
   updatedByUid?: string;
+  updatedByName?: string;
   updatedAt?: Timestamp;
   updatedBy?: string;
 };
@@ -2727,6 +2736,72 @@ export type LeaveBalanceAdjustment = {
   adjustedBy: string;
   adjustedByName: string;
   createdAt: Timestamp;
+};
+
+// --- LEAVE POLICY (per-brand reset rules) ---
+// Deliberately a separate system from LeaveBalance/leave_balances above —
+// that collection is one perpetual doc per employee (doc id == uid) with no
+// period/reset concept, actively used by the HRD approval batch-write and
+// the employee submission page's quota check. LeavePolicy/LeavePolicyBalance
+// add PERIOD-aware quota tracking (annual reset for some brands, per-contract
+// reset for others) as an additive layer, without touching that existing flow.
+export type LeavePolicyResetType = "annual" | "contract";
+
+/**
+ * A LeavePolicy answers exactly one question: "reset cutinya mengikuti apa?"
+ * (annual calendar-year reset, or per-employee-contract reset) — it
+ * deliberately carries NO quota/entitlement-days field. How many days an
+ * employee gets is read from elsewhere (employee data / contract / saldo
+ * cuti / manual HRD input — see resolveEmployeeLeaveEntitlementDays in
+ * src/lib/leave-policy.ts), never from the policy itself.
+ */
+export type LeavePolicy = {
+  id?: string;
+  name: string;
+  resetType: LeavePolicyResetType;
+  brandIds: string[];
+  brandNames: string[];
+  isActive: boolean;
+  createdAt?: Timestamp;
+  createdByUid?: string;
+  createdByName?: string;
+  updatedAt?: Timestamp;
+  updatedByUid?: string;
+  updatedByName?: string;
+};
+
+export type LeavePolicyBalanceStatus = "active" | "closed";
+
+/**
+ * A computed snapshot of one employee's leave balance for ONE period —
+ * unlike leave_balances (one doc per employee, forever), a contract-reset
+ * policy produces a NEW doc every contract period, so history is preserved
+ * instead of being overwritten on renewal (see calculateLeaveBalance /
+ * buildLeavePolicyBalancePayload in src/lib/leave-balance.ts).
+ */
+export type LeavePolicyBalance = {
+  id?: string;
+  employeeUid: string;
+  employeeName: string;
+  brandId: string;
+  brandName: string;
+  policyId: string;
+  policyName: string;
+  resetType: LeavePolicyResetType;
+  /** Stable key identifying this period, e.g. "2026" (annual) or "2026-07-01_2027-06-30" (contract) — used to find-or-create the right doc instead of always appending. */
+  periodKey: string;
+  periodStart: Timestamp;
+  periodEnd: Timestamp;
+  entitlementDays: number;
+  usedDays: number;
+  pendingDays: number;
+  /** entitlementDays - usedDays — the "official" remaining balance. */
+  remainingDays: number;
+  /** entitlementDays - usedDays - pendingDays — what can still be requested right now. */
+  availableDays: number;
+  status: LeavePolicyBalanceStatus;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
 };
 
 // Landing Page CMS Types

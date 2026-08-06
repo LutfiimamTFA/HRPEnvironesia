@@ -3,12 +3,12 @@
 import { useState, useMemo, type ElementType, type ReactNode } from 'react';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/hooks/use-toast';
-import { useCollection, useFirestore, useMemoFirebase, deleteDocumentNonBlocking } from '@/firebase';
-import { collection, doc } from 'firebase/firestore';
+import { useFirestore, deleteDocumentNonBlocking } from '@/firebase';
+import { doc } from 'firebase/firestore';
 import type { AttendanceSite, Brand } from '@/lib/types';
 import { getActiveDaysLabel, getBrandNamesForSite, getWorkScheduleLines } from '@/lib/attendance-helpers';
 import { useHrdScopeContext } from '@/providers/hrd-scope-provider';
-import { useHrdScopedBrands } from '@/hooks/useHrdScopedCollection';
+import { useHrdScopedBrands, useHrdScopedCollection } from '@/hooks/useHrdScopedCollection';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Loader2, PlusCircle, Trash2, Edit, Building2, CalendarDays, Clock, Radar, ChevronDown, ChevronUp, MapPinned } from 'lucide-react';
@@ -168,27 +168,74 @@ function SiteCard({
 export function AttendanceSettingsClient() {
   const firestore = useFirestore();
   const { toast } = useToast();
-  const { emptyStateMessage, isConfigured, isSuperAdmin } = useHrdScopeContext();
+  const { userProfile } = useAuth();
+  const { emptyStateMessage, isConfigured, isSuperAdmin, isAllCompanies, allowedBrandIds } = useHrdScopeContext();
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [selectedSite, setSelectedSite] = useState<AttendanceSite | null>(null);
 
-  // attendance_sites is intentionally read unscoped here — Firestore rules
-  // (hrdCanAccessSiteData) already filter the result set down to sites whose
-  // brandIds intersect this HRD's allowedBrandIds (or everything for Super
-  // Admin), so a client-side brandId "in" query isn't needed for this
-  // collection. `brands` IS scoped client-side via useHrdScopedBrands so the
-  // create/edit dropdown only ever offers brands this HRD actually holds.
-  const { data: sites, isLoading: isLoadingSites } = useCollection<AttendanceSite>(
-    useMemoFirebase(() => collection(firestore, 'attendance_sites'), [firestore])
-  );
+  // attendance_sites stores brandIds as an array (one site can serve several
+  // brands) — same array-mode scoped query Monitoring Absensi already uses,
+  // so a brand-scoped HRD's read is an explicit `array-contains-any`
+  // Firestore query instead of depending purely on rules-based filtering of
+  // an unscoped `list` (which is what produced empty allSites/visibleSites
+  // for an HRD whose allowedBrandIds were otherwise loaded fine).
+  // legacyBrandField covers any older doc still on a singular `brandId`.
+  const {
+    data: sites,
+    isLoading: isLoadingSites,
+    mutate: refetchAttendanceSites,
+  } = useHrdScopedCollection<AttendanceSite>('attendance_sites', {
+    brandField: 'brandIds',
+    brandFieldMode: 'array',
+    legacyBrandField: 'brandId',
+    realtime: false,
+  });
   const { data: brands, isLoading: isLoadingBrands } = useHrdScopedBrands();
 
   const brandMap = useMemo(() => {
     if (!brands) return new Map<string, string>();
     return new Map(brands.map((brand: Brand) => [brand.id!, brand.name]));
   }, [brands]);
+
+  // null = no filter (Super Admin / HRD scoped to "all companies").
+  const effectiveBrandIds = isSuperAdmin || isAllCompanies ? null : allowedBrandIds;
+
+  const visibleSites = useMemo(() => {
+    if (!sites) return [];
+    if (effectiveBrandIds == null) return sites;
+    return sites.filter((site) => {
+      const siteBrandIds = [
+        ...(site.brandIds || []),
+        (site as any).brandId,
+        (site as any).companyId,
+      ].filter(Boolean);
+      return siteBrandIds.some((id) => effectiveBrandIds.includes(id));
+    });
+  }, [sites, effectiveBrandIds]);
+
+  if (typeof window !== 'undefined' && sites) {
+    console.log('[ATTENDANCE_SETTINGS_SCOPE_DEBUG]', {
+      currentUserUid: userProfile?.uid ?? null,
+      role: userProfile?.role ?? null,
+      allowedBrandIds,
+      allSites: sites.map((site) => ({
+        id: site.id,
+        siteName: (site as any).siteName || site.name,
+        brandId: (site as any).brandId,
+        brandIds: site.brandIds,
+        brandNames: site.brandNames,
+        isActive: site.isActive,
+      })),
+      visibleSites: visibleSites.map((site) => ({
+        id: site.id,
+        siteName: (site as any).siteName || site.name,
+        brandIds: site.brandIds,
+        brandNames: site.brandNames,
+      })),
+    });
+  }
 
   const handleCreate = () => {
     setSelectedSite(null);
@@ -249,9 +296,9 @@ export function AttendanceSettingsClient() {
         <Card><CardContent className="p-10 flex items-center justify-center text-muted-foreground gap-2">
           <Loader2 className="h-4 w-4 animate-spin" /> Memuat data site...
         </CardContent></Card>
-      ) : sites && sites.length > 0 ? (
+      ) : visibleSites.length > 0 ? (
         <div className="space-y-3">
-          {sites.map((site) => (
+          {visibleSites.map((site) => (
             <SiteCard
               key={site.id}
               site={site}
@@ -272,6 +319,9 @@ export function AttendanceSettingsClient() {
         onOpenChange={setIsFormOpen}
         site={selectedSite}
         brands={brands || []}
+        sites={visibleSites}
+        onCreateNewInstead={handleCreate}
+        onSaved={refetchAttendanceSites}
       />
 
       <DeleteConfirmationDialog

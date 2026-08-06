@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useState, useMemo, useRef } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -9,13 +9,15 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDes
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Loader2, Save, LocateFixed, Search, MapPin, Plus, Trash2 } from 'lucide-react';
+import { Loader2, Save, LocateFixed, Search, MapPin, Plus, Trash2, AlertTriangle, Split } from 'lucide-react';
 import type { AttendanceSite, Brand, WorkScheduleDay } from '@/lib/types';
 import { useFirestore, setDocumentNonBlocking } from '@/firebase';
-import { doc, serverTimestamp, Timestamp, collection } from 'firebase/firestore';
+import { doc, serverTimestamp, Timestamp, collection, writeBatch } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/providers/auth-provider';
+import { useHrdScopeContext } from '@/providers/hrd-scope-provider';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../ui/accordion';
+import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -24,6 +26,12 @@ import { Checkbox } from '../ui/checkbox';
 import { Slider } from '../ui/slider';
 import { Badge } from '../ui/badge';
 import { getWorkScheduleLines, formatDaysRangeLabel } from '@/lib/attendance-helpers';
+
+/** Coerces a possibly-string/undefined/NaN Firestore field into a finite number, never silently falling through to `fallback` when a real (if oddly-typed) value is already present. */
+function toFiniteNumber(value: unknown, fallback: number): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -85,6 +93,12 @@ interface AttendanceSiteFormDialogProps {
   onOpenChange: (open: boolean) => void;
   site: AttendanceSite | null;
   brands: Brand[];
+  /** Every site this HRD can currently see (AttendanceSettingsClient's visibleSites) — used only for the duplicate-active-site-per-brand check below, never fetched independently here. */
+  sites: AttendanceSite[];
+  /** Closes this dialog and opens a fresh blank "create" dialog instead — offered as an escape hatch when the site being edited has brands outside this HRD's scope and can't be saved. */
+  onCreateNewInstead?: () => void;
+  /** Called after a create/update actually commits — lets the parent refetch attendance_sites (its useHrdScopedCollection query has no realtime listener) so the new/edited site shows up immediately instead of only after a manual reload. */
+  onSaved?: () => void;
 }
 
 const DEFAULT_SCHEDULE_GROUP = { days: [...MON_FRI], startTime: '08:00', endTime: '17:00', breakStart: '12:00', breakEnd: '13:00' };
@@ -111,8 +125,13 @@ function buildDefaultValues(site: AttendanceSite | null): FormValues {
   }
 
   const brandIds = Array.isArray(site.brandIds) ? site.brandIds : (site.brandId ? [site.brandId] : []);
-  const checkInRadius = site.checkInRadiusMeters ?? site.radiusM ?? 20;
-  const checkOutRadius = site.checkOutRadiusMeters ?? site.radiusM ?? 20;
+  // Number(...) guards against a legacy doc storing these as strings (e.g.
+  // "35" instead of 35) — Number("35") is still 35, so this never changes
+  // behavior for already-numeric fields, it only stops a string-typed value
+  // from breaking downstream consumers (the radius Slider in particular)
+  // that expect an actual number.
+  const checkInRadius = toFiniteNumber(site.checkInRadiusMeters ?? site.radiusM, 20);
+  const checkOutRadius = toFiniteNumber(site.checkOutRadiusMeters ?? site.radiusM, 20);
   const activeDays = site.activeDays && site.activeDays.length > 0
     ? site.activeDays
     : (site.workDays?.map((code) => ({ Mon: 'monday', Tue: 'tuesday', Wed: 'wednesday', Thu: 'thursday', Fri: 'friday', Sat: 'saturday', Sun: 'sunday' } as Record<string, WorkScheduleDay>)[code]).filter(Boolean) as WorkScheduleDay[] ?? [...MON_FRI]);
@@ -138,17 +157,18 @@ function buildDefaultValues(site: AttendanceSite | null): FormValues {
     locationValidationMode: site.locationValidationMode || 'hybrid',
     activeDays,
     workSchedules: workSchedules as any,
-    lateToleranceMinutes: site.lateToleranceMinutes ?? site.shift?.graceLateMinutes ?? 15,
+    lateToleranceMinutes: toFiniteNumber(site.lateToleranceMinutes ?? site.shift?.graceLateMinutes, 15),
     earliestCheckIn: site.earliestCheckIn || '06:00',
     latestCheckInWithoutReview: site.latestCheckInWithoutReview || '09:00',
-    minimumWorkMinutes: site.minimumWorkMinutes ?? 480,
+    minimumWorkMinutes: toFiniteNumber(site.minimumWorkMinutes, 480),
   };
 }
 
-export function AttendanceSiteFormDialog({ open, onOpenChange, site, brands }: AttendanceSiteFormDialogProps) {
+export function AttendanceSiteFormDialog({ open, onOpenChange, site, brands, sites, onCreateNewInstead, onSaved }: AttendanceSiteFormDialogProps) {
   const firestore = useFirestore();
   const { toast } = useToast();
   const { userProfile } = useAuth();
+  const { isSuperAdmin, isAllCompanies, allowedBrandIds } = useHrdScopeContext();
   const [isSaving, setIsSaving] = useState(false);
   const [isFetchingLocation, setIsFetchingLocation] = useState(false);
   const [addressSearch, setAddressSearch] = useState('');
@@ -171,11 +191,46 @@ export function AttendanceSiteFormDialog({ open, onOpenChange, site, brands }: A
   const watchedCheckInRadius = form.watch('checkInRadiusMeters');
   const watchedUseSameRadius = form.watch('useSameRadiusForCheckOut');
   const watchedActiveDays = form.watch('activeDays') as WorkScheduleDay[];
+  const watchedBrandIds = form.watch('brandIds');
+
+  // A per-brand name ("Absensi PT Environesia Global Saraya") makes it obvious
+  // this site is one company's own rule set, not a generic shared bucket like
+  // the old "Environesia Company" default that made HRD think several brands'
+  // absensi rules were all the same. Only offered as a one-click suggestion —
+  // never auto-fills over whatever the user already typed.
+  const suggestedSiteName = useMemo(() => {
+    const names = watchedBrandIds
+      .map((id) => brands.find((b) => b.id === id)?.name)
+      .filter((n): n is string => !!n);
+    if (names.length === 0) return null;
+    if (names.length === 1) return `Absensi ${names[0]}`;
+    return `Absensi Group ${names.join(' & ')}`;
+  }, [watchedBrandIds, brands]);
 
   const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
   const [isResolvingAddress, setIsResolvingAddress] = useState(false);
+  const [isSplitting, setIsSplitting] = useState(false);
+  const [showSplitConfirm, setShowSplitConfirm] = useState(false);
 
   const mapId = useMemo(() => `attendance-site-map-${site?.id ?? 'new'}`, [site]);
+
+  // Brands the site being edited already carries that this HRD isn't
+  // allowed to touch — a leftover multi-brand site (e.g. the old
+  // "Environesia Company" bucket) that includes even one brand outside
+  // allowedBrandIds. These ids never appear as a checkbox in "Brand
+  // Terkait" (that list only ever renders `brands`, this HRD's own scope),
+  // so there is no way for the HRD to remove them from the form — meaning
+  // save must be blocked here, with a clear explanation, rather than
+  // silently failing at Firestore's rules layer with a generic error.
+  // Super Admin / "all companies" HRD scope never hit this.
+  const unauthorizedBrandIds = useMemo(() => {
+    if (isSuperAdmin || isAllCompanies || !site) return [];
+    const siteBrandIds = Array.isArray(site.brandIds) && site.brandIds.length > 0
+      ? site.brandIds
+      : (site.brandId ? [site.brandId] : []);
+    return siteBrandIds.filter((id) => !allowedBrandIds.includes(id));
+  }, [isSuperAdmin, isAllCompanies, site, allowedBrandIds]);
+  const unauthorizedBrandNames = unauthorizedBrandIds.map((id) => site?.brandNames?.[site.brandIds?.indexOf(id) ?? -1] || id);
 
   // Keep check-out radius mirrored to check-in radius whenever "samakan radius" is on.
   useEffect(() => {
@@ -184,47 +239,66 @@ export function AttendanceSiteFormDialog({ open, onOpenChange, site, brands }: A
     }
   }, [watchedUseSameRadius, watchedCheckInRadius, form]);
 
-  useEffect(() => {
-    if (open) {
-      setActiveTab('informasi');
-      const initialValues = buildDefaultValues(site);
-      form.reset(initialValues);
-
-      const timer = setTimeout(() => {
-        const mapContainer = document.getElementById(mapId);
-        if (mapContainer && !mapRef.current) {
-          const map = L.map(mapId).setView([initialValues.office.lat, initialValues.office.lng], 16);
-          mapRef.current = map;
-
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-          }).addTo(map);
-
-          const marker = L.marker([initialValues.office.lat, initialValues.office.lng], { draggable: true }).addTo(map);
-          markerRef.current = marker;
-
-          const circle = L.circle([initialValues.office.lat, initialValues.office.lng], { radius: initialValues.checkInRadiusMeters }).addTo(map);
-          circleRef.current = circle;
-
-          marker.on('dragend', (e) => {
-            const { lat, lng } = e.target.getLatLng();
-            form.setValue('office', { lat, lng }, { shouldValidate: true });
-          });
-
-          setTimeout(() => map.invalidateSize(), 400);
-        }
-      }, 100);
-
-      return () => {
-        clearTimeout(timer);
-        if (mapRef.current) {
-          mapRef.current.remove();
-          mapRef.current = null;
-          markerRef.current = null;
-          circleRef.current = null;
-        }
-      };
+  // Synchronous, before paint — a plain useEffect here would run AFTER the
+  // dialog's first paint, so for one frame PreviewPanel (which reads
+  // form.watch()) and every field would still show whatever the form last
+  // held (the blank "create" defaults, or the PREVIOUS site's values if the
+  // dialog was already open for a different site) instead of this site's
+  // actual data. That one-frame staleness is what made the preview panel
+  // disagree with the site card in the reported bug.
+  useLayoutEffect(() => {
+    if (!open) return;
+    setActiveTab('informasi');
+    setShowSplitConfirm(false);
+    const initialValues = buildDefaultValues(site);
+    // HRD scoped to exactly one brand can never pick a different one — the
+    // "Brand Terkait" field below renders as a locked, non-interactive label
+    // in that case, so nothing else ever calls field.onChange to actually
+    // put the brand id into form state. Without this, a brand-new site's
+    // brandIds silently stayed [] forever for a single-brand HRD.
+    if (!isSuperAdmin && !isAllCompanies && brands.length === 1 && initialValues.brandIds.length === 0) {
+      initialValues.brandIds = [brands[0].id!];
     }
+    form.reset(initialValues);
+  }, [open, site, form, brands, isSuperAdmin, isAllCompanies]);
+
+  useEffect(() => {
+    if (!open) return;
+    const initialValues = buildDefaultValues(site);
+    const timer = setTimeout(() => {
+      const mapContainer = document.getElementById(mapId);
+      if (mapContainer && !mapRef.current) {
+        const map = L.map(mapId).setView([initialValues.office.lat, initialValues.office.lng], 16);
+        mapRef.current = map;
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        }).addTo(map);
+
+        const marker = L.marker([initialValues.office.lat, initialValues.office.lng], { draggable: true }).addTo(map);
+        markerRef.current = marker;
+
+        const circle = L.circle([initialValues.office.lat, initialValues.office.lng], { radius: initialValues.checkInRadiusMeters }).addTo(map);
+        circleRef.current = circle;
+
+        marker.on('dragend', (e) => {
+          const { lat, lng } = e.target.getLatLng();
+          form.setValue('office', { lat, lng }, { shouldValidate: true });
+        });
+
+        setTimeout(() => map.invalidateSize(), 400);
+      }
+    }, 100);
+
+    return () => {
+      clearTimeout(timer);
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+        markerRef.current = null;
+        circleRef.current = null;
+      }
+    };
   }, [open, site, form, mapId]);
 
   useEffect(() => {
@@ -320,70 +394,221 @@ export function AttendanceSiteFormDialog({ open, onOpenChange, site, brands }: A
 
   const onSubmit = async (values: FormValues) => {
     if (!userProfile) return;
+
+    const selectedBrandIds = values.brandIds || [];
+
+    // Zod's `min(1)` already blocks the native submit for this, but a plain
+    // check here gives the exact spec'd message instead of a generic form
+    // validation string, and guards the same thing at the actual save point.
+    if (selectedBrandIds.length === 0) {
+      toast({ variant: 'destructive', title: 'Pilih perusahaan terlebih dahulu.' });
+      return;
+    }
+
+    // Re-validate brandIds against this HRD's own scope — the Save button is
+    // already disabled below when unauthorizedBrandIds is non-empty, but
+    // this stays as a hard block too (defense in depth against a stale form
+    // state actually reaching Firestore). Super Admin and "all companies"
+    // HRD scope are exempt; both are legitimately allowed to touch every brand.
+    if (!isSuperAdmin && !isAllCompanies) {
+      const outOfScope = selectedBrandIds.filter((id) => !allowedBrandIds.includes(id));
+      if (outOfScope.length > 0) {
+        const names = outOfScope.map((id) => {
+          const idx = site?.brandIds?.indexOf(id) ?? -1;
+          return (idx >= 0 ? site?.brandNames?.[idx] : null) || brands.find((b) => b.id === id)?.name || id;
+        });
+        toast({
+          variant: 'destructive',
+          title: 'Site ini berisi perusahaan di luar akses HRD Anda',
+          description: `Anda tidak memiliki akses untuk mengatur:\n${names.map((n) => `- ${n}`).join('\n')}\n\nPisahkan site absensi per perusahaan atau hubungi Super Admin.`,
+        });
+        return;
+      }
+    }
+
+    // 1 brand = 1 aturan absensi aktif — two active sites both claiming the
+    // same brand would leave resolveSiteForBrand to pick between them
+    // arbitrarily (first match in array order), so Monitoring Absensi/Detail
+    // modal/Rekap Payroll could silently apply the wrong schedule/tolerance.
+    // Only checked when this site is being saved as active; inactive sites
+    // are never returned by resolveSiteForBrand and so can't conflict.
+    if (values.isActive) {
+      const conflictingSite = sites.find((other) => {
+        if (other.id === site?.id) return false; // editing the same doc is never a conflict with itself
+        if (!other.isActive) return false;
+        const otherBrandIds = [...(other.brandIds || []), other.brandId].filter(Boolean);
+        return selectedBrandIds.some((id) => otherBrandIds.includes(id));
+      });
+      if (conflictingSite) {
+        toast({
+          variant: 'destructive',
+          title: 'Aturan absensi bentrok',
+          description: `Perusahaan ini sudah memiliki aturan absensi aktif ("${conflictingSite.name}"). Nonaktifkan aturan lama atau edit aturan yang sudah ada.`,
+        });
+        return;
+      }
+    }
+
+    const docRef = site ? doc(firestore, 'attendance_sites', site.id!) : doc(collection(firestore, 'attendance_sites'));
+    // Never embed a raw id as a "name" — an unresolved brandId (e.g. one
+    // outside this HRD's scope) is dropped, not stringified into brandNames.
+    const selectedBrandNames = selectedBrandIds
+      .map((id) => brands.find((b) => b.id === id)?.name)
+      .filter((name): name is string => !!name);
+    const checkOutRadius = values.useSameRadiusForCheckOut ? values.checkInRadiusMeters : values.checkOutRadiusMeters;
+    const firstSchedule = values.workSchedules[0];
+    const keywords = (values.validAddressKeywords || '')
+      .split(',')
+      .map((k) => k.trim())
+      .filter(Boolean);
+    const displayName = (userProfile as any).displayName || (userProfile as any).fullName || userProfile.email || 'HRD';
+    const siteName = values.name || `Absensi ${selectedBrandNames[0] || 'Perusahaan'}`;
+
+    const payload: Omit<AttendanceSite, 'id'> = {
+      name: siteName,
+      // Mirrors `name` — some external readers were seen expecting this key;
+      // this app's own code always reads `name`, never `siteName`.
+      siteName,
+      brandIds: selectedBrandIds,
+      brandId: selectedBrandIds[0],
+      brandNames: selectedBrandNames,
+      brandName: selectedBrandNames[0] || '',
+      isActive: values.isActive,
+      office: values.office,
+      address: resolvedAddress || (site as any)?.address || '',
+      checkInRadiusMeters: Number(values.checkInRadiusMeters),
+      checkOutRadiusMeters: Number(checkOutRadius),
+      useSameRadiusForCheckOut: values.useSameRadiusForCheckOut,
+      // Legacy single radius — mirrors checkInRadiusMeters for older readers.
+      radiusM: Number(values.checkInRadiusMeters),
+      validAddressKeywords: keywords,
+      locationValidationMode: values.locationValidationMode,
+      timezone: 'Asia/Jakarta',
+      activeDays: values.activeDays as WorkScheduleDay[],
+      workSchedules: values.workSchedules.map((g) => ({
+        ...g,
+        days: g.days as WorkScheduleDay[],
+        breakStart: g.breakStart || undefined,
+        breakEnd: g.breakEnd || undefined,
+      })),
+      // Legacy fields — derived from the first schedule group so old readers keep working.
+      workDays: (values.activeDays as WorkScheduleDay[]).map((d) => ({
+        monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed', thursday: 'Thu', friday: 'Fri', saturday: 'Sat', sunday: 'Sun',
+      } as Record<WorkScheduleDay, string>)[d]),
+      shift: {
+        startTime: firstSchedule?.startTime || '08:00',
+        endTime: firstSchedule?.endTime || '17:00',
+        graceLateMinutes: Number(values.lateToleranceMinutes),
+      },
+      breakStart: firstSchedule?.breakStart || undefined,
+      breakEnd: firstSchedule?.breakEnd || undefined,
+      lateToleranceMinutes: Number(values.lateToleranceMinutes),
+      earliestCheckIn: values.earliestCheckIn || '06:00',
+      latestCheckInWithoutReview: values.latestCheckInWithoutReview || '09:00',
+      minimumWorkMinutes: Number(values.minimumWorkMinutes),
+      createdByUid: site ? (site as any).createdByUid || userProfile.uid : userProfile.uid,
+      createdByName: site ? (site as any).createdByName || displayName : displayName,
+      createdAt: site ? (site as any).createdAt : (serverTimestamp() as Timestamp),
+      updatedByUid: userProfile.uid,
+      updatedByName: displayName,
+      updatedAt: serverTimestamp() as Timestamp,
+      updatedBy: userProfile.uid,
+    };
+
+    console.log('[ATTENDANCE_SITE_CREATE_DEBUG]', {
+      currentUserUid: userProfile.uid,
+      role: (userProfile as any).role ?? null,
+      allowedBrandIds,
+      selectedBrandIds,
+      selectedBrandNames,
+      payload,
+    });
+
     setIsSaving(true);
     try {
-      const docRef = site ? doc(firestore, 'attendance_sites', site.id!) : doc(collection(firestore, 'attendance_sites'));
-      // Never embed a raw id as a "name" — an unresolved brandId (e.g. one
-      // outside this HRD's scope) is dropped, not stringified into brandNames.
-      const brandNames = values.brandIds
-        .map((id) => brands.find((b) => b.id === id)?.name)
-        .filter((name): name is string => !!name);
-      const checkOutRadius = values.useSameRadiusForCheckOut ? values.checkInRadiusMeters : values.checkOutRadiusMeters;
-      const firstSchedule = values.workSchedules[0];
-      const keywords = (values.validAddressKeywords || '')
-        .split(',')
-        .map((k) => k.trim())
-        .filter(Boolean);
-
-      const payload: Omit<AttendanceSite, 'id'> = {
-        name: values.name,
-        brandIds: values.brandIds,
-        brandId: values.brandIds[0],
-        brandNames,
-        isActive: values.isActive,
-        office: values.office,
-        checkInRadiusMeters: values.checkInRadiusMeters,
-        checkOutRadiusMeters: checkOutRadius,
-        useSameRadiusForCheckOut: values.useSameRadiusForCheckOut,
-        // Legacy single radius — mirrors checkInRadiusMeters for older readers.
-        radiusM: values.checkInRadiusMeters,
-        validAddressKeywords: keywords,
-        locationValidationMode: values.locationValidationMode,
-        timezone: 'Asia/Jakarta',
-        activeDays: values.activeDays as WorkScheduleDay[],
-        workSchedules: values.workSchedules.map((g) => ({
-          ...g,
-          days: g.days as WorkScheduleDay[],
-          breakStart: g.breakStart || undefined,
-          breakEnd: g.breakEnd || undefined,
-        })),
-        // Legacy fields — derived from the first schedule group so old readers keep working.
-        workDays: (values.activeDays as WorkScheduleDay[]).map((d) => ({
-          monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed', thursday: 'Thu', friday: 'Fri', saturday: 'Sat', sunday: 'Sun',
-        } as Record<WorkScheduleDay, string>)[d]),
-        shift: {
-          startTime: firstSchedule?.startTime || '08:00',
-          endTime: firstSchedule?.endTime || '17:00',
-          graceLateMinutes: values.lateToleranceMinutes,
-        },
-        breakStart: firstSchedule?.breakStart || undefined,
-        breakEnd: firstSchedule?.breakEnd || undefined,
-        lateToleranceMinutes: values.lateToleranceMinutes,
-        earliestCheckIn: values.earliestCheckIn,
-        latestCheckInWithoutReview: values.latestCheckInWithoutReview,
-        minimumWorkMinutes: values.minimumWorkMinutes,
-        createdByUid: site ? (site as any).createdByUid || userProfile.uid : userProfile.uid,
-        updatedByUid: userProfile.uid,
-        updatedAt: serverTimestamp() as Timestamp,
-        updatedBy: userProfile.uid,
-      };
       await setDocumentNonBlocking(docRef, payload, { merge: true });
-      toast({ title: 'Pengaturan Disimpan' });
+      toast({ title: site ? 'Pengaturan Disimpan' : 'Site absensi berhasil ditambahkan.' });
+      onSaved?.();
       onOpenChange(false);
     } catch (error: any) {
+      console.error('[ATTENDANCE_SITE_CREATE_ERROR]', {
+        code: error?.code,
+        message: error?.message,
+        payload,
+        allowedBrandIds,
+        selectedBrandIds,
+      });
       toast({ variant: 'destructive', title: 'Gagal Menyimpan', description: error.message });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // Super Admin only — turns one legacy multi-brand site (e.g. the old
+  // "Environesia Company" bucket) into one new active site per brand, each
+  // copying the old site's rules as a starting point (radius, schedule,
+  // tolerance, ...) so they can then be tuned per company. The OLD site is
+  // deliberately left untouched/active here — "boleh dinonaktifkan" (may be
+  // deactivated) in the spec is optional, and auto-deactivating a still-live
+  // attendance rule the moment a batch write succeeds is a needless risk if
+  // anything about the split needs fixing first. Super Admin turns it off
+  // manually (Aktifkan Site Ini → off → Simpan) once the new sites are verified.
+  const siteBrandIdsForSplit = site
+    ? (Array.isArray(site.brandIds) && site.brandIds.length > 0 ? site.brandIds : (site.brandId ? [site.brandId] : []))
+    : [];
+
+  const handleSplitSiteByBrand = async () => {
+    if (!site || !userProfile || siteBrandIdsForSplit.length < 2) return;
+    setIsSplitting(true);
+    try {
+      const batch = writeBatch(firestore);
+      for (const brandId of siteBrandIdsForSplit) {
+        const idx = siteBrandIdsForSplit.indexOf(brandId);
+        const brandName = brands.find((b) => b.id === brandId)?.name || site.brandNames?.[idx] || brandId;
+        const newDocRef = doc(collection(firestore, 'attendance_sites'));
+        const newSite: Omit<AttendanceSite, 'id'> = {
+          name: `Absensi ${brandName}`,
+          brandIds: [brandId],
+          brandId,
+          brandNames: [brandName],
+          isActive: true,
+          office: site.office,
+          checkInRadiusMeters: toFiniteNumber(site.checkInRadiusMeters ?? site.radiusM, 20),
+          checkOutRadiusMeters: toFiniteNumber(site.checkOutRadiusMeters ?? site.radiusM, 20),
+          useSameRadiusForCheckOut: site.useSameRadiusForCheckOut ?? true,
+          radiusM: toFiniteNumber(site.checkInRadiusMeters ?? site.radiusM, 20),
+          validAddressKeywords: site.validAddressKeywords || [],
+          locationValidationMode: site.locationValidationMode || 'hybrid',
+          timezone: 'Asia/Jakarta',
+          activeDays: site.activeDays || [],
+          workSchedules: site.workSchedules || [],
+          workDays: site.workDays || [],
+          shift: site.shift,
+          breakStart: site.breakStart,
+          breakEnd: site.breakEnd,
+          lateToleranceMinutes: toFiniteNumber(site.lateToleranceMinutes ?? site.shift?.graceLateMinutes, 15),
+          earliestCheckIn: site.earliestCheckIn || '06:00',
+          latestCheckInWithoutReview: site.latestCheckInWithoutReview || '09:00',
+          minimumWorkMinutes: toFiniteNumber(site.minimumWorkMinutes, 480),
+          createdFromSiteId: site.id,
+          createdByUid: userProfile.uid,
+          createdAt: serverTimestamp() as Timestamp,
+          updatedByUid: userProfile.uid,
+          updatedAt: serverTimestamp() as Timestamp,
+        };
+        batch.set(newDocRef, newSite);
+      }
+      await batch.commit();
+      toast({
+        title: 'Site berhasil dipecah',
+        description: `${siteBrandIdsForSplit.length} site baru dibuat, satu per brand. Site lama ("${site.name}") masih aktif — nonaktifkan setelah memverifikasi jadwal/toleransi tiap site baru.`,
+      });
+      setShowSplitConfirm(false);
+      onOpenChange(false);
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Gagal memecah site', description: error.message });
+    } finally {
+      setIsSplitting(false);
     }
   };
 
@@ -396,6 +621,33 @@ export function AttendanceSiteFormDialog({ open, onOpenChange, site, brands }: A
             Atur lokasi kantor, radius, hari &amp; jadwal kerja, serta aturan absensi untuk brand yang Anda pegang.
           </DialogDescription>
         </DialogHeader>
+
+        {!isSuperAdmin && !isAllCompanies && unauthorizedBrandIds.length > 0 && (
+          <div className="px-6 pt-4 flex-shrink-0">
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Site ini berisi perusahaan di luar akses HRD Anda</AlertTitle>
+              <AlertDescription>
+                <p className="mb-1">Anda tidak memiliki akses untuk mengatur:</p>
+                <ul className="list-disc pl-5 mb-2">
+                  {unauthorizedBrandNames.map((name) => <li key={name}>{name}</li>)}
+                </ul>
+                <p className="mb-2">Penyimpanan dinonaktifkan. Pisahkan site absensi per perusahaan atau hubungi Super Admin — atau buat site baru khusus brand yang Anda pegang.</p>
+                {onCreateNewInstead && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => { onOpenChange(false); onCreateNewInstead(); }}
+                  >
+                    Buat Site Baru untuk Brand Saya
+                  </Button>
+                )}
+              </AlertDescription>
+            </Alert>
+          </div>
+        )}
+
         <div className="flex-grow overflow-hidden flex flex-col">
           <Form {...form}>
             <form id="site-form" onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col h-full overflow-hidden">
@@ -417,7 +669,25 @@ export function AttendanceSiteFormDialog({ open, onOpenChange, site, brands }: A
                       <p className="text-xs text-muted-foreground mt-0.5">Nama site dan brand yang akan mengikuti aturan absensi ini.</p>
                     </div>
                     <FormField control={form.control} name="name" render={({ field }) => (
-                      <FormItem><FormLabel>Nama Site</FormLabel><FormControl><Input placeholder="Kantor Pusat Yogyakarta" {...field} /></FormControl><FormMessage /></FormItem>
+                      <FormItem>
+                        <FormLabel>Nama Site</FormLabel>
+                        <FormControl><Input placeholder="Absensi PT Environesia Global Saraya" {...field} /></FormControl>
+                        <FormDescription>
+                          Gunakan nama yang spesifik per perusahaan (mis. &quot;Absensi PT Environesia Global Saraya&quot;), bukan nama umum seperti &quot;Environesia Company&quot; — kecuali brand yang digabung di sini memang punya aturan absensi yang sama persis.
+                        </FormDescription>
+                        {suggestedSiteName && suggestedSiteName !== field.value && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => form.setValue('name', suggestedSiteName, { shouldValidate: true })}
+                          >
+                            Gunakan: {suggestedSiteName}
+                          </Button>
+                        )}
+                        <FormMessage />
+                      </FormItem>
                     )} />
                     <FormField
                       control={form.control}
@@ -454,6 +724,43 @@ export function AttendanceSiteFormDialog({ open, onOpenChange, site, brands }: A
                         </FormItem>
                       )}
                     />
+
+                    {isSuperAdmin && siteBrandIdsForSplit.length > 1 && (
+                      <Alert>
+                        <Split className="h-4 w-4" />
+                        <AlertTitle>Site ini menggabungkan {siteBrandIdsForSplit.length} brand</AlertTitle>
+                        <AlertDescription>
+                          <p className="mb-2">
+                            Jika aturan absensi tiap brand berbeda (jam masuk, toleransi, radius, dll), pecah site ini
+                            menjadi satu site aktif per brand — masing-masing dimulai dari salinan aturan site ini,
+                            lalu bisa disesuaikan sendiri-sendiri.
+                          </p>
+                          {!showSplitConfirm ? (
+                            <Button type="button" size="sm" variant="outline" onClick={() => setShowSplitConfirm(true)}>
+                              <Split className="mr-1.5 h-3.5 w-3.5" /> Pecah Site per Brand
+                            </Button>
+                          ) : (
+                            <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-900/10 p-3">
+                              <p className="text-xs">
+                                Akan dibuat {siteBrandIdsForSplit.length} site baru (aktif), satu per brand. Site ini
+                                ("{site?.name}") tetap aktif apa adanya — nonaktifkan sendiri setelah memverifikasi
+                                site-site baru.
+                              </p>
+                              <div className="flex gap-2">
+                                <Button type="button" size="sm" onClick={handleSplitSiteByBrand} disabled={isSplitting}>
+                                  {isSplitting && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                                  Ya, Pecah Sekarang
+                                </Button>
+                                <Button type="button" size="sm" variant="ghost" onClick={() => setShowSplitConfirm(false)} disabled={isSplitting}>
+                                  Batal
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </AlertDescription>
+                      </Alert>
+                    )}
+
                     <FormField control={form.control} name="isActive" render={({ field }) => (
                       <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
                         <FormLabel>Aktifkan Site Ini</FormLabel>
@@ -710,7 +1017,7 @@ export function AttendanceSiteFormDialog({ open, onOpenChange, site, brands }: A
         </div>
         <DialogFooter className="flex-shrink-0 p-6 pt-4 border-t">
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Batal</Button>
-          <Button type="submit" form="site-form" disabled={isSaving}>
+          <Button type="submit" form="site-form" disabled={isSaving || unauthorizedBrandIds.length > 0}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             <Save className="mr-2 h-4 w-4" />
             Simpan Pengaturan

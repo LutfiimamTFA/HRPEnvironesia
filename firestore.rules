@@ -636,6 +636,32 @@ service cloud.firestore {
       allow delete: if isSuperAdmin() || (isHrd() && hrdCanAccessSiteData(resource.data));
     }
 
+    // --- Leave Policy (per-brand leave quota/reset rules) ---
+    // Same brandIds-array scoping shape as attendance_sites — a policy can
+    // cover several brands (e.g. the EGS Group's 4 companies sharing one
+    // contract-reset policy), so isHrdAllowedForAnyBrand is reused here too.
+    match /leave_policies/{policyId} {
+      allow read: if isSuperAdmin() || (isHrd() && isHrdAllowedForAnyBrand(resource.data.get('brandIds', [])));
+      allow create: if isSuperAdmin() || (isHrd() && isHrdAllowedForAnyBrand(request.resource.data.get('brandIds', [])));
+      allow update: if isSuperAdmin() || (isHrd() &&
+        isHrdAllowedForAnyBrand(resource.data.get('brandIds', [])) &&
+        isHrdAllowedForAnyBrand(request.resource.data.get('brandIds', [])));
+      allow delete: if isSuperAdmin() || (isHrd() && isHrdAllowedForAnyBrand(resource.data.get('brandIds', [])));
+    }
+
+    // Computed per-period leave balance snapshots (see src/lib/leave-policy.ts).
+    // One doc per employee per period — never overwritten across periods
+    // (periodKey differs), so a contract renewal's new period never clobbers
+    // the old one's history. Employees may only ever read their own.
+    match /leave_policy_balances/{balanceId} {
+      allow get, list: if isSuperAdmin() ||
+        (isHrd() && hrdCanReadBrandData(resource.data)) ||
+        (isSignedIn() && resource.data.get('employeeUid', '') == request.auth.uid);
+      allow create: if isSuperAdmin() || (isHrd() && hrdCanCreateBrandData(request.resource.data));
+      allow update: if isSuperAdmin() || (isHrd() && hrdCanUpdateBrandData(resource.data, request.resource.data));
+      allow delete: if isSuperAdmin();
+    }
+
     match /attendance_events/{eventId} {
       allow read: if isSuperAdmin() || (isHrd() && hrdCanReadBrandData(resource.data));
       allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
