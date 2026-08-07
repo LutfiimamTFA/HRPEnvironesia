@@ -739,7 +739,28 @@ service cloud.firestore {
       
       allow delete: if isSuperAdmin() || (isSubmissionOwner() && resource.data.status == 'draft');
     }
-    
+
+    // Final HRD-approved overtime, grouped for payroll processing. Written by
+    // ReviewOvertimeDialog.tsx when HRD approves an overtime_submissions doc;
+    // read/updated by OvertimePayrollRecapClient.tsx (Rekap Lembur Payroll).
+    // No collection-wide read for HRD — brand-scoped only, same shape as
+    // overtime_submissions above.
+    match /overtime_payroll_recaps/{recapId} {
+      allow get, list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (isHrd() && hrdCanReadBrandData(resource.data))
+      );
+      allow create: if isSignedIn() && (
+        isSuperAdmin() ||
+        (isHrd() && hrdCanCreateBrandData(request.resource.data))
+      );
+      allow update: if isSignedIn() && (
+        isSuperAdmin() ||
+        (isHrd() && hrdCanUpdateBrandData(resource.data, request.resource.data))
+      );
+      allow delete: if isSuperAdmin();
+    }
+
      match /permission_requests/{requestId} {
       function isSubmissionOwner() {
         return request.auth.uid == resource.data.uid;

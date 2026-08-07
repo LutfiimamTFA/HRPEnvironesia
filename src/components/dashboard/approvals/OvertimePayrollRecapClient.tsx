@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
 import { collection, doc, writeBatch, serverTimestamp, query, where, getDocs, Timestamp } from "firebase/firestore";
+import { useHrdScopedCollection, useHrdScopedBrands } from "@/hooks/useHrdScopedCollection";
+import { useHrdScopeContext } from "@/providers/hrd-scope-provider";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -38,13 +40,14 @@ import { sendNotification } from "@/lib/notifications";
 import { Search, Loader2, Filter, FileSpreadsheet, Check, ReceiptText, ShieldCheck, User, Calendar, Trash2, X } from "lucide-react";
 import { format } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
-import type { Brand } from "@/lib/types";
 
 interface OvertimePayrollRecap {
   id?: string;
   employeeId: string;
   employeeName: string;
   brand: string;
+  brandId?: string;
+  brandName?: string;
   division: string;
   managerId: string;
   managerName: string;
@@ -109,17 +112,37 @@ export function OvertimePayrollRecapClient() {
   // Individual update note state
   const [individualNote, setIndividualNote] = useState("");
 
-  // Query all payroll recaps
-  const recapsRef = useMemoFirebase(() => collection(firestore, "overtime_payroll_recaps"), [firestore]);
-  const { data: recaps, isLoading } = useCollection<OvertimePayrollRecap>(recapsRef);
+  // Query payroll recaps — brand-scoped for HRD (Super Admin/All Companies
+  // gets everyone via the same hook's internal bypass). Never a raw
+  // collection-wide list: firestore.rules only allows HRD to read docs whose
+  // brandId is in their own allowedBrandIds, so an unscoped query here was
+  // rejected outright with "Missing or insufficient permissions" the moment
+  // any doc outside the caller's brands existed in the result set.
+  const { isSuperAdmin, isAllCompanies, allowedBrandIds } = useHrdScopeContext();
+  const { data: recaps, isLoading } = useHrdScopedCollection<OvertimePayrollRecap>("overtime_payroll_recaps");
+
+  if (typeof window !== "undefined") {
+    console.log("[OVERTIME_PAYROLL_RECAP_SCOPE_DEBUG]", {
+      currentUserUid: userProfile?.uid,
+      role: isSuperAdmin ? "super-admin" : "hrd",
+      allowedBrandIds,
+      queryMode: isSuperAdmin || isAllCompanies ? "global" : "scoped_by_brand",
+    });
+  }
 
   // Query employees list to fetch NIK/Employee Numbers for export
   const employeesRef = useMemoFirebase(() => collection(firestore, "employees"), [firestore]);
   const { data: employeesData } = useCollection<EmployeeMaster>(employeesRef);
 
-  // Query all brands from master data (TUGAS 2)
-  const brandsRef = useMemoFirebase(() => query(collection(firestore, "brands")), [firestore]);
-  const { data: allBrands = [] } = useCollection<Brand>(brandsRef);
+  // Brands for the filter dropdown — brand-scoped for HRD via the same
+  // allowedBrandIds used to scope the recaps query above (Super Admin/All
+  // Companies still gets every brand). Previously this queried the full
+  // "brands" collection unconditionally, so HRD Greenlab's Brand dropdown
+  // listed every EGS Group brand too — confusing/wrong even though the
+  // underlying recap data was already scoped, since picking one of those
+  // brands just silently showed zero rows instead of not being offered at all.
+  const { data: visibleBrandsData } = useHrdScopedBrands();
+  const visibleBrands = visibleBrandsData || [];
 
   const employeeMetadataMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -129,25 +152,58 @@ export function OvertimePayrollRecapClient() {
     return map;
   }, [employeesData]);
 
-  // Dynamic filter options (TUGAS 2: Include master brands + payroll data brands)
+  // Dynamic filter options — visibleBrands (already scoped) first, then any
+  // brand name appearing in recaps but missing from master data. recaps is
+  // itself already brand-scoped (useHrdScopedCollection above), so this
+  // fallback can never introduce an out-of-scope brand.
+  // Filtering below matches against r.brand — the NAME string every recap
+  // doc reliably carries (brandId only exists on docs created after this
+  // collection started writing it, see ReviewOvertimeDialog.tsx) — so option
+  // values must be the brand NAME, not brand.id, or selecting a specific
+  // brand would never match anything and silently show zero rows.
   const brandOptions = useMemo(() => {
     const map = new Map<string, string>();
 
-    // Priority 1: Master brands from collection
-    allBrands?.forEach((brand) => {
-      const value = brand.id || "";
-      const label = brand.name || brand.id || "Unknown";
-      if (value && !map.has(value)) map.set(value, label);
+    visibleBrands?.forEach((brand) => {
+      const value = brand.name || brand.id || "";
+      if (value && !map.has(value)) map.set(value, value);
     });
 
-    // Priority 2: Brands from payroll data that are not in master
     recaps?.forEach((r) => {
       const value = r.brand || "";
       if (value && !map.has(value)) map.set(value, r.brand);
     });
 
     return [...map.entries()].map(([value, label]) => ({ value, label }));
-  }, [allBrands, recaps]);
+  }, [visibleBrands, recaps]);
+
+  const isSingleBrandHrd = !isSuperAdmin && !isAllCompanies && visibleBrands.length === 1;
+
+  // HRD with exactly one visible brand never needs to choose — auto-select
+  // it and lock the dropdown. HRD with several sees "Semua Brand Saya" (never
+  // the bare "Semua Brand" label, which would misleadingly imply every brand
+  // in the system rather than just the ones this HRD is scoped to).
+  useEffect(() => {
+    if (isSuperAdmin || isAllCompanies) return;
+    const onlyBrandName = visibleBrands[0]?.name || visibleBrands[0]?.id;
+    if (visibleBrands.length === 1 && onlyBrandName && brandFilter !== onlyBrandName) {
+      setBrandFilter(onlyBrandName);
+    }
+  }, [isSuperAdmin, isAllCompanies, visibleBrands, brandFilter]);
+
+  if (typeof window !== "undefined") {
+    console.log("[OVERTIME_PAYROLL_BRAND_SCOPE_DEBUG]", {
+      currentUserUid: userProfile?.uid,
+      role: isSuperAdmin ? "super-admin" : "hrd",
+      allowedBrandIds,
+      visibleBrands: visibleBrands.map((b) => ({ id: b.id, name: b.name })),
+      // Filter matches r.brand (a name string on every recap doc), not
+      // brand.id, so this is a brand NAME despite the field name — see the
+      // comment on brandOptions above for why.
+      selectedBrandId: brandFilter,
+      isSingleBrandHrd,
+    });
+  }
 
   const divisionOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -647,36 +703,58 @@ export function OvertimePayrollRecapClient() {
               />
             </div>
 
-            {/* Brand Filter */}
+            {/* Brand Filter — options are always brandOptions (already scoped
+                to visibleBrands for HRD); only the "all" option's label/
+                presence changes by role/scope. A disabled Select for a
+                single-brand HRD rendered as a grayed-out, chevron'd control
+                that looked broken/inactive for a value that was never
+                actually choosable — a plain read-only field communicates
+                "this is just information" instead. */}
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">Brand</label>
-              <Select value={brandFilter} onValueChange={setBrandFilter}>
-                <SelectTrigger className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white rounded-xl">
-                  <SelectValue placeholder="Semua Brand" />
-                </SelectTrigger>
-                <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white">
-                  <SelectItem value="all">Semua Brand</SelectItem>
-                  {brandOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {isSingleBrandHrd ? (
+                <div className="h-10 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 px-3 flex items-center text-sm text-slate-900 dark:text-white">
+                  {brandOptions[0]?.label || visibleBrands[0]?.name || "-"}
+                </div>
+              ) : (
+                <Select value={brandFilter} onValueChange={setBrandFilter}>
+                  <SelectTrigger className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white rounded-xl">
+                    <SelectValue placeholder="Pilih brand" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white">
+                    <SelectItem value="all">
+                      {isSuperAdmin || isAllCompanies ? "Semua Brand" : "Semua Brand Saya"}
+                    </SelectItem>
+                    {brandOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
-            {/* Division Filter */}
+            {/* Division Filter — same read-only-when-single-option pattern as
+                Brand above: nothing to actually choose when there's only one
+                division in scope, so don't render it as a choice. */}
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">Divisi</label>
-              <Select value={divisionFilter} onValueChange={setDivisionFilter}>
-                <SelectTrigger className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white rounded-xl">
-                  <SelectValue placeholder="Semua Divisi" />
-                </SelectTrigger>
-                <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white">
-                  <SelectItem value="all">Semua Divisi</SelectItem>
-                  {divisionOptions.map((div) => (
-                    <SelectItem key={div} value={div}>{div}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {divisionOptions.length === 1 ? (
+                <div className="h-10 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 px-3 flex items-center text-sm text-slate-900 dark:text-white">
+                  {divisionOptions[0]}
+                </div>
+              ) : (
+                <Select value={divisionFilter} onValueChange={setDivisionFilter}>
+                  <SelectTrigger className="bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white rounded-xl">
+                    <SelectValue placeholder="Semua Divisi" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white">
+                    <SelectItem value="all">Semua Divisi</SelectItem>
+                    {divisionOptions.map((div) => (
+                      <SelectItem key={div} value={div}>{div}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
             {/* Payroll Status */}

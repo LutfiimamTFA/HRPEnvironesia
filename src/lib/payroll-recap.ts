@@ -33,6 +33,15 @@ function dayOfWeekFromDateStr(dateStr: string): WorkScheduleDay {
 
 export type PeriodMode = 'calendar' | 'payroll' | 'custom';
 
+// Single global source of truth for the payroll cut-off — applies to every
+// HRD account and Super Admin alike, never per-account. Changing the cut-off
+// means changing these two numbers, not hunting down hardcoded dates.
+export const PAYROLL_PERIOD_CONFIG = {
+  startDay: 20,
+  endDay: 20,
+  label: 'Periode Payroll (20–20)',
+} as const;
+
 export interface PayrollPeriod {
   mode: PeriodMode;
   startDate: Date;
@@ -240,10 +249,15 @@ export function calculatePayrollPeriod(
     endDate = endOfMonth(new Date(year, month, 1));
     displayLabel = startDate.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
   } else if (mode === 'payroll') {
-    // Payroll period runs the 19th of the previous month through the 20th of
-    // the selected month (e.g. selecting July -> 19 June - 20 July).
-    startDate = new Date(year, month - 1, 19, 0, 0, 0);
-    endDate = new Date(year, month, 20, 23, 59, 59);
+    // Payroll period runs PAYROLL_PERIOD_CONFIG.startDay of the previous
+    // month through .endDay of the selected month (currently 20–20, e.g.
+    // selecting August -> 20 July - 20 August). Same global cut-off for
+    // every HRD account and Super Admin — never per-account. `new Date`'s
+    // month underflow (month - 1 === -1) rolls back to December of the
+    // previous year automatically, so January correctly resolves to
+    // 20 Desember (prev year) - 20 Januari with no extra year-rollover code.
+    startDate = new Date(year, month - 1, PAYROLL_PERIOD_CONFIG.startDay, 0, 0, 0);
+    endDate = new Date(year, month, PAYROLL_PERIOD_CONFIG.endDay, 23, 59, 59);
     displayLabel = `Payroll ${new Date(year, month, 1).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}`;
   } else {
     startDate = customStart ? startOfDay(customStart) : startOfMonth(new Date());

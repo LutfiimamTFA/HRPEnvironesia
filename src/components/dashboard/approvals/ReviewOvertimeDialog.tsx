@@ -376,10 +376,10 @@ export function ReviewOvertimeDialog({
                 coordinatorDecision: "approved",
                 coordinatorDecisionAt: serverTimestamp() as any,
                 coordinatorDecisionBy: userProfile.uid,
-                coordinatorDecisionByName: userProfile.displayName || userProfile.email || operatorName || null,
+                coordinatorDecisionByName: userProfile.fullName || userProfile.email || operatorName || null,
                 supervisorApprovedAt: serverTimestamp() as any,
                 supervisorApprovedBy: userProfile.uid,
-                supervisorApprovedByName: userProfile.displayName || userProfile.email || operatorName || null,
+                supervisorApprovedByName: userProfile.fullName || userProfile.email || operatorName || null,
                 coordinatorNotes: note || null,
                 managerNotes: note || null,
                 managerDecisionAt: serverTimestamp() as any,
@@ -391,10 +391,10 @@ export function ReviewOvertimeDialog({
                 coordinatorDecision: "approved",
                 coordinatorDecisionAt: serverTimestamp() as any,
                 coordinatorDecisionBy: userProfile.uid,
-                coordinatorDecisionByName: userProfile.displayName || userProfile.email || operatorName || null,
+                coordinatorDecisionByName: userProfile.fullName || userProfile.email || operatorName || null,
                 coordinatorApprovedAt: serverTimestamp() as any,
                 coordinatorApprovedBy: userProfile.uid,
-                coordinatorApprovedByName: userProfile.displayName || userProfile.email || operatorName || null,
+                coordinatorApprovedByName: userProfile.fullName || userProfile.email || operatorName || null,
                 coordinatorNotes: note || null,
               };
             }
@@ -493,10 +493,26 @@ export function ReviewOvertimeDialog({
             .join("; ");
 
           const recapColRef = collection(firestore, "overtime_payroll_recaps");
+          console.log("[OVERTIME_PAYROLL_RECAP_PAYLOAD_DEBUG]", {
+            employeeId: submission.employeeUid || submission.uid,
+            brandId: submission.brandId,
+            brandName: submission.brandName,
+          });
           await addDoc(recapColRef, {
             employeeId: submission.employeeUid || submission.uid!,
             employeeName: submission.employeeName || submission.fullName || "",
             brand: submission.brandName || "",
+            // brandId is what firestore.rules' hrdCanReadBrandData() and the
+            // HRD-scoped list query both key off — without it an HRD account
+            // can never read this doc back (list/get denied), which is what
+            // caused "Missing or insufficient permissions" on this collection.
+            brandId: submission.brandId || "",
+            brandName: submission.brandName || "",
+            companyId: submission.brandId || "",
+            companyName: submission.brandName || "",
+            createdByUid: userProfile.uid,
+            updatedByUid: userProfile.uid,
+            updatedAt: serverTimestamp(),
             division: submission.divisionName || submission.division || "",
             managerId:
               submission.directSupervisorUid || submission.supervisorUid || "",
@@ -918,7 +934,7 @@ export function ReviewOvertimeDialog({
         coordinatorDecision: "approved_manual",
         coordinatorApprovedByProxy: true,
         coordinatorProxyApprovedBy: userProfile.uid,
-        coordinatorProxyApprovedByName: userProfile.fullName || userProfile.displayName || userProfile.email || operatorName || "Manager",
+        coordinatorProxyApprovedByName: userProfile.fullName || userProfile.email || operatorName || "Manager",
         coordinatorProxyNote: note,
         coordinatorProxyMethod: proxyMethod,
         coordinatorApprovedAt: serverTimestamp() as any,

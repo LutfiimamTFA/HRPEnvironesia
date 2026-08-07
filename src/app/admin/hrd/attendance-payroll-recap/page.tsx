@@ -56,6 +56,7 @@ import {
   formatWorkMinutes,
   INDONESIA_PUBLIC_HOLIDAYS_2026,
   mergeEmployeeIdentity,
+  PAYROLL_PERIOD_CONFIG,
   type HolidayDetail,
   type PeriodMode,
   type PayrollRecapRow,
@@ -87,7 +88,7 @@ function makeInitialExportSteps(): ExportStepState[] {
 import { HrdScopeEmptyState } from "@/components/dashboard/hrd/HrdScopeEmptyState";
 
 const PERIOD_MODES: Array<{ value: PeriodMode; label: string }> = [
-  { value: "payroll", label: "Periode Payroll (19–20)" },
+  { value: "payroll", label: PAYROLL_PERIOD_CONFIG.label },
   { value: "calendar", label: "Bulan Kalender" },
   { value: "custom", label: "Custom Range" },
 ];
@@ -878,13 +879,24 @@ export default function RekapAbsensiPayrollPage() {
 
   // ── Active period ──
   const activePeriod = useMemo(() => {
-    return calculatePayrollPeriod(
+    const period = calculatePayrollPeriod(
       periodMode,
       selectedYear,
       selectedMonth,
       customStartDate ? new Date(customStartDate) : undefined,
       customEndDate ? new Date(customEndDate) : undefined
     );
+    if (periodMode === "payroll") {
+      console.log("[PAYROLL_PERIOD_DEBUG]", {
+        selectedMonth,
+        selectedYear,
+        mode: `${PAYROLL_PERIOD_CONFIG.startDay}-${PAYROLL_PERIOD_CONFIG.endDay}`,
+        periodStart: format(period.startDate, "yyyy-MM-dd"),
+        periodEnd: format(period.endDate, "yyyy-MM-dd"),
+        periodLabel: period.displayLabel,
+      });
+    }
+    return period;
   }, [periodMode, selectedYear, selectedMonth, customStartDate, customEndDate]);
 
   // ── Generate recap ──
@@ -1316,7 +1328,7 @@ export default function RekapAbsensiPayrollPage() {
         {/* ── Filter Card ── */}
         <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40">
           <CardContent className="pt-5 pb-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 lg:[grid-template-columns:1fr_1fr_1fr_1.4fr_1fr_1.2fr] gap-3">
 
               <div className="lg:col-span-1">
                 <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1.5">Mode</label>
@@ -1375,17 +1387,20 @@ export default function RekapAbsensiPayrollPage() {
                 </div>
               )}
 
-              <div>
+              <div className="min-w-[260px]">
                 <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1.5">Brand</label>
                 {(brands?.length || 0) === 1 ? (
-                  <div className="h-9 rounded-md border bg-background px-3 py-2 text-sm font-medium">
-                    Perusahaan: {brands?.[0]?.name || brands?.[0]?.id}
+                  <div
+                    className="h-9 rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 px-3 flex items-center text-sm font-medium text-slate-900 dark:text-white truncate whitespace-nowrap overflow-hidden"
+                    title={brands?.[0]?.name || brands?.[0]?.id}
+                  >
+                    {brands?.[0]?.name || brands?.[0]?.id}
                   </div>
                 ) : (
                   <Select value={selectedBrand} onValueChange={setSelectedBrand}>
                     <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Semua Brand</SelectItem>
+                      <SelectItem value="all">Semua Brand Saya</SelectItem>
                       {brands?.map(b => (
                         <SelectItem key={b.id} value={b.id || ""}>{b.name}</SelectItem>
                       ))}
