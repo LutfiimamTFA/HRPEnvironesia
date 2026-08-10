@@ -60,6 +60,7 @@ type DashboardLayoutProps = {
 function getCurrentModule(pathname: string) {
   if (pathname.includes("/backup-export")) return "Backup & Export";
   if (pathname.includes("/data-integrity")) return "Data Integrity";
+  if (pathname.includes("/division-backfill")) return "Backfill Divisi";
   if (pathname.includes("/sync-center")) return "Sync Center";
   if (pathname.includes("/analytics-system")) return "Analytics Sistem";
   if (pathname.includes("/recruitment") || pathname.includes("/jobs") || pathname.includes("/interviews")) return "Recruitment";

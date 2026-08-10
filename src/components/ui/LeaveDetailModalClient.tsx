@@ -344,6 +344,33 @@ export function LeaveDetailModalClient({
                     {request.handoverEmployeePosition}
                   </p>
                 )}
+                {(() => {
+                  const confirmation = (request as any).replacementConfirmation;
+                  if (!confirmation?.status) return null;
+                  const badgeClass =
+                    confirmation.status === "accepted"
+                      ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
+                      : confirmation.status === "rejected"
+                        ? "bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400"
+                        : "bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400";
+                  return (
+                    <div className="mt-2 space-y-1">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black border uppercase tracking-wider ${badgeClass}`}>
+                        {confirmation.label ||
+                          (confirmation.status === "accepted"
+                            ? "Pengganti Bersedia"
+                            : confirmation.status === "rejected"
+                              ? "Pengganti Menolak"
+                              : "Menunggu Konfirmasi")}
+                      </span>
+                      {confirmation.status === "rejected" && confirmation.rejectionReason && (
+                        <p className="text-[11px] text-red-600 dark:text-red-400 italic">
+                          "{confirmation.rejectionReason}"
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
               <div>
                 <span className="text-[10px] font-bold text-slate-600 dark:text-slate-500 uppercase block">Kontak Darurat</span>

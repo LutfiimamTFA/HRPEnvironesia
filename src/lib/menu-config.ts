@@ -46,6 +46,7 @@ import {
   Server,
   Briefcase as BriefcaseIcon,
   Package,
+  ShieldAlert,
 } from "lucide-react";
 import type { UserRole } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
@@ -477,6 +478,12 @@ export const ALL_MENU_GROUPS: MenuGroup[] = [
         icon: createElement(ScanSearch),
       },
       {
+        key: "admin.division-backfill",
+        href: "/admin/super-admin/division-backfill",
+        label: "Backfill Divisi",
+        icon: createElement(ShieldAlert),
+      },
+      {
         key: "admin.sync-center",
         href: "/admin/super-admin/sync-center",
         label: "Technical Sync Center",
@@ -762,6 +769,12 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
           href: "/admin/super-admin/data-integrity",
           label: "Data Integrity",
           icon: createElement(ScanSearch),
+        },
+        {
+          key: "admin.division-backfill",
+          href: "/admin/super-admin/division-backfill",
+          label: "Backfill Divisi",
+          icon: createElement(ShieldAlert),
         },
         {
           key: "admin.sync-center",

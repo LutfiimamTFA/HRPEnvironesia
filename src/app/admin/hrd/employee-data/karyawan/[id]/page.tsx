@@ -2032,6 +2032,24 @@ export default function EmployeeDetailPage({
           isOverrideActive: isOverrideActive,
           structureUpdatedAt: serverTimestamp(),
           structureUpdatedBy: userProfile?.uid || undefined,
+          // Compatibility mirrors for every other field name a division/
+          // brand move has ever been read from elsewhere in this app (the
+          // Pengganti Sementara candidate lookup, older reports, etc.) — a
+          // move that only touched the canonical top-level divisionId/
+          // divisionName above left these nested/legacy copies stale,
+          // which is exactly how an employee moved to DTIC could still show
+          // up elsewhere labeled with their old division (e.g. "CBDMS").
+          // Dot-notation targets ONLY these specific nested fields under
+          // merge:true, without disturbing the rest of hrdEmploymentInfo/
+          // strukturKepegawaian.
+          "hrdEmploymentInfo.divisionId": updatedValues.divisionId || undefined,
+          "hrdEmploymentInfo.divisionName": updatedValues.divisionName || undefined,
+          "hrdEmploymentInfo.divisi": updatedValues.divisionName || undefined,
+          "strukturKepegawaian.divisionId": updatedValues.divisionId || undefined,
+          "strukturKepegawaian.divisionName": updatedValues.divisionName || undefined,
+          departmentId: updatedValues.divisionId || undefined,
+          departmentName: updatedValues.divisionName || undefined,
+          divisi: updatedValues.divisionName || undefined,
         }),
         ...supervisorFields,
       };

@@ -7,6 +7,7 @@ import {
   useFirestore,
   useMemoFirebase,
   setDocumentNonBlocking,
+  updateDocumentNonBlocking,
   useDoc,
 } from "@/firebase";
 import {
@@ -16,6 +17,7 @@ import {
   doc,
   getDocs,
   addDoc,
+  setDoc,
   serverTimestamp,
   Timestamp,
   writeBatch,
@@ -50,7 +52,6 @@ import {
   Landmark,
   Send,
   Info,
-  CheckCircle2,
   ShieldCheck,
   X,
   FileUp,
@@ -110,6 +111,7 @@ import {
   parseContractDurationMonths,
 } from "@/lib/leave-utils";
 import { sendLeaveNotification } from "@/lib/leave-notifications";
+import { sendNotification } from "@/lib/notifications";
 import {
   resolveApprovalTarget,
   type DivisionMasterOrganization,
@@ -165,6 +167,34 @@ function cleanUndefinedFields<T extends object>(obj: T): Partial<T> {
   return clean;
 }
 
+/**
+ * Runs every non-critical write that follows a successful leave_requests
+ * create (staff/manager/handover notifications, replacement-confirmation
+ * ping) through Promise.allSettled so a permission-denied or transient
+ * failure on any ONE of them can never bubble up and get mistaken for a
+ * failure of the main leave_requests write, which has already committed by
+ * the time this runs. Each task owns its own try/catch so allSettled always
+ * sees a resolved promise; failures are only ever logged.
+ */
+async function runLeaveRequestSideEffectsSafely(tasks: { label: string; run: () => Promise<any> }[]) {
+  const results = await Promise.allSettled(
+    tasks.map(async (task) => {
+      try {
+        await task.run();
+      } catch (error) {
+        console.warn("[LEAVE_SIDE_EFFECT_FAILED]", { label: task.label, error });
+        throw error;
+      }
+    }),
+  );
+
+  const failedLabels = results
+    .map((result, index) => (result.status === "rejected" ? tasks[index].label : null))
+    .filter((label): label is string => label !== null);
+
+  return { allSucceeded: failedLabels.length === 0, failedLabels };
+}
+
 const formSchema = z
   .object({
     leaveType: z.enum(["tahunan", "besar", "menikah", "melahirkan"], {
@@ -172,24 +202,19 @@ const formSchema = z
     }),
     startDate: z.date({ required_error: "Tanggal mulai cuti wajib diisi." }),
     endDate: z.date({ required_error: "Tanggal selesai cuti wajib diisi." }),
-    reason: z.string().min(10, "Alasan cuti minimal 10 karakter."),
     leaveAddress: z
       .string()
       .min(10, "Alamat selama cuti wajib diisi (minimal 10 karakter)."),
-    handoverEmployeeId: z.string().optional(),
-    handoverEmployeeName: z
+    emergencyContactName: z.string().optional(),
+    emergencyContactPhone: z.string().optional(),
+    // "none" is a sentinel (never a real uid) for "no colleague available to
+    // pick" — Radix Select rejects an empty-string SelectItem value.
+    replacementEmployeeUid: z
       .string()
-      .min(2, "Nama pengganti sementara wajib diisi (minimal 2 karakter)."),
-    handoverEmployeePosition: z
-      .string()
-      .min(2, "Jabatan pengganti sementara wajib diisi."),
+      .min(1, "Pengganti sementara wajib dipilih."),
     handoverNotes: z
       .string()
       .min(10, "Catatan serah terima tugas wajib diisi (minimal 10 karakter)."),
-    emergencyContactName: z.string().min(2, "Nama kontak darurat wajib diisi."),
-    emergencyContactPhone: z
-      .string()
-      .min(8, "Nomor kontak darurat wajib diisi (min 8 digit)."),
     attachment: z.any().optional(),
   })
   .superRefine((data, ctx) => {
@@ -198,7 +223,8 @@ const formSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["startDate"],
-        message: "Pengajuan cuti minimal diajukan H-14 sebelum tanggal mulai cuti.",
+        message:
+          "Pengajuan cuti tahunan minimal dilakukan H-14 sebelum tanggal mulai cuti. Silakan pilih tanggal mulai cuti yang lebih sesuai.",
       });
     }
 
@@ -227,6 +253,23 @@ export function LeaveSubmissionClient() {
   const [isSaving, setIsSaving] = useState(false);
   const [isInitializingBalance, setIsInitializingBalance] = useState(false);
 
+  // "Pengganti Sementara" candidates — colleagues in the same brand+division.
+  // A plain karyawan account can't `list` employee_profiles directly
+  // (firestore.rules only grants that to HRD/Super Admin — see the comment
+  // further down where the old free-text handover input used to live), so
+  // this goes through a server route using the Admin SDK instead.
+  type ReplacementCandidate = {
+    uid: string;
+    fullName: string;
+    jobTitle: string;
+    brandId: string;
+    brandName: string;
+    divisionId: string;
+    divisionName: string;
+  };
+  const [replacementCandidates, setReplacementCandidates] = useState<ReplacementCandidate[]>([]);
+  const [isLoadingReplacementCandidates, setIsLoadingReplacementCandidates] = useState(false);
+
   // Fetch employee profile to read hrdEmploymentInfo
   const { data: employeeProfile, isLoading: isLoadingProfile } =
     useDoc<EmployeeProfile>(
@@ -246,15 +289,23 @@ export function LeaveSubmissionClient() {
       : employeeProfile.brandId;
   }, [employeeProfile?.brandId]);
 
+  // Top-level employee_profiles.divisionId first — Ubah Struktur Kepegawaian
+  // writes divisionId/divisionName/brandId/brandName to the TOP LEVEL of the
+  // doc on every structural move (see the "Sync root profile" block in
+  // employee-data/karyawan/[id]/page.tsx's handleSaveHrd); hrdEmploymentInfo's
+  // copy of the same field is only touched by other forms and can lag behind
+  // an actual division transfer. `.division` (no "Id") isn't a real field
+  // this app ever writes — reading it first was silently always falling
+  // through to the possibly-stale hrdEmploymentInfo value below.
   const divisionId = useMemo(() => {
     return (
-      employeeProfile?.division ||
+      (employeeProfile as any)?.divisionId ||
       employeeProfile?.hrdEmploymentInfo?.divisionId ||
       employeeProfile?.hrdEmploymentInfo?.divisionName ||
       ""
     );
   }, [
-    employeeProfile?.division,
+    (employeeProfile as any)?.divisionId,
     employeeProfile?.hrdEmploymentInfo?.divisionId,
     employeeProfile?.hrdEmploymentInfo?.divisionName,
   ]);
@@ -299,11 +350,6 @@ export function LeaveSubmissionClient() {
     mutate: mutateBalance,
   } = useDoc<LeaveBalance>(balanceDocRef);
 
-  // Colleagues query is removed to prevent Firestore "Missing or insufficient permissions" errors for standard employees.
-  // Standard employees are not allowed to list all users. Handover is handled via a clean text input.
-  const colleagues: any[] = [];
-  const isLoadingColleagues = false;
-  const handoverOptions: any[] = [];
 
   // Fetch requests submitted by current user only — never a global list.
   // employeeUid is the PRIMARY ownership field (it's the actual Firebase
@@ -345,19 +391,173 @@ export function LeaveSubmissionClient() {
 
   useEffect(() => {
     if (!userProfile?.uid) return;
+    const role = userProfile.role;
+    const roleStr = String(role);
+    const queryMode =
+      roleStr === "super-admin" || roleStr === "super_admin"
+        ? "global"
+        : roleStr === "hrd"
+          ? "brand_scoped"
+          : "employee_scoped";
     console.log("[LEAVE_REQUEST_QUERY_DEBUG]", {
       component: "LeaveSubmissionClient",
       uid: userProfile.uid,
       email: userProfile.email,
-      roleKey: userProfile.role,
+      roleKey: role,
       queryMode: "employee",
       fieldUsed: "employeeUid",
       fallbackFieldsUsed: ["requesterUid", "uid", "userId", "employeeId"],
+    });
+    // This component only ever runs the employee-scoped path below (it's
+    // the karyawan-facing "Pengajuan Cuti" page, not an HRD/manager one) —
+    // logged in the exact shape requested so a permission-denied report can
+    // be checked against it directly.
+    console.log("[LEAVE_REQUEST_QUERY_SCOPE_DEBUG]", {
+      currentUserUid: userProfile.uid,
+      role,
+      queryMode,
     });
   }, [userProfile?.uid, userProfile?.email, userProfile?.role]);
 
   const isLoadingRequests = isLoadingByEmployeeUid || isLoadingByRequesterUid || isLoadingByUid || isLoadingByUserId || isLoadingByEmployeeId;
   const mutateRequests = () => { mutateByEmployeeUid(); mutateByRequesterUid(); mutateByUid(); mutateByUserId(); mutateByEmployeeId(); };
+
+  // Requests where the current user is the NAMED replacement (not the
+  // owner) — allowed by firestore.rules' isAssignedReplacement(), a
+  // separate grant from isLeaveRequestOwner() above. Requires that rule to
+  // actually be deployed — if this specific query is the one throwing
+  // permission-denied while the employeeUid/requesterUid/etc queries above
+  // succeed, that's the signal it's a rules-deployment gap, not a frontend
+  // scoping bug (this query is already scoped by replacementEmployeeUid,
+  // never a bare collection() call).
+  const replacementRequestsQuery = useMemoFirebase(() => {
+    if (!userProfile?.uid) return null;
+    return query(collection(firestore, "leave_requests"), where("replacementEmployeeUid", "==", userProfile.uid));
+  }, [userProfile?.uid, firestore]);
+  const {
+    data: replacementRequests,
+    error: replacementRequestsError,
+    mutate: mutateReplacementRequests,
+  } = useCollection<LeaveRequest>(replacementRequestsQuery);
+
+  useEffect(() => {
+    if (replacementRequestsError) {
+      console.error("[LEAVE_REQUEST_QUERY_SCOPE_DEBUG] replacementEmployeeUid query failed", {
+        currentUserUid: userProfile?.uid,
+        queryField: "replacementEmployeeUid",
+        error: replacementRequestsError,
+      });
+    }
+  }, [replacementRequestsError, userProfile?.uid]);
+
+  const [rejectingRequestId, setRejectingRequestId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [isConfirmingReplacement, setIsConfirmingReplacement] = useState(false);
+
+  const handleAcceptReplacement = async (req: LeaveRequest) => {
+    if (!userProfile || !firestore || !req.id) return;
+    setIsConfirmingReplacement(true);
+    try {
+      await updateDocumentNonBlocking(doc(firestore, "leave_requests", req.id), {
+        replacementConfirmation: {
+          status: "accepted",
+          label: "Pengganti bersedia",
+          acceptedAt: serverTimestamp(),
+          acceptedByUid: userProfile.uid,
+          acceptedByName: userProfile.fullName,
+          signatureType: "electronic_confirmation",
+          message: "Pengganti sementara telah menyatakan bersedia.",
+          confirmedByUid: userProfile.uid,
+          confirmedByName: userProfile.fullName,
+          confirmedAt: serverTimestamp(),
+          confirmationSource: "employee_portal",
+          confirmationType: "electronic_signature_substitute",
+        },
+      });
+      try {
+        await sendNotification(firestore, {
+          userId: (req as any).employeeUid || req.employeeId,
+          type: "status_update",
+          module: "employee",
+          title: "Pengganti Sementara Bersedia",
+          message: `${userProfile.fullName} bersedia menjadi pengganti sementara untuk pengajuan cuti Anda.`,
+          targetType: "user",
+          targetId: req.id,
+          actionUrl: "/admin/karyawan/pengajuan-cuti",
+          createdBy: userProfile.uid,
+        });
+      } catch (notifErr) {
+        console.error("Failed to notify requester of replacement acceptance:", notifErr);
+      }
+      toast({ title: "Konfirmasi Terkirim", description: "Anda bersedia menjadi pengganti sementara." });
+      mutateReplacementRequests();
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Gagal Konfirmasi", description: e.message });
+    } finally {
+      setIsConfirmingReplacement(false);
+    }
+  };
+
+  const handleRejectReplacement = async (req: LeaveRequest) => {
+    if (!userProfile || !firestore || !req.id) return;
+    if (!rejectReason.trim() || rejectReason.trim().length < 5) {
+      toast({
+        variant: "destructive",
+        title: "Alasan Wajib Diisi",
+        description: "Tuliskan alasan tidak dapat menjadi pengganti sementara.",
+      });
+      return;
+    }
+    setIsConfirmingReplacement(true);
+    try {
+      await updateDocumentNonBlocking(doc(firestore, "leave_requests", req.id), {
+        replacementConfirmation: {
+          status: "rejected",
+          label: "Pengganti menolak",
+          rejectedAt: serverTimestamp(),
+          rejectedByUid: userProfile.uid,
+          rejectedByName: userProfile.fullName,
+          rejectionReason: rejectReason.trim(),
+          signatureType: "electronic_confirmation",
+          message: "Pengganti sementara tidak bersedia.",
+          confirmedByUid: userProfile.uid,
+          confirmedByName: userProfile.fullName,
+          confirmedAt: serverTimestamp(),
+          confirmationSource: "employee_portal",
+          confirmationType: "electronic_signature_substitute",
+        },
+      });
+      try {
+        await sendNotification(firestore, {
+          userId: (req as any).employeeUid || req.employeeId,
+          type: "status_update",
+          module: "employee",
+          title: "Pengganti Sementara Menolak",
+          message: `${userProfile.fullName} tidak bersedia menjadi pengganti sementara. Silakan pilih ulang pengganti sementara untuk pengajuan cuti Anda.`,
+          targetType: "user",
+          targetId: req.id,
+          actionUrl: "/admin/karyawan/pengajuan-cuti",
+          createdBy: userProfile.uid,
+          priority: "action_required",
+        });
+      } catch (notifErr) {
+        console.error("Failed to notify requester of replacement rejection:", notifErr);
+      }
+      toast({ title: "Konfirmasi Terkirim", description: "Anda telah menolak menjadi pengganti sementara." });
+      setRejectingRequestId(null);
+      setRejectReason("");
+      mutateReplacementRequests();
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Gagal Konfirmasi", description: e.message });
+    } finally {
+      setIsConfirmingReplacement(false);
+    }
+  };
+
+  const pendingReplacementRequests = useMemo(
+    () => (replacementRequests || []).filter((r) => (r as any).replacementConfirmation?.status === "pending"),
+    [replacementRequests],
+  );
 
   const sortedRequests = useMemo(() => {
     const merged = new Map<string, LeaveRequest>();
@@ -438,6 +638,51 @@ export function LeaveSubmissionClient() {
     toast,
   ]);
 
+  // Fetch "Pengganti Sementara" candidates once the form dialog opens — a
+  // server route (Admin SDK), not a client Firestore query, since a plain
+  // karyawan account can't list employee_profiles.
+  useEffect(() => {
+    if (!isFormOpen || !userProfile) return;
+    let cancelled = false;
+    const fetchCandidates = async () => {
+      setIsLoadingReplacementCandidates(true);
+      try {
+        const auth = getAuth();
+        const token = await auth.currentUser?.getIdToken();
+        if (!token) throw new Error("Sesi login Anda tidak valid.");
+        const res = await fetch("/api/leave/replacement-candidates", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Gagal memuat daftar pengganti sementara.");
+        if (!cancelled) {
+          setReplacementCandidates(data.candidates || []);
+          console.log("[LEAVE_REPLACEMENT_CANDIDATES_DEBUG]", {
+            currentEmployee: {
+              uid: userProfile?.uid,
+              fullName: userProfile?.fullName,
+            },
+            currentDivisionId: divisionId,
+            currentDivisionName:
+              employeeProfile?.hrdEmploymentInfo?.divisionName || employeeProfile?.hrdEmploymentInfo?.divisi,
+            rawEmployeesCount: data.meta?.rawEmployeesCount ?? null,
+            excludedInvalidNameCount: data.meta?.excludedInvalidNameCount ?? null,
+            candidates: data.candidates || [],
+          });
+        }
+      } catch (e: any) {
+        console.error("Failed to fetch replacement candidates:", e);
+        if (!cancelled) setReplacementCandidates([]);
+      } finally {
+        if (!cancelled) setIsLoadingReplacementCandidates(false);
+      }
+    };
+    fetchCandidates();
+    return () => {
+      cancelled = true;
+    };
+  }, [isFormOpen, userProfile]);
+
   // Form setup
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -445,11 +690,8 @@ export function LeaveSubmissionClient() {
       leaveType: "tahunan",
       startDate: new Date(),
       endDate: new Date(),
-      reason: "",
       leaveAddress: "",
-      handoverEmployeeId: "",
-      handoverEmployeeName: "",
-      handoverEmployeePosition: "",
+      replacementEmployeeUid: "",
       handoverNotes: "",
       emergencyContactName: "",
       emergencyContactPhone: "",
@@ -459,10 +701,12 @@ export function LeaveSubmissionClient() {
   const watchLeaveType = form.watch("leaveType");
   const watchStartDate = form.watch("startDate");
   const watchEndDate = form.watch("endDate");
-  const watchHandoverEmployeeId = form.watch("handoverEmployeeId");
-  const watchLeaveAddress = form.watch("leaveAddress");
-  const watchHandoverEmployeeName = form.watch("handoverEmployeeName");
-  const watchHandoverEmployeePosition = form.watch("handoverEmployeePosition");
+  const watchReplacementEmployeeUid = form.watch("replacementEmployeeUid");
+
+  const selectedReplacement = useMemo(
+    () => replacementCandidates.find((c) => c.uid === watchReplacementEmployeeUid) || null,
+    [replacementCandidates, watchReplacementEmployeeUid],
+  );
 
   const durationDays = useMemo(() => {
     if (!watchStartDate || !watchEndDate || watchEndDate < watchStartDate)
@@ -624,11 +868,8 @@ export function LeaveSubmissionClient() {
       leaveType: "tahunan",
       startDate: new Date(),
       endDate: new Date(),
-      reason: "",
       leaveAddress: "",
-      handoverEmployeeId: "",
-      handoverEmployeeName: "",
-      handoverEmployeePosition: "",
+      replacementEmployeeUid: "",
       handoverNotes: "",
       emergencyContactName: "",
       emergencyContactPhone: "",
@@ -647,11 +888,8 @@ export function LeaveSubmissionClient() {
       leaveType: req.leaveType || "tahunan",
       startDate: req.startDate.toDate(),
       endDate: req.endDate.toDate(),
-      reason: req.reason,
       leaveAddress: req.leaveAddress || "",
-      handoverEmployeeId: req.handoverEmployeeId,
-      handoverEmployeeName: req.handoverEmployeeName || "",
-      handoverEmployeePosition: req.handoverEmployeePosition || "",
+      replacementEmployeeUid: (req as any).replacementEmployeeUid || req.handoverEmployeeId || "",
       handoverNotes: req.handoverNotes || "",
       emergencyContactName: req.emergencyContactName,
       emergencyContactPhone: req.emergencyContactPhone,
@@ -691,6 +929,10 @@ export function LeaveSubmissionClient() {
   };
 
   const onSubmit = async (values: FormValues) => {
+    // Extra insurance on top of the submit button's disabled={isSaving} —
+    // a form re-submit (e.g. a stray Enter keypress before the disabled
+    // state re-renders) must never create a second leave_requests doc.
+    if (isSaving) return;
     if (!userProfile || !firestore || !leaveBalance) return;
 
     // Use our centralized, strict validationResult check as final guard
@@ -701,6 +943,21 @@ export function LeaveSubmissionClient() {
         description:
           validationResult.warning ||
           "Silakan periksa kembali isian tanggal pengajuan cuti Anda.",
+      });
+      return;
+    }
+
+    // Guard against a replacement that's no longer valid (e.g. moved
+    // divisions or was deactivated while this modal was open) — never trust
+    // a stale selection silently.
+    if (
+      values.replacementEmployeeUid !== "none" &&
+      !replacementCandidates.some((c) => c.uid === values.replacementEmployeeUid)
+    ) {
+      toast({
+        variant: "destructive",
+        title: "Pengganti Tidak Valid",
+        description: "Data pengganti sementara sudah berubah. Silakan pilih ulang pengganti.",
       });
       return;
     }
@@ -725,6 +982,36 @@ export function LeaveSubmissionClient() {
         variant: "destructive",
         title: "Atasan Tidak Valid",
         description: "Atasan persetujuan belum diatur. Hubungi HRD untuk melengkapi struktur organisasi.",
+      });
+      return;
+    }
+    // Defense-in-depth on top of resolveApprovalTarget's own self-checks —
+    // firestore.rules' create rule (and any stricter deployed version) must
+    // never see an approver equal to the requester.
+    if (approvalTarget.approvalTargetUid === userProfile.uid) {
+      toast({
+        variant: "destructive",
+        title: "Atasan Tidak Valid",
+        description: "Atasan tidak boleh sama dengan pengaju cuti. Hubungi HRD untuk memperbaiki struktur organisasi.",
+      });
+      return;
+    }
+
+    // brandId is required by the leave_requests create rule and must never
+    // be silently sent as "" — the old inline resolution only looked at
+    // employeeProfile.brandId, missing brandId/companyId nested under
+    // hrdEmploymentInfo on profiles that only have it there.
+    const resolvedBrandId =
+      (Array.isArray(employeeProfile?.brandId) ? employeeProfile.brandId[0] : employeeProfile?.brandId) ||
+      (employeeProfile as any)?.companyId ||
+      employeeProfile?.hrdEmploymentInfo?.brandId ||
+      (employeeProfile?.hrdEmploymentInfo as any)?.companyId ||
+      "";
+    if (!resolvedBrandId) {
+      toast({
+        variant: "destructive",
+        title: "Data Perusahaan Tidak Lengkap",
+        description: "Brand/perusahaan karyawan belum diatur. Hubungi HRD.",
       });
       return;
     }
@@ -801,12 +1088,12 @@ export function LeaveSubmissionClient() {
         userId: userProfile.uid, // Alternate ownership field some rules/tools check
         employeeId: (employeeProfile as any)?.employeeId || userProfile.uid,
         employeeName: userProfile.fullName,
-        brandId: Array.isArray(employeeProfile?.brandId)
-          ? employeeProfile.brandId[0]
-          : employeeProfile?.brandId || "",
-        brandName: hrdInfo.brandName || hrdInfo.brand || "",
-        divisionId: hrdInfo.divisionId || "",
-        divisionName: hrdInfo.divisionName || hrdInfo.divisi || "",
+        brandId: resolvedBrandId,
+        // Top-level fields first — see the divisionId useMemo comment above
+        // for why hrdEmploymentInfo's copy can lag behind a real transfer.
+        brandName: (employeeProfile as any)?.brandName || hrdInfo.brandName || hrdInfo.brand || "",
+        divisionId: (employeeProfile as any)?.divisionId || hrdInfo.divisionId || "",
+        divisionName: (employeeProfile as any)?.divisionName || hrdInfo.divisionName || hrdInfo.divisi || "",
         employmentType:
           hrdInfo.employeeType ||
           hrdInfo.tipeKaryawan ||
@@ -817,14 +1104,50 @@ export function LeaveSubmissionClient() {
         startDate: Timestamp.fromDate(values.startDate),
         endDate: Timestamp.fromDate(values.endDate),
         durationDays: durationDays,
-        reason: values.reason,
+        // No user-facing "Alasan Cuti" field anymore — auto-filled so
+        // anything downstream still expecting a reason/leaveReason string
+        // doesn't break.
+        reason: "Pengajuan cuti tahunan",
+        leaveReason: "Pengajuan cuti tahunan",
         leaveAddress: values.leaveAddress,
-        handoverEmployeeId: values.handoverEmployeeId || "manual",
-        handoverEmployeeName: values.handoverEmployeeName || "",
-        handoverEmployeePosition: values.handoverEmployeePosition,
+        // New field set (uid-sourced, not manually typed) plus the legacy
+        // handoverEmployee* fields mirrored from the same selection for
+        // whatever downstream (approval dialogs, exports) still reads those.
+        replacementEmployeeUid:
+          values.replacementEmployeeUid !== "none" ? values.replacementEmployeeUid : null,
+        replacementEmployeeName: selectedReplacement?.fullName || "",
+        replacementEmployeePosition: selectedReplacement?.jobTitle || "",
+        replacementEmployeeDivisionId: selectedReplacement?.divisionId || "",
+        replacementEmployeeDivisionName: selectedReplacement?.divisionName || "",
+        replacementEmployeeBrandId: selectedReplacement?.brandId || "",
+        replacementEmployeeBrandName: selectedReplacement?.brandName || "",
+        handoverEmployeeId:
+          values.replacementEmployeeUid !== "none" ? values.replacementEmployeeUid : "manual",
+        handoverEmployeeName: selectedReplacement?.fullName || "",
+        handoverEmployeePosition: selectedReplacement?.jobTitle || "",
         handoverNotes: values.handoverNotes,
-        emergencyContactName: values.emergencyContactName,
-        emergencyContactPhone: values.emergencyContactPhone,
+        emergencyContactName: values.emergencyContactName || "",
+        emergencyContactPhone: values.emergencyContactPhone || "",
+
+        // Confirmation-as-electronic-signature-substitute workflow — reset
+        // to "pending" on every (re)submission, including when the pengaju
+        // reopens a request to swap in a different replacement after a
+        // rejection, so a stale accepted/rejected state never lingers
+        // against a now-different person.
+        ...(selectedReplacement && {
+          replacementConfirmation: {
+            status: "pending",
+            label: "Menunggu konfirmasi pengganti",
+            requestedAt: serverTimestamp(),
+            requestedByUid: userProfile.uid,
+            requestedByName: userProfile.fullName,
+            replacementUid: selectedReplacement.uid,
+            replacementName: selectedReplacement.fullName,
+            replacementPosition: selectedReplacement.jobTitle || "-",
+            replacementDivision: selectedReplacement.divisionName || "-",
+            message: "Anda ditunjuk sebagai pengganti sementara untuk pengajuan cuti ini.",
+          },
+        }),
 
         // Approver fields based on structural level
         status: isDivisionManager ? "pending_director_review" : "pending_manager_review",
@@ -890,57 +1213,143 @@ export function LeaveSubmissionClient() {
       const docRef = selectedRequest
         ? doc(firestore, "leave_requests", selectedRequest.id!)
         : doc(collection(firestore, "leave_requests"));
-      const batch = writeBatch(firestore);
 
       // Dynamically remove any undefined properties to avoid Firestore "Unsupported field value: undefined" errors
       const cleanedPayload = cleanUndefinedFields(payload);
 
-      // Audit logs before Firestore write (auth.uid, employeeUid, and targeted Firestore paths)
-      console.log("=== SUBMIT LEAVE REQUEST AUDIT LOGS ===");
-      console.log("auth.uid:", userProfile.uid);
-      console.log("payload.employeeUid:", cleanedPayload.employeeUid);
-      console.log("Firestore Path written: leave_requests/" + docRef.id);
+      // Full snapshot of every field firestore.rules' leave_requests create
+      // check can look at — logged right before the write so a
+      // permission-denied can be diagnosed from this line alone, without
+      // guessing which field was empty/mismatched.
+      console.log("[LEAVE_CREATE_PAYLOAD_VALIDATE]", {
+        authUid: userProfile.uid,
+        employeeUid: cleanedPayload.employeeUid,
+        requesterUid: cleanedPayload.requesterUid,
+        uid: cleanedPayload.uid,
+        userId: cleanedPayload.userId,
+        employeeId: cleanedPayload.employeeId,
+        brandId: cleanedPayload.brandId,
+        brandName: cleanedPayload.brandName,
+        approvalTargetUid: cleanedPayload.approvalTargetUid,
+        currentApproverUid: cleanedPayload.currentApproverUid,
+        directSupervisorUid: cleanedPayload.directSupervisorUid,
+        managerUid: cleanedPayload.managerUid,
+        status: cleanedPayload.status,
+      });
 
-      // Save Request doc
-      batch.set(
-        docRef,
-        {
-          ...cleanedPayload,
-          [selectedRequest ? "updatedAt" : "createdAt"]: serverTimestamp(),
-        },
-        { merge: true },
-      );
+      // ===== MAIN WRITE — this is the only write that may create/update the
+      // leave_requests doc, and the only one whose failure should ever be
+      // reported to the user as "Pengajuan gagal". Everything below this
+      // point (notifications) is a side effect and must never be allowed to
+      // make a successful submission look like a failure.
+      try {
+        await setDoc(
+          docRef,
+          {
+            ...cleanedPayload,
+            [selectedRequest ? "updatedAt" : "createdAt"]: serverTimestamp(),
+          },
+          { merge: true },
+        );
+        console.log("[LEAVE_REQUEST_CREATED]", { id: docRef.id, path: docRef.path });
+      } catch (mainWriteError) {
+        console.error("[LEAVE_REQUEST_CREATE_FAILED]", {
+          path: docRef.path,
+          authUid: userProfile.uid,
+          payloadCheck: {
+            employeeUid: cleanedPayload.employeeUid,
+            requesterUid: cleanedPayload.requesterUid,
+            brandId: cleanedPayload.brandId,
+            approvalTargetUid: cleanedPayload.approvalTargetUid,
+            status: cleanedPayload.status,
+          },
+          error: mainWriteError,
+        });
+        throw mainWriteError;
+      }
 
       // Note: We DO NOT update leave_balances from the client here as standard employees are restricted by Security Rules.
       // Leave balance quota adjustments are handled by HRD / Super Admin or backend API.
 
-      await batch.commit();
-
-      // Trigger custom leaf notification workflow
-      await sendLeaveNotification(firestore, "staff_submission", {
-        employeeId: userProfile.uid,
-        employeeName: userProfile.fullName,
-        managerId: payload.managerId,
-        managerName: payload.managerName,
-        handoverEmployeeId: payload.handoverEmployeeId,
-        handoverEmployeeName: payload.handoverEmployeeName,
-        startDate: values.startDate,
-        endDate: values.endDate,
-        requestId: docRef.id,
-      });
-
+      // The leave request itself is now safely committed — show success and
+      // close the modal immediately, before touching anything else. A
+      // notification failure after this point must not undo it.
       toast({
-        title: selectedRequest
-          ? "Perubahan Disimpan"
-          : "Pengajuan Cuti Berhasil",
+        title: selectedRequest ? "Perubahan Disimpan" : "Pengajuan Cuti Berhasil",
         description: "Pengajuan cuti berhasil diajukan.",
       });
-
       setIsFormOpen(false);
       mutateRequests();
       mutateBalance();
+
+      // ===== SIDE EFFECTS — notifications only. Wrapped so a permission
+      // error on any single notification write (e.g. writing into a
+      // manager's or colleague's own notification path) can never bubble up
+      // and get logged/shown as a failure of the leave_requests write above,
+      // which has already succeeded by this point.
+      const { allSucceeded, failedLabels } = await runLeaveRequestSideEffectsSafely([
+        {
+          label: "staff_submission_notifications",
+          run: () =>
+            sendLeaveNotification(firestore, "staff_submission", {
+              employeeId: userProfile.uid,
+              employeeName: userProfile.fullName,
+              managerId: payload.managerId,
+              managerName: payload.managerName,
+              handoverEmployeeId: payload.handoverEmployeeId,
+              handoverEmployeeName: payload.handoverEmployeeName,
+              startDate: values.startDate,
+              endDate: values.endDate,
+              requestId: docRef.id,
+            }),
+        },
+        ...(selectedReplacement
+          ? [
+              {
+                // Ask the replacement to confirm — this is the "electronic
+                // signature substitute" step; the leave request isn't
+                // considered fully settled until they respond (see the
+                // "Permintaan Sebagai Pengganti Sementara" section below).
+                label: "replacement_confirmation_notification",
+                run: () =>
+                  sendNotification(firestore, {
+                    userId: selectedReplacement.uid,
+                    type: "status_update",
+                    module: "employee",
+                    title: "Penunjukan Pengganti Sementara",
+                    message: `${userProfile.fullName} menunjuk Anda sebagai pengganti sementara selama cuti (${formattedStartDate} – ${formattedEndDate}).`,
+                    targetType: "user",
+                    targetId: docRef.id,
+                    actionUrl: "/admin/karyawan/pengajuan-cuti",
+                    createdBy: userProfile.uid,
+                    priority: "action_required",
+                    meta: {
+                      leaveRequestId: docRef.id,
+                      requesterUid: userProfile.uid,
+                      requesterName: userProfile.fullName,
+                      leavePeriodStart: formattedStartDate,
+                      leavePeriodEnd: formattedEndDate,
+                    },
+                  }),
+              },
+            ]
+          : []),
+      ]);
+
+      if (!allSucceeded) {
+        console.warn("[LEAVE_REQUEST_NOTIFICATIONS_PARTIAL_FAILURE]", { requestId: docRef.id, failedLabels });
+        toast({
+          title: "Notifikasi Tertunda",
+          description:
+            "Pengajuan cuti berhasil dikirim. Namun notifikasi belum berhasil dikirim otomatis.",
+        });
+      }
     } catch (e: any) {
-      console.error("=== SUBMIT LEAVE REQUEST PERMISSION ERROR ===");
+      // Reaching here means the MAIN leave_requests write itself failed —
+      // side effects never throw into this block (see
+      // runLeaveRequestSideEffectsSafely above), so this path label is
+      // always accurate now.
+      console.error("=== SUBMIT LEAVE REQUEST ERROR ===");
       console.error("Error Code/Message:", e.message || e);
       console.error(
         "Firestore Path attempted: leave_requests/" +
@@ -1021,10 +1430,35 @@ export function LeaveSubmissionClient() {
     }
   };
 
+  const getReplacementBadge = (req: LeaveRequest) => {
+    const confirmation = (req as any).replacementConfirmation;
+    if (!confirmation?.status) return null;
+    switch (confirmation.status) {
+      case "accepted":
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black border uppercase tracking-wider bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+            Pengganti Bersedia
+          </span>
+        );
+      case "rejected":
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black border uppercase tracking-wider bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400">
+            Pengganti Menolak
+          </span>
+        );
+      case "pending":
+      default:
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black border uppercase tracking-wider bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400">
+            Menunggu Konfirmasi
+          </span>
+        );
+    }
+  };
+
   if (
     isLoadingProfile ||
     isLoadingBalance ||
-    isLoadingColleagues ||
     isLoadingRequests ||
     isInitializingBalance
   ) {
@@ -1160,6 +1594,113 @@ export function LeaveSubmissionClient() {
           </Card>
         </div>
 
+        {/* Permintaan Sebagai Pengganti Sementara — visible whenever a
+            colleague named this account as their replacement. */}
+        {(replacementRequests || []).length > 0 && (
+          <Card className="border-indigo-100 dark:border-indigo-900/40 shadow-md">
+            <CardHeader className="border-b pb-4 bg-indigo-50/50 dark:bg-indigo-950/20">
+              <CardTitle className="text-sm font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                Permintaan Sebagai Pengganti Sementara
+              </CardTitle>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Konfirmasi ini menjadi bukti persetujuan digital sebagai pengganti tanda tangan
+                manual.
+              </p>
+            </CardHeader>
+            <CardContent className="p-4 space-y-3">
+              {(replacementRequests || []).map((req) => {
+                const confirmation = (req as any).replacementConfirmation;
+                if (!confirmation) return null;
+                const isPending = confirmation.status === "pending";
+                const isRejecting = rejectingRequestId === req.id;
+                return (
+                  <div
+                    key={req.id}
+                    className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 space-y-3"
+                  >
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div>
+                        <p className="font-bold text-sm text-slate-900 dark:text-white">
+                          {req.employeeName}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {format(req.startDate.toDate(), "dd MMM yyyy", { locale: idLocale })} –{" "}
+                          {format(req.endDate.toDate(), "dd MMM yyyy", { locale: idLocale })} (
+                          {req.durationDays} hari kerja)
+                        </p>
+                      </div>
+                      {getReplacementBadge(req)}
+                    </div>
+                    {req.handoverNotes && (
+                      <p className="text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3">
+                        <span className="font-bold block mb-0.5 text-slate-400 uppercase text-[10px] tracking-wider">
+                          Catatan Serah Terima Tugas
+                        </span>
+                        {req.handoverNotes}
+                      </p>
+                    )}
+
+                    {isPending && !isRejecting && (
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <Button
+                          size="sm"
+                          disabled={isConfirmingReplacement}
+                          onClick={() => handleAcceptReplacement(req)}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs"
+                        >
+                          Saya Bersedia
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={isConfirmingReplacement}
+                          onClick={() => {
+                            setRejectingRequestId(req.id!);
+                            setRejectReason("");
+                          }}
+                          className="border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 font-bold rounded-lg text-xs"
+                        >
+                          Tidak Bersedia
+                        </Button>
+                      </div>
+                    )}
+
+                    {isPending && isRejecting && (
+                      <div className="space-y-2 pt-1">
+                        <Textarea
+                          rows={2}
+                          value={rejectReason}
+                          onChange={(e) => setRejectReason(e.target.value)}
+                          placeholder="Tuliskan alasan tidak dapat menjadi pengganti sementara"
+                          className="text-xs"
+                        />
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            disabled={isConfirmingReplacement}
+                            onClick={() => handleRejectReplacement(req)}
+                            className="bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg text-xs"
+                          >
+                            Kirim Penolakan
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setRejectingRequestId(null)}
+                            className="font-bold rounded-lg text-xs"
+                          >
+                            Batal
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Requests Table Card */}
         <Card className="border-slate-100 dark:border-slate-800 shadow-md">
           <CardHeader className="border-b pb-4 bg-slate-50/50 dark:bg-slate-900/50">
@@ -1214,7 +1755,10 @@ export function LeaveSubmissionClient() {
                           </span>
                         </TableCell>
                         <TableCell className="text-sm font-medium text-slate-500">
-                          {r.handoverEmployeeName || "-"}
+                          <div className="flex flex-col gap-1">
+                            <span>{r.handoverEmployeeName || "-"}</span>
+                            {getReplacementBadge(r)}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <span
@@ -1300,340 +1844,222 @@ export function LeaveSubmissionClient() {
         </Card>
       </div>
 
-      {/* Form Form Submission Dialog */}
+      {/* Form Pengajuan Cuti Tahunan */}
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-        <DialogContent className="max-w-3xl h-[85vh] flex flex-col p-0 overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border-none shadow-2xl">
-          <DialogHeader className="p-6 pb-2 border-b bg-slate-50/50 dark:bg-slate-900/50">
+        <DialogContent className="max-w-[95vw] lg:max-w-[1040px] h-[88vh] flex flex-col p-0 overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border-none shadow-2xl">
+          <DialogHeader className="p-6 pb-4 border-b shrink-0 bg-slate-50/50 dark:bg-slate-900/50">
             <DialogTitle className="text-xl font-black text-slate-900 dark:text-white">
               {selectedRequest
                 ? "Ubah Pengajuan Cuti"
                 : "Form Pengajuan Cuti Tahunan"}
             </DialogTitle>
             <DialogDescription className="text-xs font-semibold text-slate-500">
-              Silakan lengkapi seluruh field dengan data yang valid.
+              Lengkapi data cuti dengan benar sebelum dikirim.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+          <div className="flex-1 overflow-y-auto px-6 py-6">
             <Form {...form}>
               <form
                 id="leave-form"
                 onSubmit={form.handleSubmit(onSubmit)}
-                className="space-y-6"
+                className="space-y-5"
               >
-                {/* Jenis Cuti Selection Dropdown */}
-                <FormField
-                  control={form.control}
-                  name="leaveType"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-xs font-black text-slate-500 uppercase tracking-wider">
-                        Jenis Cuti*
-                      </FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        value={field.value}
-                      >
-                        <FormControl>
-                          <SelectTrigger className="rounded-xl border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-                            <SelectValue placeholder="Pilih jenis cuti..." />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-                          <SelectItem value="tahunan">Cuti Tahunan</SelectItem>
-                          <SelectItem value="besar">Cuti Besar</SelectItem>
-                          <SelectItem value="menikah">Cuti Menikah</SelectItem>
-                          <SelectItem value="melahirkan">
-                            Cuti Melahirkan
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                      {validationResult.errorField === "leaveType" && (
-                        <p className="text-[11px] font-bold text-red-500 mt-1 flex items-center gap-1">
-                          <AlertTriangle className="h-3 w-3" />{" "}
-                          {validationResult.warning}
-                        </p>
+                {/* Section 1: Ringkasan Cuti */}
+                <section className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 p-5 space-y-4">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                    <ShieldCheck className="h-3.5 w-3.5 text-indigo-500" />
+                    Ringkasan Cuti
+                  </p>
+
+                  <FormField
+                    control={form.control}
+                    name="leaveType"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs font-black text-slate-500 uppercase tracking-wider">
+                          Jenis Cuti*
+                        </FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger className="rounded-xl border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                              <SelectValue placeholder="Pilih jenis cuti" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                            <SelectItem value="tahunan">Cuti Tahunan</SelectItem>
+                            <SelectItem value="besar">Cuti Besar</SelectItem>
+                            <SelectItem value="menikah">Cuti Menikah</SelectItem>
+                            <SelectItem value="melahirkan">Cuti Melahirkan</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {validationResult.errorField === "leaveType" && (
+                          <p className="text-[11px] font-bold text-red-500 mt-1 flex items-center gap-1">
+                            <AlertTriangle className="h-3 w-3" /> {validationResult.warning}
+                          </p>
+                        )}
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+                    <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-3">
+                      <span className="font-bold text-slate-400 block mb-0.5">Sisa Cuti Tersedia</span>
+                      <p className="font-black text-emerald-600 dark:text-emerald-400 text-base">
+                        {leaveBalance?.currentBalance ?? 0} Hari
+                      </p>
+                    </div>
+                    <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-3">
+                      <span className="font-bold text-slate-400 block mb-0.5">Jatah Cuti Tahunan</span>
+                      <p className="font-black text-slate-700 dark:text-slate-200 text-base">
+                        {leaveBalance?.initialQuota ?? 0} Hari
+                      </p>
+                    </div>
+                    <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-3 col-span-2 sm:col-span-1">
+                      <span className="font-bold text-slate-400 block mb-0.5">Ketentuan Pengajuan</span>
+                      <p className="font-bold text-slate-700 dark:text-slate-200">Minimal H-14</p>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Section 2: Tanggal Cuti */}
+                <section className="rounded-2xl border border-slate-100 dark:border-slate-800 p-5 space-y-4">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    Tanggal Cuti
+                  </p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="startDate"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-col">
+                          <FormLabel className="text-xs font-black text-slate-500 uppercase">
+                            Mulai Cuti*
+                          </FormLabel>
+                          <FormControl>
+                            <GoogleDatePicker
+                              value={field.value}
+                              onChange={field.onChange}
+                              disabledDate={(date) => {
+                                const minDate = getMinimumLeaveDate();
+                                return date < minDate;
+                              }}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
                       )}
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                    />
+                    <FormField
+                      control={form.control}
+                      name="endDate"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-col">
+                          <FormLabel className="text-xs font-black text-slate-500 uppercase">
+                            Selesai Cuti*
+                          </FormLabel>
+                          <FormControl>
+                            <GoogleDatePicker value={field.value} onChange={field.onChange} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
 
-                {/* 1. Date Range picker */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="startDate"
-                    render={({ field }) => (
-                      <FormItem className="flex flex-col">
-                        <FormLabel className="text-xs font-black text-slate-500 uppercase">
-                          Mulai Cuti*
-                        </FormLabel>
-                        <FormControl>
-                          <GoogleDatePicker
-                            value={field.value}
-                            onChange={field.onChange}
-                            disabledDate={(date) => {
-                              const minDate = getMinimumLeaveDate();
-                              return date < minDate;
-                            }}
-                          />
-                        </FormControl>
-                        <FormDescription className="text-xs text-muted-foreground mt-1">
-                          Cuti hanya dapat diajukan minimal 14 hari sebelum tanggal mulai cuti.
-                        </FormDescription>
-                        {validationResult.errorField === "startDate" && (
-                          <p className="text-[11px] font-bold text-red-500 mt-1 flex items-center gap-1">
-                            <AlertTriangle className="h-3 w-3" />{" "}
-                            {validationResult.warning}
-                          </p>
-                        )}
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="endDate"
-                    render={({ field }) => (
-                      <FormItem className="flex flex-col">
-                        <FormLabel className="text-xs font-black text-slate-500 uppercase">
-                          Selesai Cuti*
-                        </FormLabel>
-                        <FormControl>
-                          <GoogleDatePicker
-                            value={field.value}
-                            onChange={field.onChange}
-                          />
-                        </FormControl>
-                        {validationResult.errorField === "endDate" && (
-                          <p className="text-[11px] font-bold text-red-500 mt-1 flex items-center gap-1">
-                            <AlertTriangle className="h-3 w-3" />{" "}
-                            {validationResult.warning}
-                          </p>
-                        )}
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                {/* Duration indicator */}
-                <div className="p-4 rounded-xl border border-indigo-100 bg-indigo-50/20 dark:border-indigo-900/30 flex justify-between items-center">
-                  <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400">
-                    <Info className="h-4 w-4" />
-                    <span className="text-xs font-bold">
-                      Durasi cuti terhitung hari kerja (Senin-Jumat):
+                  <div className="p-3.5 rounded-xl border border-indigo-100 bg-indigo-50/20 dark:border-indigo-900/30 flex justify-between items-center">
+                    <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400">
+                      <Info className="h-4 w-4" />
+                      <span className="text-xs font-bold">Durasi (hari kerja Senin–Jumat)</span>
+                    </div>
+                    <span className="text-lg font-black text-indigo-700 dark:text-indigo-400">
+                      {durationDays} Hari Kerja
                     </span>
                   </div>
-                  <span className="text-lg font-black text-indigo-700 dark:text-indigo-400">
-                    {durationDays} Hari Kerja
-                  </span>
-                </div>
 
-                {/* Premium Ringkasan Detail Cuti Panel */}
-                {watchStartDate &&
-                  watchEndDate &&
-                  watchEndDate >= watchStartDate && (
-                    <div className="p-5 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800/80 space-y-4 shadow-sm transition-all duration-200">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                        <ShieldCheck className="h-3.5 w-3.5 text-indigo-500" />{" "}
-                        Ringkasan Pengajuan Cuti
-                      </p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                        <div>
-                          <span className="font-bold text-slate-400 block mb-0.5">
-                            Diajukan pada:
-                          </span>
-                          <p className="font-semibold text-slate-700 dark:text-slate-300">
-                            {format(
-                              new Date(),
-                              "EEEE, dd MMMM yyyy 'pukul' HH:mm",
-                              { locale: idLocale },
-                            )}
-                          </p>
-                        </div>
-                        <div>
-                          <span className="font-bold text-slate-400 block mb-0.5">
-                            Periode Cuti:
-                          </span>
-                          <p className="font-bold text-indigo-600 dark:text-indigo-400">
-                            {format(watchStartDate, "EEEE, dd MMMM yyyy", {
-                              locale: idLocale,
-                            })}{" "}
-                            –{" "}
-                            {format(watchEndDate, "EEEE, dd MMMM yyyy", {
-                              locale: idLocale,
-                            })}
-                          </p>
-                        </div>
-                        <div>
-                          <span className="font-bold text-slate-400 block mb-0.5">
-                            Durasi Cuti:
-                          </span>
-                          <p className="font-bold text-slate-700 dark:text-slate-300">
-                            {validationResult.dur} Hari Kerja
-                          </p>
-                        </div>
-                        <div>
-                          <span className="font-bold text-slate-400 block mb-0.5">
-                            Jenis Cuti:
-                          </span>
-                          <p className="font-bold text-indigo-600 dark:text-indigo-400 capitalize">
-                            Cuti{" "}
-                            {watchLeaveType === "tahunan"
-                              ? "Tahunan"
-                              : watchLeaveType === "besar"
-                                ? "Besar"
-                                : watchLeaveType === "menikah"
-                                  ? "Menikah"
-                                  : "Melahirkan"}
-                          </p>
-                        </div>
-                        <div className="sm:col-span-2">
-                          <span className="font-bold text-slate-400 block mb-0.5">
-                            Alamat Selama Cuti:
-                          </span>
-                          <p className="font-semibold text-slate-700 dark:text-slate-300 break-words">
-                            {watchLeaveAddress || "—"}
-                          </p>
-                        </div>
-                        <div className="sm:col-span-2 border-t pt-2.5 mt-1">
-                          <span className="font-bold text-slate-400 block mb-0.5">
-                            Digantikan Oleh:
-                          </span>
-                          <p className="font-bold text-slate-800 dark:text-slate-200">
-                            {watchHandoverEmployeeName
-                              ? `${watchHandoverEmployeeName} — ${watchHandoverEmployeePosition || "Jabatan Belum Diisi"}`
-                              : "—"}
-                          </p>
-                        </div>
+                  {/* Validation feedback lives here, next to the date fields it's
+                      actually about — not as a big banner spanning the whole form. */}
+                  {!validationResult.isValid && validationResult.warning && (
+                    <div className="p-3.5 rounded-xl border border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-400 flex items-start gap-2.5">
+                      <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-wider">
+                          Tanggal cuti belum memenuhi ketentuan
+                        </p>
+                        <p className="text-xs font-semibold mt-0.5">{validationResult.warning}</p>
                       </div>
                     </div>
                   )}
 
-                {/* Validation Info/Error Panel */}
-                {validationResult.warning && (
-                  <div
-                    className={`p-4 rounded-xl border flex items-start gap-3 ${
-                      validationResult.isValid
-                        ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                        : "border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-400"
-                    }`}
-                  >
-                    {validationResult.isValid ? (
-                      <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-500" />
-                    ) : (
-                      <AlertTriangle className="h-5 w-5 shrink-0 text-red-500" />
-                    )}
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-wider">
-                        {validationResult.isValid
-                          ? "Pengajuan Valid"
-                          : "Validasi Gagal"}
-                      </p>
-                      <p className="text-sm font-semibold mt-1">
-                        {validationResult.warning}
-                      </p>
+                  {divisionOverlapWarning && (
+                    <div className="flex items-center gap-2.5 p-3.5 rounded-xl border border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400">
+                      <AlertTriangle className="h-4 w-4 shrink-0" />
+                      <p className="text-xs font-medium">{divisionOverlapWarning}</p>
                     </div>
-                  </div>
-                )}
-
-                {divisionOverlapWarning && (
-                  <div className="flex items-center gap-3 p-4 rounded-xl border border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400">
-                    <AlertTriangle className="h-5 w-5 shrink-0" />
-                    <p className="text-xs font-medium">
-                      {divisionOverlapWarning}
-                    </p>
-                  </div>
-                )}
-
-                {/* 2. Reason */}
-                <FormField
-                  control={form.control}
-                  name="reason"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-xs font-black text-slate-500 uppercase">
-                        Alasan Cuti*
-                      </FormLabel>
-                      <FormControl>
-                        <Textarea
-                          rows={3}
-                          placeholder="Jelaskan alasan pengajuan cuti tahunan Anda..."
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
                   )}
-                />
+                </section>
 
-                {/* Alamat Selama Cuti */}
-                <FormField
-                  control={form.control}
-                  name="leaveAddress"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-xs font-black text-slate-500 uppercase">
-                        Alamat Selama Cuti*
-                      </FormLabel>
-                      <FormControl>
-                        <Textarea
-                          rows={2}
-                          placeholder="Sebutkan alamat lengkap tempat Anda tinggal/singgah selama cuti..."
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                {/* Section 3: Informasi Selama Cuti */}
+                <section className="rounded-2xl border border-slate-100 dark:border-slate-800 p-5 space-y-4">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    Informasi Selama Cuti
+                  </p>
 
-                {/* 3. Handover Staff selector */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
-                    name="handoverEmployeeName"
+                    name="leaveAddress"
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel className="text-xs font-black text-slate-500 uppercase">
-                          Nama Pengganti Sementara*
+                          Alamat Selama Cuti*
                         </FormLabel>
                         <FormControl>
-                          <Input
-                            placeholder="Ketik nama rekan pengganti sementara..."
+                          <Textarea
+                            rows={2}
+                            placeholder="Sebutkan alamat lengkap tempat Anda tinggal/singgah selama cuti..."
                             {...field}
-                            className="rounded-xl border-slate-200 dark:border-slate-800"
                           />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                  <FormField
-                    control={form.control}
-                    name="handoverEmployeePosition"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-xs font-black text-slate-500 uppercase">
-                          Jabatan Pengganti Sementara*
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="Contoh: Senior Web Developer..."
-                            {...field}
-                            className="rounded-xl border-slate-200 dark:border-slate-800"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
 
-                {/* File Upload (full width or single column in grid) */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="emergencyContactName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs font-black text-slate-500 uppercase">
+                            Kontak yang Bisa Dihubungi (Opsional)
+                          </FormLabel>
+                          <FormControl>
+                            <Input placeholder="Contoh: Ibu Rina (Istri)" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="emergencyContactPhone"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs font-black text-slate-500 uppercase">
+                            No. Telepon (Opsional)
+                          </FormLabel>
+                          <FormControl>
+                            <Input placeholder="Contoh: 0812XXXXXXXX" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
                   <FormField
                     control={form.control}
                     name="attachment"
@@ -1658,100 +2084,124 @@ export function LeaveSubmissionClient() {
                       </FormItem>
                     )}
                   />
-                </div>
+                </section>
 
-                {/* Handover notes */}
-                <FormField
-                  control={form.control}
-                  name="handoverNotes"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-xs font-black text-slate-500 uppercase">
-                        Catatan Serah Terima Tugas*
-                      </FormLabel>
-                      <FormControl>
-                        <Textarea
-                          rows={2}
-                          placeholder="Sebutkan delegasi tugas utama selama Anda berhalangan..."
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                {/* Section 4: Pengganti Sementara */}
+                <section className="rounded-2xl border-2 border-indigo-100 dark:border-indigo-900/40 bg-indigo-50/20 dark:bg-indigo-950/10 p-5 space-y-4">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    Pengganti Sementara
+                  </p>
 
-                {/* Emergency Contact */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
-                  <FormField
-                    control={form.control}
-                    name="emergencyContactName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-xs font-black text-slate-500 uppercase">
-                          Nama Kontak Darurat*
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="Contoh: Ibu Rina (Istri)"
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="emergencyContactPhone"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-xs font-black text-slate-500 uppercase">
-                          No. Telepon Kontak Darurat*
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="Contoh: 0812XXXXXXXX"
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                {/* Validation Summary Warning Alert at Bottom of Form */}
-                {validationResult.warning && (
-                  <div
-                    className={`p-4 rounded-xl border flex items-start gap-3 mt-4 ${
-                      validationResult.isValid
-                        ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                        : "border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-400"
-                    }`}
-                  >
-                    {validationResult.isValid ? (
-                      <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-500" />
-                    ) : (
-                      <AlertTriangle className="h-5 w-5 shrink-0 text-red-500" />
-                    )}
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-wider">
-                        {validationResult.isValid
-                          ? "Pengajuan Valid"
-                          : "Validasi Gagal (Ajukan Cuti Dinonaktifkan)"}
-                      </p>
-                      <p className="text-sm font-semibold mt-1">
-                        {validationResult.warning}
+                  {!isLoadingReplacementCandidates && replacementCandidates.length === 0 && (
+                    <div className="flex items-start gap-2.5 p-3.5 rounded-xl border border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400">
+                      <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                      <p className="text-xs font-medium">
+                        Belum ada karyawan aktif lain di divisi Anda yang bisa dipilih sebagai
+                        pengganti sementara.
                       </p>
                     </div>
-                  </div>
-                )}
+                  )}
+
+                  <FormField
+                    control={form.control}
+                    name="replacementEmployeeUid"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs font-black text-slate-500 uppercase">
+                          Nama Pengganti Sementara*
+                        </FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger className="rounded-xl border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 h-auto py-2">
+                              <SelectValue placeholder="Pilih karyawan pengganti sementara" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                            {replacementCandidates.length === 0 && (
+                              <SelectItem value="none">Tidak ada pengganti sementara</SelectItem>
+                            )}
+                            {replacementCandidates.map((c) => (
+                              <SelectItem key={c.uid} value={c.uid} className="py-2">
+                                <div className="flex items-center gap-2.5">
+                                  <div className="h-7 w-7 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 flex items-center justify-center text-[11px] font-black shrink-0">
+                                    {c.fullName.charAt(0).toUpperCase()}
+                                  </div>
+                                  <div className="flex flex-col">
+                                    <span className="font-semibold text-sm leading-tight">{c.fullName}</span>
+                                    <span className="text-[10px] text-slate-500 leading-tight">
+                                      {c.jobTitle}
+                                      {c.divisionName ? ` • ${c.divisionName}` : ""}
+                                    </span>
+                                  </div>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* Auto-filled from the selected candidate — never typed manually. */}
+                  {selectedReplacement && (
+                    <div className="rounded-xl border border-indigo-200 dark:border-indigo-900/50 bg-white dark:bg-slate-900 p-4 space-y-2">
+                      <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest flex items-center gap-1.5">
+                        <User className="h-3 w-3" /> Pengganti Dipilih
+                      </p>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                        <div>
+                          <span className="text-slate-400 font-semibold block">Nama</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-100">{selectedReplacement.fullName}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 font-semibold block">Jabatan</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-100">{selectedReplacement.jobTitle || "-"}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 font-semibold block">Divisi</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-100">{selectedReplacement.divisionName || "-"}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 font-semibold block">Brand</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-100">{selectedReplacement.brandName || "-"}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <FormField
+                    control={form.control}
+                    name="handoverNotes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs font-black text-slate-500 uppercase">
+                          Catatan Serah Terima Tugas*
+                        </FormLabel>
+                        <FormControl>
+                          <Textarea
+                            rows={3}
+                            placeholder="Tulis ringkasan tugas yang perlu dilanjutkan oleh pengganti sementara selama Anda cuti."
+                            className="resize-none"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed border-t border-indigo-100 dark:border-indigo-900/40 pt-3">
+                    Pengganti sementara akan menerima notifikasi dan diminta mengonfirmasi
+                    kesediaannya. Konfirmasi tersebut menjadi bukti persetujuan digital sebagai
+                    pengganti tanda tangan manual.
+                  </p>
+                </section>
               </form>
             </Form>
           </div>
 
-          <DialogFooter className="p-6 pt-4 border-t bg-slate-50/50 dark:bg-slate-900/50 gap-2">
+          <DialogFooter className="p-6 pt-4 border-t bg-slate-50/50 dark:bg-slate-900/50 gap-2 shrink-0">
             <Button
               variant="ghost"
               onClick={() => setIsFormOpen(false)}

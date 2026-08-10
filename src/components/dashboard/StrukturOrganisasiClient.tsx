@@ -1640,7 +1640,12 @@ function DivisionManagerTab({
   }, [users]);
 
   const [potentialDirectors, setPotentialDirectors] = useState<UserProfile[]>([]);
-  const [selectedDirectorUid, setSelectedDirectorUid] = useState<string>("");
+  // "none" is a sentinel, never a real uid — Radix Select rejects an empty
+  // string as a SelectItem value (it's reserved for clearing/placeholder).
+  // director lookups below already do potentialDirectors.find(d => d.uid ===
+  // selectedDirectorUid), which correctly resolves to undefined for "none"
+  // exactly like it did for "", so no downstream translation is needed.
+  const [selectedDirectorUid, setSelectedDirectorUid] = useState<string>("none");
   const [selectedManagerUid, setSelectedManagerUid] = useState<string>("");
   const [tempDivisions, setTempDivisions] = useState<Division[]>([]);
 
@@ -1668,7 +1673,7 @@ function DivisionManagerTab({
     );
 
     setPotentialDirectors(matches);
-    setSelectedDirectorUid(matches.length === 1 ? matches[0].uid : "");
+    setSelectedDirectorUid(matches.length === 1 ? matches[0].uid : "none");
 
     // Find current manager
     const current = users.find((u) =>
@@ -1880,7 +1885,7 @@ function DivisionManagerTab({
                     <SelectValue placeholder="Pilih Direktur..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">— Tanpa Atasan Langsung —</SelectItem>
+                    <SelectItem value="none">— Tanpa Atasan Langsung —</SelectItem>
                     {potentialDirectors.map((d) => (
                       <SelectItem key={d.uid} value={d.uid}>
                         {d.fullName}{d.workRole ? ` (${d.workRole})` : ""}

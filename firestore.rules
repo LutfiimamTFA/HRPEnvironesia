@@ -986,6 +986,24 @@ service cloud.firestore {
     }
 
     match /leave_requests/{requestId} {
+      // The named replacement is neither the owner nor an approver, but
+      // needs to read the request (to see the leave period/handover notes
+      // before confirming) and to write their accept/reject decision — the
+      // "electronic signature substitute" flow.
+      function isAssignedReplacement(data) {
+        return data.get('replacementEmployeeUid', '') == request.auth.uid;
+      }
+      // Only the replacementConfirmation field may change via this path —
+      // everything else on the doc (approval status, dates, etc.) stays
+      // untouched by the replacement, same pattern as
+      // permission_requests' isReportingReturn() above.
+      function isReplacementConfirming() {
+        let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
+        return isAssignedReplacement(resource.data) &&
+          isAssignedReplacement(request.resource.data) &&
+          changedKeys.hasOnly(['replacementConfirmation']);
+      }
+
       allow get: if isSignedIn() && (
         isLeaveRequestOwner(resource.data) ||
         resource.data.managerId == request.auth.uid ||
@@ -995,6 +1013,7 @@ service cloud.firestore {
         resource.data.get('approvalTargetUid', '') == request.auth.uid ||
         resource.data.get('directSupervisorUid', '') == request.auth.uid ||
         resource.data.get('currentApproverUid', '') == request.auth.uid ||
+        isAssignedReplacement(resource.data) ||
         isSuperAdmin() ||
         (isHrd() && hrdCanReadBrandData(resource.data))
       );
@@ -1007,6 +1026,7 @@ service cloud.firestore {
         resource.data.get('approvalTargetUid', '') == request.auth.uid ||
         resource.data.get('directSupervisorUid', '') == request.auth.uid ||
         resource.data.get('currentApproverUid', '') == request.auth.uid ||
+        isAssignedReplacement(resource.data) ||
         isSuperAdmin() ||
         (isHrd() && hrdCanReadBrandData(resource.data))
       );
@@ -1026,6 +1046,7 @@ service cloud.firestore {
             resource.data.status in ['pending_manager', 'pending_manager_review', 'pending_director', 'pending_director_review', 'pending_supervisor', 'menunggu_approval_atasan'] ||
             resource.data.status.startsWith('pending_')
          )) ||
+        isReplacementConfirming() ||
         (isHrd() && hrdCanUpdateBrandData(resource.data, request.resource.data)) ||
         isSuperAdmin()
       );
