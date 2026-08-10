@@ -1909,6 +1909,7 @@ export type NotificationType =
   | "recruitment"
   | "employee_request"
   | "attendance"
+  | "leave"
   | "system";
 
 /** Granular event within the recruitment category */
@@ -1934,7 +1935,9 @@ export type Notification = {
     | "offer"
     | "negotiation"
     | "decision"
-    | "bank_change_request";
+    | "bank_change_request"
+    | "leave_approval_request"
+    | "leave_replacement_mandate";
   module: "recruitment" | "employee";
   title: string;
   message: string;

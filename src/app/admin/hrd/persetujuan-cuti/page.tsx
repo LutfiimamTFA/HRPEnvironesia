@@ -18,7 +18,10 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { sendLeaveNotification } from '@/lib/leave-notifications';
 import { type LeaveRequest, type LeaveBalance, type LeaveBalanceAdjustment, type LeavePolicy } from '@/lib/types';
-import { calculateLeaveBalanceForRequest } from '@/lib/leave-balance';
+import { calculateLeaveBalance, calculateLeaveBalanceForRequest } from '@/lib/leave-balance';
+import { getLeaveProcessStage } from '@/lib/leave-process-stage';
+import { getRequestEmployeeProfile, resolveCurrentEmployeeDivision } from '@/lib/employee-division';
+import { getLeaveRequestOwnerUid } from '@/lib/leave-request-query';
 import {
   Loader2,
   CalendarOff,
@@ -304,7 +307,15 @@ export default function HrdLeaveApprovalPage() {
   const getSupervisorStatusLabel = (req: LeaveRequest) => {
     const status = req.status;
     const isMgr = isManagerRequest(req);
-    
+
+    // Replacement confirmation is the FIRST gate — a request hasn't really
+    // reached the atasan's queue while it's still waiting on the pengganti
+    // sementara, no matter what `status` itself says.
+    const stage = getLeaveProcessStage(req);
+    if (stage.stage === 'replacement_pending' || stage.stage === 'replacement_rejected') {
+      return 'Belum Masuk Tahap Atasan';
+    }
+
     // Check Director/Management decisions for managers
     if (isMgr) {
       if (req.directorDecision === 'approved') return 'Disetujui Direktur/Manajemen';
@@ -352,17 +363,25 @@ export default function HrdLeaveApprovalPage() {
 
   const getHrdStatusLabel = (req: LeaveRequest) => {
     const status = req.status;
+    // Same replacement-confirmation gate as getSupervisorStatusLabel — this
+    // is the exact bug fix: a request stuck on an unconfirmed pengganti used
+    // to show "Menunggu Atasan" here, hiding the REAL blocker from HRD.
+    const stage = getLeaveProcessStage(req);
+    if (stage.stage === 'replacement_pending') return 'Menunggu Konfirmasi Pengganti';
+    if (stage.stage === 'replacement_rejected') return 'Pengganti Menolak';
     if (['approved', 'approved_by_hrd', 'active_leave', 'completed'].includes(status)) return 'Disetujui HRD';
     if (status === 'rejected_by_hrd') return 'Ditolak HRD';
     if (status === 'revision_requested_by_hrd') return 'Revisi Diminta HRD';
     if (status === 'pending_hrd' || status === 'pending_hrd_review') return 'Menunggu Tindakan HRD';
-    return 'Menunggu Atasan';
+    return 'Belum Masuk Tahap HRD';
   };
 
   const getHrdStatusBadgeClass = (req: LeaveRequest) => {
     const label = getHrdStatusLabel(req);
     if (label === 'Disetujui HRD') return 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400';
     if (label === 'Ditolak HRD') return 'bg-red-500/10 border-red-500/20 text-red-400';
+    if (label === 'Pengganti Menolak') return 'bg-red-500/10 border-red-500/20 text-red-400';
+    if (label === 'Menunggu Konfirmasi Pengganti') return 'bg-amber-500/10 border-amber-500/20 text-amber-400';
     if (label === 'Revisi Diminta HRD') return 'bg-amber-500/10 border-amber-500/20 text-amber-400';
     if (label === 'Menunggu Tindakan HRD') return 'bg-blue-550/10 border border-blue-550/20 text-blue-400';
     return 'bg-slate-700/10 border border-slate-750 text-slate-400';
@@ -379,16 +398,18 @@ export default function HrdLeaveApprovalPage() {
         const reasonMatch = r.reason?.toLowerCase().includes(queryStr);
         if (!nameMatch && !reasonMatch) return false;
       }
-      const profile = employeeProfilesMap.get(r.employeeId);
+      const profile = getRequestEmployeeProfile(r, employeeProfilesMap);
       // 2. Brand
       if (filterBrand !== 'all') {
-        const bBrandId = r.brandId || profile?.hrdEmploymentInfo?.brandId || profile?.brandId || '';
+        const bBrandId = profile?.brandId || profile?.hrdEmploymentInfo?.brandId || r.brandId || '';
         if (bBrandId !== filterBrand) return false;
       }
-      // 3. Division
+      // 3. Division — current profile wins over the request's own snapshot,
+      // same priority as the display columns, so filtering by "DTIC" finds
+      // an employee whose request still snapshots the old "CBDMS" division.
       if (filterDivision !== 'all') {
         const fDivId = filterDivision.split('__')[1] || filterDivision;
-        const bDivId = r.divisionId || profile?.hrdEmploymentInfo?.divisionId || profile?.divisionId || '';
+        const bDivId = resolveCurrentEmployeeDivision(r, profile).divisionId || r.divisionId || '';
         if (bDivId !== fDivId) return false;
       }
       // 4. Leave Type
@@ -474,9 +495,6 @@ export default function HrdLeaveApprovalPage() {
   // Tab 3 List: Employee Quota balances filtered (Sourced from Employee Profiles to show uninitialized ones)
   const filteredBalances = useMemo(() => {
     if (!employeeProfiles) return [];
-    
-    const balanceMap = new Map<string, any>();
-    if (balances) balances.forEach(b => balanceMap.set(b.employeeId, b));
 
     const eligible = employeeProfiles.filter(p => {
       const bEmploymentType = p.hrdEmploymentInfo?.employeeType || '';
@@ -508,12 +526,31 @@ export default function HrdLeaveApprovalPage() {
 
     return eligible.map(p => {
       const uid = p.uid || p.id;
-      const bal = balanceMap.get(uid);
       const emp = employeesMap.get(uid);
       const usr = usersMap.get(uid);
-      return { profile: p, employee: emp || null, user: usr || null, balance: bal || null };
+      // Live-calculated, same calculateLeaveBalance() every other page
+      // (Detail Karyawan, Detail Pengajuan) reads — replaces the old
+      // leave_balances-doc lookup that let this tab disagree with the rest
+      // of the app.
+      const liveBalance = calculateLeaveBalance({ employee: p, leaveRequests: requests, leavePolicies });
+      console.log('[LEAVE_BALANCE_SYNC_DEBUG]', {
+        employeeUid: uid,
+        employeeName: resolveEmployeeName(p, emp, usr, null),
+        ...(liveBalance.found
+          ? {
+              entitlementDays: liveBalance.entitlementDays,
+              usedDays: liveBalance.usedDays,
+              pendingDays: liveBalance.pendingDays,
+              remainingDays: liveBalance.remainingDays,
+              availableDays: liveBalance.availableDays,
+              approvedRequestIds: liveBalance.approvedRequestIds,
+              pendingRequestIds: liveBalance.pendingRequestIds,
+            }
+          : { reason: liveBalance.reason }),
+      });
+      return { profile: p, employee: emp || null, user: usr || null, liveBalance };
     });
-  }, [employeeProfiles, balances, filterSearch, filterBrand, filterDivision, employeesMap, usersMap]);
+  }, [employeeProfiles, requests, leavePolicies, filterSearch, filterBrand, filterDivision, employeesMap, usersMap]);
 
   // Tab 4 List: Audit Mutasi Saldo Cuti ledger logs filtered
   const sortedAdjustmentsFiltered = useMemo(() => {
@@ -585,7 +622,7 @@ export default function HrdLeaveApprovalPage() {
   // request, not after, whether it's pending or already approved.
   const selectedRequestPolicyBalance = useMemo(() => {
     if (!selectedRequest) return null;
-    const employeeProfile = employeeProfilesMap.get(selectedRequest.employeeId || (selectedRequest as any).employeeUid);
+    const employeeProfile = getRequestEmployeeProfile(selectedRequest, employeeProfilesMap);
     if (!employeeProfile) return null;
     const result = calculateLeaveBalanceForRequest({
       employee: employeeProfile,
@@ -706,6 +743,19 @@ export default function HrdLeaveApprovalPage() {
   // AUTOMATED ATOMIC FINAL APPROVAL DEDUCTIONS
   const handleConfirmAction = async () => {
     if (!selectedRequest || !actionType || !userProfile || !firestore) return;
+
+    // Defense-in-depth on top of the button's own disabled/hidden state —
+    // a stale dialog left open across a status change (another tab, a race)
+    // must not still let HRD approve/reject/revise before the request has
+    // actually reached the HRD stage (pengganti confirmed + atasan decided).
+    if (!getLeaveProcessStage(selectedRequest).hrdCanApprove) {
+      toast({
+        variant: 'destructive',
+        title: 'Belum Masuk Tahap HRD',
+        description: 'Pengajuan ini masih menunggu konfirmasi pengganti / persetujuan atasan.',
+      });
+      return;
+    }
 
     if ((actionType === 'reject' || actionType === 'revise') && notes.trim().length < 5) {
       toast({
@@ -959,39 +1009,49 @@ export default function HrdLeaveApprovalPage() {
     }
   };
 
-  const getStatusBadgeClass = (status: string) => {
-    switch (status) {
+  // Overall status badge (detail dialog header) — same replacement-first
+  // gate as getSupervisorStatusLabel/getHrdStatusLabel below, so the
+  // headline badge and the two per-stage columns never contradict each
+  // other (e.g. badge saying "Menunggu Persetujuan Atasan" while the HRD
+  // column correctly says "Menunggu Konfirmasi Pengganti").
+  const getStatusBadgeClass = (request: LeaveRequest) => {
+    const stage = getLeaveProcessStage(request);
+    switch (stage.stage) {
+      case 'replacement_pending':
+      case 'replacement_rejected':
+        return 'bg-amber-500/10 border-amber-500/20 text-amber-600';
+      case 'manager_pending':
+      case 'hrd_pending':
+        return 'bg-indigo-500/10 border-indigo-500/20 text-indigo-600';
       case 'approved':
-      case 'approved_by_hrd': return 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600';
+        return 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600';
+      default:
+        break;
+    }
+    switch (request.status) {
       case 'active_leave': return 'bg-blue-500/10 border-blue-500/20 text-blue-600';
       case 'completed': return 'bg-slate-500/10 border-slate-500/20 text-slate-600';
       case 'cancelled': return 'bg-gray-500/10 border-gray-500/20 text-gray-500';
       case 'rejected_by_manager':
+      case 'rejected_by_director':
       case 'rejected_by_hrd': return 'bg-red-500/10 border-red-500/20 text-red-600';
       case 'revision_requested':
       case 'revision_requested_by_manager':
+      case 'revision_requested_by_director':
       case 'revision_requested_by_hrd': return 'bg-amber-500/10 border-amber-500/20 text-amber-600';
-      case 'pending_manager':
-      case 'pending_manager_review':
-      case 'pending_hrd':
-      case 'pending_hrd_review':
       default: return 'bg-indigo-500/10 border-indigo-500/20 text-indigo-600';
     }
   };
 
-  const getStatusLabel = (status: string) => {
-    switch (status) {
-      case 'pending_manager':
-      case 'pending_manager_review': return 'Menunggu Persetujuan Atasan';
+  const getStatusLabel = (request: LeaveRequest) => {
+    const stage = getLeaveProcessStage(request);
+    if (stage.stage !== 'unknown') return stage.label;
+    switch (request.status) {
       case 'revision_requested':
       case 'revision_requested_by_manager': return 'Perlu Revisi (Atasan)';
       case 'rejected_by_manager': return 'Ditolak Atasan';
-      case 'pending_hrd':
-      case 'pending_hrd_review': return 'Menunggu Verifikasi HRD';
       case 'revision_requested_by_hrd': return 'Perlu Revisi (HRD)';
       case 'rejected_by_hrd': return 'Ditolak HRD';
-      case 'approved':
-      case 'approved_by_hrd': return 'Disetujui HRD';
       case 'active_leave': return 'Cuti Aktif';
       case 'completed': return 'Cuti Selesai';
       case 'cancelled': return 'Dibatalkan';
@@ -1007,11 +1067,21 @@ export default function HrdLeaveApprovalPage() {
           <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
             {list.length > 0 ? (
               list.map(r => {
-                const profile = employeeProfilesMap.get(r.employeeId);
-                const rBrand = r.brandName || profile?.hrdEmploymentInfo?.brandName || profile?.hrdEmploymentInfo?.brand || '-';
-                const rDivision = r.divisionName || profile?.hrdEmploymentInfo?.divisionName || profile?.hrdEmploymentInfo?.division || '-';
+                const profile = getRequestEmployeeProfile(r, employeeProfilesMap);
+                const rBrand = profile?.brandName || profile?.hrdEmploymentInfo?.brandName || profile?.hrdEmploymentInfo?.brand || r.brandName || '-';
+                const rDivision = resolveCurrentEmployeeDivision(r, profile).divisionName;
                 const jobTitle = getRequesterPositionLabel(r);
-                const canAction = r.status === 'pending_hrd' || r.status === 'pending_hrd_review';
+                const stage = getLeaveProcessStage(r);
+                const canAction = stage.hrdCanApprove;
+                console.log('[LEAVE_SYNC_DEBUG]', {
+                  requestId: r.id,
+                  employeeUid: getLeaveRequestOwnerUid(r),
+                  requestSnapshotDivision: r.divisionName,
+                  currentProfileDivision: profile?.divisionName || profile?.hrdEmploymentInfo?.divisionName,
+                  status: r.status,
+                  replacementConfirmationStatus: (r as any).replacementConfirmationStatus || (r as any).replacementConfirmation?.status,
+                  derivedStage: stage,
+                });
                 return (
                   <div key={r.id} className="p-4 space-y-3">
                     <div className="flex items-start justify-between gap-2">
@@ -1057,7 +1127,7 @@ export default function HrdLeaveApprovalPage() {
                       <Button variant="ghost" size="sm" onClick={() => handleViewDetails(r)} className="rounded-xl hover:bg-slate-100 font-bold text-xs gap-1">
                         <Eye className="h-3.5 w-3.5" /> Detail
                       </Button>
-                      {canAction && (
+                      {canAction ? (
                         <>
                           <Button variant="outline" size="sm" onClick={() => handleOpenAction('approve', r)} className="rounded-xl border-emerald-500/20 hover:bg-emerald-950/20 text-emerald-600 font-bold text-xs">
                             Setujui
@@ -1069,6 +1139,13 @@ export default function HrdLeaveApprovalPage() {
                             Revisi
                           </Button>
                         </>
+                      ) : (
+                        <span
+                          title="Pengajuan ini masih menunggu konfirmasi pengganti / persetujuan atasan."
+                          className="rounded-xl border border-slate-200 dark:border-slate-800 px-2.5 py-1 text-[11px] font-bold text-slate-400 cursor-help"
+                        >
+                          Belum Masuk Tahap HRD
+                        </span>
                       )}
                     </div>
                   </div>
@@ -1102,11 +1179,12 @@ export default function HrdLeaveApprovalPage() {
               <TableBody>
                 {list.length > 0 ? (
                   list.map(r => {
-                    const profile = employeeProfilesMap.get(r.employeeId);
-                    const rBrand = r.brandName || profile?.hrdEmploymentInfo?.brandName || profile?.hrdEmploymentInfo?.brand || '-';
-                    const rDivision = r.divisionName || profile?.hrdEmploymentInfo?.divisionName || profile?.hrdEmploymentInfo?.division || '-';
+                    const profile = getRequestEmployeeProfile(r, employeeProfilesMap);
+                    const rBrand = profile?.brandName || profile?.hrdEmploymentInfo?.brandName || profile?.hrdEmploymentInfo?.brand || r.brandName || '-';
+                    const rDivision = resolveCurrentEmployeeDivision(r, profile).divisionName;
                     const jobTitle = getRequesterPositionLabel(r);
-                    const canAction = r.status === 'pending_hrd' || r.status === 'pending_hrd_review';
+                    const stage = getLeaveProcessStage(r);
+                    const canAction = stage.hrdCanApprove;
 
                     return (
                       <TableRow key={r.id} className="hover:bg-slate-50/30 dark:hover:bg-slate-900/10 transition-colors border-b border-slate-100 dark:border-slate-800/80">
@@ -1149,7 +1227,7 @@ export default function HrdLeaveApprovalPage() {
                             <Button variant="ghost" size="sm" onClick={() => handleViewDetails(r)} className="rounded-xl hover:bg-slate-100 font-bold text-xs gap-1">
                               <Eye className="h-3.5 w-3.5" /> Detail
                             </Button>
-                            {canAction && (
+                            {canAction ? (
                               <>
                                 <Button
                                   variant="outline"
@@ -1176,6 +1254,13 @@ export default function HrdLeaveApprovalPage() {
                                   Revisi
                                 </Button>
                               </>
+                            ) : (
+                              <span
+                                title="Pengajuan ini masih menunggu konfirmasi pengganti / persetujuan atasan."
+                                className="rounded-xl border border-slate-200 dark:border-slate-800 px-2.5 py-1 text-[11px] font-bold text-slate-400 cursor-help"
+                              >
+                                Belum Masuk Tahap HRD
+                              </span>
                             )}
                           </div>
                         </TableCell>
@@ -1605,19 +1690,21 @@ export default function HrdLeaveApprovalPage() {
                     </TableHeader>
                     <TableBody>
                       {filteredBalances.length > 0 ? filteredBalances.map(item => {
-                        const { profile, employee, user, balance: b } = item as any;
-                        const bBrand = b?.brandName || profile?.hrdEmploymentInfo?.brandName || profile?.brandName || '-';
-                        const bDivision = b?.divisionName || profile?.hrdEmploymentInfo?.divisionName || profile?.divisionName || '-';
-                        const employeeName = resolveEmployeeName(profile, employee, user, b);
-                        
-                        const initQuota = b ? (b.initialQuota !== undefined ? b.initialQuota : (b as any).annualAllowance || 0) : 0;
-                        const usedLeave = b ? (b.allocatedLeave !== undefined ? b.allocatedLeave : (b as any).usedDays || 0) : 0;
-                        const pendLeave = b ? (b.pendingLeave !== undefined ? b.pendingLeave : (b as any).pendingDays || 0) : 0;
-                        const currBal = b ? (b.currentBalance !== undefined ? b.currentBalance : (b as any).remainingDays || 0) : 0;
-                        const lowBal = currBal <= 2;
+                        const { profile, employee, user, liveBalance } = item as any;
+                        // Old leave_balances doc — kept ONLY as the write target for
+                        // "Proses Cashout"/"Inisialisasi Saldo" (a real, separate ledger
+                        // feature), never as the source for the numbers displayed below.
+                        const oldBalanceDoc = (balances || []).find((bal: any) => bal.employeeId === (profile.uid || profile.id)) || null;
+                        const bBrand = profile?.brandName || profile?.hrdEmploymentInfo?.brandName || profile?.hrdEmploymentInfo?.brand || '-';
+                        const bDivision = resolveCurrentEmployeeDivision({}, profile).divisionName;
+                        const employeeName = resolveEmployeeName(profile, employee, user, oldBalanceDoc);
 
-                        const empCashoutRate = b?.cashoutRatePerDay || profile?.hrdEmploymentInfo?.cashoutRatePerDay || 0;
-                        
+                        const noPolicy = !liveBalance.found && liveBalance.reason === 'no_policy';
+                        const contractIncomplete = !liveBalance.found && liveBalance.reason === 'contract_incomplete';
+                        const notInitialized = liveBalance.found && liveBalance.entitlementDays === 0 && liveBalance.carryOverDays === 0;
+                        const currBal = liveBalance.found ? liveBalance.remainingDays : 0;
+                        const lowBal = liveBalance.found && currBal <= 2;
+
                         return (
                           <TableRow key={profile.uid || profile.id} className="hover:bg-slate-50/30 dark:hover:bg-slate-900/10 transition-colors border-b border-slate-100 dark:border-slate-800/80">
                             <TableCell className="pl-8 py-5">
@@ -1630,30 +1717,42 @@ export default function HrdLeaveApprovalPage() {
                               </div>
                             </TableCell>
                             <TableCell className="py-5 text-xs font-black uppercase tracking-widest text-slate-400">
-                              {b?.employmentType || profile?.hrdEmploymentInfo?.employeeType || '-'}
+                              {profile?.hrdEmploymentInfo?.employeeType || '-'}
                             </TableCell>
-                            <TableCell className="py-5 font-bold text-slate-600 text-sm">
-                              {b ? `${initQuota} Hari` : '-'}
-                            </TableCell>
-                            <TableCell className="py-5 font-bold text-emerald-600 text-sm">
-                              {b ? `${usedLeave} Hari` : '-'}
-                            </TableCell>
-                            <TableCell className="py-5 font-bold text-amber-500 text-sm">
-                              {b ? `${pendLeave} Hari` : '-'}
-                            </TableCell>
-                            <TableCell className="py-5 py-5 font-black text-sm">
-                              {b ? (
-                                <span className={lowBal ? 'text-red-500 animate-pulse' : 'text-indigo-600 dark:text-indigo-400'}>
-                                  {currBal} Hari
-                                </span>
-                              ) : (
+                            {noPolicy ? (
+                              <TableCell colSpan={4} className="py-5">
+                                <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded border border-slate-200 dark:bg-slate-800 dark:border-slate-700">Belum Ada Policy</span>
+                              </TableCell>
+                            ) : contractIncomplete ? (
+                              <TableCell colSpan={4} className="py-5">
+                                <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded border border-amber-200">Periode Kontrak Belum Diatur</span>
+                              </TableCell>
+                            ) : notInitialized ? (
+                              <TableCell colSpan={4} className="py-5">
                                 <span className="text-[10px] font-bold text-amber-500 bg-amber-50 px-2 py-1 rounded border border-amber-200">Belum Inisialisasi</span>
-                              )}
-                            </TableCell>
+                              </TableCell>
+                            ) : (
+                              <>
+                                <TableCell className="py-5 font-bold text-slate-600 text-sm">
+                                  {liveBalance.entitlementDays} Hari
+                                </TableCell>
+                                <TableCell className="py-5 font-bold text-emerald-600 text-sm">
+                                  {liveBalance.usedDays} Hari
+                                </TableCell>
+                                <TableCell className="py-5 font-bold text-amber-500 text-sm">
+                                  {liveBalance.pendingDays} Hari
+                                </TableCell>
+                                <TableCell className="py-5 font-black text-sm">
+                                  <span className={lowBal ? 'text-red-500 animate-pulse' : 'text-indigo-600 dark:text-indigo-400'}>
+                                    {currBal} Hari
+                                  </span>
+                                </TableCell>
+                              </>
+                            )}
                             <TableCell className="text-right pr-8 py-5">
                               <div className="flex items-center justify-end gap-2">
-                                {b ? (
-                                  <Button size="sm" variant="outline" onClick={() => handleOpenCashout(b, profile)} className="rounded-xl font-bold text-[10px] text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 border-emerald-200">
+                                {oldBalanceDoc ? (
+                                  <Button size="sm" variant="outline" onClick={() => handleOpenCashout(oldBalanceDoc, profile)} className="rounded-xl font-bold text-[10px] text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 border-emerald-200">
                                     Proses Cashout
                                   </Button>
                                 ) : (
@@ -1817,11 +1916,27 @@ export default function HrdLeaveApprovalPage() {
               <div className="flex items-center justify-between gap-4 flex-wrap">
                 <div>
                   <DialogTitle className="text-2xl font-black text-slate-900 dark:text-white">Detail Pengajuan Cuti</DialogTitle>
-                  <p className="text-sm font-bold text-slate-600 dark:text-slate-300 mt-1">{selectedRequest?.employeeName} • {selectedRequest?.divisionName} / {selectedRequest?.brandName}</p>
+                  {selectedRequest && (() => {
+                    const detailProfile = getRequestEmployeeProfile(selectedRequest, employeeProfilesMap);
+                    const currentDivision = resolveCurrentEmployeeDivision(selectedRequest, detailProfile);
+                    const snapshotDivision = selectedRequest.divisionName || '';
+                    const divisionChanged =
+                      snapshotDivision && currentDivision.divisionName && snapshotDivision !== currentDivision.divisionName;
+                    return (
+                      <p className="text-sm font-bold text-slate-600 dark:text-slate-300 mt-1">
+                        {selectedRequest.employeeName} • {currentDivision.divisionName} / {selectedRequest.brandName}
+                        {divisionChanged && (
+                          <span className="ml-1.5 text-xs font-semibold text-slate-400">
+                            (Divisi saat pengajuan: {snapshotDivision})
+                          </span>
+                        )}
+                      </p>
+                    );
+                  })()}
                 </div>
                 {selectedRequest && (
-                  <Badge variant="outline" className={`px-3 py-1.5 rounded-full text-xs font-black border uppercase tracking-wider h-fit ${getStatusBadgeClass(selectedRequest.status)}`}>
-                    {getStatusLabel(selectedRequest.status)}
+                  <Badge variant="outline" className={`px-3 py-1.5 rounded-full text-xs font-black border uppercase tracking-wider h-fit ${getStatusBadgeClass(selectedRequest)}`}>
+                    {getStatusLabel(selectedRequest)}
                   </Badge>
                 )}
               </div>
@@ -2115,7 +2230,7 @@ export default function HrdLeaveApprovalPage() {
 
           {/* Sticky Footer with Action Buttons */}
           <div className="border-t bg-slate-100 dark:bg-slate-800/60 p-4 flex-none space-y-3">
-            {selectedRequest && ['pending_hrd', 'pending_hrd_review'].includes(selectedRequest.status) && (
+            {selectedRequest && getLeaveProcessStage(selectedRequest).hrdCanApprove && (
               <div className="grid grid-cols-3 gap-2">
                 <Button
                   variant="outline"
@@ -2138,6 +2253,11 @@ export default function HrdLeaveApprovalPage() {
                   ✓ Setujui
                 </Button>
               </div>
+            )}
+            {selectedRequest && !getLeaveProcessStage(selectedRequest).hrdCanApprove && (
+              <p className="text-center text-xs font-semibold text-slate-400" title="Pengajuan ini masih menunggu konfirmasi pengganti / persetujuan atasan.">
+                Belum Masuk Tahap HRD — {getLeaveProcessStage(selectedRequest).label}
+              </p>
             )}
             <Button
               onClick={() => setIsDetailOpen(false)}

@@ -659,23 +659,51 @@ export default function EmployeeDetailPage({
     brandField: "brandIds",
     brandFieldMode: "array",
   });
-  const leaveRequestConstraints = useMemo(() => {
-    if (!employeeId) return [];
-    return [where("employeeUid", "==", employeeId)];
-  }, [employeeId]);
-  // unscoped: true — this query is already scoped to ONE employee via the
-  // employeeUid constraint above, so the default brandId "in" filter is
-  // redundant and, combined with the employeeUid "==" constraint, requires a
-  // composite index that doesn't exist — for a non-superadmin HRD viewer that
-  // makes the whole query throw and silently leaves employeeLeaveRequests
-  // empty (Cuti Terpakai showing 0 while Workspace Cuti's unfiltered query,
-  // which needs no composite index, shows the real count). Firestore
-  // security rules still gate per-doc read access regardless of this filter.
-  const { data: employeeLeaveRequests } = useHrdScopedCollection<LeaveRequest>("leave_requests", {
-    constraints: leaveRequestConstraints,
-    enabled: Boolean(employeeId),
-    unscoped: true,
-  });
+  // Old leave_requests docs can carry this employee's uid under any of
+  // several field names (requesterUid/uid/userId/employeeId/createdByUid —
+  // see getLeaveRequestOwnerUid in leave-request-query.ts) instead of the
+  // modern employeeUid every current write sets — a single employeeUid-only
+  // query silently undercounts usedDays for anyone with older docs, which is
+  // exactly the "Detail Karyawan shows Sisa 12 while Staff shows Sisa 9"
+  // drift. Each field gets its own scoped query (unscoped: true — see note
+  // below), merged by doc id.
+  const employeeUidConstraints = useMemo(() => (employeeId ? [where("employeeUid", "==", employeeId)] : []), [employeeId]);
+  const requesterUidConstraints = useMemo(() => (employeeId ? [where("requesterUid", "==", employeeId)] : []), [employeeId]);
+  const uidFieldConstraints = useMemo(() => (employeeId ? [where("uid", "==", employeeId)] : []), [employeeId]);
+  const userIdConstraints = useMemo(() => (employeeId ? [where("userId", "==", employeeId)] : []), [employeeId]);
+  const employeeIdFieldConstraints = useMemo(() => (employeeId ? [where("employeeId", "==", employeeId)] : []), [employeeId]);
+  const createdByUidConstraints = useMemo(() => (employeeId ? [where("createdByUid", "==", employeeId)] : []), [employeeId]);
+
+  // unscoped: true — each of these queries is already scoped to ONE employee
+  // via its own "==" constraint, so the default brandId "in" filter is
+  // redundant and, combined with the "==" constraint, requires a composite
+  // index that doesn't exist — for a non-superadmin HRD viewer that makes
+  // the whole query throw and silently leaves employeeLeaveRequests empty
+  // (Cuti Terpakai showing 0 while Workspace Cuti's unfiltered query, which
+  // needs no composite index, shows the real count). Firestore security
+  // rules still gate per-doc read access regardless of this filter.
+  const commonQueryOpts = { enabled: Boolean(employeeId), unscoped: true as const };
+  const { data: byEmployeeUid } = useHrdScopedCollection<LeaveRequest>("leave_requests", { constraints: employeeUidConstraints, ...commonQueryOpts });
+  const { data: byRequesterUid } = useHrdScopedCollection<LeaveRequest>("leave_requests", { constraints: requesterUidConstraints, ...commonQueryOpts });
+  const { data: byUidField } = useHrdScopedCollection<LeaveRequest>("leave_requests", { constraints: uidFieldConstraints, ...commonQueryOpts });
+  const { data: byUserId } = useHrdScopedCollection<LeaveRequest>("leave_requests", { constraints: userIdConstraints, ...commonQueryOpts });
+  const { data: byEmployeeIdField } = useHrdScopedCollection<LeaveRequest>("leave_requests", { constraints: employeeIdFieldConstraints, ...commonQueryOpts });
+  const { data: byCreatedByUid } = useHrdScopedCollection<LeaveRequest>("leave_requests", { constraints: createdByUidConstraints, ...commonQueryOpts });
+
+  const employeeLeaveRequests = useMemo(() => {
+    const merged = new Map<string, LeaveRequest>();
+    for (const r of [
+      ...(byEmployeeUid || []),
+      ...(byRequesterUid || []),
+      ...(byUidField || []),
+      ...(byUserId || []),
+      ...(byEmployeeIdField || []),
+      ...(byCreatedByUid || []),
+    ]) {
+      if ((r as any).id) merged.set((r as any).id, r);
+    }
+    return Array.from(merged.values());
+  }, [byEmployeeUid, byRequesterUid, byUidField, byUserId, byEmployeeIdField, byCreatedByUid]);
 
   // THE live leave balance for this employee — same calculateLeaveBalance()
   // every other page (Detail Pengajuan Cuti, LeavePolicySummaryCard) calls,

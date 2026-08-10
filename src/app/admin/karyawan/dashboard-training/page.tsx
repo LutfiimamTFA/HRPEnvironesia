@@ -1,20 +1,18 @@
 'use client';
 
 import { useMemo } from 'react';
-import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { useRoleGuard } from '@/hooks/useRoleGuard';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useAuth } from '@/providers/auth-provider';
 import { MENU_CONFIG } from '@/lib/menu-config';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { EmployeeDashboardClient } from '@/components/dashboard/karyawan/dashboard/EmployeeDashboardClient';
 
 export default function TrainingDashboardPage() {
-  const { userProfile } = useAuth();
   const hasAccess = useRoleGuard('karyawan');
+  // Sidebar menu choice preserved exactly as before this rebuild — not part
+  // of this change's scope.
   const menuConfig = useMemo(() => MENU_CONFIG['karyawan'] || [], []);
 
-  if (!hasAccess || !userProfile) {
+  if (!hasAccess) {
     return (
       <div className="flex h-screen w-full items-center justify-center p-4">
         <Skeleton className="h-[400px] w-full max-w-6xl" />
@@ -22,17 +20,5 @@ export default function TrainingDashboardPage() {
     );
   }
 
-  return (
-    <DashboardLayout pageTitle="Dashboard Masa Percobaan" menuConfig={menuConfig}>
-        <Card>
-            <CardHeader>
-                <CardTitle>Halo, {userProfile.fullName}!</CardTitle>
-            </CardHeader>
-            <CardContent>
-                <p>Selamat datang di dashboard masa percobaan.</p>
-                <Badge className="mt-4 capitalize">{userProfile.employmentType}</Badge>
-            </CardContent>
-        </Card>
-    </DashboardLayout>
-  );
+  return <EmployeeDashboardClient menuConfig={menuConfig} />;
 }

@@ -30,6 +30,7 @@ import {
   Bell,
   Briefcase,
   Calendar,
+  CalendarOff,
   CheckCircle,
   Wallet,
   UserCheck,
@@ -47,9 +48,10 @@ type TabKey = "all" | NotificationType;
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "all",              label: "Semua"     },
+  { key: "leave",            label: "Cuti"      },
+  { key: "attendance",       label: "Absensi"   },
   { key: "recruitment",      label: "Rekrutmen" },
   { key: "employee_request", label: "Karyawan"  },
-  { key: "attendance",       label: "Absensi"   },
   { key: "system",           label: "Sistem"    },
 ];
 
@@ -92,6 +94,8 @@ function NotifIcon({ notif }: { notif: Notification }) {
   }
   if (cat === "attendance")
     return <Clock className="h-4 w-4 text-amber-500" />;
+  if (cat === "leave")
+    return <CalendarOff className="h-4 w-4 text-indigo-500" />;
   if (cat === "system")
     return <Settings className="h-4 w-4 text-slate-500" />;
 
@@ -125,6 +129,12 @@ function categoryBadge(notif: Notification) {
       return (
         <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
           Absensi
+        </span>
+      );
+    case "leave":
+      return (
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
+          Cuti
         </span>
       );
     case "system":
@@ -198,7 +208,7 @@ export function NotificationPanel() {
   // Unread counts per tab (for badge)
   const unreadCounts = useMemo(() => {
     const counts: Record<TabKey, number> = {
-      all: 0, recruitment: 0, employee_request: 0, attendance: 0, system: 0,
+      all: 0, recruitment: 0, employee_request: 0, attendance: 0, leave: 0, system: 0,
     };
     allNotifications.forEach((n) => {
       if (!n.isRead) {
@@ -254,8 +264,14 @@ export function NotificationPanel() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Web Push activation status — pinned to the very top of the dropdown */}
-      {userProfile?.uid && <PushActivationCard uid={userProfile.uid} />}
+      {/* Web Push activation/test controls — debug tooling (device status,
+          "Kirim Sekarang", "Kirim 10 Detik", "Nonaktifkan"), not something a
+          regular employee needs cluttering the top of their notification
+          bell. Kept for Super Admin only, who uses it to verify push
+          delivery is actually working. */}
+      {userProfile?.uid && userProfile.role === "super-admin" && (
+        <PushActivationCard uid={userProfile.uid} />
+      )}
 
       {/* Header */}
       <div className="p-4 border-b">
@@ -318,7 +334,7 @@ export function NotificationPanel() {
             <p className="font-semibold">Tidak ada notifikasi</p>
             <p className="text-sm text-muted-foreground">
               {activeTab === "all"
-                ? "Semua notifikasi Anda akan muncul di sini."
+                ? "Semua informasi penting akan muncul di sini."
                 : `Belum ada notifikasi kategori ${TABS.find((t) => t.key === activeTab)?.label}.`}
             </p>
           </div>
@@ -349,7 +365,9 @@ export function NotificationPanel() {
                         ? "bg-blue-50 dark:bg-blue-900/30"
                         : resolveCategory(notif) === "attendance"
                           ? "bg-amber-50 dark:bg-amber-900/30"
-                          : "bg-muted",
+                          : resolveCategory(notif) === "leave"
+                            ? "bg-indigo-50 dark:bg-indigo-900/30"
+                            : "bg-muted",
                   )}
                 >
                   <NotifIcon notif={notif} />

@@ -991,17 +991,29 @@ service cloud.firestore {
       // before confirming) and to write their accept/reject decision — the
       // "electronic signature substitute" flow.
       function isAssignedReplacement(data) {
-        return data.get('replacementEmployeeUid', '') == request.auth.uid;
+        return data.get('replacementEmployeeUid', '') == request.auth.uid ||
+          data.get('handoverEmployeeId', '') == request.auth.uid;
       }
-      // Only the replacementConfirmation field may change via this path —
-      // everything else on the doc (approval status, dates, etc.) stays
-      // untouched by the replacement, same pattern as
-      // permission_requests' isReportingReturn() above.
+      // Only the replacement's own confirmation fields may change via this
+      // path — everything else on the doc (approval status, dates, etc.)
+      // stays untouched by the replacement, same pattern as
+      // permission_requests' isReportingReturn() above. The top-level
+      // replacementConfirmationStatus/replacementConfirmedAt/
+      // replacementRejectedAt/replacementRejectionReason mirrors are
+      // included because other readers check those flat fields directly
+      // instead of the nested replacementConfirmation.status.
       function isReplacementConfirming() {
         let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
         return isAssignedReplacement(resource.data) &&
           isAssignedReplacement(request.resource.data) &&
-          changedKeys.hasOnly(['replacementConfirmation']);
+          changedKeys.hasOnly([
+            'replacementConfirmation',
+            'replacementConfirmationStatus',
+            'replacementConfirmedAt',
+            'replacementRejectedAt',
+            'replacementRejectionReason',
+            'updatedAt'
+          ]);
       }
 
       allow get: if isSignedIn() && (
@@ -1033,7 +1045,7 @@ service cloud.firestore {
       allow create: if isSignedIn() && isLeaveRequestOwner(request.resource.data);
       allow update: if isSignedIn() && (
         (isLeaveRequestOwner(resource.data) && (
-          resource.data.status in ['pending_manager', 'pending_manager_review', 'pending_director', 'pending_director_review', 'revision_requested', 'revision_requested_by_manager', 'revision_requested_by_hrd'] ||
+          resource.data.status in ['pending_manager', 'pending_manager_review', 'pending_director', 'pending_director_review', 'revision_requested', 'revision_requested_by_manager', 'revision_requested_by_director', 'revision_requested_by_hrd'] ||
           request.resource.data.status == 'cancelled'
         )) ||
         ((resource.data.managerId == request.auth.uid ||

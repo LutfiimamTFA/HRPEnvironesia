@@ -212,6 +212,27 @@ export default function ManagerLeaveApprovalPage() {
     }
   };
 
+  // A manager must never approve a leave request while its named
+  // replacement hasn't confirmed (or has declined) — that's the FIRST gate
+  // in the real workflow, before this even reaches the atasan's decision in
+  // spirit. Reject/Revise stay available regardless (a manager can still
+  // reject a request outright without waiting on the replacement).
+  const getReplacementConfirmationStatus = (req: LeaveRequest): string => {
+    return (req as any).replacementConfirmationStatus || (req as any).replacementConfirmation?.status || "none";
+  };
+
+  const canApproveReplacementGate = (req: LeaveRequest): boolean => {
+    const status = getReplacementConfirmationStatus(req);
+    return status !== "pending" && status !== "rejected";
+  };
+
+  const getReplacementBlockMessage = (req: LeaveRequest): string | null => {
+    const status = getReplacementConfirmationStatus(req);
+    if (status === "pending") return "Menunggu pengganti sementara mengonfirmasi kesediaan.";
+    if (status === "rejected") return "Pengganti menolak. Pengaju perlu memilih pengganti lain.";
+    return null;
+  };
+
   const isPendingForCurrentApprover = (req: LeaveRequest, userUid: string) => {
     if (!isActionEnabledForRole(req)) return false;
 
@@ -761,6 +782,19 @@ export default function ManagerLeaveApprovalPage() {
         variant: "destructive",
         title: "Self-approval blocked",
         description: "Anda tidak dapat menyetujui pengajuan Anda sendiri.",
+      });
+      return;
+    }
+
+    // Defense-in-depth on top of the Approve button's own disabled state —
+    // a stale dialog left open across a status change (another tab, a race)
+    // must not still let a manager approve before the named replacement has
+    // confirmed.
+    if (actionType === "approve" && !canApproveReplacementGate(selectedRequest)) {
+      toast({
+        variant: "destructive",
+        title: "Belum Bisa Disetujui",
+        description: getReplacementBlockMessage(selectedRequest) || "Menunggu konfirmasi pengganti sementara.",
       });
       return;
     }
@@ -1512,7 +1546,8 @@ export default function ManagerLeaveApprovalPage() {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => handleOpenAction("approve", r)}
-                                disabled={isSaving || !isActionEnabledForRole(r)}
+                                disabled={isSaving || !isActionEnabledForRole(r) || !canApproveReplacementGate(r)}
+                                title={getReplacementBlockMessage(r) || undefined}
                                 className="rounded-xl border-emerald-500/20 hover:bg-emerald-950/20 text-emerald-400 font-bold text-xs"
                               >
                                 Setujui
@@ -1652,7 +1687,8 @@ export default function ManagerLeaveApprovalPage() {
                             variant="outline"
                             size="sm"
                             onClick={() => handleOpenAction("approve", r)}
-                            disabled={isSaving || !isActionEnabledForRole(r)}
+                            disabled={isSaving || !isActionEnabledForRole(r) || !canApproveReplacementGate(r)}
+                            title={getReplacementBlockMessage(r) || undefined}
                             className="rounded-xl border-emerald-500/20 text-emerald-400 hover:bg-emerald-950/20 font-bold text-xs"
                           >
                             Setujui

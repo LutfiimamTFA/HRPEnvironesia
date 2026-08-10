@@ -68,3 +68,41 @@ export function resolveEmployeeDivision(
 
   return { divisionId: rawDivisionId, divisionName: rawDivisionName, isValid: false, source: 'legacy_invalid' };
 }
+
+// ── leave_requests <-> employee_profiles division display ──────────────────
+// A leave_requests doc's own divisionName/divisionId is a SNAPSHOT taken at
+// submission time — it can go stale the moment HRD moves the employee to a
+// new division (the "CBDMS still showing after the employee moved to DTIC"
+// bug). For any UI that shows "which division is this employee in", the
+// live employee_profiles doc must win over the request's own snapshot,
+// never the other way around. The snapshot is still worth keeping around
+// for an explicit "divisi saat pengajuan" history field, just never as the
+// default/primary display.
+
+/** Looks up the current employee_profiles doc for a leave_requests doc, via the same owner-uid fallback chain used everywhere else (getLeaveRequestOwnerUid) — never by name. */
+export function getRequestEmployeeProfile(
+  request: any,
+  employeeProfilesMap: Map<string, any>,
+): any | null {
+  const uid =
+    request?.employeeUid ||
+    request?.requesterUid ||
+    request?.uid ||
+    request?.userId ||
+    request?.createdByUid ||
+    request?.employeeId ||
+    '';
+  return (uid && employeeProfilesMap.get(uid)) || null;
+}
+
+/** Current division to DISPLAY for a leave_requests doc — the employee's live profile always wins over the request's own snapshot fields. */
+export function resolveCurrentEmployeeDivision(
+  request: any,
+  profile: any,
+): { divisionId: string; divisionName: string } {
+  const hrd = profile?.hrdEmploymentInfo || {};
+  return {
+    divisionId: profile?.divisionId || hrd.divisionId || request?.divisionId || '',
+    divisionName: profile?.divisionName || hrd.divisionName || hrd.divisi || request?.divisionName || '-',
+  };
+}
