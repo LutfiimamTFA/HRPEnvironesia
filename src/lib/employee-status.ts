@@ -1,4 +1,5 @@
 import { EmployeeMasterData, EmployeeProfile, UserProfile } from "./types";
+import { resolveEmployeeType } from "./employee-type";
 
 /**
  * OperationalStatus defines the high-level operational status for filtering and grouping.
@@ -25,6 +26,12 @@ export function normalizeEmployeeOperationalStatus(
   // Extract and clean values from multiple possible locations
   const getCleanVal = (val: any) => String(val || "").toLowerCase().trim();
 
+  // employmentStatus/statusKerja are OPERATIONAL fields — active/inactive/
+  // resigned/terminated — never a source of employee TYPE. They used to be
+  // checked ahead of the type fields below, which meant a stale
+  // employmentStatus="probation" left over from before HRD updated the
+  // employee's type kept overriding a fresh hrdEmploymentInfo.tipeKaryawan
+  // of "Kontrak" — exactly the Dashboard Staff mismatch this was fixed for.
   const statusFields = [
     employee?.employmentStatus,
     employee?.hrdEmploymentInfo?.employmentStatus,
@@ -36,55 +43,47 @@ export function normalizeEmployeeOperationalStatus(
     employee?.workStatus,
   ];
 
-  const typeFields = [
-    employee?.employeeType,
-    employee?.hrdEmploymentInfo?.employeeType,
-    employee?.employmentType,
-    employee?.hrdEmploymentInfo?.tipeKaryawan,
-    profile?.hrdEmploymentInfo?.tipeKaryawan,
-    profile?.hrdEmploymentInfo?.employeeType,
-  ];
-
   const roleFallback = getCleanVal(user?.role);
 
-  // Check Resigned / Terminated first as they are final states
+  // Check Resigned / Terminated first as they are final states, regardless
+  // of employee type — a resigned ex-contract-employee is "resigned", not
+  // "contract".
   for (const s of statusFields) {
     const val = getCleanVal(s);
     if (val === "resigned") return "resigned";
     if (val === "terminated") return "terminated";
   }
 
-  // Check Training
-  for (const s of [...statusFields, ...typeFields]) {
+  // "training" is a genuine legacy operational-status value (not a type),
+  // kept as its own bucket for parity with pre-existing callers/dashboards
+  // that treat it the same as probation.
+  for (const s of statusFields) {
     const val = getCleanVal(s);
     if (val === "training") return "training";
   }
 
-  // Check Magang / Intern
-  for (const s of [...statusFields, ...typeFields]) {
-    const val = getCleanVal(s);
-    if (["magang", "intern", "internship"].includes(val)) return "intern";
-  }
+  // Employee TYPE (magang/probation/kontrak/tetap) comes from
+  // resolveEmployeeType() (employee-type.ts) ONLY — it never reads
+  // employmentStatus/statusKerja, so a fresh hrdEmploymentInfo.tipeKaryawan
+  // always wins here regardless of what the legacy status fields still say.
+  // Tries `profile` first (employee_profiles — the canonical HRD-managed
+  // doc), then `employee` (the older employees/master-data doc) as a
+  // fallback for records that predate employee_profiles.
+  const resolvedType = resolveEmployeeType(profile, user).type !== "unknown"
+    ? resolveEmployeeType(profile, user).type
+    : resolveEmployeeType(employee, user).type;
 
-  // Check Probation
-  for (const s of [...statusFields, ...typeFields]) {
-    const val = getCleanVal(s);
-    if (["probation", "masa percobaan", "percobaan"].includes(val)) return "probation";
-  }
+  if (resolvedType === "magang") return "intern";
+  if (resolvedType === "probation") return "probation";
+  if (resolvedType === "kontrak") return "contract";
+  if (resolvedType === "tetap") return "active";
 
-  // Check Contract
-  for (const s of [...statusFields, ...typeFields]) {
-    const val = getCleanVal(s);
-    if (["kontrak", "contract"].includes(val)) return "contract";
-  }
-
-  // Check Active / Karyawan
-  for (const s of [...statusFields, ...typeFields]) {
+  // No type field resolved — fall back to legacy status-field values, then role.
+  for (const s of statusFields) {
     const val = getCleanVal(s);
     if (["karyawan", "active", "aktif"].includes(val)) return "active";
   }
 
-  // Fallback logic
   if (roleFallback === "karyawan") return "active";
 
   return "unknown";

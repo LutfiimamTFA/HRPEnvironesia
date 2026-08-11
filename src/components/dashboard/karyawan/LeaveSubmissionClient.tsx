@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { getAuth } from "firebase/auth";
 import {
   useCollection,
@@ -123,11 +123,10 @@ import {
 import {
   type EmployeeProfile,
   type LeaveRequest,
-  type LeaveBalance,
   type UserProfile,
 } from "@/lib/types";
 import { getLeaveProcessStage } from "@/lib/leave-process-stage";
-import type { LeaveBalanceResult } from "@/lib/leave-balance";
+import { useLiveLeaveBalance } from "@/hooks/use-live-leave-balance";
 
 import { LeaveDetailModalClient } from "@/components/ui/LeaveDetailModalClient";
 
@@ -343,7 +342,6 @@ export function LeaveSubmissionClient() {
   );
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [isInitializingBalance, setIsInitializingBalance] = useState(false);
 
   // "Pengganti Sementara" candidates — colleagues in the same brand+division.
   // A plain karyawan account can't `list` employee_profiles directly
@@ -362,13 +360,16 @@ export function LeaveSubmissionClient() {
   const [replacementCandidates, setReplacementCandidates] = useState<ReplacementCandidate[]>([]);
   const [isLoadingReplacementCandidates, setIsLoadingReplacementCandidates] = useState(false);
 
-  // Live leave balance — calculateLeaveBalance() run server-side (Admin SDK,
-  // via /api/leave/my-balance) against employee_profiles + leave_policies +
-  // leave_requests, the exact same calculator every other page (Detail
-  // Karyawan, HRD workspace) uses. Replaces the old leave_balances doc as
-  // the number source so this card can never drift from what HRD sees.
-  const [myLiveLeaveBalance, setMyLiveLeaveBalance] = useState<LeaveBalanceResult | null>(null);
-  const [isLoadingLiveBalance, setIsLoadingLiveBalance] = useState(true);
+  // Live leave balance — the ONE shared hook (src/hooks/use-live-leave-balance.ts)
+  // every leave-balance UI in the app calls. It fetches /api/leave/my-balance
+  // (Admin SDK, no-store) instead of relying on onSnapshot, so this card
+  // can't drift from HRD/Detail Karyawan even when a Firestore realtime
+  // listener elsewhere is erroring out.
+  const {
+    balance: myLiveLeaveBalance,
+    loading: isLoadingLiveBalance,
+    refetch: refetchMyLiveBalance,
+  } = useLiveLeaveBalance(userProfile?.uid);
 
   // Fetch employee profile to read hrdEmploymentInfo
   const { data: employeeProfile, isLoading: isLoadingProfile } =
@@ -438,17 +439,6 @@ export function LeaveSubmissionClient() {
     return null;
   }, [divisionMasterRaw, brandDoc]);
 
-  // Fetch balance
-  const balanceDocRef = useMemoFirebase(() => {
-    return userProfile
-      ? doc(firestore, "leave_balances", userProfile.uid)
-      : null;
-  }, [userProfile, firestore]);
-  const {
-    data: leaveBalance,
-    isLoading: isLoadingBalance,
-    mutate: mutateBalance,
-  } = useDoc<LeaveBalance>(balanceDocRef);
 
 
   // Fetch requests submitted by current user only — never a global list.
@@ -640,6 +630,7 @@ export function LeaveSubmissionClient() {
       }
       toast({ title: "Konfirmasi Terkirim", description: "Mandat pengganti berhasil dikonfirmasi." });
       mutateReplacementRequests();
+      await refetchMyLiveBalance();
     } catch (e: any) {
       toast({ variant: "destructive", title: "Gagal Konfirmasi", description: e.message });
     } finally {
@@ -689,6 +680,7 @@ export function LeaveSubmissionClient() {
       setRejectingRequestId(null);
       setRejectReason("");
       mutateReplacementRequests();
+      await refetchMyLiveBalance();
     } catch (e: any) {
       toast({ variant: "destructive", title: "Gagal Konfirmasi", description: e.message });
     } finally {
@@ -763,6 +755,7 @@ export function LeaveSubmissionClient() {
       setChangingReplacementRequest(null);
       setNewReplacementUid("none");
       mutateRequests();
+      await refetchMyLiveBalance();
     } catch (e: any) {
       toast({ variant: "destructive", title: "Gagal Mengganti Pengganti", description: e.message });
     } finally {
@@ -824,73 +817,6 @@ export function LeaveSubmissionClient() {
     !activeBlockingLeave &&
     (myLiveLeaveBalance?.found ? myLiveLeaveBalance.availableDays : 0) > 0;
 
-  // Self-healing / automatic balance initialization via secure API route
-  useEffect(() => {
-    if (
-      isLoadingProfile ||
-      isLoadingBalance ||
-      leaveBalance ||
-      isInitializingBalance ||
-      !userProfile ||
-      !firestore
-    )
-      return;
-
-    const initializeQuota = async () => {
-      setIsInitializingBalance(true);
-      try {
-        const eligibility = checkLeaveEligibility(userProfile, employeeProfile);
-        if (!eligibility.isEligible) {
-          setIsInitializingBalance(false);
-          return;
-        }
-
-        const auth = getAuth();
-        const token = await auth.currentUser?.getIdToken();
-        if (!token) {
-          throw new Error("Sesi login Anda tidak valid.");
-        }
-
-        const res = await fetch("/api/leave/initialize-balance", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(
-            data.error || "Gagal melakukan inisialisasi kuota cuti.",
-          );
-        }
-
-        mutateBalance();
-        toast({
-          title: "Inisialisasi Berhasil",
-          description: `Jatah cuti tahunan Anda telah diatur sebesar ${data.balance?.annualAllowance || eligibility.allowance} Hari.`,
-        });
-      } catch (e: any) {
-        console.error("Failed to initialize leave balance:", e);
-      } finally {
-        setIsInitializingBalance(false);
-      }
-    };
-
-    initializeQuota();
-  }, [
-    isLoadingProfile,
-    isLoadingBalance,
-    leaveBalance,
-    userProfile,
-    employeeProfile,
-    firestore,
-    isInitializingBalance,
-    mutateBalance,
-    toast,
-  ]);
-
   // Fetch "Pengganti Sementara" candidates once the form dialog (or the
   // "Ganti Pengganti" dialog) opens — a server route (Admin SDK), not a
   // client Firestore query, since a plain karyawan account can't list
@@ -936,31 +862,6 @@ export function LeaveSubmissionClient() {
       cancelled = true;
     };
   }, [isFormOpen, changingReplacementRequest, userProfile]);
-
-  useEffect(() => {
-    if (!userProfile) return;
-    let cancelled = false;
-    (async () => {
-      setIsLoadingLiveBalance(true);
-      try {
-        const auth = getAuth();
-        const token = await auth.currentUser?.getIdToken();
-        if (!token) throw new Error("Sesi login Anda tidak valid.");
-        const res = await fetch("/api/leave/my-balance", { headers: { Authorization: `Bearer ${token}` } });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Gagal memuat saldo cuti.");
-        if (!cancelled) setMyLiveLeaveBalance(data.balance);
-      } catch (e) {
-        console.error("Failed to fetch live leave balance:", e);
-        if (!cancelled) setMyLiveLeaveBalance(null);
-      } finally {
-        if (!cancelled) setIsLoadingLiveBalance(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [userProfile]);
 
   // Form setup
   const form = useForm<FormValues>({
@@ -1120,7 +1021,7 @@ export function LeaveSubmissionClient() {
     watchLeaveType,
     watchStartDate,
     watchEndDate,
-    leaveBalance,
+    myLiveLeaveBalance,
     sortedRequests,
     selectedRequest,
     userProfile,
@@ -1221,7 +1122,7 @@ export function LeaveSubmissionClient() {
       await batch.commit();
       toast({ title: "Pengajuan Cuti Dibatalkan" });
       mutateRequests();
-      mutateBalance();
+      await refetchMyLiveBalance();
     } catch (e: any) {
       toast({
         variant: "destructive",
@@ -1748,7 +1649,7 @@ export function LeaveSubmissionClient() {
       });
       closeLeaveForm();
       mutateRequests();
-      mutateBalance();
+      await refetchMyLiveBalance();
 
       // ===== SIDE EFFECTS — notifications, and only for a brand-new
       // submission (an edit/revision resubmit doesn't re-announce "cuti
@@ -1935,9 +1836,7 @@ export function LeaveSubmissionClient() {
 
   if (
     isLoadingProfile ||
-    isLoadingBalance ||
-    isLoadingRequests ||
-    isInitializingBalance
+    isLoadingRequests
   ) {
     return (
       <div className="flex flex-col justify-center items-center h-64 gap-3">

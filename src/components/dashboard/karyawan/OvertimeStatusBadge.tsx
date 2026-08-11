@@ -9,7 +9,30 @@ export const statusDisplay: Record<
   { label: string; className: string }
 > = {
   draft: {
-    label: "Draft",
+    label: "Draft Persiapan",
+    className: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200",
+  },
+  submitted: {
+    label: "Menunggu Validasi Atasan",
+    className:
+      "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-500/10",
+  },
+  pending_manager_review: {
+    label: "Menunggu Validasi Atasan",
+    className:
+      "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-500/10",
+  },
+  pending_hrd_review: {
+    label: "Menunggu Verifikasi HRD",
+    className: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-500/10",
+  },
+  approved_by_hrd: {
+    label: "Disetujui HRD",
+    className:
+      "bg-green-100 text-green-800 dark:bg-green-950/30 dark:text-green-300 border border-green-500/10",
+  },
+  cancelled: {
+    label: "Dibatalkan",
     className: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200",
   },
   timer_running: {
@@ -167,7 +190,7 @@ export function OvertimeStatusBadge({
   className,
 }: OvertimeStatusBadgeProps) {
   // If submission is approved, check for payrollStatus override
-  if ((status === "approved" || status === "approved_hrd") && payrollStatus) {
+  if ((status === "approved" || status === "approved_hrd" || status === "approved_by_hrd") && payrollStatus) {
     const config = payrollStatusDisplay[payrollStatus];
     if (config) {
       return (

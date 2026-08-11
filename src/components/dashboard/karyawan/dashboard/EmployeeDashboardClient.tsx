@@ -12,15 +12,16 @@ import type { MenuGroup } from "@/lib/menu-config";
 import { Skeleton } from "@/components/ui/skeleton";
 import type {
   EmployeeProfile,
-  LeaveBalance,
   LeaveRequest,
   PermissionRequest,
   OvertimeSubmission,
   Notification,
 } from "@/lib/types";
 import { checkLeaveEligibility } from "@/lib/leave-utils";
+import { useLiveLeaveBalance } from "@/hooks/use-live-leave-balance";
 import { calculateProfileCompleteness } from "@/lib/employee-completeness";
-import { resolveEmploymentStage, toJsDate, fallbackText } from "@/lib/employee-dashboard-stage";
+import { toJsDate, fallbackText, type EmploymentStageKey } from "@/lib/employee-dashboard-stage";
+import { resolveEmployeeType } from "@/lib/employee-type";
 
 import { EmployeeHeroCard } from "./EmployeeHeroCard";
 import { EmployeeSummaryCards } from "./EmployeeSummaryCards";
@@ -72,11 +73,13 @@ export function EmployeeDashboardClient({ menuConfig }: { menuConfig?: MenuGroup
   );
   const { data: employeeProfile, isLoading: profileLoading } = useDoc<EmployeeProfile>(employeeProfileRef);
 
-  const leaveBalanceRef = useMemoFirebase(
-    () => (userProfile ? doc(firestore, "leave_balances", userProfile.uid) : null),
-    [userProfile, firestore],
-  );
-  const { data: leaveBalance, isLoading: balanceLoading } = useDoc<LeaveBalance>(leaveBalanceRef);
+  // Live-calculated via useLiveLeaveBalance() (src/hooks/use-live-leave-balance.ts)
+  // — the same hook Pengajuan Cuti/Detail Karyawan/HRD workspace all call.
+  // This card used to read the legacy leave_balances doc directly
+  // (currentBalance/allocatedLeave), which is exactly what let the
+  // dashboard home page disagree with the Pengajuan Cuti page for the same
+  // person.
+  const { balance: leaveBalance, loading: balanceLoading } = useLiveLeaveBalance(userProfile?.uid);
 
   // Own leave_requests — scoped by employeeUid, the canonical ownership
   // field every current write sets (see LeaveSubmissionClient.tsx). A
@@ -146,7 +149,53 @@ export function EmployeeDashboardClient({ menuConfig }: { menuConfig?: MenuGroup
     };
   }, [userProfile]);
 
-  const stage = useMemo(() => resolveEmploymentStage(userProfile, employeeProfile), [userProfile, employeeProfile]);
+  // Employee TYPE (magang/probation/kontrak/tetap) — resolveEmployeeType()
+  // (employee-type.ts) reads ONLY type-shaped fields (hrdEmploymentInfo.
+  // tipeKaryawan first), never employmentStatus/statusKerja. That's the fix
+  // for Dashboard Staff showing "Probation" for an employee HRD had already
+  // updated to "Kontrak" — the old resolveEmploymentStage() path read a
+  // stale employmentStatus="probation" ahead of the fresh type field.
+  const employeeType = useMemo(
+    () => resolveEmployeeType(employeeProfile, userProfile),
+    [employeeProfile, userProfile],
+  );
+
+  if (typeof window !== "undefined" && employeeProfile) {
+    console.log("[EMPLOYEE_TYPE_RESOLVE_DEBUG]", {
+      uid: userProfile?.uid,
+      name: (userProfile as any)?.displayName || (employeeProfile as any)?.fullName,
+      resolvedType: employeeType.type,
+      resolvedLabel: employeeType.label,
+      source: employeeType.rawSource,
+      fields: {
+        employeeType: (employeeProfile as any)?.employeeType,
+        tipeKaryawan: (employeeProfile as any)?.tipeKaryawan,
+        employmentType: (employeeProfile as any)?.employmentType,
+        hrdEmployeeType: (employeeProfile as any)?.hrdEmploymentInfo?.employeeType,
+        hrdTipeKaryawan: (employeeProfile as any)?.hrdEmploymentInfo?.tipeKaryawan,
+        hrdEmploymentType: (employeeProfile as any)?.hrdEmploymentInfo?.employmentType,
+        employmentStatus: (employeeProfile as any)?.employmentStatus,
+        statusKerja: (employeeProfile as any)?.statusKerja,
+        hrdEmploymentStatus: (employeeProfile as any)?.hrdEmploymentInfo?.employmentStatus,
+        hrdStatusKerja: (employeeProfile as any)?.hrdEmploymentInfo?.statusKerja,
+        userEmploymentType: (userProfile as any)?.employmentType,
+        userEmploymentStage: (userProfile as any)?.employmentStage,
+      },
+    });
+  }
+
+  // StatusAdaptiveSection only has cards for magang/probation/kontrak/tetap
+  // — "freelance" (a valid employeeType, but not one of the four dashboard
+  // stages) folds into "unknown" here (renders nothing extra), same as an
+  // employee whose type hasn't been set at all. The label itself (used by
+  // EmploymentInfoCard's "Jenis Karyawan"/"Status Kepegawaian" rows) still
+  // correctly reads "Freelance" via employeeType.label below.
+  const stage = useMemo(() => {
+    const stageKey: EmploymentStageKey =
+      employeeType.type === "freelance" ? "unknown" : employeeType.type;
+    return { stage: stageKey, label: employeeType.label };
+  }, [employeeType]);
+
   const leaveEligibility = useMemo(() => checkLeaveEligibility(userProfile, employeeProfile), [userProfile, employeeProfile]);
   const completeness = useMemo(() => calculateProfileCompleteness(employeeProfile), [employeeProfile]);
 
@@ -212,7 +261,8 @@ export function EmployeeDashboardClient({ menuConfig }: { menuConfig?: MenuGroup
     "menunggu_approval_atasan",
   ]);
   const leavePendingCount = (leaveRequests || []).filter((r) => leavePendingStatuses.has(String((r as any).status))).length;
-  const leaveUsed = (leaveBalance?.allocatedLeave ?? 0);
+  const leaveUsed = leaveBalance?.found ? leaveBalance.usedDays : 0;
+  const leaveRemaining = leaveBalance?.found ? leaveBalance.remainingDays : 0;
 
   const permissionPending = (permissionRequests || []).filter((p) => PERMIT_PENDING_STATUSES.has(p.status));
   const thisMonthKey = format(new Date(), "yyyy-MM");
@@ -330,7 +380,7 @@ export function EmployeeDashboardClient({ menuConfig }: { menuConfig?: MenuGroup
           tenureHint={tenureHint}
           attendanceValue={attendanceLoading ? "..." : `${attendance?.monthSummary.daysPresent ?? 0} hari hadir`}
           attendanceHint="Bulan ini"
-          leaveBalanceValue={leaveEligibility.isEligible ? `${leaveBalance?.currentBalance ?? 0} hari` : "Belum tersedia"}
+          leaveBalanceValue={leaveEligibility.isEligible ? `${leaveRemaining} hari` : "Belum tersedia"}
           leaveBalanceHint={leaveEligibility.isEligible ? undefined : "Menyesuaikan status kepegawaian"}
           activeSubmissionsCount={activeSubmissionsCount}
           completenessLabel={completeness.label}
@@ -351,7 +401,7 @@ export function EmployeeDashboardClient({ menuConfig }: { menuConfig?: MenuGroup
                 eligible: leaveEligibility.isEligible,
                 allowance: leaveEligibility.allowance,
                 used: leaveUsed,
-                remaining: leaveBalance?.currentBalance ?? 0,
+                remaining: leaveRemaining,
                 pendingCount: leavePendingCount,
               }}
               permit={{

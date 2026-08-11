@@ -46,18 +46,12 @@ import type {
   VerificationStatusGroup,
   OvertimeSubmission,
   AttendanceSite,
-  LeavePolicy,
-  LeaveRequest,
 } from "@/lib/types";
 import { LeavePolicySummaryCard } from "@/components/dashboard/LeavePolicySummaryCard";
-import { resolveEmployeeUid, resolveEmployeeBrandId } from "@/lib/leave-policy";
+import { useLiveLeaveBalance } from "@/hooks/use-live-leave-balance";
 import {
-  calculateLeaveBalance,
-  getLeaveRequestEmployeeUid,
-  isApprovedLeaveRequest,
-  resolveLeaveRequestDates,
-  resolveLeaveRequestDurationDays,
   resolveEmployeeLeaveEntitlementDays,
+  type LeaveBalanceResult,
 } from "@/lib/leave-balance";
 import {
   ATTENDANCE_METHODS,
@@ -654,120 +648,20 @@ export default function EmployeeDetailPage({
   const { data: sitesData, isLoading: sitesLoading } =
     useHrdScopedCollection<AttendanceSite>("attendance_sites");
 
-  // Leave policy + this employee's own leave_requests — for LeavePolicySummaryCard.
-  const { data: leavePoliciesData } = useHrdScopedCollection<LeavePolicy>("leave_policies", {
-    brandField: "brandIds",
-    brandFieldMode: "array",
-  });
-  // Old leave_requests docs can carry this employee's uid under any of
-  // several field names (requesterUid/uid/userId/employeeId/createdByUid —
-  // see getLeaveRequestOwnerUid in leave-request-query.ts) instead of the
-  // modern employeeUid every current write sets — a single employeeUid-only
-  // query silently undercounts usedDays for anyone with older docs, which is
-  // exactly the "Detail Karyawan shows Sisa 12 while Staff shows Sisa 9"
-  // drift. Each field gets its own scoped query (unscoped: true — see note
-  // below), merged by doc id.
-  const employeeUidConstraints = useMemo(() => (employeeId ? [where("employeeUid", "==", employeeId)] : []), [employeeId]);
-  const requesterUidConstraints = useMemo(() => (employeeId ? [where("requesterUid", "==", employeeId)] : []), [employeeId]);
-  const uidFieldConstraints = useMemo(() => (employeeId ? [where("uid", "==", employeeId)] : []), [employeeId]);
-  const userIdConstraints = useMemo(() => (employeeId ? [where("userId", "==", employeeId)] : []), [employeeId]);
-  const employeeIdFieldConstraints = useMemo(() => (employeeId ? [where("employeeId", "==", employeeId)] : []), [employeeId]);
-  const createdByUidConstraints = useMemo(() => (employeeId ? [where("createdByUid", "==", employeeId)] : []), [employeeId]);
-
-  // unscoped: true — each of these queries is already scoped to ONE employee
-  // via its own "==" constraint, so the default brandId "in" filter is
-  // redundant and, combined with the "==" constraint, requires a composite
-  // index that doesn't exist — for a non-superadmin HRD viewer that makes
-  // the whole query throw and silently leaves employeeLeaveRequests empty
-  // (Cuti Terpakai showing 0 while Workspace Cuti's unfiltered query, which
-  // needs no composite index, shows the real count). Firestore security
-  // rules still gate per-doc read access regardless of this filter.
-  const commonQueryOpts = { enabled: Boolean(employeeId), unscoped: true as const };
-  const { data: byEmployeeUid } = useHrdScopedCollection<LeaveRequest>("leave_requests", { constraints: employeeUidConstraints, ...commonQueryOpts });
-  const { data: byRequesterUid } = useHrdScopedCollection<LeaveRequest>("leave_requests", { constraints: requesterUidConstraints, ...commonQueryOpts });
-  const { data: byUidField } = useHrdScopedCollection<LeaveRequest>("leave_requests", { constraints: uidFieldConstraints, ...commonQueryOpts });
-  const { data: byUserId } = useHrdScopedCollection<LeaveRequest>("leave_requests", { constraints: userIdConstraints, ...commonQueryOpts });
-  const { data: byEmployeeIdField } = useHrdScopedCollection<LeaveRequest>("leave_requests", { constraints: employeeIdFieldConstraints, ...commonQueryOpts });
-  const { data: byCreatedByUid } = useHrdScopedCollection<LeaveRequest>("leave_requests", { constraints: createdByUidConstraints, ...commonQueryOpts });
-
-  const employeeLeaveRequests = useMemo(() => {
-    const merged = new Map<string, LeaveRequest>();
-    for (const r of [
-      ...(byEmployeeUid || []),
-      ...(byRequesterUid || []),
-      ...(byUidField || []),
-      ...(byUserId || []),
-      ...(byEmployeeIdField || []),
-      ...(byCreatedByUid || []),
-    ]) {
-      if ((r as any).id) merged.set((r as any).id, r);
-    }
-    return Array.from(merged.values());
-  }, [byEmployeeUid, byRequesterUid, byUidField, byUserId, byEmployeeIdField, byCreatedByUid]);
-
-  // THE live leave balance for this employee — same calculateLeaveBalance()
-  // every other page (Detail Pengajuan Cuti, LeavePolicySummaryCard) calls,
-  // so "Sisa Cuti" here can never drift from what those pages show. Recomputes
-  // automatically whenever leave_requests/leave_policies' realtime listeners
-  // emit a new snapshot (e.g. right after HRD approves a request elsewhere) —
-  // no manual refresh/refetch step needed.
-  const employeeLeaveBalance = useMemo(
-    () => calculateLeaveBalance({ employee: profileDoc, leaveRequests: employeeLeaveRequests, leavePolicies: leavePoliciesData }),
-    [profileDoc, employeeLeaveRequests, leavePoliciesData],
-  );
-
-  if (typeof window !== "undefined" && profileDoc) {
-    console.log("[EMPLOYEE_LEAVE_BALANCE_SYNC_DEBUG]", {
-      employeeName: (profileDoc as any)?.fullName || (profileDoc as any)?.namaLengkap || null,
-      employeeUid: resolveEmployeeUid(profileDoc),
-      brandId: resolveEmployeeBrandId(profileDoc),
-      policy: employeeLeaveBalance.found
-        ? { id: employeeLeaveBalance.policyId, name: employeeLeaveBalance.policyName, resetType: employeeLeaveBalance.resetType }
-        : (employeeLeaveBalance.reason === "contract_incomplete" ? employeeLeaveBalance.policy : null),
-      periodStart: employeeLeaveBalance.found ? employeeLeaveBalance.periodStart : null,
-      periodEnd: employeeLeaveBalance.found ? employeeLeaveBalance.periodEnd : null,
-      entitlementDays: employeeLeaveBalance.found ? employeeLeaveBalance.entitlementDays : null,
-      carryOverDays: employeeLeaveBalance.found ? employeeLeaveBalance.carryOverDays : null,
-      usedDays: employeeLeaveBalance.found ? employeeLeaveBalance.usedDays : null,
-      pendingDays: employeeLeaveBalance.found ? employeeLeaveBalance.pendingDays : null,
-      remainingDays: employeeLeaveBalance.found ? employeeLeaveBalance.remainingDays : null,
-      source: "calculateLeaveBalance",
-    });
-
-    // Per-request diagnostic for the "Ubah Cuti" form specifically — lets us
-    // tell apart a JOIN failure (matchedLeaveRequests empty even though the
-    // employee clearly has leave history) from a STATUS-RECOGNITION failure
-    // (matched, but isApproved is false for a request that's visibly
-    // "Disetujui HRD" elsewhere in the app).
-    console.log("[LEAVE_EDIT_FORM_BALANCE_DEBUG]", {
-      employeeName: (profileDoc as any)?.fullName || (profileDoc as any)?.namaLengkap || null,
-      employeeUid: resolveEmployeeUid(profileDoc),
-      brandId: resolveEmployeeBrandId(profileDoc),
-      policy: employeeLeaveBalance.found
-        ? { id: employeeLeaveBalance.policyId, name: employeeLeaveBalance.policyName, resetType: employeeLeaveBalance.resetType }
-        : (employeeLeaveBalance.reason === "contract_incomplete" ? employeeLeaveBalance.policy : null),
-      periodStart: employeeLeaveBalance.found ? employeeLeaveBalance.periodStart : null,
-      periodEnd: employeeLeaveBalance.found ? employeeLeaveBalance.periodEnd : null,
-      entitlementDays: employeeLeaveBalance.found ? employeeLeaveBalance.entitlementDays : null,
-      carryOverDays: employeeLeaveBalance.found ? employeeLeaveBalance.carryOverDays : null,
-      matchedLeaveRequests: (employeeLeaveRequests || []).map((r: any) => {
-        const { start, end } = resolveLeaveRequestDates(r);
-        return {
-          id: r.id,
-          employeeUid: getLeaveRequestEmployeeUid(r),
-          status: r.status ?? null,
-          hrdApprovalStatus: r.hrdApprovalStatus ?? null,
-          startDate: start,
-          endDate: end,
-          durationDays: resolveLeaveRequestDurationDays(r),
-          isApproved: isApprovedLeaveRequest(r),
-        };
-      }),
-      usedDays: employeeLeaveBalance.found ? employeeLeaveBalance.usedDays : null,
-      pendingDays: employeeLeaveBalance.found ? employeeLeaveBalance.pendingDays : null,
-      remainingDays: employeeLeaveBalance.found ? employeeLeaveBalance.remainingDays : null,
-    });
-  }
+  // THE live leave balance for this employee — the ONE shared hook
+  // (src/hooks/use-live-leave-balance.ts) every leave-balance UI calls. This
+  // page used to run SIX separate leave_requests onSnapshot listeners plus a
+  // leave_policies listener just to feed a local calculateLeaveBalance()
+  // call (to cover every historical owner-field name a leave_requests doc
+  // might use) — a major contributor to the reported Firestore "Listen"
+  // channel 404/400 errors and repeated re-renders, since every one of those
+  // listeners re-triggered this component. /api/leave/my-balance now does
+  // that same multi-field join server-side (Admin SDK, one fetch, no-store),
+  // so "Sisa Cuti" here can never drift from what Staff or the HRD workspace
+  // show, and a flaky realtime channel elsewhere can't leave this page stuck
+  // on a stale number.
+  const { balance: employeeLeaveBalanceRaw, refetch: refetchEmployeeLeaveBalance } = useLiveLeaveBalance(employeeId);
+  const employeeLeaveBalance: LeaveBalanceResult = employeeLeaveBalanceRaw ?? { found: false, reason: "no_policy" };
 
   useEffect(() => {
     if (sitesData) {
@@ -1684,6 +1578,34 @@ export default function EmployeeDetailPage({
       // (serverTimestamp) are the real record of when this was changed.
       delete (updatedValues as any).cutiEffectiveDate;
 
+      // If this save changes the employee's TYPE to "Kontrak" (the "Jenis
+      // Kontrak/Tipe" field), keep every type-compatibility field name in
+      // sync AND clear a stale "probation" employmentStatus/statusKerja left
+      // over from before. Without this, {...values} above silently
+      // re-persists whatever statusKerja was already on the doc — even
+      // "Probation" from before HRD ever touched Jenis Kontrak — right next
+      // to the freshly-saved employeeType, which is exactly what made
+      // Dashboard Staff keep showing "Probation" for an employee HRD had
+      // already set to "Kontrak" (see employee-type.ts/employee-status.ts).
+      // Never touches an explicit resigned/terminated/other status.
+      // NOTE: normalizeEmployeeTypeValue here is this file's own local
+      // helper (line ~200, returns display-case strings like "Kontrak") —
+      // not src/lib/employee-type.ts's key-returning version of the same name.
+      const isSettingTypeToKontrak = normalizeEmployeeTypeValue((updatedValues as any).employeeType) === "Kontrak";
+      if (isSettingTypeToKontrak) {
+        (updatedValues as any).employeeType = "Kontrak";
+        (updatedValues as any).tipeKaryawan = "Kontrak";
+        (updatedValues as any).employmentType = "Kontrak";
+
+        const currentStatusIsProbation =
+          normalizeEmployeeTypeValue((updatedValues as any).employmentStatus) === "Probation" ||
+          normalizeEmployeeTypeValue((updatedValues as any).statusKerja) === "Probation";
+        if (currentStatusIsProbation) {
+          (updatedValues as any).employmentStatus = "active";
+          (updatedValues as any).statusKerja = "Aktif";
+        }
+      }
+
       // Determine what changed for history
       const changes: any[] = [];
       const trackChange = (
@@ -1989,14 +1911,30 @@ export default function EmployeeDetailPage({
             updatedByUid: userProfile.uid,
             updatedByName: (userProfile as any).displayName || (userProfile as any).fullName || userProfile.email || "HRD",
           }),
+          // Same top-level-mirror reasoning as jatahCuti above, for employee
+          // TYPE — resolveEmployeeType() (employee-type.ts) checks
+          // hrdEmploymentInfo.tipeKaryawan first, but Dashboard Staff and
+          // other readers may check top-level employeeType/tipeKaryawan too.
+          // Only written when this save actually set the type to Kontrak.
+          ...(isSettingTypeToKontrak && {
+            employeeType: "Kontrak",
+            tipeKaryawan: "Kontrak",
+            employmentType: "Kontrak",
+            employmentStatus: (updatedValues as any).employmentStatus,
+            statusKerja: (updatedValues as any).statusKerja,
+          }),
         },
         { merge: true },
       );
       // Realtime listener on profileDoc already picks this up, but refetch
-      // explicitly too so the Policy Cuti card can never be seen showing a
-      // stale number even for one frame after Simpan Data.
+      // explicitly too — jatahCuti/carryOverCuti feed calculateLeaveBalance()
+      // directly, so the Policy Cuti card must never be seen showing a stale
+      // number even for one frame after Simpan Data. No onSnapshot on the
+      // balance itself to fall back on, so this explicit call is the only
+      // thing that refreshes it.
       if (isSavingLeaveEntitlement) {
         mutateProfile();
+        refetchEmployeeLeaveBalance();
       }
 
       // Save to employees collection for master data sync
@@ -2078,6 +2016,15 @@ export default function EmployeeDetailPage({
           departmentId: updatedValues.divisionId || undefined,
           departmentName: updatedValues.divisionName || undefined,
           divisi: updatedValues.divisionName || undefined,
+          // users/{uid} can carry its own employmentType/employmentStage
+          // mirror, independent of employee_profiles — only written when
+          // this save actually set the type to Kontrak, so an unrelated
+          // save (e.g. moving divisions) never touches it.
+          ...(isSettingTypeToKontrak && {
+            employmentType: "Kontrak",
+            employmentStage: "contract",
+            jobTitle: updatedValues.workRole || undefined,
+          }),
         }),
         ...supervisorFields,
       };
@@ -4057,9 +4004,7 @@ export default function EmployeeDetailPage({
                   {profileDoc && (
                     <div className="lg:col-span-2 xl:col-span-3">
                       <LeavePolicySummaryCard
-                        employee={profileDoc}
-                        leavePolicies={leavePoliciesData}
-                        leaveRequests={employeeLeaveRequests}
+                        employeeUid={employeeId}
                         onEdit={() => setEditingSection("cuti")}
                       />
                     </div>

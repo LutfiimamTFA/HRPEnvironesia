@@ -194,7 +194,7 @@ export function RealtimeOvertimeTimer({
   });
   const [overtimeType, setOvertimeType] = useState<
     'hari_kerja' | 'hari_libur' | 'urgent'
-  >(submission.overtimeType ?? 'hari_kerja');
+  >((submission.overtimeType as 'hari_kerja' | 'hari_libur' | 'urgent') ?? 'hari_kerja');
   const [location, setLocation] = useState<WorkLocationValue>(
     normalizeWorkLocation(submission.location),
   );

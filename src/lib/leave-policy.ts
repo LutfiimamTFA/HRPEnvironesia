@@ -21,15 +21,29 @@ import type { LeavePolicy } from './types';
 // payroll-recap.ts) since employee_profiles docs were written by several
 // different tools/versions over time.
 
-/** Same brandId fallback chain used across the app (payroll-recap.ts, attendance-summary.ts). */
+/**
+ * Same brandId fallback chain used across the app (payroll-recap.ts,
+ * attendance-summary.ts). employeeProfile.brandId is stored as an array on
+ * some docs (a site/employee can belong to multiple brands) — unwrapping
+ * BEFORE the `||` chain picks a value (not after) matters: if the FIRST
+ * field in the chain happens to hold an array, `||` stops there and never
+ * even tries the string fallbacks after it, so a naive
+ * "only unwrap the final result" fix still silently returns null for that
+ * employee. Every candidate is unwrapped individually so the chain can fall
+ * through past an empty/invalid array to a usable string further down.
+ */
 export function resolveEmployeeBrandId(employee: any): string | null {
-  const id =
-    employee?.brandId ||
-    employee?.companyId ||
-    employee?.hrdEmploymentInfo?.brandId ||
-    employee?.hrdEmploymentInfo?.companyId ||
-    null;
-  return typeof id === 'string' && id ? id : null;
+  const unwrap = (value: any): string | null => {
+    const v = Array.isArray(value) ? value[0] : value;
+    return typeof v === 'string' && v ? v : null;
+  };
+  return (
+    unwrap(employee?.brandId) ||
+    unwrap(employee?.companyId) ||
+    unwrap(employee?.hrdEmploymentInfo?.brandId) ||
+    unwrap(employee?.hrdEmploymentInfo?.companyId) ||
+    null
+  );
 }
 
 /** Same uid fallback chain as resolveProfileUid in attendance-helpers.ts. */

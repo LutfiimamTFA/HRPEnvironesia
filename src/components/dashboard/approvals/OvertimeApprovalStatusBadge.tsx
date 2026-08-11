@@ -17,6 +17,59 @@ const statusConfig: Record<
     hrdLabel: "Draf",
     className: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200",
   },
+  submitted: {
+    managerLabel: "Menunggu Review Anda",
+    hrdLabel: "Menunggu Atasan",
+    className:
+      "bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-200",
+  },
+  pending_manager_review: {
+    managerLabel: "Menunggu Review Anda",
+    hrdLabel: "Menunggu Atasan",
+    className:
+      "bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-200",
+  },
+  pending_hrd_review: {
+    managerLabel: "Diteruskan ke HRD",
+    hrdLabel: "Menunggu Review HRD",
+    className: "bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-200",
+  },
+  approved_by_hrd: {
+    managerLabel: "Disetujui HRD",
+    hrdLabel: "Disetujui HRD (Final)",
+    className:
+      "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-500/20",
+  },
+  revision_requested: {
+    managerLabel: "Revisi Diminta",
+    hrdLabel: "Revisi Diminta",
+    className:
+      "bg-amber-100 text-amber-800 dark:bg-amber-800 dark:text-amber-200",
+  },
+  cancelled: {
+    managerLabel: "Dibatalkan",
+    hrdLabel: "Dibatalkan",
+    className: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200",
+  },
+  // Legacy realtime-timer statuses — old docs only, never written anymore.
+  timer_running: {
+    managerLabel: "Timer Berjalan",
+    hrdLabel: "Timer Berjalan",
+    className:
+      "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 border border-emerald-500/10",
+  },
+  timer_paused: {
+    managerLabel: "Timer Dijeda",
+    hrdLabel: "Timer Dijeda",
+    className:
+      "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-500/10",
+  },
+  timer_finished_pending_submit: {
+    managerLabel: "Siap Diajukan",
+    hrdLabel: "Siap Diajukan",
+    className:
+      "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-500/10",
+  },
   pending_coordinator: {
     managerLabel: "Menunggu Review Anda",
     hrdLabel: "Menunggu Koordinator",
@@ -175,7 +228,7 @@ export function OvertimeApprovalStatusBadge({
   className,
 }: OvertimeApprovalStatusBadgeProps) {
   // If approved and payrollStatus is set, show payroll-specific status badge
-  if ((status === "approved" || status === "approved_hrd") && payrollStatus) {
+  if ((status === "approved" || status === "approved_hrd" || status === "approved_by_hrd") && payrollStatus) {
     const config = payrollStatusConfig[payrollStatus];
     if (config) {
       const label = mode === "manager" ? config.managerLabel : config.hrdLabel;

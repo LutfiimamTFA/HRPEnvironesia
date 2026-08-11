@@ -93,8 +93,10 @@ const APPROVED_LEAVE_STATUS_VALUES = new Set([
   'active_leave', 'completed',
 ]);
 const PENDING_LEAVE_STATUS_VALUES = new Set([
-  'pending_manager', 'pending_manager_review', 'pending_director', 'pending_director_review',
+  'pending', 'submitted', 'pending_approval',
+  'pending_manager', 'pending_manager_review', 'pending_supervisor', 'pending_director', 'pending_director_review',
   'pending_hrd', 'pending_hrd_review',
+  'menunggu_approval_atasan', 'menunggu_persetujuan_atasan', 'menunggu_approval_hrd',
   'revision_requested', 'revision_requested_by_manager', 'revision_requested_by_director', 'revision_requested_by_hrd',
 ]);
 

@@ -490,6 +490,12 @@ export const ALL_MENU_GROUPS: MenuGroup[] = [
         icon: createElement(ShieldAlert),
       },
       {
+        key: "admin.employee-type-status-backfill",
+        href: "/admin/super-admin/employee-type-status-backfill",
+        label: "Sinkronkan Status Kepegawaian",
+        icon: createElement(ShieldAlert),
+      },
+      {
         key: "admin.sync-center",
         href: "/admin/super-admin/sync-center",
         label: "Technical Sync Center",
@@ -786,6 +792,12 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
           key: "admin.leave-snapshot-backfill",
           href: "/admin/super-admin/leave-snapshot-backfill",
           label: "Sinkronkan Snapshot Cuti",
+          icon: createElement(ShieldAlert),
+        },
+        {
+          key: "admin.employee-type-status-backfill",
+          href: "/admin/super-admin/employee-type-status-backfill",
+          label: "Sinkronkan Status Kepegawaian",
           icon: createElement(ShieldAlert),
         },
         {

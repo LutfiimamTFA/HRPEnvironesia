@@ -2181,22 +2181,35 @@ export type DailyReport = {
 };
 
 export const OVERTIME_SUBMISSION_STATUSES = [
+  // Current flow (manual-only, staff -> atasan -> HRD — see
+  // src/lib/overtime-utils.ts). These are the only statuses any NEW
+  // submission ever gets written with.
+  "draft",
+  "submitted",
+  "pending_manager_review",
+  "approved_by_manager",
+  "pending_hrd_review",
+  "approved_by_hrd",
+  "rejected_by_manager",
+  "rejected_by_hrd",
+  "revision_requested",
+  "cancelled",
+
+  // Legacy statuses — kept ONLY so old documents (realtime-timer flow,
+  // coordinator-approval flow) still render correctly wherever they're
+  // read; no write path produces these anymore.
   "timer_running",
   "timer_paused",
   "timer_finished_pending_submit",
-  "draft",
   "pending_coordinator",
   "pending_supervisor",
   "pending_manager",
   "rejected_by_coordinator",
   "revision_requested_by_coordinator",
-  "rejected_by_manager",
   "revision_requested_by_manager",
   "rejected_manager",
   "revision_manager",
-  "approved_by_manager",
   "pending_hrd",
-  "rejected_by_hrd",
   "revision_requested_by_hrd",
   "rejected_hrd",
   "revision_hrd",
@@ -2209,12 +2222,39 @@ export const OVERTIME_SUBMISSION_STATUSES = [
 export type OvertimeSubmissionStatus =
   (typeof OVERTIME_SUBMISSION_STATUSES)[number];
 
+/** Flags computed by detectOvertimeAnomalies() (src/lib/overtime-utils.ts) — surfaced to atasan/HRD as "Perlu Review" indicators, never blocking submission. */
+export type OvertimeAnomalyFlag =
+  | "durasi_lebih_4_jam"
+  | "durasi_lebih_6_jam"
+  | "lewat_jam_22"
+  | "lintas_hari"
+  | "hari_libur"
+  | "tanggal_merah"
+  | "lembur_beruntun"
+  | "overlap_pengajuan_lain"
+  | "bukti_hanya_link"
+  | "durasi_pekerjaan_tidak_sesuai"
+  | "bukti_pekerjaan_belum_lengkap";
+
+/** One row of the "Daftar Pekerjaan Lembur" section — a single overtime submission can cover more than one distinct piece of work. */
+export type OvertimeJobItem = {
+  id: string;
+  title: string;
+  projectOrClient?: string | null;
+  workSummary: string;
+  workOutput: string;
+  estimatedDurationMinutes: number;
+  evidenceFiles?: Array<{ name?: string; url: string; mimeType?: string }>;
+  evidenceLinks?: string[];
+};
+
 export type OvertimeSubmission = {
   id?: string;
   uid?: string; // Legacy field, use employeeUid
   employeeUid: string;
   employeeName: string;
   fullName?: string;
+  employeeCode?: string;
   brandId: string;
   brandName?: string;
   divisionId?: string;
@@ -2222,11 +2262,23 @@ export type OvertimeSubmission = {
   division?: string;
   workRole?: string;
   positionTitle?: string;
+  /** Alias of workRole/positionTitle — the exact field name the "Waktu & Lokasi Lembur" payload spec asks for. */
+  position?: string;
   overtimeDate: Timestamp | string | Date;
   date?: Timestamp;
-  startTime: string; // "HH:mm"
-  endTime: string; // "HH:mm"
+  /** Display value, Indonesian 24-jam dot format ("17.00") — older docs may still carry "HH:mm" (colon). */
+  startTime: string;
+  endTime: string;
+  /** Normalized minutes-since-midnight mirrors of startTime/endTime, for backend/payroll consumers that would rather not re-parse the display string. */
+  startTimeMinutes?: number;
+  endTimeMinutes?: number;
   totalDurationMinutes: number;
+  /** Alias of totalDurationMinutes — kept in sync on every write by computeOvertimeDuration(). */
+  durationMinutes?: number;
+  /** totalDurationMinutes / 60, rounded to 2 decimals — display convenience. */
+  durationHours?: number;
+  /** True when endTime is on the calendar day after overtimeDate (lembur lewat tengah malam). */
+  isCrossDay?: boolean;
 
   // Start-time audit trail (hybrid realtime flow)
   formCreatedAt?: string | null;           // "HH:MM" waktu form dibuka
@@ -2243,8 +2295,12 @@ export type OvertimeSubmission = {
   confirmedCompletedAt?: Timestamp | null;
   confirmedByUid?: string | null;
   confirmedByName?: string | null;
-  overtimeType: "hari_kerja" | "hari_libur" | "urgent";
+  /** Only "hari_kerja"/"hari_libur" are ever written now — Tanggal Merah/Libur Nasional lives under holidayType below (still part of "hari_libur"), and Dinas/Lapangan moved to workLocation. "tanggal_merah"/"dinas_lapangan"/"urgent" are legacy values from before that split — still read on old docs, never written. */
+  overtimeType: "hari_kerja" | "hari_libur" | "tanggal_merah" | "dinas_lapangan" | "urgent";
   overtimeTypeLabel?: string;
+  /** Only meaningful when overtimeType === "hari_libur". */
+  holidayType?: "weekend" | "libur_nasional" | "libur_perusahaan" | "cuti_bersama" | "lainnya" | null;
+  holidayTypeOther?: string | null;
   taskDetails?: {
     description: string;
     estimatedMinutes?: number;
@@ -2255,11 +2311,16 @@ export type OvertimeSubmission = {
     estimatedMinutes?: number;
     actualMinutes?: number | null;
   }[];
+  /** Mirrors overtimeReason below — kept for every existing reader that displays `.reason`. */
   reason: string;
   location?: "kantor" | "rumah_wfh" | "luar_kantor" | "site_klien" | "lainnya" | "remote" | "site";
+  /** Canonical values going forward: "kantor" | "wfh" | "lapangan" | "dinas" | "lainnya". Older docs may still carry the `location` union above. */
   workLocation?: string;
   workLocationLabel?: string;
+  /** Mirrors workLocationOther — kept for the original field name. */
   workLocationDetail?: string | null;
+  /** Only meaningful when workLocation === "lainnya". Mirrors workLocationDetail. */
+  workLocationOther?: string | null;
   employeeNotes?: string | null;
   // Attachments may be legacy string URLs or richer objects from upload APIs
   attachments?: Array<
@@ -2277,6 +2338,58 @@ export type OvertimeSubmission = {
         contentType?: string;
       }
   >;
+
+  // ── Penugasan ──────────────────────────────────────────────────────────
+  /** Who assigned this overtime — direct supervisor / division manager / project leader / HRD, resolved via buildTaskAssignerCandidates() (overtime-utils.ts). Mirrors overtimeCoordinatorUid/Name below so older readers of that field keep working. */
+  taskAssignerUid?: string;
+  taskAssignerName?: string;
+  taskAssignerPosition?: string;
+  /** Raw system role/structuralLevel (e.g. "division_manager") — never shown to users directly, use taskAssignerRoleLabel for display. */
+  taskAssignerRole?: string;
+  /** Human-readable role label (e.g. "Manager Divisi") via getReadableRoleLabel(). */
+  taskAssignerRoleLabel?: string;
+  taskAssignerDivisionId?: string;
+  taskAssignerDivisionName?: string;
+  taskAssignerBrandId?: string;
+  taskAssignerBrandName?: string;
+  /** True when this task assigner is the employee's own direct supervisor (resolveApprovalTarget's result), not just any manager/HRD picked from the broader list. */
+  isDirectSupervisor?: boolean;
+  /** Which dropdown group the task assigner was picked from (TaskAssignerCategory, overtime-utils.ts) — e.g. "same_division_staff" when a same-division colleague coordinated the work instead of a manager. Approval routing (atasan -> HRD) never changes based on this — a same-division-staff assigner is NOT an approver. */
+  taskAssignerGroup?: string;
+  projectOrClient?: string | null;
+  assignmentType?:
+    | "terencana"
+    | "mendadak_urgent"
+    | "instruksi_atasan"
+    | "kebutuhan_operasional"
+    | "penyelesaian_deadline"
+    | "lainnya";
+  /** Only meaningful when assignmentType === "lainnya". */
+  assignmentTypeOther?: string | null;
+
+  // ── Daftar Pekerjaan Lembur — one submission can cover multiple jobs ──────
+  jobs?: OvertimeJobItem[];
+  /** Sum of jobs[].estimatedDurationMinutes — compared against totalDurationMinutes for the "durasi_pekerjaan_tidak_sesuai" anomaly flag. */
+  totalJobDurationMinutes?: number;
+
+  // ── Pekerjaan & Output — mirrors of jobs[0] kept for older single-job readers (ReviewOvertimeDialog.tsx etc). ──
+  workSummary?: string;
+  workOutput?: string;
+  overtimeReason?: string;
+
+  // ── Bukti Pendukung ──────────────────────────────────────────────────────
+  evidenceFiles?: Array<{ name?: string; url: string; mimeType?: string }>;
+  evidenceLinks?: string[];
+  hasSupportingEvidence?: boolean;
+
+  // ── Pernyataan ───────────────────────────────────────────────────────────
+  declarationAccepted?: boolean;
+  declarationAcceptedAt?: Timestamp | null;
+
+  // ── Anomaly detection (never blocks submission — see detectOvertimeAnomalies()) ──
+  anomalyFlags?: OvertimeAnomalyFlag[];
+  reviewLevel?: "normal" | "perlu_review";
+
   status: OvertimeSubmissionStatus;
   approvalStatus?: string;
 
@@ -2323,7 +2436,8 @@ export type OvertimeSubmission = {
   managerRole?: string | null;
   waitingForUid?: string | null;
   waitingForName?: string | null;
-  currentApprovalStep?: string | null;
+  currentApprovalStep?: "manager" | "hrd" | "done" | string | null;
+  currentApproverUid?: string | null;
 
   hrdReviewerUid?: string | null;
   hrdNotes?: string | null;
@@ -2331,6 +2445,38 @@ export type OvertimeSubmission = {
   hrdApprovedAt?: Timestamp | null;
   hrdApprovedBy?: string | null;
   hrdApprovedByName?: string | null;
+
+  // ── Audit trail (see src/lib/overtime-utils.ts's decision-payload builders) ──
+  submittedAt?: Timestamp | null;
+  submittedByUid?: string | null;
+  submittedByName?: string | null;
+
+  managerDecision?: "approved" | "rejected" | "revision_requested" | null;
+  managerReviewedAt?: Timestamp | null;
+  managerReviewedBy?: string | null;
+  managerReviewedByName?: string | null;
+
+  hrdDecision?: "approved" | "rejected" | "revision_requested" | null;
+  hrdReviewedAt?: Timestamp | null;
+  hrdReviewedBy?: string | null;
+  hrdReviewedByName?: string | null;
+
+  revisionRequestedAtStage?: "manager" | "hrd" | null;
+  revisionReason?: string | null;
+
+  /** One entry per post-revision edit — never overwritten, always appended. */
+  editHistory?: Array<{
+    updatedAt: Timestamp;
+    updatedByUid: string;
+    oldStartTime?: string;
+    newStartTime?: string;
+    oldEndTime?: string;
+    newEndTime?: string;
+    oldDurationMinutes?: number;
+    newDurationMinutes?: number;
+    oldWorkOutput?: string;
+    newWorkOutput?: string;
+  }>;
 
   approvedMinutesFinal?: number | null;
 
@@ -2548,6 +2694,8 @@ export function isFinalStatus(status: string): boolean {
   return [
     "approved",
     "approved_hrd",
+    "approved_by_hrd",
+    "cancelled",
     "rejected_by_coordinator",
     "rejected_by_manager",
     "rejected_by_hrd",
@@ -2568,13 +2716,16 @@ export function isActionableStatus(
   if (isFinalStatus(status)) return false;
 
   if (mode === "manager") {
-    // For normal flow, including coordinator and manager review stages
+    // Current flow's manager-actionable statuses, plus legacy equivalents
+    // (old docs that never migrated past pending_coordinator/pending_manager).
     const normalActionable =
+      status === "submitted" ||
+      status === "pending_manager_review" ||
       status === "pending_coordinator" ||
       status === "pending_supervisor" ||
       status === "pending_manager" ||
       status === "revision_manager";
-    // For non-blocking office exit flow
+    // For non-blocking office exit flow (permission_requests only)
     // A manager can verify either after reported OR after returned (tap-in detected)
     const officeExitActionable = status === "reported" || status === "returned";
 
@@ -2582,10 +2733,12 @@ export function isActionableStatus(
   }
 
   if (mode === "hrd") {
-    // HRD can act on items approved by manager/coordinator or pending hrd review
+    // HRD can act on items approved by manager or pending hrd review, plus
+    // legacy equivalents.
     return (
-      status === "pending_hrd" ||
+      status === "pending_hrd_review" ||
       status === "approved_by_manager" ||
+      status === "pending_hrd" ||
       status === "revision_hrd" ||
       status === "revision_requested_by_hrd" ||
       status === "verified_manager" ||

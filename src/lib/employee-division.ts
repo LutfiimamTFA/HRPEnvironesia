@@ -79,20 +79,37 @@ export function resolveEmployeeDivision(
 // for an explicit "divisi saat pengajuan" history field, just never as the
 // default/primary display.
 
-/** Looks up the current employee_profiles doc for a leave_requests doc, via the same owner-uid fallback chain used everywhere else (getLeaveRequestOwnerUid) — never by name. */
+/**
+ * Looks up the current employee_profiles doc for a leave_requests doc.
+ * Tries every uid/code-style field the request might carry its owner
+ * under, in priority order, against the SAME multi-key-indexed map every
+ * consumer builds (see addProfileIndex in persetujuan-cuti/page.tsx) — a
+ * profile keyed only by employeeCode/employeeNumber/email still resolves
+ * even when the request's canonical employeeUid field is missing/stale.
+ * Never joins by display name.
+ */
 export function getRequestEmployeeProfile(
   request: any,
   employeeProfilesMap: Map<string, any>,
 ): any | null {
-  const uid =
-    request?.employeeUid ||
-    request?.requesterUid ||
-    request?.uid ||
-    request?.userId ||
-    request?.createdByUid ||
-    request?.employeeId ||
-    '';
-  return (uid && employeeProfilesMap.get(uid)) || null;
+  const keys = [
+    request?.employeeUid,
+    request?.requesterUid,
+    request?.uid,
+    request?.userId,
+    request?.createdByUid,
+    request?.employeeProfileId,
+    request?.employeeId,
+    request?.employeeCode,
+    request?.employeeNumber,
+    request?.employeeEmail,
+  ].filter(Boolean);
+
+  for (const key of keys) {
+    const profile = employeeProfilesMap.get(String(key));
+    if (profile) return profile;
+  }
+  return null;
 }
 
 /** Current division to DISPLAY for a leave_requests doc — the employee's live profile always wins over the request's own snapshot fields. */
@@ -101,8 +118,10 @@ export function resolveCurrentEmployeeDivision(
   profile: any,
 ): { divisionId: string; divisionName: string } {
   const hrd = profile?.hrdEmploymentInfo || {};
+  const struktur = profile?.strukturKepegawaian || {};
   return {
-    divisionId: profile?.divisionId || hrd.divisionId || request?.divisionId || '',
-    divisionName: profile?.divisionName || hrd.divisionName || hrd.divisi || request?.divisionName || '-',
+    divisionId: profile?.divisionId || hrd.divisionId || struktur.divisionId || request?.divisionId || '',
+    divisionName:
+      profile?.divisionName || hrd.divisionName || hrd.divisi || struktur.divisionName || request?.divisionName || '-',
   };
 }

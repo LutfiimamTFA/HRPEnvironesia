@@ -21,7 +21,6 @@ import { type LeaveRequest, type LeaveBalance, type LeaveBalanceAdjustment, type
 import { calculateLeaveBalance, calculateLeaveBalanceForRequest } from '@/lib/leave-balance';
 import { getLeaveProcessStage } from '@/lib/leave-process-stage';
 import { getRequestEmployeeProfile, resolveCurrentEmployeeDivision } from '@/lib/employee-division';
-import { getLeaveRequestOwnerUid } from '@/lib/leave-request-query';
 import {
   Loader2,
   CalendarOff,
@@ -110,13 +109,36 @@ export default function HrdLeaveApprovalPage() {
   );
   const { data: rawUsers } = useHrdScopedCollection<any>('users', { constraints: activeUserConstraints });
 
+  // A leave_requests doc's owner-uid field can point at any of several
+  // identifiers depending on when/how it was written (see
+  // getLeaveRequestOwnerUid / getRequestEmployeeProfile) — indexing the
+  // profile under every identifier it itself carries means a lookup by ANY
+  // of those fields still resolves to the SAME current profile, instead of
+  // silently missing (and falling back to the request's own stale
+  // snapshot) whenever the request's id field doesn't match uid/id exactly.
+  const addProfileIndex = (map: Map<string, any>, profile: any) => {
+    const keys = [
+      profile.id,
+      profile.uid,
+      profile.userId,
+      profile.authUid,
+      profile.employeeUid,
+      profile.employeeId,
+      profile.employeeCode,
+      profile.employeeNumber,
+      profile.nomorIndukKaryawan,
+      profile.email,
+    ].filter(Boolean);
+    keys.forEach((key) => map.set(String(key), profile));
+  };
+
   const { employeeProfilesMap, employeesMap, usersMap } = useMemo(() => {
     const pMap = new Map<string, any>();
     const eMap = new Map<string, any>();
     const uMap = new Map<string, any>();
-    if (employeeProfiles) employeeProfiles.forEach(p => pMap.set(p.uid || p.id, p));
-    if (rawEmployees) rawEmployees.forEach(e => eMap.set(e.employeeUid || e.id, e));
-    if (rawUsers) rawUsers.forEach(u => uMap.set(u.id, u));
+    if (employeeProfiles) employeeProfiles.forEach(p => addProfileIndex(pMap, p));
+    if (rawEmployees) rawEmployees.forEach(e => addProfileIndex(eMap, e));
+    if (rawUsers) rawUsers.forEach(u => addProfileIndex(uMap, u));
     return { employeeProfilesMap: pMap, employeesMap: eMap, usersMap: uMap };
   }, [employeeProfiles, rawEmployees, rawUsers]);
 
@@ -452,8 +474,8 @@ export default function HrdLeaveApprovalPage() {
 
   // Tab 1 List: Need HRD Action
   const needHrdActionList = useMemo(() => {
-    return filteredRequests.filter(r => 
-      ['pending_hrd', 'pending_hrd_review', 'menunggu_approval_hrd', 'approved_by_director', 'approved_by_manager'].includes(r.status)
+    return filteredRequests.filter(r =>
+      getLeaveProcessStage(r).hrdCanApprove
     ).sort((a, b) => {
       const aTime = a.updatedAt?.toMillis ? a.updatedAt.toMillis() : 0;
       const bTime = b.updatedAt?.toMillis ? b.updatedAt.toMillis() : 0;
@@ -531,23 +553,14 @@ export default function HrdLeaveApprovalPage() {
       // Live-calculated, same calculateLeaveBalance() every other page
       // (Detail Karyawan, Detail Pengajuan) reads — replaces the old
       // leave_balances-doc lookup that let this tab disagree with the rest
-      // of the app.
+      // of the app. No per-row console.log here — logging once per eligible
+      // employee on every recompute of this table (N employees x every
+      // requests/leavePolicies/employeeProfiles listener tick) was exactly
+      // the "[LEAVE_BALANCE_SYNC_DEBUG] muncul berulang" spam; the shared
+      // useLiveLeaveBalance hook's own single log (fired once per explicit
+      // fetch, from api/leave/my-balance) is the one source of truth for
+      // that debug tag now.
       const liveBalance = calculateLeaveBalance({ employee: p, leaveRequests: requests, leavePolicies });
-      console.log('[LEAVE_BALANCE_SYNC_DEBUG]', {
-        employeeUid: uid,
-        employeeName: resolveEmployeeName(p, emp, usr, null),
-        ...(liveBalance.found
-          ? {
-              entitlementDays: liveBalance.entitlementDays,
-              usedDays: liveBalance.usedDays,
-              pendingDays: liveBalance.pendingDays,
-              remainingDays: liveBalance.remainingDays,
-              availableDays: liveBalance.availableDays,
-              approvedRequestIds: liveBalance.approvedRequestIds,
-              pendingRequestIds: liveBalance.pendingRequestIds,
-            }
-          : { reason: liveBalance.reason }),
-      });
       return { profile: p, employee: emp || null, user: usr || null, liveBalance };
     });
   }, [employeeProfiles, requests, leavePolicies, filterSearch, filterBrand, filterDivision, employeesMap, usersMap]);
@@ -557,15 +570,15 @@ export default function HrdLeaveApprovalPage() {
     if (!adjustments) return [];
     
     const processed = adjustments.map(a => {
-      const profile = employeeProfilesMap.get(a.employeeId);
-      const bBrandId = (a as any).brandId || profile?.hrdEmploymentInfo?.brandId || profile?.brandId || '';
-      const bDivisionId = (a as any).divisionId || profile?.hrdEmploymentInfo?.divisionId || profile?.divisionId || '';
+      const profile = getRequestEmployeeProfile(a, employeeProfilesMap) || employeeProfilesMap.get(a.employeeId);
+      const currentDivision = resolveCurrentEmployeeDivision(a, profile);
+      const bBrandId = profile?.hrdEmploymentInfo?.brandId || profile?.brandId || (a as any).brandId || '';
       return {
         ...a,
         brandId: bBrandId,
-        divisionId: bDivisionId,
-        brandName: (a as any).brandName || profile?.hrdEmploymentInfo?.brandName || profile?.brandName || '-',
-        divisionName: (a as any).divisionName || profile?.hrdEmploymentInfo?.divisionName || profile?.divisionName || '-'
+        divisionId: currentDivision.divisionId,
+        brandName: profile?.hrdEmploymentInfo?.brandName || profile?.brandName || (a as any).brandName || '-',
+        divisionName: currentDivision.divisionName,
       };
     });
 
@@ -631,22 +644,22 @@ export default function HrdLeaveApprovalPage() {
       request: selectedRequest,
     });
 
-    console.log('[LEAVE_DETAIL_BALANCE_DEBUG]', {
+    console.log('[LEAVE_DETAIL_BALANCE_DEBUG]', JSON.stringify({
       employeeName: resolveEmployeeName(employeeProfile, employeesMap.get(selectedRequest.employeeId), usersMap.get(selectedRequest.employeeId), null),
       employeeUid: selectedRequest.employeeId,
       requestId: selectedRequest.id,
       requestDurationDays: selectedRequest.durationDays,
       requestStatus: selectedRequest.status,
-      policy: result.found ? { id: result.policy.id, name: result.policy.name, resetType: result.policy.resetType } : (result.reason === 'contract_incomplete' ? result.policy : null),
-      periodStart: result.found ? result.period.periodStart : null,
-      periodEnd: result.found ? result.period.periodEnd : null,
+      found: result.found,
+      reason: result.found ? undefined : result.reason,
       entitlementDays: result.found ? result.entitlementDays : null,
       carryOverDays: result.found ? result.carryOverDays : null,
       usedDaysBeforeThisRequest: result.found ? result.usedDaysBeforeThisRequest : null,
       usedDaysIncludingThisRequest: result.found ? result.usedDaysIncludingThisRequest : null,
       previousBalance: result.found ? result.previousBalance : null,
       balanceAfterApproval: result.found ? result.balanceAfterApproval : null,
-    });
+      calculatedAt: new Date().toISOString(),
+    }, null, 2));
 
     return result;
   }, [selectedRequest, employeeProfilesMap, requests, leavePolicies, employeesMap, usersMap]);
@@ -792,56 +805,30 @@ export default function HrdLeaveApprovalPage() {
         updatedAt: serverTimestamp()
       });
 
-      // 2. Automate quota balance updates atomically
-      const balanceRef = doc(firestore, 'leave_balances', selectedRequest.employeeId);
-      const balData = balances?.find(b => b.employeeId === selectedRequest.employeeId);
-
-      if (balData) {
-        const pendingLeaveVal = Math.max(0, (balData.pendingLeave || 0) - selectedRequest.durationDays);
-        const pendingDaysVal = Math.max(0, ((balData as any).pendingDays || 0) - selectedRequest.durationDays);
-
-        if (actionType === 'approve') {
-          const newCurrentBalance = Math.max(0, (balData.currentBalance || 0) - selectedRequest.durationDays);
-          const newRemainingDays = Math.max(0, ((balData as any).remainingDays || 0) - selectedRequest.durationDays);
-          const newAllocatedLeave = (balData.allocatedLeave || 0) + selectedRequest.durationDays;
-          const newUsedDays = ((balData as any).usedDays || 0) + selectedRequest.durationDays;
-
-          batch.update(balanceRef, {
-            pendingLeave: pendingLeaveVal,
-            pendingDays: pendingDaysVal,
-            currentBalance: newCurrentBalance,
-            remainingDays: newRemainingDays,
-            allocatedLeave: newAllocatedLeave,
-            usedDays: newUsedDays,
-            updatedAt: serverTimestamp()
-          } as any);
-
-          // Write ledger audit record
-          const adjRef = doc(collection(firestore, 'leave_balance_adjustments'));
-          batch.set(adjRef, {
-            employeeId: selectedRequest.employeeId,
-            employeeName: selectedRequest.employeeName,
-            brandId: selectedRequest.brandId || '',
-            brandName: selectedRequest.brandName || '',
-            divisionId: selectedRequest.divisionId || '',
-            divisionName: selectedRequest.divisionName || '',
-            previousBalance: balData.currentBalance || 0,
-            newBalance: newCurrentBalance,
-            adjustmentValue: -selectedRequest.durationDays,
-            reason: `Cuti ${selectedRequest.leaveType === 'tahunan' ? 'Tahunan' : selectedRequest.leaveType === 'besar' ? 'Besar' : selectedRequest.leaveType === 'menikah' ? 'Menikah' : selectedRequest.leaveType === 'melahirkan' ? 'Melahirkan' : 'Tahunan'} disetujui HRD`,
-            type: 'cuti_disetujui',
-            adjustedBy: userProfile.uid,
-            adjustedByName: userProfile.fullName,
-            createdAt: serverTimestamp()
-          });
-        } else {
-          // Rejection or revision releases pending leave only
-          batch.update(balanceRef, {
-            pendingLeave: pendingLeaveVal,
-            pendingDays: pendingDaysVal,
-            updatedAt: serverTimestamp()
-          });
-        }
+      // 2. Audit ledger only — leave_requests.status above is what actually
+      // drives the displayed numbers (via calculateLeaveBalance reading
+      // approved leave_requests). This write is informational history only;
+      // approve must never depend on it or on the legacy leave_balances doc
+      // existing/being in sync.
+      if (actionType === 'approve') {
+        const balData = balances?.find(b => b.employeeId === selectedRequest.employeeId);
+        const adjRef = doc(collection(firestore, 'leave_balance_adjustments'));
+        batch.set(adjRef, {
+          employeeId: selectedRequest.employeeId,
+          employeeName: selectedRequest.employeeName,
+          brandId: selectedRequest.brandId || '',
+          brandName: selectedRequest.brandName || '',
+          divisionId: selectedRequest.divisionId || '',
+          divisionName: selectedRequest.divisionName || '',
+          previousBalance: balData?.currentBalance || 0,
+          newBalance: Math.max(0, (balData?.currentBalance || 0) - selectedRequest.durationDays),
+          adjustmentValue: -selectedRequest.durationDays,
+          reason: `Cuti ${selectedRequest.leaveType === 'tahunan' ? 'Tahunan' : selectedRequest.leaveType === 'besar' ? 'Besar' : selectedRequest.leaveType === 'menikah' ? 'Menikah' : selectedRequest.leaveType === 'melahirkan' ? 'Melahirkan' : 'Tahunan'} disetujui HRD`,
+          type: 'cuti_disetujui',
+          adjustedBy: userProfile.uid,
+          adjustedByName: userProfile.fullName,
+          createdAt: serverTimestamp()
+        });
       }
 
       await batch.commit();
@@ -1073,15 +1060,6 @@ export default function HrdLeaveApprovalPage() {
                 const jobTitle = getRequesterPositionLabel(r);
                 const stage = getLeaveProcessStage(r);
                 const canAction = stage.hrdCanApprove;
-                console.log('[LEAVE_SYNC_DEBUG]', {
-                  requestId: r.id,
-                  employeeUid: getLeaveRequestOwnerUid(r),
-                  requestSnapshotDivision: r.divisionName,
-                  currentProfileDivision: profile?.divisionName || profile?.hrdEmploymentInfo?.divisionName,
-                  status: r.status,
-                  replacementConfirmationStatus: (r as any).replacementConfirmationStatus || (r as any).replacementConfirmation?.status,
-                  derivedStage: stage,
-                });
                 return (
                   <div key={r.id} className="p-4 space-y-3">
                     <div className="flex items-start justify-between gap-2">
@@ -2132,8 +2110,19 @@ export default function HrdLeaveApprovalPage() {
             {/* 4. Timeline Alur Persetujuan (Asia/Jakarta Context) */}
             <div className="p-5 bg-slate-100 dark:bg-slate-800/60 rounded-2xl border-2 border-slate-300 dark:border-slate-700 space-y-4">
               <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">Timeline Alur Persetujuan</h3>
+              {(() => {
+                const timelineStage = selectedRequest ? getLeaveProcessStage(selectedRequest) : null;
+                const replacementBlocking = timelineStage?.stage === 'replacement_pending' || timelineStage?.stage === 'replacement_rejected';
+                const replacementName =
+                  (selectedRequest as any)?.replacementEmployeeName ||
+                  (selectedRequest as any)?.handoverEmployeeName ||
+                  'pengganti sementara';
+                const hasReplacementAssigned =
+                  Boolean((selectedRequest as any)?.replacementEmployeeUid) ||
+                  (Boolean((selectedRequest as any)?.handoverEmployeeId) && (selectedRequest as any)?.handoverEmployeeId !== 'manual');
+                return (
               <div className="relative pl-6 space-y-5 before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-[2px] before:bg-slate-200 dark:before:bg-slate-800">
-                
+
                 {/* Milestone 1: Staff Submission */}
                 <div className="relative">
                   <div className="absolute -left-[20px] top-1 h-[12px] w-[12px] rounded-full bg-emerald-500 ring-4 ring-white dark:ring-slate-900" />
@@ -2143,24 +2132,47 @@ export default function HrdLeaveApprovalPage() {
                   </div>
                 </div>
 
-                {/* Milestone 2: Atasan Persetujuan */}
+                {/* Milestone 2: Konfirmasi Pengganti Sementara — the FIRST real
+                    gate, before the atasan's queue in spirit and (once
+                    firestore.rules' replacementReadyForApproval lands) in
+                    practice too. */}
+                {hasReplacementAssigned && (
+                  <div className="relative">
+                    <div className={`absolute -left-[20px] top-1 h-[12px] w-[12px] rounded-full ring-4 ring-white dark:ring-slate-900 ${
+                      timelineStage?.stage === 'replacement_pending'
+                        ? 'bg-amber-500 animate-pulse'
+                        : (timelineStage?.stage === 'replacement_rejected' ? 'bg-red-500' : 'bg-emerald-500')
+                    }`} />
+                    <div className="text-xs font-bold text-slate-800 dark:text-white">Konfirmasi Pengganti Sementara</div>
+                    <div className="text-[10px] text-slate-500 font-medium mt-0.5">
+                      {timelineStage?.stage === 'replacement_pending' && `Menunggu konfirmasi dari ${replacementName}`}
+                      {timelineStage?.stage === 'replacement_rejected' && 'Pengganti menolak. Pengaju perlu memilih pengganti baru.'}
+                      {!replacementBlocking && `${replacementName} telah menyatakan bersedia.`}
+                    </div>
+                  </div>
+                )}
+
+                {/* Milestone 3: Atasan Persetujuan */}
                 <div className="relative">
                   <div className={`absolute -left-[20px] top-1 h-[12px] w-[12px] rounded-full ring-4 ring-white dark:ring-slate-900 ${
-                    selectedRequest && ['pending_manager', 'pending_manager_review'].includes(selectedRequest.status)
-                      ? 'bg-amber-500 animate-pulse'
-                      : (selectedRequest && (selectedRequest.status === 'rejected_by_manager' || ['revision_requested', 'revision_requested_by_manager'].includes(selectedRequest.status))
-                        ? 'bg-red-500'
-                        : (selectedRequest && selectedRequest.status === 'cancelled'
-                          ? 'bg-gray-400'
-                          : 'bg-emerald-500'))
+                    replacementBlocking
+                      ? 'bg-slate-300'
+                      : (selectedRequest && ['pending_manager', 'pending_manager_review'].includes(selectedRequest.status)
+                        ? 'bg-amber-500 animate-pulse'
+                        : (selectedRequest && (selectedRequest.status === 'rejected_by_manager' || ['revision_requested', 'revision_requested_by_manager'].includes(selectedRequest.status))
+                          ? 'bg-red-500'
+                          : (selectedRequest && selectedRequest.status === 'cancelled'
+                            ? 'bg-gray-400'
+                            : 'bg-emerald-500')))
                   }`} />
                   <div className="text-xs font-bold text-slate-800 dark:text-white">Persetujuan Atasan ({selectedRequest?.managerName || 'Atasan Langsung'})</div>
                   <div className="text-[10px] text-slate-500 font-medium mt-0.5">
-                    {selectedRequest && ['pending_manager', 'pending_manager_review'].includes(selectedRequest.status) && 'Menunggu Persetujuan Atasan'}
-                    {selectedRequest && selectedRequest.status === 'rejected_by_manager' && `Ditolak Atasan: "${selectedRequest.managerNotes}"`}
-                    {selectedRequest && ['revision_requested', 'revision_requested_by_manager'].includes(selectedRequest.status) && `Perlu Revisi: "${selectedRequest.managerNotes}"`}
-                    {selectedRequest && selectedRequest.status === 'cancelled' && 'Pengajuan Dibatalkan'}
-                    {selectedRequest && !['pending_manager', 'pending_manager_review', 'rejected_by_manager', 'revision_requested', 'revision_requested_by_manager', 'cancelled'].includes(selectedRequest.status) && (
+                    {replacementBlocking && 'Belum masuk tahap atasan.'}
+                    {!replacementBlocking && selectedRequest && ['pending_manager', 'pending_manager_review'].includes(selectedRequest.status) && 'Menunggu Persetujuan Atasan'}
+                    {!replacementBlocking && selectedRequest && selectedRequest.status === 'rejected_by_manager' && `Ditolak Atasan: "${selectedRequest.managerNotes}"`}
+                    {!replacementBlocking && selectedRequest && ['revision_requested', 'revision_requested_by_manager'].includes(selectedRequest.status) && `Perlu Revisi: "${selectedRequest.managerNotes}"`}
+                    {!replacementBlocking && selectedRequest && selectedRequest.status === 'cancelled' && 'Pengajuan Dibatalkan'}
+                    {!replacementBlocking && selectedRequest && !['pending_manager', 'pending_manager_review', 'rejected_by_manager', 'revision_requested', 'revision_requested_by_manager', 'cancelled'].includes(selectedRequest.status) && (
                       <div className="space-y-1">
                         <span>Disetujui Atasan pada {selectedRequest.managerReviewedAt ? format(selectedRequest.managerReviewedAt.toDate(), "EEEE, dd MMMM yyyy 'pukul' HH:mm", { locale: idLocale }) : '-'}</span>
                         {selectedRequest.managerNotes && <p className="italic text-slate-400 bg-slate-100 p-1.5 rounded text-[9px] mt-0.5">"{selectedRequest.managerNotes}"</p>}
@@ -2169,10 +2181,10 @@ export default function HrdLeaveApprovalPage() {
                   </div>
                 </div>
 
-                {/* Milestone 3: HRD Verifikasi */}
+                {/* Milestone 4: HRD Verifikasi */}
                 <div className="relative">
                   <div className={`absolute -left-[20px] top-1 h-[12px] w-[12px] rounded-full ring-4 ring-white dark:ring-slate-900 ${
-                    selectedRequest && ['pending_manager', 'pending_manager_review', 'rejected_by_manager', 'revision_requested', 'revision_requested_by_manager', 'cancelled'].includes(selectedRequest.status)
+                    replacementBlocking || (selectedRequest && ['pending_manager', 'pending_manager_review', 'rejected_by_manager', 'revision_requested', 'revision_requested_by_manager', 'cancelled'].includes(selectedRequest.status))
                       ? 'bg-slate-300'
                       : (selectedRequest && ['pending_hrd', 'pending_hrd_review'].includes(selectedRequest.status)
                         ? 'bg-amber-500 animate-pulse'
@@ -2182,11 +2194,12 @@ export default function HrdLeaveApprovalPage() {
                   }`} />
                   <div className="text-xs font-bold text-slate-800 dark:text-white">Verifikasi & Approval HRD</div>
                   <div className="text-[10px] text-slate-500 font-medium mt-0.5">
-                    {selectedRequest && ['pending_manager', 'pending_manager_review', 'rejected_by_manager', 'revision_requested', 'revision_requested_by_manager', 'cancelled'].includes(selectedRequest.status) && 'Menunggu persetujuan atasan'}
-                    {selectedRequest && ['pending_hrd', 'pending_hrd_review'].includes(selectedRequest.status) && 'Menunggu Verifikasi HRD'}
-                    {selectedRequest && selectedRequest.status === 'rejected_by_hrd' && `Ditolak HRD: "${selectedRequest.hrdNotes}"`}
-                    {selectedRequest && selectedRequest.status === 'revision_requested_by_hrd' && `Perlu Revisi: "${selectedRequest.hrdNotes}"`}
-                    {selectedRequest && ['approved', 'approved_by_hrd', 'active_leave', 'completed'].includes(selectedRequest.status) && (
+                    {replacementBlocking && 'Belum masuk tahap HRD.'}
+                    {!replacementBlocking && selectedRequest && ['pending_manager', 'pending_manager_review', 'rejected_by_manager', 'revision_requested', 'revision_requested_by_manager', 'cancelled'].includes(selectedRequest.status) && 'Menunggu persetujuan atasan'}
+                    {!replacementBlocking && selectedRequest && ['pending_hrd', 'pending_hrd_review'].includes(selectedRequest.status) && 'Menunggu Verifikasi HRD'}
+                    {!replacementBlocking && selectedRequest && selectedRequest.status === 'rejected_by_hrd' && `Ditolak HRD: "${selectedRequest.hrdNotes}"`}
+                    {!replacementBlocking && selectedRequest && selectedRequest.status === 'revision_requested_by_hrd' && `Perlu Revisi: "${selectedRequest.hrdNotes}"`}
+                    {!replacementBlocking && selectedRequest && ['approved', 'approved_by_hrd', 'active_leave', 'completed'].includes(selectedRequest.status) && (
                       <div className="space-y-1">
                         <span>Disetujui HRD pada {selectedRequest.hrdReviewedAt ? format(selectedRequest.hrdReviewedAt.toDate(), "EEEE, dd MMMM yyyy 'pukul' HH:mm", { locale: idLocale }) : '-'}</span>
                         {selectedRequest.hrdNotes && <p className="italic text-slate-400 bg-slate-100 p-1.5 rounded text-[9px] mt-0.5">"{selectedRequest.hrdNotes}"</p>}
@@ -2214,6 +2227,8 @@ export default function HrdLeaveApprovalPage() {
                 </div>
 
               </div>
+                );
+              })()}
             </div>
 
             {selectedRequest?.attachmentUrl && (

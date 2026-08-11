@@ -36,14 +36,49 @@ const MANAGER_PENDING_STATUSES = new Set([
   "menunggu_persetujuan_atasan",
 ]);
 
-const HRD_PENDING_STATUSES = new Set(["pending_hrd", "pending_hrd_review", "menunggu_approval_hrd"]);
+// approved_by_manager/approved_by_director are legacy/defensive — the
+// current manager-approval write path (manager/persetujuan-cuti/page.tsx)
+// always writes "pending_hrd" on approve, never these — but older docs (or
+// the pattern shared with permission/overtime approval, which DOES use
+// these names) may still carry them, so they're kept here for parity with
+// what the HRD workspace's "Butuh Tindakan HRD" tab already treated as
+// ready-for-HRD before this file existed.
+const HRD_PENDING_STATUSES = new Set([
+  "pending_hrd",
+  "pending_hrd_review",
+  "menunggu_approval_hrd",
+  "approved_by_manager",
+  "approved_by_director",
+]);
 
 const APPROVED_STATUSES = new Set(["approved", "approved_by_hrd", "disetujui", "disetujui_hrd", "active_leave", "completed"]);
 
 export function getLeaveProcessStage(request: any): LeaveProcessStage {
-  const replacementStatus =
-    request?.replacementConfirmationStatus || request?.replacementConfirmation?.status || "none";
   const status = String(request?.status || "");
+
+  // Legacy docs can have a replacement assigned (replacementEmployeeUid /
+  // handoverEmployeeId, the older compatibility field) without ever having
+  // had replacementConfirmationStatus written — those must still be treated
+  // as "pending", not silently skipped to "none" (which would wrongly let
+  // them read as already past this gate). "manual" is handoverEmployeeId's
+  // own sentinel for "no replacement picked" (see LeaveSubmissionClient.tsx)
+  // and must never count as a real assignment.
+  const hasReplacement =
+    Boolean(request?.replacementEmployeeUid) ||
+    (Boolean(request?.handoverEmployeeId) && request.handoverEmployeeId !== "manual") ||
+    Boolean(request?.replacementUid);
+
+  const rawReplacementStatus: string =
+    request?.replacementConfirmationStatus || request?.replacementConfirmation?.status || "";
+
+  // Only infer "pending" while status hasn't progressed past the manager
+  // stage yet — a request already sitting at pending_hrd/approved cleared
+  // that gate somehow (however confirmation worked when it was written),
+  // so inferring "pending" there would wrongly regress it backwards.
+  const statusAlreadyPastManagerStage = HRD_PENDING_STATUSES.has(status) || APPROVED_STATUSES.has(status);
+
+  const replacementStatus =
+    rawReplacementStatus || (hasReplacement && !statusAlreadyPastManagerStage ? "pending" : "none");
 
   if (replacementStatus === "pending") {
     return {

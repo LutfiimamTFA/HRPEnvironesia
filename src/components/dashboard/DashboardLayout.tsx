@@ -90,12 +90,6 @@ export function DashboardLayout({
 }: DashboardLayoutProps) {
   const { userProfile } = useAuth();
   const firestore = useFirestore();
-
-  // Temporary debug log — remove once the flicker fix is confirmed stable.
-  // If this prints repeatedly with no user interaction, something upstream
-  // is still causing unnecessary re-renders.
-  // eslint-disable-next-line no-console
-  console.log("[DASHBOARD_LAYOUT_RENDER]");
   const pathname = usePathname();
   const router = useRouter();
   // Pengumuman Sistem is informational only — it must never lock access.

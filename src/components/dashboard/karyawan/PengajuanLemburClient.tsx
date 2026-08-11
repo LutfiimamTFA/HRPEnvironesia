@@ -336,6 +336,84 @@ const getTimelineSteps = (
     });
   }
 
+  const NEW_FLOW_STATUSES = new Set([
+    "draft", "submitted", "pending_manager_review", "approved_by_manager",
+    "pending_hrd_review", "approved_by_hrd", "rejected_by_manager",
+    "rejected_by_hrd", "revision_requested", "cancelled",
+  ]);
+  if (NEW_FLOW_STATUSES.has(status)) {
+    const assignerDisplay = (submission as any).taskAssignerName || (submission as any).overtimeCoordinatorName || supervisorName || "atasan";
+    const isRejectedByManager = status === "rejected_by_manager";
+    const isRejectedByHrd = status === "rejected_by_hrd";
+    const isCancelled = status === "cancelled";
+    const isRevision = status === "revision_requested";
+    const pastManagerStage = ["approved_by_manager", "pending_hrd_review", "approved_by_hrd"].includes(status);
+
+    const step1 = {
+      title: "Pengajuan Dikirim",
+      statusLabel: status === "draft" ? "Menunggu" : "Selesai",
+      state: status === "draft" ? "active" : "completed",
+      description: status === "draft" ? "Pengajuan belum dikirim." : "Pengajuan lembur berhasil dikirim.",
+    };
+    const step2 = {
+      title: "Validasi Atasan",
+      state:
+        status === "submitted" || status === "pending_manager_review" ? "active"
+        : isRevision ? "revision"
+        : pastManagerStage ? "completed"
+        : isRejectedByManager ? "rejected"
+        : isCancelled ? "cancelled"
+        : "pending",
+      statusLabel:
+        status === "submitted" || status === "pending_manager_review" ? "Sedang Berjalan"
+        : isRevision ? "Revisi"
+        : pastManagerStage ? "Selesai"
+        : isRejectedByManager ? "Ditolak"
+        : isCancelled ? "Dibatalkan"
+        : "Menunggu",
+      description:
+        status === "submitted" || status === "pending_manager_review" ? `Menunggu validasi dari ${assignerDisplay}.`
+        : isRevision ? "Perlu direvisi sesuai catatan atasan/HRD."
+        : isRejectedByManager ? ((submission as any).managerNotes ? `Ditolak: ${(submission as any).managerNotes}` : "Ditolak oleh atasan.")
+        : pastManagerStage ? "Atasan telah memvalidasi pengajuan."
+        : isCancelled ? "Pengajuan dibatalkan."
+        : "Akan dimulai setelah pengajuan dikirim.",
+    };
+    const step3 = {
+      title: "Verifikasi HRD",
+      state:
+        status === "pending_hrd_review" || status === "approved_by_manager" ? "active"
+        : status === "approved_by_hrd" ? "completed"
+        : isRejectedByHrd ? "rejected"
+        : "pending",
+      statusLabel:
+        status === "pending_hrd_review" || status === "approved_by_manager" ? "Sedang Berjalan"
+        : status === "approved_by_hrd" ? "Selesai"
+        : isRejectedByHrd ? "Ditolak"
+        : "Menunggu",
+      description:
+        status === "pending_hrd_review" || status === "approved_by_manager" ? "Menunggu verifikasi HRD."
+        : status === "approved_by_hrd" ? "HRD telah memverifikasi dan menyetujui pengajuan."
+        : isRejectedByHrd ? ((submission as any).hrdNotes ? `Ditolak: ${(submission as any).hrdNotes}` : "Ditolak oleh HRD.")
+        : "Akan diteruskan ke HRD setelah validasi atasan.",
+    };
+    const step4 = {
+      title: "Selesai",
+      state: status === "approved_by_hrd" ? "completed" : "pending",
+      statusLabel:
+        status === "approved_by_hrd" ? "Selesai"
+        : isRejectedByManager || isRejectedByHrd ? "Tidak Selesai"
+        : isCancelled ? "Dibatalkan"
+        : "Menunggu",
+      description:
+        status === "approved_by_hrd" ? "Pengajuan lembur telah disetujui dan siap masuk rekap/payroll."
+        : isRejectedByManager || isRejectedByHrd ? "Pengajuan tidak selesai karena ditolak."
+        : isCancelled ? "Pengajuan dibatalkan sebelum proses selesai."
+        : "Pengajuan selesai setelah verifikasi HRD.",
+    };
+    return [step1, step2, step3, step4];
+  }
+
   const coordinatorDisplay =
     (submission as any).overtimeCoordinatorName || "pengawas/koordinator";
   const supervisorDisplay =
@@ -577,10 +655,11 @@ const isPendingStatus = (status: string) =>
   status === "pending_manager" ||
   status === "pending_hrd" ||
   status === "approved_by_manager" ||
+  status === "submitted" ||
   status.startsWith("pending");
 
 const isApprovedStatus = (status: string) =>
-  status === "approved" || status === "approved_hrd";
+  status === "approved" || status === "approved_hrd" || status === "approved_by_hrd";
 
 const isRejectedStatus = (status: string) =>
   status === "rejected" || status.startsWith("rejected");
@@ -619,6 +698,56 @@ const getStatusMeta = (status: string) => {
       nextStep: "Lengkapi draf dan kirim pengajuan lembur.",
       alertVariant: "warning" as const,
       activeStep: 0,
+    };
+  }
+
+  // Current flow (manual-only, staff -> atasan -> HRD, no coordinator stage).
+  if (status === "submitted" || status === "pending_manager_review") {
+    return {
+      waitingFor: "Atasan",
+      nextStep: "Menunggu validasi dari atasan.",
+      alertVariant: "default" as const,
+      activeStep: 1,
+    };
+  }
+  if (status === "approved_by_manager" || status === "pending_hrd_review") {
+    return {
+      waitingFor: "Tim HRD",
+      nextStep: "Menunggu verifikasi akhir HRD.",
+      alertVariant: "default" as const,
+      activeStep: 2,
+    };
+  }
+  if (status === "approved_by_hrd") {
+    return {
+      waitingFor: "Selesai",
+      nextStep: "Pengajuan lembur telah disetujui HRD.",
+      alertVariant: "default" as const,
+      activeStep: 3,
+    };
+  }
+  if (status === "rejected_by_manager" || status === "rejected_by_hrd") {
+    return {
+      waitingFor: "Selesai",
+      nextStep: "Pengajuan lembur ditolak. Lihat detail untuk alasan.",
+      alertVariant: "destructive" as const,
+      activeStep: 3,
+    };
+  }
+  if (status === "revision_requested") {
+    return {
+      waitingFor: "Anda",
+      nextStep: "Revisi pengajuan sesuai catatan yang diterima.",
+      alertVariant: "warning" as const,
+      activeStep: 0,
+    };
+  }
+  if (status === "cancelled") {
+    return {
+      waitingFor: "Selesai",
+      nextStep: "Pengajuan lembur dibatalkan.",
+      alertVariant: "default" as const,
+      activeStep: 3,
     };
   }
 
@@ -1353,15 +1482,8 @@ export function PengajuanLemburClient() {
           onActionClick={handleAction}
         />
 
-        <div className="grid gap-4 md:grid-cols-4 xl:grid-cols-8">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <KpiCard title="Draft Persiapan" value={summary.draft} />
-          <KpiCard title="Timer Aktif" value={summary.timerActive} />
-          <KpiCard
-            title="Dijeda"
-            value={summary.timerPaused}
-            deltaType="inverse"
-          />
-          <KpiCard title="Siap Diajukan" value={summary.readyToSubmit} />
           <KpiCard title="Menunggu Persetujuan" value={summary.pending} />
           <KpiCard
             title="Perlu Revisi"
@@ -1375,14 +1497,6 @@ export function PengajuanLemburClient() {
             deltaType="inverse"
           />
         </div>
-
-        {activeRealtimeSubmission && (
-          <RealtimeActiveCard
-            submission={activeRealtimeSubmission}
-            nowMs={nowMs}
-            onOpen={(submission) => handleAction("edit", submission)}
-          />
-        )}
 
         <Card>
           <CardHeader>
@@ -1406,7 +1520,7 @@ export function PengajuanLemburClient() {
                       Lokasi
                     </TableHead>
                     <TableHead className="px-3 py-3 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                      Ringkasan Pekerjaan
+                      Pekerjaan
                     </TableHead>
                     <TableHead className="px-3 py-3 text-left text-xs uppercase tracking-wide text-muted-foreground">
                       Status
@@ -1504,7 +1618,16 @@ export function PengajuanLemburClient() {
                           {locationLabel}
                         </TableCell>
                         <TableCell className="px-3 py-3 align-top text-sm text-muted-foreground truncate">
-                          {s.reason || "Tidak ada ringkasan pekerjaan."}
+                          {(s as any).jobs?.length ? (
+                            <>
+                              <div className="truncate">{(s as any).jobs[0]?.title || "Pekerjaan Lembur"}</div>
+                              {(s as any).jobs.length > 1 && (
+                                <div className="text-xs text-muted-foreground">+{(s as any).jobs.length - 1} pekerjaan lainnya</div>
+                              )}
+                            </>
+                          ) : (
+                            s.reason || "Tidak ada ringkasan pekerjaan."
+                          )}
                         </TableCell>
                         <TableCell className="px-3 py-3 align-top">
                           {lifecycle ? (
@@ -1549,10 +1672,10 @@ export function PengajuanLemburClient() {
         submission={selectedSubmission}
         employeeProfile={employeeProfile}
         brands={brands || []}
+        existingSubmissions={submissions || []}
         formMode={formMode}
         onSuccess={mutate}
         onRequestEdit={() => setFormMode("edit")}
-        existingRealtimeDrafts={existingRealtimeDrafts}
       />
 
       <DeleteConfirmationDialog

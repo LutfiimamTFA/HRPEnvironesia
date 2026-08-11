@@ -27,6 +27,7 @@ import {
   arrayUnion,
 } from "firebase/firestore";
 import { sendNotification, sendHrdNotification } from "@/lib/notifications";
+import { getOvertimeStatusLabel, getAnomalyFlagLabel } from "@/lib/overtime-utils";
 import { format } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -175,7 +176,16 @@ export function ReviewOvertimeDialog({
     (submission as any).approvalStatus || submission.status || "draft";
   const isCoordinatorReview =
     mode === "manager" && resolvedStatus === "pending_coordinator";
-  const tasks = submission.taskDetails || submission.tasks || [];
+  // Current flow submissions carry a real jobs[] array (Daftar Pekerjaan
+  // Lembur — multiple distinct pieces of work per submission); older docs
+  // only ever had a single taskDetails[]/tasks[] list. Map jobs[] into the
+  // same {description, estimatedMinutes} shape so the existing table below
+  // keeps working for both, with a richer per-job output/evidence panel
+  // added separately for jobs[] submissions only.
+  const jobs = submission.jobs && submission.jobs.length > 0 ? submission.jobs : null;
+  const tasks = jobs
+    ? jobs.map((j) => ({ description: j.title, estimatedMinutes: j.estimatedDurationMinutes, actualMinutes: null as number | null }))
+    : (submission.taskDetails || submission.tasks || []);
   const totalEstimatedMinutes = tasks.reduce(
     (sum, task) => sum + (task.estimatedMinutes || 0),
     0,
@@ -195,12 +205,28 @@ export function ReviewOvertimeDialog({
       if (resolvedStatus === "pending_coordinator") {
         return submission.overtimeCoordinatorUid === userProfile.uid;
       }
-      if (resolvedStatus === "pending_supervisor" || resolvedStatus === "pending_manager" || resolvedStatus === "revision_manager") {
-        return submission.directSupervisorUid === userProfile.uid || submission.managerUid === userProfile.uid;
+      if (
+        resolvedStatus === "submitted" ||
+        resolvedStatus === "pending_manager_review" ||
+        resolvedStatus === "pending_supervisor" ||
+        resolvedStatus === "pending_manager" ||
+        resolvedStatus === "revision_manager"
+      ) {
+        // taskAssignerUid is intentionally NOT checked here — it can now
+        // be a same-division staff colleague picked purely as an
+        // informational "pemberi tugas" (see OvertimeSubmissionForm.tsx's
+        // same_division_staff group), who must never gain approval
+        // rights. overtimeCoordinatorUid is always written to the real
+        // atasan/manager approver regardless of who taskAssignerUid is.
+        return (
+          submission.overtimeCoordinatorUid === userProfile.uid ||
+          submission.directSupervisorUid === userProfile.uid ||
+          submission.managerUid === userProfile.uid
+        );
       }
     }
     if (mode === "hrd") {
-      return ["pending_hrd", "approved_by_manager", "revision_hrd", "revision_requested_by_hrd", "verified_manager"].includes(resolvedStatus);
+      return ["pending_hrd_review", "pending_hrd", "approved_by_manager", "revision_hrd", "revision_requested_by_hrd", "verified_manager"].includes(resolvedStatus);
     }
     return false;
   };
@@ -211,24 +237,7 @@ export function ReviewOvertimeDialog({
   const isManagerOrHrd = mode === "hrd" || (userProfile && (submission.directSupervisorUid === userProfile.uid || submission.managerUid === userProfile.uid));
   const canRecordProxyApproval = resolvedStatus === "pending_coordinator" && !!isManagerOrHrd && submission.overtimeCoordinatorUid !== userProfile?.uid;
 
-  const approvalStatusLabels: Record<string, string> = {
-    pending_coordinator: "Menunggu Review Koordinator",
-    pending_supervisor: "Menunggu Review Manager Divisi",
-    pending_hrd: "Diteruskan ke HRD",
-    needs_revision: "Perlu Revisi",
-    revision_manager: "Perlu Revisi",
-    revision_hrd: "Perlu Revisi",
-    approved_hrd: "Disetujui HRD",
-    approved: "Disetujui HRD",
-    rejected_manager: "Ditolak Manager Divisi",
-    rejected_hrd: "Ditolak HRD",
-    rejected: "Ditolak",
-    cancelled: "Dibatalkan",
-    draft: "Draft",
-  };
-
-  const getApprovalStatusLabel = (status: string) =>
-    approvalStatusLabels[status] || status || "-";
+  const getApprovalStatusLabel = (status: string) => getOvertimeStatusLabel(status);
 
   const workLocationLabel = getWorkLocationDisplay(submission);
 
@@ -249,7 +258,51 @@ export function ReviewOvertimeDialog({
     return "border-amber-200 bg-amber-50 text-amber-700";
   };
 
-  const approvalTimelineSteps = [
+  const isNewFlowStatus = [
+    "draft", "submitted", "pending_manager_review", "approved_by_manager",
+    "pending_hrd_review", "approved_by_hrd", "rejected_by_manager",
+    "rejected_by_hrd", "revision_requested", "cancelled",
+  ].includes(resolvedStatus);
+
+  // Current flow — no coordinator stage, so the timeline is a clean 4 steps.
+  const newFlowTimelineSteps = [
+    {
+      title: "Pengajuan Dibuat",
+      reviewer: submission.employeeName || submission.fullName || "Karyawan",
+      state: "Selesai",
+    },
+    {
+      title: "Validasi Atasan",
+      reviewer: submission.taskAssignerName || (submission as any).overtimeCoordinatorName || submission.directSupervisorName || "Atasan",
+      state:
+        resolvedStatus === "submitted" || resolvedStatus === "pending_manager_review" ? "Menunggu"
+        : resolvedStatus === "rejected_by_manager" ? "Ditolak"
+        : resolvedStatus === "revision_requested" && submission.revisionRequestedAtStage !== "hrd" ? "Revisi"
+        : ["approved_by_manager", "pending_hrd_review", "approved_by_hrd"].includes(resolvedStatus) ? "Selesai"
+        : "Menunggu",
+    },
+    {
+      title: "Verifikasi HRD",
+      reviewer: submission.hrdReviewedByName || "Tim HRD",
+      state:
+        resolvedStatus === "pending_hrd_review" || resolvedStatus === "approved_by_manager" ? "Menunggu"
+        : resolvedStatus === "rejected_by_hrd" ? "Ditolak"
+        : resolvedStatus === "revision_requested" && submission.revisionRequestedAtStage === "hrd" ? "Revisi"
+        : resolvedStatus === "approved_by_hrd" ? "Selesai"
+        : "Menunggu",
+    },
+    {
+      title: "Selesai",
+      reviewer: getApprovalStatusLabel(resolvedStatus),
+      state:
+        resolvedStatus === "approved_by_hrd" ? "Selesai"
+        : resolvedStatus.includes("rejected") ? "Ditolak"
+        : resolvedStatus === "revision_requested" ? "Revisi"
+        : "Menunggu",
+    },
+  ];
+
+  const legacyTimelineSteps = [
     {
       title: "Pengajuan Dibuat",
       reviewer: submission.employeeName || submission.fullName || "Karyawan",
@@ -326,6 +379,8 @@ export function ReviewOvertimeDialog({
               : "Menunggu",
     },
   ];
+
+  const approvalTimelineSteps = isNewFlowStatus ? newFlowTimelineSteps : legacyTimelineSteps;
 
   const handleDecision = async (
     decision: "approve" | "reject" | "revise",
@@ -420,42 +475,62 @@ export function ReviewOvertimeDialog({
             } as any;
           }
         } else {
+          // Current flow (no coordinator stage) — every new submission and
+          // any legacy pending_supervisor/pending_manager doc lands here.
           if (decision === "approve") {
             payload = {
-              approvalStatus: "pending_hrd",
-              status: "pending_hrd",
+              approvalStatus: "pending_hrd_review",
+              status: "pending_hrd_review",
+              currentApprovalStep: "hrd",
+              currentApproverUid: null,
               supervisorApprovedAt: serverTimestamp() as any,
               supervisorApprovedBy: userProfile.uid,
               supervisorApprovedByName: operatorName || null,
               managerNotes: note || null,
               managerDecisionAt: serverTimestamp() as any,
+              managerDecision: "approved",
+              managerReviewedAt: serverTimestamp() as any,
+              managerReviewedBy: userProfile.uid,
+              managerReviewedByName: operatorName || null,
             };
           } else if (decision === "reject") {
             payload = {
-              approvalStatus: "rejected_manager",
-              status: "rejected_manager",
+              approvalStatus: "rejected_by_manager",
+              status: "rejected_by_manager",
               rejectedAt: serverTimestamp() as any,
               rejectedBy: userProfile.uid,
               rejectionReason: note || null,
               managerDecisionAt: serverTimestamp() as any,
+              managerDecision: "rejected",
+              managerReviewedAt: serverTimestamp() as any,
+              managerReviewedBy: userProfile.uid,
+              managerReviewedByName: operatorName || null,
+              managerNotes: note || null,
             };
           } else if (decision === "revise") {
             payload = {
-              approvalStatus: "revision_manager",
-              status: "revision_manager",
+              approvalStatus: "revision_requested",
+              status: "revision_requested",
               revisionRequestedAt: serverTimestamp() as any,
               revisionRequestedBy: userProfile.uid,
+              revisionRequestedAtStage: "manager",
               revisionNote: note || null,
+              revisionReason: note || null,
               managerDecisionAt: serverTimestamp() as any,
+              managerDecision: "revision_requested",
+              managerReviewedAt: serverTimestamp() as any,
+              managerReviewedBy: userProfile.uid,
+              managerReviewedByName: operatorName || null,
+              managerNotes: note || null,
             };
           }
         }
       } else {
         let status: OvertimeSubmission["status"] =
           resolvedStatus as OvertimeSubmission["status"];
-        if (decision === "approve") status = "approved_hrd";
-        else if (decision === "reject") status = "rejected_hrd";
-        else if (decision === "revise") status = "revision_hrd";
+        if (decision === "approve") status = "approved_by_hrd";
+        else if (decision === "reject") status = "rejected_by_hrd";
+        else if (decision === "revise") status = "revision_requested";
 
         const finalApprovedMinutes = decision === "approve" ? approvedMinutesFinal : null;
         payload = {
@@ -464,6 +539,11 @@ export function ReviewOvertimeDialog({
           hrdReviewerUid: userProfile.uid,
           hrdNotes: note || null,
           hrdDecisionAt: serverTimestamp() as any,
+          hrdDecision: decision === "approve" ? "approved" : decision === "reject" ? "rejected" : "revision_requested",
+          hrdReviewedAt: serverTimestamp() as any,
+          hrdReviewedBy: userProfile.uid,
+          hrdReviewedByName: operatorName || null,
+          ...(decision === "revise" && { revisionRequestedAtStage: "hrd", revisionReason: note || null }),
           approvedMinutesFinal: finalApprovedMinutes,
           // Over-limit audit fields
           ...(isOverLimit && {
@@ -1067,6 +1147,22 @@ export function ReviewOvertimeDialog({
                 />
               </div>
 
+              {(submission.anomalyFlags?.length || 0) > 0 && (
+                <Alert className="border-amber-200 bg-amber-50">
+                  <Info className="h-4 w-4 text-amber-600" />
+                  <AlertDescription className="text-amber-800">
+                    <p className="mb-1 font-semibold">Indikator Perlu Review:</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(submission.anomalyFlags || []).map((flag) => (
+                        <span key={flag} className="rounded-full border border-amber-300 bg-white px-2.5 py-0.5 text-xs font-semibold text-amber-700">
+                          {getAnomalyFlagLabel(flag)}
+                        </span>
+                      ))}
+                    </div>
+                  </AlertDescription>
+                </Alert>
+              )}
+
               <div className="grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.9fr)]">
                 <Card className="rounded-3xl border border-slate-200 bg-white shadow-sm">
                   <CardHeader className="border-b border-slate-100 px-6 py-5">
@@ -1154,6 +1250,38 @@ export function ReviewOvertimeDialog({
                       <p className="text-sm text-muted-foreground">
                         Tidak ada rincian tugas.
                       </p>
+                    )}
+
+                    {jobs && (
+                      <div className="space-y-3">
+                        <p className="text-sm font-bold text-slate-950">Output & Bukti per Pekerjaan</p>
+                        {jobs.map((job, i) => (
+                          <div key={job.id || i} className="rounded-2xl border border-slate-200 bg-white p-4 space-y-2">
+                            <p className="text-sm font-semibold text-slate-900">{i + 1}. {job.title}</p>
+                            {job.projectOrClient && <p className="text-xs text-slate-500">{job.projectOrClient}</p>}
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Output</p>
+                              <p className="text-sm text-slate-700">{job.workOutput || "-"}</p>
+                            </div>
+                            {((job.evidenceFiles?.length || 0) + (job.evidenceLinks?.length || 0)) > 0 ? (
+                              <div className="space-y-1 pt-1">
+                                {(job.evidenceFiles || []).map((f, fi) => (
+                                  <a key={`f-${fi}`} href={f.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-blue-600 hover:underline">
+                                    <FileText className="h-3 w-3 shrink-0" /> {f.name || `Lampiran ${fi + 1}`}
+                                  </a>
+                                ))}
+                                {(job.evidenceLinks || []).map((link, li) => (
+                                  <a key={`l-${li}`} href={link} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-blue-600 hover:underline">
+                                    <ExternalLink className="h-3 w-3 shrink-0" /> {link}
+                                  </a>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-xs font-semibold text-amber-600">Bukti belum lengkap untuk pekerjaan ini.</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     )}
 
                     <div className="rounded-2xl border border-slate-200 bg-white p-5">

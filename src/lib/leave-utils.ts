@@ -109,11 +109,18 @@ export function checkLeaveEligibility(
     return { isEligible: false, reason: "Magang tidak mendapat cuti tahunan.", allowance: 0 };
   }
 
-  // 2. Probation/training does not get leave
+  // 2. Probation/training does not get leave. "probation" is an employee
+  // TYPE — determined from employeeType (hrdEmploymentInfo.tipeKaryawan/
+  // employeeType/employmentType) ONLY, never from `stage`
+  // (employmentStatus/statusKerja/employmentStage), which is an OPERATIONAL
+  // status field that can be left stale as "probation" after HRD updates
+  // only the employee's type to "Kontrak" — checking it here used to block
+  // that employee's cuti eligibility even though their type was already
+  // Kontrak. "training" has no type-field equivalent, so it's still read
+  // from `stage` as a genuine operational-status signal.
   if (
-    employeeType.includes('probation') || 
-    employeeType.includes('training') || 
-    stage.includes('probation') || 
+    employeeType.includes('probation') ||
+    employeeType.includes('training') ||
     stage.includes('training')
   ) {
     return { isEligible: false, reason: "Probation/training tidak mendapat cuti tahunan.", allowance: 0 };

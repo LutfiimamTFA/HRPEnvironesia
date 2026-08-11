@@ -701,42 +701,265 @@ service cloud.firestore {
     }
 
     match /overtime_submissions/{submissionId} {
+      // employeeUid is the canonical owner field every current write sets
+      // (OvertimeSubmissionForm.tsx) — uid/userId are legacy mirrors kept
+      // for older docs/readers. Checking all three means neither an old doc
+      // nor the current write path gets incorrectly denied.
+      function isOvertimeOwnerRead(data) {
+        return data.get('employeeUid', '') == request.auth.uid ||
+               data.get('uid', '') == request.auth.uid ||
+               data.get('userId', '') == request.auth.uid;
+      }
       function isSubmissionOwner() {
-        return request.auth.uid == resource.data.uid;
+        return isOvertimeOwnerRead(resource.data);
       }
-      function isRequester() {
-        return request.auth.uid == request.resource.data.uid;
+      // The staff member's own choice of "Atasan / Koordinator Pemberi
+      // Tugas" (taskAssignerUid) is informational only — since it can now
+      // also be a same-division staff colleague (not an approver), reading
+      // it is fine (they're named on the doc) but it must NOT grant write/
+      // approval rights on its own. overtimeCoordinatorUid is always
+      // written to the REAL approver (atasan/manager) by
+      // OvertimeSubmissionForm.tsx regardless of who taskAssignerUid is, so
+      // write authorization keys off that (plus directSupervisorUid/
+      // managerUid) instead — see isAssignedApprover() below.
+      function isNamedTaskAssigner(submission) {
+        return request.auth.uid == submission.get('taskAssignerUid', null) ||
+               request.auth.uid == submission.get('overtimeCoordinatorUid', null) ||
+               request.auth.uid == submission.get('directSupervisorUid', null) ||
+               request.auth.uid == submission.get('managerUid', null);
       }
-      
-      // Allow read by owner, their manager, HR, or Super Admin
+      function isAssignedApprover(submission) {
+        return request.auth.uid == submission.get('overtimeCoordinatorUid', null) ||
+               request.auth.uid == submission.get('directSupervisorUid', null) ||
+               request.auth.uid == submission.get('managerUid', null);
+      }
+
+      // ── Manual overtime create (OvertimeSubmissionForm.tsx) ─────────────
+      // The old rule gated create on isInternal()'s role whitelist, which
+      // only recognizes role == 'karyawan' — any employee doc whose role
+      // field drifted to a different value (seen elsewhere in this app,
+      // e.g. 'staff') got "Missing or insufficient permissions" on submit.
+      // These checks validate the submission's *shape* instead (owner,
+      // brand, a resolvable non-self approver, correct first-stage status,
+      // required fields present) so they don't depend on role-field values
+      // staying consistent.
+      function overtimeOwnerUidOnCreate() {
+        return request.resource.data.get('employeeUid',
+          request.resource.data.get('uid',
+            request.resource.data.get('userId', '')));
+      }
+      function overtimeBrandIdOnCreate() {
+        return request.resource.data.get('brandId',
+          request.resource.data.get('companyId',
+            request.resource.data.get('brandID', '')));
+      }
+      function overtimeApproverUidOnCreate() {
+        return request.resource.data.get('currentApproverUid',
+          request.resource.data.get('approvalTargetUid',
+            request.resource.data.get('directSupervisorUid',
+              request.resource.data.get('managerUid', ''))));
+      }
+      function hasManualOvertimeRequiredFields() {
+        return request.resource.data.get('inputMode', 'manual') == 'manual'
+          && overtimeOwnerUidOnCreate() == request.auth.uid
+          && overtimeBrandIdOnCreate() is string
+          && overtimeBrandIdOnCreate() != ''
+          && overtimeApproverUidOnCreate() is string
+          && overtimeApproverUidOnCreate() != ''
+          && overtimeApproverUidOnCreate() != request.auth.uid
+          && request.resource.data.get('status', '') in [
+            'pending_manager_review', 'submitted', 'pending_supervisor', 'pending_atasan'
+          ]
+          && request.resource.data.get('currentApprovalStep', '') in [
+            'manager', 'supervisor', 'atasan'
+          ]
+          && request.resource.data.get('overtimeDate', '') != ''
+          && request.resource.data.get('startTime', '') != ''
+          && request.resource.data.get('endTime', '') != ''
+          && request.resource.data.get('durationMinutes', 0) is number
+          && request.resource.data.get('durationMinutes', 0) > 0
+          && request.resource.data.get('hasSupportingEvidence', false) == true
+          && request.resource.data.get('declarationAccepted', false) == true;
+      }
+      // Every field basePayload in OvertimeSubmissionForm.tsx can send on
+      // create (incl. 'division'/'workRole'/'holidayTypeOther'/
+      // 'isDirectSupervisor', which the original spec for this whitelist
+      // missed and would have reintroduced the same permission error for a
+      // different reason), plus long-lived legacy/compat synonyms.
+      function manualOvertimeCreateKeys() {
+        return [
+          // identity
+          'employeeUid', 'uid', 'userId', 'employeeName', 'employeeCode',
+          'employeeType', 'position', 'jobTitle', 'workRole',
+          // scope
+          'brandId', 'brandName', 'companyId', 'companyName',
+          'divisionId', 'divisionName', 'division',
+          // overtime mode
+          'inputMode',
+          // date/time
+          'overtimeDate', 'overtimeDateStr', 'overtimeDay',
+          'startTime', 'endTime', 'startTimeMinutes', 'endTimeMinutes',
+          'durationMinutes', 'durationHours', 'totalDurationMinutes', 'isCrossDay',
+          // type/category
+          'overtimeType', 'overtimeTypeLabel', 'holidayType', 'holidayTypeLabel', 'holidayTypeOther',
+          // location
+          'workLocation', 'workLocationLabel', 'workLocationOther', 'workLocationDetail',
+          'location', 'locationDetail',
+          // task assigner / coordinator
+          'taskAssignerUid', 'taskAssignerName', 'taskAssignerRole', 'taskAssignerRoleLabel',
+          'taskAssignerPosition', 'taskAssignerDivisionId', 'taskAssignerDivisionName',
+          'taskAssignerBrandId', 'taskAssignerBrandName', 'taskAssignerGroup', 'isDirectSupervisor',
+          // compatibility old coordinator fields
+          'overtimeCoordinatorUid', 'overtimeCoordinatorName', 'overtimeCoordinatorRole',
+          'overtimeCoordinatorPosition', 'overtimeCoordinatorEmail', 'overtimeInstructionNote',
+          // assignment context
+          'assignmentType', 'assignmentTypeLabel', 'assignmentTypeOther', 'projectOrClient',
+          // jobs
+          'jobs', 'tasks', 'taskDetails', 'totalJobDurationMinutes',
+          // reason/output/evidence
+          'workSummary', 'workOutput', 'overtimeReason', 'reason', 'reasonDetail',
+          'evidenceFiles', 'evidenceLinks', 'attachments', 'attachmentUrls',
+          'supportingEvidence', 'hasSupportingEvidence',
+          // declaration
+          'declarationAccepted', 'declarationAcceptedAt',
+          // anomaly/review
+          'anomalyFlags', 'reviewLevel', 'reviewStatus',
+          // approval flow
+          'status', 'approvalStatus', 'approvalLevel', 'approvalFlowType', 'approvalFlow',
+          'currentApprovalStep', 'currentApproverUid', 'approvalTargetUid',
+          'waitingForUid', 'waitingForName', 'waitingForRole',
+          // supervisor/manager
+          'directSupervisorUid', 'directSupervisorName', 'managerUid', 'managerName', 'managerDivisionName',
+          // timeline / metadata
+          'timeline', 'createdAt', 'updatedAt', 'submittedAt',
+          'createdByUid', 'createdByName', 'submittedByUid', 'submittedByName'
+        ];
+      }
+      function isValidManualOvertimeCreateFields() {
+        return request.resource.data.keys().hasOnly(manualOvertimeCreateKeys());
+      }
+      function isEmployeeManualOvertimeCreate() {
+        return isSignedIn()
+          && hasManualOvertimeRequiredFields()
+          && isValidManualOvertimeCreateFields();
+      }
+
+      // Allow read by owner, their approver, HR, or Super Admin
       allow get: if isSignedIn() && (
-        isSubmissionOwner() ||
-        isAssignedManager(resource.data) ||
         isSuperAdmin() ||
+        isOvertimeOwnerRead(resource.data) ||
+        isAssignedManager(resource.data) ||
+        isNamedTaskAssigner(resource.data) ||
         (isHrd() && hrdCanReadBrandData(resource.data))
       );
       allow list: if isSignedIn() && (
-        request.auth.uid == resource.data.uid ||
-        isAssignedManager(resource.data) ||
         isSuperAdmin() ||
+        isOvertimeOwnerRead(resource.data) ||
+        isAssignedManager(resource.data) ||
+        isNamedTaskAssigner(resource.data) ||
         (isHrd() && hrdCanReadBrandData(resource.data))
       );
+      // NOTE for the frontend: staff must still query scoped to themselves
+      // (where("employeeUid", "==", currentUser.uid)) — this rule allows a
+      // scoped query to succeed, it does not make a global/unscoped list
+      // query legal (that would still be denied for docs owned by others).
 
-      // Allow create by an internal user for themselves
-      allow create: if isInternal() && isRequester();
+      // Staff can create their own manual overtime submission as long as it
+      // carries a resolvable owner/brand/approver and starts in the correct
+      // first-stage status — never a bare isSignedIn() passthrough.
+      allow create: if isSignedIn() && (
+        isSuperAdmin() ||
+        isEmployeeManualOvertimeCreate()
+      );
+
+      // Owner can cancel their own pending submission — status change only,
+      // no smuggling other field edits in alongside the cancellation.
+      // PengajuanLemburClient.tsx's cancel button actually writes
+      // approvalStatus: 'cancelled' via a merge (not status), so both field
+      // names are accepted here — requiring only 'status' would make this
+      // rule pass code review but still deny the real cancel button.
+      function isEmployeeOvertimeCancelUpdate() {
+        let changed = request.resource.data.diff(resource.data).affectedKeys();
+        return isOvertimeOwnerRead(resource.data)
+          && resource.data.get('status', '') in [
+            'submitted', 'pending_manager_review', 'pending_supervisor', 'pending_atasan'
+          ]
+          && (
+            request.resource.data.get('status', '') == 'cancelled' ||
+            request.resource.data.get('approvalStatus', '') == 'cancelled'
+          )
+          && changed.hasOnly([
+            'status', 'approvalStatus', 'cancelledAt', 'cancelledByUid', 'cancelledBy',
+            'cancelledByName', 'cancellationReason', 'updatedAt'
+          ]);
+      }
+      // Owner resubmits after manager/HRD asked for a revision. Only the
+      // business fields the form actually resends may change — identity/
+      // brand/audit-trail create-only fields are deliberately left out so a
+      // revision update can never be used to reassign ownership or scope.
+      // 'editHistory' is required here (not in the original spec) because
+      // the form's resubmit path always does arrayUnion(editEntry) on it.
+      function isEmployeeOvertimeRevisionUpdate() {
+        let changed = request.resource.data.diff(resource.data).affectedKeys();
+        return isOvertimeOwnerRead(resource.data)
+          && resource.data.get('status', '') in [
+            'revision_requested', 'revision_requested_by_manager', 'revision_requested_by_hrd'
+          ]
+          && request.resource.data.get('status', '') in ['pending_manager_review', 'submitted']
+          && changed.hasOnly([
+            'overtimeDate', 'overtimeDateStr', 'overtimeDay',
+            'startTime', 'endTime', 'startTimeMinutes', 'endTimeMinutes',
+            'durationMinutes', 'durationHours', 'totalDurationMinutes', 'isCrossDay',
+            'overtimeType', 'overtimeTypeLabel', 'holidayType', 'holidayTypeLabel', 'holidayTypeOther',
+            'workLocation', 'workLocationLabel', 'workLocationOther', 'workLocationDetail',
+            'taskAssignerUid', 'taskAssignerName', 'taskAssignerRole', 'taskAssignerRoleLabel',
+            'taskAssignerPosition', 'taskAssignerDivisionId', 'taskAssignerDivisionName',
+            'taskAssignerBrandId', 'taskAssignerBrandName', 'taskAssignerGroup', 'isDirectSupervisor',
+            'overtimeCoordinatorUid', 'overtimeCoordinatorName', 'overtimeCoordinatorPosition',
+            'assignmentType', 'assignmentTypeLabel', 'assignmentTypeOther', 'projectOrClient',
+            'jobs', 'tasks', 'taskDetails', 'totalJobDurationMinutes',
+            'workSummary', 'workOutput', 'overtimeReason', 'reason', 'reasonDetail',
+            'evidenceFiles', 'evidenceLinks', 'attachments', 'attachmentUrls',
+            'supportingEvidence', 'hasSupportingEvidence',
+            'declarationAccepted', 'declarationAcceptedAt',
+            'anomalyFlags', 'reviewLevel', 'reviewStatus',
+            'status', 'approvalStatus', 'currentApprovalStep', 'currentApproverUid', 'approvalTargetUid',
+            'waitingForUid', 'waitingForName', 'waitingForRole',
+            'timeline', 'updatedAt', 'editHistory'
+          ]);
+      }
 
       // Allow update logic
       allow update: if isSignedIn() && (
-        // Owner can update their draft or revision request
-        (isSubmissionOwner() && (resource.data.status == 'draft' || resource.data.status.startsWith('revision_'))) ||
-        // Manager can act on pending_manager requests
+        // Owner can update their own draft — legacy path, no status other
+        // than 'draft' is written by the current manual create flow but
+        // kept for backward compat with older docs/writers.
+        (isSubmissionOwner() && resource.data.status == 'draft') ||
+        isEmployeeOvertimeCancelUpdate() ||
+        isEmployeeOvertimeRevisionUpdate() ||
+        // Current flow: the assigned atasan/koordinator can act while the
+        // submission is waiting on them — "submitted"/"pending_manager_review",
+        // plus legacy pending_manager/pending_supervisor/pending_coordinator
+        // for older docs.
+        (isAssignedApprover(resource.data) && (
+          resource.data.status == 'submitted' ||
+          resource.data.status == 'pending_manager_review' ||
+          resource.data.status == 'pending_manager' ||
+          resource.data.status == 'pending_supervisor' ||
+          resource.data.status == 'pending_coordinator'
+        )) ||
+        // Division-manager fallback (legacy docs without a resolvable task assigner uid)
         (isAssignedManager(resource.data) && resource.data.status == 'pending_manager') ||
-        // HRD can act on pending_hrd or approved_by_manager requests
-        (isHrd() && hrdCanUpdateBrandData(resource.data, request.resource.data) && (resource.data.status == 'pending_hrd' || resource.data.status == 'approved_by_manager')) ||
+        // HRD can act on pending_hrd_review/approved_by_manager, plus legacy pending_hrd
+        (isHrd() && hrdCanUpdateBrandData(resource.data, request.resource.data) && (
+          resource.data.status == 'pending_hrd_review' ||
+          resource.data.status == 'approved_by_manager' ||
+          resource.data.status == 'pending_hrd'
+        )) ||
         // Super Admin can always update
         isSuperAdmin()
       );
-      
+
       allow delete: if isSuperAdmin() || (isSubmissionOwner() && resource.data.status == 'draft');
     }
 
@@ -1016,6 +1239,59 @@ service cloud.firestore {
           ]);
       }
 
+      // A leave_requests doc can have a named replacement assigned
+      // (replacementEmployeeUid / the legacy handoverEmployeeId field) whose
+      // own confirmation must land before either the manager or HRD may
+      // record an approval decision — mirrors getLeaveProcessStage() in
+      // src/lib/leave-process-stage.ts so the same gate exists at the rules
+      // layer, not just in the UI (a manager/HRD client could otherwise
+      // write an approval decision directly, bypassing a UI-only check).
+      function leaveHasReplacement(data) {
+        return data.get('replacementEmployeeUid', '') != '' ||
+          (data.get('handoverEmployeeId', '') != '' && data.get('handoverEmployeeId', '') != 'manual') ||
+          data.get('replacementUid', '') != '';
+      }
+
+      function leaveReplacementStatus(data) {
+        let raw = data.get('replacementConfirmationStatus', '');
+        return raw != '' ? raw : (leaveHasReplacement(data) ? 'pending' : 'none');
+      }
+
+      function replacementReadyForApproval(data) {
+        return leaveReplacementStatus(data) != 'pending' && leaveReplacementStatus(data) != 'rejected';
+      }
+
+      // HRD's own approval decision (ACC/Tolak/Revisi) — status must move
+      // from a pending-HRD bucket into an HRD-decision status, the named
+      // replacement (if any) must already be confirmed, and only the
+      // decision fields themselves may change. Distinct from
+      // isHrdApprovalRoutingFixUpdate() below, which is a separate, narrower
+      // administrative repair path — HRD must never get a single free-form
+      // "can write brand data" update branch for this collection.
+      function isHrdLeaveDecisionUpdate() {
+        let changed = request.resource.data.diff(resource.data).affectedKeys();
+        return isHrd() &&
+          hrdCanUpdateBrandData(resource.data, request.resource.data) &&
+          replacementReadyForApproval(resource.data) &&
+          resource.data.status in ['pending_hrd', 'pending_hrd_review', 'menunggu_approval_hrd', 'approved_by_manager', 'approved_by_director'] &&
+          request.resource.data.status in ['approved_by_hrd', 'rejected_by_hrd', 'revision_requested_by_hrd'] &&
+          changed.hasOnly(['status', 'hrdId', 'hrdName', 'hrdNotes', 'hrdReviewedAt', 'updatedAt']);
+      }
+
+      // Separate, narrow administrative repair path (the "Migrasi" action in
+      // persetujuan-cuti/page.tsx) for backfilling approver-routing fields on
+      // older docs that predate the manager->director->hrd flow type — never
+      // touches status/dates/duration/approval decision fields.
+      function isHrdApprovalRoutingFixUpdate() {
+        let changed = request.resource.data.diff(resource.data).affectedKeys();
+        return isHrd() &&
+          hrdCanUpdateBrandData(resource.data, request.resource.data) &&
+          changed.hasOnly([
+            'approvalFlowType', 'currentApprovalStep', 'currentApproverUid', 'currentApproverName',
+            'approvalTargetUid', 'directorUid', 'directorId', 'directorName', 'updatedAt'
+          ]);
+      }
+
       allow get: if isSignedIn() && (
         isLeaveRequestOwner(resource.data) ||
         resource.data.managerId == request.auth.uid ||
@@ -1057,9 +1333,10 @@ service cloud.firestore {
           resource.data.get('currentApproverUid', '') == request.auth.uid) && (
             resource.data.status in ['pending_manager', 'pending_manager_review', 'pending_director', 'pending_director_review', 'pending_supervisor', 'menunggu_approval_atasan'] ||
             resource.data.status.startsWith('pending_')
-         )) ||
+         ) && replacementReadyForApproval(resource.data)) ||
         isReplacementConfirming() ||
-        (isHrd() && hrdCanUpdateBrandData(resource.data, request.resource.data)) ||
+        isHrdLeaveDecisionUpdate() ||
+        isHrdApprovalRoutingFixUpdate() ||
         isSuperAdmin()
       );
       allow delete: if isSuperAdmin() || (isLeaveRequestOwner(resource.data) && (

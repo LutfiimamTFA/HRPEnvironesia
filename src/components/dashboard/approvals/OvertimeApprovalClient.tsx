@@ -448,18 +448,24 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
     return [...map.entries()].map(([value, label]) => ({ value, label }));
   }, [submissions]);
 
+  // Current flow has no coordinator stage — "pending_coordinator" is kept as
+  // the tab KEY (URL/localStorage compat) but now also covers the new
+  // manager-actionable statuses ("submitted"/"pending_manager_review"), so a
+  // brand new submission still shows up in a manager's default tab.
   const activeTabStatuses = useMemo(() => {
     if (mode === "manager") {
       switch (activeTab) {
         case "pending_coordinator":
-          return ["pending_coordinator"];
+          return ["pending_coordinator", "submitted", "pending_manager_review"];
         case "pending_supervisor":
           return ["pending_supervisor"];
         case "riwayat_saya":
           return OVERTIME_SUBMISSION_STATUSES.filter(
             (status) =>
               status !== "pending_coordinator" &&
-              status !== "pending_supervisor",
+              status !== "pending_supervisor" &&
+              status !== "submitted" &&
+              status !== "pending_manager_review",
           );
         case "all":
         default:
@@ -471,14 +477,14 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
 
     switch (activeTab) {
       case "pending_hrd":
-        return ["pending_hrd"];
+        return ["pending_hrd", "pending_hrd_review", "approved_by_manager"];
       case "pending_supervisor":
-        return ["pending_supervisor"];
+        return ["pending_supervisor", "submitted", "pending_manager_review"];
       case "approved":
       case "rekap_payroll":
-        return ["approved_hrd", "approved"];
+        return ["approved_hrd", "approved", "approved_by_hrd"];
       case "rejected":
-        return ["rejected_manager", "rejected_hrd"];
+        return ["rejected_manager", "rejected_hrd", "rejected_by_manager", "rejected_by_hrd"];
       case "all":
       default:
         return OVERTIME_SUBMISSION_STATUSES;
@@ -511,7 +517,12 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
       // Role-specific filtering in manager mode
       if (mode === "manager") {
         if (activeTab === "pending_coordinator") {
-          if (s.overtimeCoordinatorUid !== userProfile.uid) return false;
+          const isAssignedAtasan =
+            (s as any).taskAssignerUid === userProfile.uid ||
+            s.overtimeCoordinatorUid === userProfile.uid ||
+            s.directSupervisorUid === userProfile.uid ||
+            s.managerUid === userProfile.uid;
+          if (!isAssignedAtasan) return false;
         } else if (activeTab === "pending_supervisor") {
           if (
             s.directSupervisorUid !== userProfile.uid &&
@@ -985,7 +996,7 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                 >
                   <TabsList className="grid w-full grid-cols-4 gap-1">
                     <TabsTrigger value="pending_coordinator">
-                      Sebagai Koordinator
+                      Menunggu Validasi Saya
                     </TabsTrigger>
                     <TabsTrigger value="pending_supervisor">
                       Sebagai Manager Divisi
