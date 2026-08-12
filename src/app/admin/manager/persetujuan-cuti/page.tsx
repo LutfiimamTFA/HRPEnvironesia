@@ -37,9 +37,14 @@ import {
 import {
   Loader2,
   CalendarOff,
-  Eye,
   CheckCircle2,
   Send,
+  X,
+  SlidersHorizontal,
+  Clock,
+  XCircle,
+  FileStack,
+  Search,
 } from "lucide-react";
 import { format } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
@@ -48,6 +53,14 @@ import { Badge } from "@/components/ui/badge";
 import { sendLeaveNotification } from "@/lib/leave-notifications";
 import { type LeaveRequest } from "@/lib/types";
 import { LeaveDetailModal } from "@/components/ui/LeaveDetailModal";
+import { LeaveApprovalTable } from "@/components/dashboard/approvals/LeaveApprovalTable";
+import { getReplacementConfirmationStatus, getReplacementStatusBadgeClass } from "@/lib/leave-replacement-status";
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from "@/components/ui/tabs";
 
 export default function ManagerLeaveApprovalPage() {
   const { userProfile } = useAuth();
@@ -59,9 +72,10 @@ export default function ManagerLeaveApprovalPage() {
   );
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isActionOpen, setIsActionOpen] = useState(false);
-  const [actionType, setActionType] = useState<
-    "approve" | "reject" | "revise" | null
-  >(null);
+  const [reasonError, setReasonError] = useState(false);
+  const [actionType, setActionType] = useState<"approve" | "reject" | null>(
+    null,
+  );
   const [notes, setNotes] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
@@ -74,6 +88,7 @@ export default function ManagerLeaveApprovalPage() {
   const [yearFilter, setYearFilter] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
 
   const isDirectorMode = useMemo(() => {
     if (!userProfile) return false;
@@ -215,21 +230,20 @@ export default function ManagerLeaveApprovalPage() {
   // A manager must never approve a leave request while its named
   // replacement hasn't confirmed (or has declined) — that's the FIRST gate
   // in the real workflow, before this even reaches the atasan's decision in
-  // spirit. Reject/Revise stay available regardless (a manager can still
-  // reject a request outright without waiting on the replacement).
-  const getReplacementConfirmationStatus = (req: LeaveRequest): string => {
-    return (req as any).replacementConfirmationStatus || (req as any).replacementConfirmation?.status || "none";
-  };
-
+  // spirit. Reject stays available regardless (a manager can still reject a
+  // request outright without waiting on the replacement). Reads through the
+  // shared getReplacementConfirmationStatus() helper (src/lib/leave-
+  // replacement-status.ts) — the same one the staff page and modal use —
+  // so this gate can never disagree with what's actually displayed.
   const canApproveReplacementGate = (req: LeaveRequest): boolean => {
     const status = getReplacementConfirmationStatus(req);
-    return status !== "pending" && status !== "rejected";
+    return status.key !== "pending" && status.key !== "declined";
   };
 
   const getReplacementBlockMessage = (req: LeaveRequest): string | null => {
     const status = getReplacementConfirmationStatus(req);
-    if (status === "pending") return "Menunggu pengganti sementara mengonfirmasi kesediaan.";
-    if (status === "rejected") return "Pengganti menolak. Pengaju perlu memilih pengganti lain.";
+    if (status.key === "pending") return "Menunggu pengganti sementara mengonfirmasi kesediaan.";
+    if (status.key === "declined") return "Pengganti menolak. Pengaju perlu memilih pengganti lain.";
     return null;
   };
 
@@ -354,6 +368,19 @@ export default function ManagerLeaveApprovalPage() {
     if (status.includes("revision")) return "revision";
     if (status.includes("approved")) return "approved";
     return status;
+  };
+
+  // Visual priority accent — a colored left border so a manager can scan
+  // which rows need action (pending) vs. which are already resolved, without
+  // reading every status badge individually.
+  const getRowAccentClass = (status: string) => {
+    const category = getStatusCategory(status);
+    if (category === "pending") return "border-l-4 border-l-amber-500";
+    if (category === "approved" || status === "active_leave" || status === "completed")
+      return "border-l-4 border-l-emerald-500";
+    if (category === "rejected") return "border-l-4 border-l-red-500";
+    if (category === "revision") return "border-l-4 border-l-orange-500";
+    return "border-l-4 border-l-transparent";
   };
 
   const visibleRequests = useMemo(() => {
@@ -499,43 +526,6 @@ export default function ManagerLeaveApprovalPage() {
 
   const formatDuration = (req: LeaveRequest) => {
     return `${req.durationDays} hari kerja`;
-  };
-
-  const getOperationalImpact = (req: LeaveRequest) => {
-    const replacementName = req.handoverEmployeeName?.trim();
-    const replacementPosition = req.handoverEmployeePosition?.trim();
-    const handoverNotes = req.handoverNotes?.trim();
-
-    if (!replacementName) {
-      return {
-        status: "Risiko Tinggi",
-        description: "Belum ada pengganti sementara.",
-      };
-    }
-
-    if (replacementName && replacementPosition && handoverNotes) {
-      return {
-        status: "Aman",
-        description: "Delegasi dan handover sudah lengkap.",
-      };
-    }
-
-    return {
-      status: "Perlu Dicek",
-      description: "Data pengganti atau handover belum lengkap.",
-    };
-  };
-
-  const getOperationalImpactBadgeClass = (impact: string) => {
-    switch (impact) {
-      case "Aman":
-        return "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400";
-      case "Perlu Dicek":
-        return "bg-amber-500/10 border border-amber-500/20 text-amber-400";
-      case "Risiko Tinggi":
-      default:
-        return "bg-red-500/10 border border-red-500/20 text-red-400";
-    }
   };
 
   const getTimelineApproverName = (req: LeaveRequest) => {
@@ -715,11 +705,19 @@ export default function ManagerLeaveApprovalPage() {
 
   const handleViewDetails = (req: LeaveRequest) => {
     setSelectedRequest(req);
+    setNotes("");
     setIsDetailOpen(true);
   };
 
+  // Opens the Setujui/Tolak confirmation dialog — only ever called from the
+  // detail modal's sticky footer (see LeaveDetailModal's onRequestApprove/
+  // onRequestReject), never from the table, so a manager always sees the
+  // full review workspace before a decision dialog can appear. Keeps
+  // whatever notes were already typed in the modal's body panel rather than
+  // clearing them, since that's the same `notes` state the confirm dialog
+  // reuses for its (optional for approve, required for reject) reason field.
   const handleOpenAction = (
-    type: "approve" | "reject" | "revise",
+    type: "approve" | "reject",
     req: LeaveRequest,
   ) => {
     if (req.employeeId === userProfile?.uid) {
@@ -766,6 +764,7 @@ export default function ManagerLeaveApprovalPage() {
     setSelectedRequest(req);
     setActionType(type);
     setNotes("");
+    setReasonError(false);
     setIsActionOpen(true);
   };
 
@@ -865,10 +864,7 @@ export default function ManagerLeaveApprovalPage() {
       return;
     }
 
-    if (
-      (actionType === "reject" || actionType === "revise") &&
-      notes.trim().length < 5
-    ) {
+    if (actionType === "reject" && notes.trim().length < 5) {
       toast({
         variant: "destructive",
         title: "Keterangan Wajib Diisi",
@@ -936,24 +932,6 @@ export default function ManagerLeaveApprovalPage() {
             managerNotes: notes,
           };
           notificationType = "director_rejection";
-        } else if (actionType === "revise") {
-          payload = {
-            status: "revision_requested_by_director",
-            directorDecision: "revision_requested",
-            directorReviewedAt: serverTimestamp(),
-            directorReviewedBy: currentUser.uid,
-            directorReviewedByName: (currentUser as any).displayName || currentUser.email,
-            directorNotes: notes,
-            updatedAt: serverTimestamp(),
-
-            // Compatibility manager fields
-            managerDecision: "revision_requested",
-            managerReviewedAt: serverTimestamp(),
-            managerReviewedBy: currentUser.uid,
-            managerReviewedByName: (currentUser as any).displayName || currentUser.email,
-            managerNotes: notes,
-          };
-          notificationType = "director_revision";
         }
       } else {
         if (actionType === "approve") {
@@ -979,17 +957,6 @@ export default function ManagerLeaveApprovalPage() {
             updatedAt: serverTimestamp(),
           };
           notificationType = "manager_rejection";
-        } else if (actionType === "revise") {
-          payload = {
-            status: "revision_requested",
-            managerDecision: "revision_requested",
-            managerReviewedAt: serverTimestamp(),
-            managerReviewedBy: currentUser.uid,
-            managerReviewedByName: displayNameOrEmail,
-            managerNotes: notes,
-            updatedAt: serverTimestamp(),
-          };
-          notificationType = "manager_revision";
         }
       }
 
@@ -1022,7 +989,6 @@ export default function ManagerLeaveApprovalPage() {
           managerName: displayNameOrEmail,
           startDate: selectedRequest.startDate,
           endDate: selectedRequest.endDate,
-          notes: actionType === "revise" ? notes : undefined,
           reason: actionType === "reject" ? notes : undefined,
           requestId: selectedRequest.id!,
         });
@@ -1031,16 +997,11 @@ export default function ManagerLeaveApprovalPage() {
       }
 
       toast({
-        title:
-          actionType === "approve"
-            ? "Persetujuan Dikirim"
-            : actionType === "reject"
-              ? "Pengajuan Ditolak"
-              : "Permintaan Revisi Dikirim",
+        title: actionType === "approve" ? "Persetujuan Dikirim" : "Pengajuan Ditolak",
         description:
           actionType === "approve"
-            ? "Pengajuan cuti berhasil disetujui dan diteruskan ke HRD."
-            : `Pengajuan cuti ${selectedRequest.employeeName} berhasil diproses.`,
+            ? "Pengajuan cuti berhasil disetujui"
+            : "Pengajuan cuti berhasil ditolak",
       });
 
       // Update state locally first for immediate responsiveness
@@ -1060,7 +1021,7 @@ export default function ManagerLeaveApprovalPage() {
       toast({
         variant: "destructive",
         title: "Gagal Memproses",
-        description: "Gagal menyetujui pengajuan cuti. Periksa rules atau data approver.",
+        description: "Terjadi kesalahan saat memproses keputusan",
       });
     } finally {
       setIsSaving(false);
@@ -1095,9 +1056,10 @@ export default function ManagerLeaveApprovalPage() {
       case "menunggu_approval_atasan":
       case "waiting_manager_approval":
       case "waiting_director_approval":
+        return "bg-amber-500/10 border-amber-500/20 text-amber-400";
       case "pending_hrd":
       case "pending_hrd_review":
-        return "bg-amber-500/10 border-amber-500/20 text-amber-400";
+        return "bg-blue-500/10 border-blue-500/20 text-blue-400";
       default:
         return "bg-indigo-500/10 border border-indigo-500/20 text-indigo-400";
     }
@@ -1157,68 +1119,221 @@ export default function ManagerLeaveApprovalPage() {
   const thisMonth = currentDate.getMonth() + 1;
   const thisYear = currentDate.getFullYear();
 
-  const managerDivisionLeavesThisMonth = visibleRequests.filter((r) => {
-    if (!isDivisionManagerRequest(r)) return false;
-    const createdAt = r.createdAt?.toDate?.();
+  const isThisMonth = (value: any) => {
+    const date = value?.toDate?.();
     return (
-      createdAt &&
-      createdAt.getMonth() + 1 === thisMonth &&
-      createdAt.getFullYear() === thisYear
+      !!date &&
+      date.getMonth() + 1 === thisMonth &&
+      date.getFullYear() === thisYear
     );
+  };
+
+  // Dashboard summary cards — always visible (manager and director mode
+  // alike), reflecting visibleRequests (already brand/division/search
+  // filtered) so the numbers move together with whatever the table shows.
+  const approvedThisMonthCount = visibleRequests.filter((r) => {
+    const reviewedAt = (r as any).directorReviewedAt || r.managerReviewedAt;
+    const decision = (r as any).directorDecision || (r as any).managerDecision;
+    return decision === "approved" && isThisMonth(reviewedAt);
   }).length;
 
-  const affectedDivisionCount = new Set(
-    visibleRequests.map((r) => r.divisionName || "").filter(Boolean),
-  ).size;
-
-  const activeLeaveTodayCount = visibleRequests.filter((r) => {
-    const start = r.startDate?.toDate?.();
-    const end = r.endDate?.toDate?.();
-    const today = new Date();
-    return (
-      start &&
-      end &&
-      start <= today &&
-      end >= today &&
-      r.status === "active_leave"
-    );
+  const rejectedThisMonthCount = visibleRequests.filter((r) => {
+    const reviewedAt = (r as any).directorReviewedAt || r.managerReviewedAt;
+    const decision = (r as any).directorDecision || (r as any).managerDecision;
+    return decision === "rejected" && isThisMonth(reviewedAt);
   }).length;
 
-  const operationalAttentionCount = visibleRequests.filter(
-    (r) =>
-      !Boolean(r.handoverEmployeeName?.trim()) ||
-      !Boolean(r.handoverNotes?.trim()) ||
-      !Boolean(r.emergencyContactName?.trim()),
+  const totalThisMonthCount = visibleRequests.filter((r) =>
+    isThisMonth(r.createdAt),
   ).length;
+
+  const leaveTypeChipLabel: Record<string, string> = {
+    tahunan: "Tahunan",
+    besar: "Besar",
+    menikah: "Menikah",
+    melahirkan: "Melahirkan",
+  };
+
+  const statusChipLabel: Record<string, string> = {
+    pending: "Menunggu",
+    approved: "Disetujui",
+    rejected: "Ditolak",
+    revision: "Revisi",
+  };
+
+  // Chips reflect every active filter so a manager can see at a glance what
+  // is narrowing the list — and clear any single one without reopening the
+  // filter panel.
+  const activeFilterChips = [
+    brandFilter !== "all" && { key: "brand", label: `Brand: ${brandFilter}`, onRemove: () => setBrandFilter("all") },
+    divisionFilter !== "all" && { key: "division", label: `Divisi: ${divisionFilter}`, onRemove: () => setDivisionFilter("all") },
+    managerNameFilter && { key: "managerName", label: `Manager: ${managerNameFilter}`, onRemove: () => setManagerNameFilter("") },
+    leaveTypeFilter !== "all" && { key: "leaveType", label: `Jenis Cuti: ${leaveTypeChipLabel[leaveTypeFilter] || leaveTypeFilter}`, onRemove: () => setLeaveTypeFilter("all") },
+    statusFilter !== "all" && { key: "status", label: `Status: ${statusChipLabel[statusFilter] || statusFilter}`, onRemove: () => setStatusFilter("all") },
+    monthFilter !== "all" && { key: "month", label: `Bulan: ${String(monthFilter).padStart(2, "0")}`, onRemove: () => setMonthFilter("all") },
+    yearFilter !== "all" && { key: "year", label: `Tahun: ${yearFilter}`, onRemove: () => setYearFilter("all") },
+    searchTerm && { key: "search", label: `Cari: "${searchTerm}"`, onRemove: () => setSearchTerm("") },
+  ].filter(Boolean) as { key: string; label: string; onRemove: () => void }[];
+
+  const handleResetFilters = () => {
+    setBrandFilter("all");
+    setDivisionFilter("all");
+    setManagerNameFilter("");
+    setLeaveTypeFilter("all");
+    setStatusFilter("all");
+    setMonthFilter("all");
+    setYearFilter("all");
+    setSearchTerm("");
+  };
+
+  // Dashboard-style summary row — always visible so the page never reads as
+  // a bare form + table, regardless of manager vs. director mode.
+  const summaryCards = [
+    {
+      key: "pending",
+      title: isDirectorMode ? "Menunggu Persetujuan Direktur" : "Menunggu Persetujuan Anda",
+      value: activeRequests.length,
+      subtext: "Perlu Anda tinjau",
+      icon: Clock,
+      borderClass: "border-amber-200 dark:border-amber-900/40",
+      bgClass: "bg-amber-50/60 dark:bg-amber-950/10",
+      iconBgClass: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+    },
+    {
+      key: "approved",
+      title: "Disetujui Bulan Ini",
+      value: approvedThisMonthCount,
+      subtext: `${format(currentDate, "MMMM yyyy", { locale: idLocale })}`,
+      icon: CheckCircle2,
+      borderClass: "border-emerald-200 dark:border-emerald-900/40",
+      bgClass: "bg-emerald-50/60 dark:bg-emerald-950/10",
+      iconBgClass: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+    },
+    {
+      key: "rejected",
+      title: "Ditolak Bulan Ini",
+      value: rejectedThisMonthCount,
+      subtext: `${format(currentDate, "MMMM yyyy", { locale: idLocale })}`,
+      icon: XCircle,
+      borderClass: "border-red-200 dark:border-red-900/40",
+      bgClass: "bg-red-50/60 dark:bg-red-950/10",
+      iconBgClass: "bg-red-500/15 text-red-600 dark:text-red-400",
+    },
+    {
+      key: "total",
+      title: "Total Pengajuan Bulan Ini",
+      value: totalThisMonthCount,
+      subtext: "Seluruh pengajuan masuk",
+      icon: FileStack,
+      borderClass: "border-indigo-200 dark:border-indigo-900/40",
+      bgClass: "bg-indigo-50/60 dark:bg-indigo-950/10",
+      iconBgClass: "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400",
+    },
+  ];
 
   return (
     <DashboardLayout pageTitle={pageTitle} menuConfig={undefined}>
       <div className="w-full space-y-6 px-4 md:px-8 max-w-[1600px] mx-auto text-slate-900 dark:text-slate-100 pb-10">
         {/* Top Header Row */}
-        <div className="flex flex-wrap items-center justify-between gap-4 py-4 border-b border-slate-200 dark:border-slate-800">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-indigo-100 dark:bg-indigo-950/30 rounded-2xl border border-indigo-200 dark:border-indigo-900/30 shadow-sm">
-              <CalendarOff className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                {pageTitle}
-              </h1>
-              <p className="text-xs text-slate-600 dark:text-slate-400 font-semibold mt-0.5">
-                {pageSubtitle}
-              </p>
-            </div>
+        <div className="flex flex-wrap items-center gap-4 py-5">
+          <div className="p-3.5 bg-indigo-100 dark:bg-indigo-950/30 rounded-2xl border border-indigo-200 dark:border-indigo-900/30 shadow-sm">
+            <CalendarOff className="h-7 w-7 text-indigo-600 dark:text-indigo-400" />
           </div>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsFilterOpen((prev) => !prev)}
-            className="rounded-2xl border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800"
-          >
-            {isFilterOpen ? "Tutup Filter" : "Buka Filter"}
-          </Button>
+          <div>
+            <h1 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
+              {pageTitle}
+            </h1>
+            <p className="text-sm text-slate-600 dark:text-slate-400 font-semibold mt-0.5">
+              {pageSubtitle}
+            </p>
+          </div>
         </div>
+
+        {/* Summary Cards — always visible, dashboard-style overview */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+          {summaryCards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <Card
+                key={card.key}
+                className={`rounded-2xl border shadow-sm ${card.borderClass} ${card.bgClass}`}
+              >
+                <CardContent className="p-4 space-y-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400 leading-tight">
+                      {card.title}
+                    </p>
+                    <div className={`h-8 w-8 shrink-0 rounded-xl flex items-center justify-center ${card.iconBgClass}`}>
+                      <Icon className="h-4 w-4" />
+                    </div>
+                  </div>
+                  <p className="text-3xl font-black text-slate-900 dark:text-white leading-none">
+                    {card.value}
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-500 font-medium">
+                    {card.subtext}
+                  </p>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+
+        {/* Toolbar — search + filter toggle, always visible */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Cari nama karyawan, brand, divisi, atau jenis cuti..."
+              className="w-full h-11 pl-10 pr-4 rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 text-sm focus:border-indigo-500 dark:focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none shadow-none"
+            />
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {activeFilterChips.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleResetFilters}
+                className="rounded-2xl text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 h-11"
+              >
+                Reset Filter
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsFilterOpen((prev) => !prev)}
+              className="rounded-2xl border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 gap-1.5 h-11 px-4"
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              {isFilterOpen ? "Tutup Filter" : "Buka Filter"}
+              {activeFilterChips.length > 0 && (
+                <Badge className="ml-1 bg-indigo-600 hover:bg-indigo-600 text-white text-[10px] font-black rounded-full px-1.5 py-0">
+                  {activeFilterChips.length}
+                </Badge>
+              )}
+            </Button>
+          </div>
+        </div>
+
+        {/* Active Filter Chips */}
+        {activeFilterChips.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 -mt-2">
+            {activeFilterChips.map((chip) => (
+              <button
+                key={chip.key}
+                onClick={chip.onRemove}
+                className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1 rounded-full text-xs font-bold bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors"
+              >
+                {chip.label}
+                <X className="h-3 w-3" />
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Filters Section (Collapsible) */}
         {isFilterOpen && (
@@ -1345,631 +1460,88 @@ export default function ManagerLeaveApprovalPage() {
               </select>
             </div>
 
-            <div className="space-y-2 sm:col-span-2 md:col-span-3 lg:col-span-4">
-              <label className="text-[10px] uppercase tracking-[0.3em] text-slate-400">
-                Cari
-              </label>
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Cari nama, brand, divisi, atau jenis cuti..."
-                className={filterInputClass}
-              />
-            </div>
           </div>
         )}
 
-        {/* Summary Cards */}
-        {isDirectorMode && (
-          <div className="grid gap-3 grid-cols-2 md:grid-cols-5 w-full">
-            {[
-              {
-                title: "Menunggu Persetujuan Direktur",
-                value: activeRequests.length,
-              },
-              {
-                title: "Manager Divisi Cuti Bulan Ini",
-                value: managerDivisionLeavesThisMonth,
-              },
-              {
-                title: "Divisi Terdampak",
-                value: affectedDivisionCount,
-              },
-              {
-                title: "Cuti Cuti Aktif Hari Ini",
-                value: activeLeaveTodayCount,
-              },
-              {
-                title: "Perlu Perhatian Operasional",
-                value: operationalAttentionCount,
-              },
-            ].map((item) => (
-              <Card
-                key={item.title}
-                className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-sm"
-              >
-                <CardContent className="p-3.5 space-y-1">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 truncate">
-                    {item.title}
-                  </p>
-                  <p className="text-2xl font-black text-slate-900 dark:text-white">
-                    {item.value}
-                  </p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
-
-        {/* 1. ACTIVE REQUESTS CARD */}
-        <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-md rounded-2xl overflow-hidden">
-          <CardHeader className="border-b border-slate-200 dark:border-slate-800 pb-4 bg-slate-50 dark:bg-slate-900/50">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
-                {isDirectorMode
-                  ? "Menunggu Persetujuan Direktur"
-                  : "Menunggu Persetujuan Anda"}
-                <Badge className="bg-indigo-600 dark:bg-indigo-600 hover:bg-indigo-700 dark:hover:bg-indigo-700 text-white font-black text-xs rounded-full px-2.5 py-0.5">
-                  {activeRequests.length}
-                </Badge>
-              </CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="p-0 bg-white dark:bg-slate-950">
-            {/* Desktop Readable Table */}
-            <div className="hidden md:block overflow-x-auto w-full">
-              <Table className="w-full min-w-[1200px] border-collapse bg-white dark:bg-slate-950">
-                <TableHeader className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-10">
-                  <TableRow className="border-b border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-900">
-                    <TableHead className="px-5 py-4 text-left font-bold text-slate-900 dark:text-slate-300 text-sm">
-                      Pengaju
-                    </TableHead>
-                    <TableHead className="px-5 py-4 text-left font-bold text-slate-900 dark:text-slate-300 text-sm">
-                      Unit Kerja
-                    </TableHead>
-                    <TableHead className="px-5 py-4 text-left font-bold text-slate-900 dark:text-slate-300 text-sm">
-                      Jenis Cuti
-                    </TableHead>
-                    <TableHead className="px-5 py-4 text-left font-bold text-slate-900 dark:text-slate-300 text-sm">
-                      Tanggal Pengajuan
-                    </TableHead>
-                    <TableHead className="px-5 py-4 text-left font-bold text-slate-900 dark:text-slate-300 text-sm">
-                      Periode Cuti
-                    </TableHead>
-                    <TableHead className="px-5 py-4 text-left font-bold text-slate-900 dark:text-slate-300 text-sm">
-                      Durasi
-                    </TableHead>
-                    <TableHead className="px-5 py-4 text-left font-bold text-slate-900 dark:text-slate-300 text-sm">
-                      Pengganti Sementara
-                    </TableHead>
-                    <TableHead className="px-5 py-4 text-left font-bold text-slate-900 dark:text-slate-300 text-sm">
-                      Dampak Operasional
-                    </TableHead>
-                    <TableHead className="px-5 py-4 text-left font-bold text-slate-900 dark:text-slate-300 text-sm">
-                      Status
-                    </TableHead>
-                    <TableHead className="px-5 py-4 text-right font-bold text-slate-900 dark:text-slate-300 text-sm">
-                      Aksi
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {activeRequests.length > 0 ? (
-                    activeRequests.map((r) => {
-                      const impact = getOperationalImpact(r);
-                      const subDate = getSubmissionDateParts(r);
-                      const period = getPeriodDateParts(r);
-                      return (
-                        <TableRow
-                          key={r.id}
-                          className="hover:bg-slate-100 dark:hover:bg-slate-900/40 transition-colors border-b border-slate-200 dark:border-slate-800/80"
-                        >
-                          <TableCell className="px-5 py-4 align-top text-sm">
-                            <div className="space-y-1">
-                              <span className="text-slate-900 dark:text-slate-100 font-bold block">
-                                {r.employeeName}
-                              </span>
-                              <Badge
-                                className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${getLevelBadgeClass(
-                                  getRequesterLevel(r),
-                                )}`}
-                              >
-                                {getLevelLabel(getRequesterLevel(r))}
-                              </Badge>
-                            </div>
-                          </TableCell>
-                          <TableCell className="px-5 py-4 align-top text-sm font-semibold text-slate-700 dark:text-slate-300">
-                            <div className="space-y-0.5">
-                              <p className="text-slate-900 dark:text-slate-100">{r.brandName || "-"}</p>
-                              <p className="text-slate-600 dark:text-slate-400 text-xs">{r.divisionName || "-"}</p>
-                            </div>
-                          </TableCell>
-                          <TableCell className="px-5 py-4 align-top text-sm font-bold text-indigo-600 dark:text-indigo-400 capitalize">
-                            Cuti{" "}
-                            {r.leaveType === "tahunan"
-                              ? "Tahunan"
-                              : r.leaveType === "besar"
-                                ? "Besar"
-                                : r.leaveType === "menikah"
-                                  ? "Menikah"
-                                  : r.leaveType === "melahirkan"
-                                    ? "Melahirkan"
-                                    : "Tahunan"}
-                          </TableCell>
-                          <TableCell className="px-5 py-4 align-top text-sm text-slate-700 dark:text-slate-300">
-                            <p className="font-semibold text-slate-900 dark:text-slate-200">{subDate.day}</p>
-                            {subDate.time && (
-                              <p className="text-slate-500 dark:text-slate-400 text-xs mt-0.5">{subDate.time}</p>
-                            )}
-                          </TableCell>
-                          <TableCell className="px-5 py-4 align-top text-sm text-slate-700 dark:text-slate-300">
-                            <p className="font-semibold text-slate-900 dark:text-slate-200">{period.start}</p>
-                            <p className="text-slate-600 dark:text-slate-400 text-xs mt-0.5">{period.end}</p>
-                          </TableCell>
-                          <TableCell className="px-5 py-4 align-top font-bold text-slate-900 dark:text-slate-200 text-sm">
-                            {formatDuration(r)}
-                          </TableCell>
-                          <TableCell className="px-5 py-4 align-top text-sm text-slate-700 dark:text-slate-300">
-                            <p className="font-bold text-slate-900 dark:text-slate-200">{r.handoverEmployeeName || "-"}</p>
-                            {r.handoverEmployeePosition && (
-                              <p className="text-slate-600 dark:text-slate-400 text-xs mt-0.5">{r.handoverEmployeePosition}</p>
-                            )}
-                          </TableCell>
-                          <TableCell className="px-5 py-4 align-top">
-                            <span
-                              className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${getOperationalImpactBadgeClass(
-                                impact.status,
-                              )}`}
-                            >
-                              {impact.status}
-                            </span>
-                          </TableCell>
-                          <TableCell className="px-5 py-4 align-top">
-                            <span
-                              className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black border uppercase tracking-wider ${getStatusBadgeClass(r.status)}`}
-                            >
-                              {getStatusLabel(r.status)}
-                            </span>
-                          </TableCell>
-                          <TableCell className="px-5 py-4 align-top text-right">
-                            <div className="flex flex-wrap items-center justify-end gap-1.5">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleViewDetails(r)}
-                                className="rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-bold text-xs gap-1"
-                              >
-                                <Eye className="h-3.5 w-3.5" /> Tinjau
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleOpenAction("approve", r)}
-                                disabled={isSaving || !isActionEnabledForRole(r) || !canApproveReplacementGate(r)}
-                                title={getReplacementBlockMessage(r) || undefined}
-                                className="rounded-xl border-emerald-500/20 hover:bg-emerald-950/20 text-emerald-400 font-bold text-xs"
-                              >
-                                Setujui
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleOpenAction("reject", r)}
-                                disabled={isSaving || !isActionEnabledForRole(r)}
-                                className="rounded-xl border-red-500/20 hover:bg-red-950/20 text-red-400 font-bold text-xs"
-                              >
-                                Tolak
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleOpenAction("revise", r)}
-                                disabled={isSaving || !isActionEnabledForRole(r)}
-                                className="rounded-xl border-amber-500/20 hover:bg-amber-950/20 text-amber-400 font-bold text-xs"
-                              >
-                                Revisi
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })
-                  ) : (
-                    <TableRow className="hover:bg-transparent">
-                      <TableCell
-                        colSpan={10}
-                        className="h-44 text-center text-slate-600 dark:text-slate-400"
-                      >
-                        <div className="flex flex-col items-center justify-center gap-2">
-                          <CheckCircle2 className="h-10 w-10 text-slate-400 dark:text-slate-600 opacity-40" />
-                          <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                            Tidak ada pengajuan pending yang perlu diproses saat ini.
-                          </p>
-                          {hasInvalidApproverPending && (
-                            <p className="text-xs text-amber-600 dark:text-amber-450 mt-2">
-                              Pengajuan belum memiliki approver valid. Cek data atasan langsung.
-                            </p>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-
-            {/* Mobile Card List (Active) */}
-            <div className="block md:hidden space-y-4 px-4 py-4 bg-slate-100 dark:bg-slate-900/20">
-              {activeRequests.length > 0 ? (
-                activeRequests.map((r) => {
-                  const impact = getOperationalImpact(r);
-                  return (
-                    <div
-                      key={r.id}
-                      className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3"
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="font-black text-slate-900 dark:text-slate-100 text-base">
-                            {r.employeeName}
-                          </p>
-                          <p className="text-[10px] text-slate-600 dark:text-slate-400 font-bold uppercase tracking-wider">
-                            {r.divisionName || "N/A"}
-                          </p>
-                        </div>
-                        <Badge
-                          variant="outline"
-                          className={`px-2 py-0.5 rounded-full text-[9px] font-black border uppercase tracking-wider ${getStatusBadgeClass(r.status)}`}
-                        >
-                          {getStatusLabel(r.status)}
-                        </Badge>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-xs py-3 border-y border-slate-200 dark:border-slate-800">
-                        <div>
-                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-wider block mb-0.5">
-                            Jenis Cuti
-                          </span>
-                          <span className="font-black text-indigo-600 dark:text-indigo-400 capitalize">
-                            {r.leaveType === "tahunan"
-                              ? "Cuti Tahunan"
-                              : r.leaveType === "besar"
-                                ? "Cuti Besar"
-                                : r.leaveType === "menikah"
-                                  ? "Cuti Menikah"
-                                  : r.leaveType === "melahirkan"
-                                    ? "Cuti Melahirkan"
-                                    : "Cuti Tahunan"}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-0.5">
-                            Durasi
-                          </span>
-                          <span className="font-bold text-slate-200">
-                            {formatDuration(r)}
-                          </span>
-                        </div>
-                        <div className="col-span-2">
-                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-0.5">
-                            Periode Cuti
-                          </span>
-                          <span className="font-semibold text-slate-300">
-                            {formatPeriodDate(r)}
-                          </span>
-                        </div>
-                        <div className="col-span-2">
-                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-0.5">
-                            Dampak Operasional
-                          </span>
-                          <span
-                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${getOperationalImpactBadgeClass(
-                              impact.status,
-                            )}`}
-                          >
-                            {impact.status}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-col gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleViewDetails(r)}
-                          className="rounded-xl flex items-center gap-2 justify-center font-bold text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2"
-                        >
-                          <Eye className="h-3.5 w-3.5" /> Tinjau
-                        </Button>
-                        <div className="grid grid-cols-2 gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleOpenAction("approve", r)}
-                            disabled={isSaving || !isActionEnabledForRole(r) || !canApproveReplacementGate(r)}
-                            title={getReplacementBlockMessage(r) || undefined}
-                            className="rounded-xl border-emerald-500/20 text-emerald-400 hover:bg-emerald-950/20 font-bold text-xs"
-                          >
-                            Setujui
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleOpenAction("reject", r)}
-                            disabled={isSaving || !isActionEnabledForRole(r)}
-                            className="rounded-xl border-red-500/20 text-red-400 hover:bg-red-950/20 font-bold text-xs"
-                          >
-                            Tolak
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="text-center py-8 text-slate-500">
-                  <CheckCircle2 className="h-8 w-8 text-slate-650 mx-auto mb-2 opacity-40" />
-                  <p className="text-xs font-bold">
-                    Tidak ada pengajuan pending yang perlu diproses saat ini.
-                  </p>
-                  {hasInvalidApproverPending && (
-                    <p className="text-[11px] mt-2 text-amber-450">
-                      Pengajuan belum memiliki approver valid. Cek data atasan langsung.
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* 2. HISTORY REQUESTS CARD */}
-        <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-md rounded-2xl overflow-hidden mt-6">
-          <CardHeader className="border-b border-slate-200 dark:border-slate-800 pb-4 bg-slate-50 dark:bg-slate-900/50">
-            <CardTitle className="text-sm font-black uppercase tracking-wider text-slate-700 dark:text-slate-400 flex items-center gap-2">
-              {isDirectorMode
-                ? "Riwayat Keputusan Cuti Manager Divisi"
-                : "Riwayat Keputusan Cuti Tim"}
-              <Badge className="bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-slate-300 border border-slate-300 dark:border-slate-700 font-black text-xs rounded-full px-2.5 py-0.5">
+        {/* Tabs — pending and history are never shown stacked; only one
+            table renders at a time so the page stays readable as data
+            grows. */}
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "pending" | "history")}>
+          <TabsList className="bg-slate-100 dark:bg-slate-900 rounded-2xl p-1 h-auto">
+            <TabsTrigger
+              value="pending"
+              className="rounded-xl px-4 py-2 text-xs font-bold gap-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:shadow-sm"
+            >
+              Butuh Persetujuan Saya
+              <Badge className="bg-indigo-600 hover:bg-indigo-600 text-white text-[10px] font-black rounded-full px-2 py-0">
+                {activeRequests.length}
+              </Badge>
+            </TabsTrigger>
+            <TabsTrigger
+              value="history"
+              className="rounded-xl px-4 py-2 text-xs font-bold gap-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:shadow-sm"
+            >
+              Riwayat Keputusan
+              <Badge className="bg-slate-300 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 text-[10px] font-black rounded-full px-2 py-0">
                 {historyRequests.length}
               </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0 bg-white dark:bg-slate-950">
-            {/* Desktop History Table */}
-            <div className="hidden md:block overflow-x-auto w-full">
-              <Table className="w-full min-w-[1200px] border-collapse bg-white dark:bg-slate-950">
-                <TableHeader className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-10">
-                  <TableRow className="border-b border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-900">
-                    <TableHead className="px-5 py-4 text-left font-bold text-slate-900 dark:text-slate-300 text-sm">
-                      Pengaju
-                    </TableHead>
-                    <TableHead className="px-5 py-4 text-left font-bold text-slate-900 dark:text-slate-300 text-sm">
-                      Unit Kerja
-                    </TableHead>
-                    <TableHead className="px-5 py-4 text-left font-bold text-slate-900 dark:text-slate-300 text-sm">
-                      Jenis Cuti
-                    </TableHead>
-                    <TableHead className="px-5 py-4 text-left font-bold text-slate-900 dark:text-slate-300 text-sm">
-                      Tanggal Pengajuan
-                    </TableHead>
-                    <TableHead className="px-5 py-4 text-left font-bold text-slate-900 dark:text-slate-300 text-sm">
-                      Periode Cuti
-                    </TableHead>
-                    <TableHead className="px-5 py-4 text-left font-bold text-slate-900 dark:text-slate-300 text-sm">
-                      Durasi
-                    </TableHead>
-                    <TableHead className="px-5 py-4 text-left font-bold text-slate-900 dark:text-slate-300 text-sm">
-                      Pengganti Sementara
-                    </TableHead>
-                    <TableHead className="px-5 py-4 text-left font-bold text-slate-900 dark:text-slate-300 text-sm">
-                      Dampak Operasional
-                    </TableHead>
-                    <TableHead className="px-5 py-4 text-left font-bold text-slate-900 dark:text-slate-300 text-sm">
-                      Status
-                    </TableHead>
-                    <TableHead className="px-5 py-4 text-right font-bold text-slate-900 dark:text-slate-300 text-sm">
-                      Aksi
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {historyRequests.length > 0 ? (
-                    historyRequests.map((r) => {
-                      const impact = getOperationalImpact(r);
-                      const subDate = getSubmissionDateParts(r);
-                      const period = getPeriodDateParts(r);
-                      return (
-                        <TableRow
-                          key={r.id}
-                          className="hover:bg-slate-100 dark:hover:bg-slate-900/40 transition-colors border-b border-slate-200 dark:border-slate-800/80"
-                        >
-                          <TableCell className="px-5 py-4 align-top text-sm">
-                            <div className="space-y-1">
-                              <span className="text-slate-900 dark:text-slate-100 font-bold block">
-                                {r.employeeName}
-                              </span>
-                              <Badge
-                                className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${getLevelBadgeClass(
-                                  getRequesterLevel(r),
-                                )}`}
-                              >
-                                {getLevelLabel(getRequesterLevel(r))}
-                              </Badge>
-                            </div>
-                          </TableCell>
-                          <TableCell className="px-5 py-4 align-top text-sm font-semibold text-slate-700 dark:text-slate-300">
-                            <div className="space-y-0.5">
-                              <p className="text-slate-900 dark:text-slate-100">{r.brandName || "-"}</p>
-                              <p className="text-slate-600 dark:text-slate-400 text-xs">{r.divisionName || "-"}</p>
-                            </div>
-                          </TableCell>
-                          <TableCell className="px-5 py-4 align-top text-sm font-bold text-indigo-600 dark:text-indigo-400 capitalize">
-                            Cuti{" "}
-                            {r.leaveType === "tahunan"
-                              ? "Tahunan"
-                              : r.leaveType === "besar"
-                                ? "Besar"
-                                : r.leaveType === "menikah"
-                                  ? "Menikah"
-                                  : r.leaveType === "melahirkan"
-                                    ? "Melahirkan"
-                                    : "Tahunan"}
-                          </TableCell>
-                          <TableCell className="px-5 py-4 align-top text-sm text-slate-700 dark:text-slate-300">
-                            <p className="font-semibold text-slate-900 dark:text-slate-200">{subDate.day}</p>
-                            {subDate.time && (
-                              <p className="text-slate-500 dark:text-slate-400 text-xs mt-0.5">{subDate.time}</p>
-                            )}
-                          </TableCell>
-                          <TableCell className="px-5 py-4 align-top text-sm text-slate-700 dark:text-slate-300">
-                            <p className="font-semibold text-slate-900 dark:text-slate-200">{period.start}</p>
-                            <p className="text-slate-600 dark:text-slate-400 text-xs mt-0.5">{period.end}</p>
-                          </TableCell>
-                          <TableCell className="px-5 py-4 align-top font-bold text-slate-900 dark:text-slate-200 text-sm">
-                            {formatDuration(r)}
-                          </TableCell>
-                          <TableCell className="px-5 py-4 align-top text-sm text-slate-700 dark:text-slate-300">
-                            <p className="font-bold text-slate-900 dark:text-slate-200">{r.handoverEmployeeName || "-"}</p>
-                            {r.handoverEmployeePosition && (
-                              <p className="text-slate-600 dark:text-slate-400 text-xs mt-0.5">{r.handoverEmployeePosition}</p>
-                            )}
-                          </TableCell>
-                          <TableCell className="px-5 py-4 align-top">
-                            <span
-                              className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${getOperationalImpactBadgeClass(
-                                impact.status,
-                              )}`}
-                            >
-                              {impact.status}
-                            </span>
-                          </TableCell>
-                          <TableCell className="px-5 py-4 align-top">
-                            <span
-                              className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black border uppercase tracking-wider ${getStatusBadgeClass(r.status)}`}
-                            >
-                              {getStatusLabel(r.status)}
-                            </span>
-                          </TableCell>
-                          <TableCell className="px-5 py-4 align-top text-right">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleViewDetails(r)}
-                              className="rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-bold text-xs gap-1"
-                            >
-                              <Eye className="h-3.5 w-3.5" /> Detail
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })
-                  ) : (
-                    <TableRow className="hover:bg-transparent">
-                      <TableCell
-                        colSpan={10}
-                        className="h-28 text-center text-slate-600 dark:text-slate-400"
-                      >
-                        <span className="text-slate-700 dark:text-slate-300">Belum ada riwayat keputusan cuti yang diproses.</span>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+            </TabsTrigger>
+          </TabsList>
 
-            {/* Mobile Card List (History) */}
-            <div className="block md:hidden space-y-4 px-4 py-4 bg-slate-100 dark:bg-slate-900/20">
-              {historyRequests.length > 0 ? (
-                historyRequests.map((r) => (
-                  <div
-                    key={r.id}
-                    className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3"
-                  >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="font-black text-slate-900 dark:text-slate-100 text-base">
-                          {r.employeeName}
-                        </p>
-                        <p className="text-[10px] text-slate-600 dark:text-slate-400 font-bold uppercase tracking-wider">
-                          {r.divisionName || "N/A"}
-                        </p>
-                      </div>
-                      <Badge
-                        variant="outline"
-                        className={`px-2 py-0.5 rounded-full text-[9px] font-black border uppercase tracking-wider ${getStatusBadgeClass(r.status)}`}
-                      >
-                        {getStatusLabel(r.status)}
-                      </Badge>
-                    </div>
+          <TabsContent value="pending" className="mt-4">
+            <LeaveApprovalTable
+              items={activeRequests}
+              mode="pending"
+              title={isDirectorMode ? "Menunggu Persetujuan Direktur" : "Menunggu Persetujuan Anda"}
+              onSelect={handleViewDetails}
+              getRequesterLevel={getRequesterLevel}
+              getLevelBadgeClass={getLevelBadgeClass}
+              getLevelLabel={getLevelLabel}
+              getStatusBadgeClass={getStatusBadgeClass}
+              getStatusLabel={getStatusLabel}
+              getRowAccentClass={getRowAccentClass}
+              formatDuration={formatDuration}
+              formatPeriodDate={formatPeriodDate}
+              getSubmissionDateParts={getSubmissionDateParts}
+              getPeriodDateParts={getPeriodDateParts}
+              hasInvalidApproverPending={hasInvalidApproverPending}
+              activeFilterCount={activeFilterChips.length}
+              onResetFilters={handleResetFilters}
+            />
+          </TabsContent>
 
-                    <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-xs py-3 border-y border-slate-200 dark:border-slate-800">
-                      <div>
-                        <span className="text-[10px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-wider block mb-0.5">
-                          Jenis Cuti
-                        </span>
-                        <span className="font-black text-indigo-600 dark:text-indigo-400 capitalize">
-                          Cuti{" "}
-                          {r.leaveType === "tahunan"
-                            ? "Tahunan"
-                            : r.leaveType === "besar"
-                              ? "Besar"
-                              : r.leaveType === "menikah"
-                                ? "Menikah"
-                                : r.leaveType === "melahirkan"
-                                  ? "Melahirkan"
-                                  : "Tahunan"}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-wider block mb-0.5">
-                          Durasi
-                        </span>
-                        <span className="font-bold text-slate-900 dark:text-slate-200">
-                          {formatDuration(r)}
-                        </span>
-                      </div>
-                      <div className="col-span-2">
-                        <span className="text-[10px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-wider block mb-0.5">
-                          Periode Cuti
-                        </span>
-                        <span className="font-semibold text-slate-900 dark:text-slate-300">
-                          {formatPeriodDate(r)}
-                        </span>
-                      </div>
-                    </div>
+          <TabsContent value="history" className="mt-4">
+            <LeaveApprovalTable
+              items={historyRequests}
+              mode="history"
+              title={isDirectorMode ? "Riwayat Keputusan Cuti Manager Divisi" : "Riwayat Keputusan Cuti Tim"}
+              onSelect={handleViewDetails}
+              getRequesterLevel={getRequesterLevel}
+              getLevelBadgeClass={getLevelBadgeClass}
+              getLevelLabel={getLevelLabel}
+              getStatusBadgeClass={getStatusBadgeClass}
+              getStatusLabel={getStatusLabel}
+              getRowAccentClass={getRowAccentClass}
+              formatDuration={formatDuration}
+              formatPeriodDate={formatPeriodDate}
+              getSubmissionDateParts={getSubmissionDateParts}
+              getPeriodDateParts={getPeriodDateParts}
+              activeFilterCount={activeFilterChips.length}
+              onResetFilters={handleResetFilters}
+            />
+          </TabsContent>
+        </Tabs>
 
-                    <div className="flex justify-end pt-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleViewDetails(r)}
-                        className="rounded-xl flex items-center gap-1 font-bold text-xs bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-200 px-4 py-2"
-                      >
-                        <Eye className="h-3.5 w-3.5" /> Detail
-                      </Button>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="text-center py-6 text-slate-600 dark:text-slate-400">
-                  <span className="text-slate-700 dark:text-slate-300">Belum ada riwayat keputusan cuti yang diproses.</span>
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
-      {/* DETAIL MODAL (Rendered using React Portal to document.body) */}
+      {/* DETAIL MODAL — the only place decisions can be initiated from (see
+          LeaveDetailModal's sticky footer). Table rows only ever open this. */}
       <LeaveDetailModal
         isOpen={isDetailOpen}
         onClose={() => setIsDetailOpen(false)}
         request={selectedRequest}
         currentUserUid={currentUserUid}
         isPendingForCurrentApprover={isPendingForCurrentApprover}
-        onAction={handleOpenAction}
         formatSubmissionDate={formatSubmissionDate}
         formatPeriodDate={formatPeriodDate}
         formatDuration={formatDuration}
@@ -1980,29 +1552,76 @@ export default function ManagerLeaveApprovalPage() {
         getStatusLabel={getStatusLabel}
         getTimelineStepState={getTimelineStepState}
         getTimelineStepDetail={getTimelineStepDetail}
+        getReplacementConfirmationStatus={getReplacementConfirmationStatus}
+        getReplacementBlockMessage={getReplacementBlockMessage}
+        canApproveReplacementGate={canApproveReplacementGate}
+        onRequestApprove={(req) => handleOpenAction("approve", req)}
+        onRequestReject={(req) => handleOpenAction("reject", req)}
+        isSaving={isSaving}
       />
 
-      {/* ACTION CONFIRMATION DIALOG (Approve/Reject/Revise) */}
+      {/* ACTION CONFIRMATION DIALOG — Setujui/Tolak only. Always opened from
+          the detail modal's footer, on top of it, so the manager has already
+          read the full review workspace before this can appear. */}
       <Dialog open={isActionOpen} onOpenChange={setIsActionOpen}>
         <DialogContent className="max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 shadow-2xl my-auto top-[50%] translate-y-[-50%] p-6">
           <DialogHeader className="space-y-2">
             <DialogTitle className="text-lg font-black text-slate-900 dark:text-slate-50">
               {actionType === "approve"
-                ? "Setujui Pengajuan Cuti"
-                : actionType === "reject"
-                  ? "Tolak Pengajuan Cuti"
-                  : "Minta Revisi Pengajuan"}
+                ? "Konfirmasi Persetujuan"
+                : "Konfirmasi Penolakan"}
             </DialogTitle>
             <DialogDescription className="text-xs font-semibold text-slate-600 dark:text-slate-400 mt-1">
               {actionType === "approve"
-                ? "Apakah Anda yakin ingin menyetujui pengajuan cuti ini?"
-                : actionType === "reject"
-                  ? "Harap berikan alasan penolakan di bawah ini. Alasan penolakan ini wajib diisi oleh Manager."
-                  : "Harap berikan catatan revisi di bawah ini."}
+                ? "Yakin ingin menyetujui pengajuan cuti ini?"
+                : "Anda yakin ingin menolak pengajuan cuti ini?"}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-3">
+          {selectedRequest && (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 p-3">
+              <div>
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Nama Pengaju</p>
+                <p className="font-bold text-slate-900 dark:text-slate-200">{selectedRequest.employeeName}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Jenis Cuti</p>
+                <p className="font-bold text-slate-900 dark:text-slate-200 capitalize">
+                  Cuti{" "}
+                  {selectedRequest.leaveType === "tahunan"
+                    ? "Tahunan"
+                    : selectedRequest.leaveType === "besar"
+                      ? "Besar"
+                      : selectedRequest.leaveType === "menikah"
+                        ? "Menikah"
+                        : selectedRequest.leaveType === "melahirkan"
+                          ? "Melahirkan"
+                          : "Tahunan"}
+                </p>
+              </div>
+              <div className="col-span-2">
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Periode Cuti</p>
+                <p className="font-bold text-slate-900 dark:text-slate-200">{formatPeriodDate(selectedRequest)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Durasi</p>
+                <p className="font-bold text-slate-900 dark:text-slate-200">{formatDuration(selectedRequest)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Status Pengganti</p>
+                <p className="font-bold text-slate-900 dark:text-slate-200">
+                  {getReplacementConfirmationStatus(selectedRequest).label}
+                </p>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-1.5 py-1">
+            <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+              {actionType === "reject"
+                ? "Alasan Penolakan (wajib)"
+                : "Catatan Persetujuan (opsional)"}
+            </label>
             <Textarea
               rows={3}
               placeholder={
@@ -2012,35 +1631,53 @@ export default function ManagerLeaveApprovalPage() {
               }
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="rounded-xl border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-600 focus:border-indigo-500 dark:focus:border-indigo-500 focus:ring-indigo-500 dark:focus:ring-indigo-500"
+              className={`rounded-xl bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-600 focus:ring-indigo-500 ${
+                actionType === "reject" && reasonError && !notes.trim()
+                  ? "border-red-500 dark:border-red-500 focus:border-red-500"
+                  : "border-slate-300 dark:border-slate-800 focus:border-indigo-500 dark:focus:border-indigo-500"
+              }`}
             />
+            {actionType === "reject" && reasonError && !notes.trim() && (
+              <p className="text-[11px] font-semibold text-red-600 dark:text-red-400">
+                Alasan penolakan wajib diisi
+              </p>
+            )}
           </div>
 
           <DialogFooter className="gap-2">
             <Button
               variant="ghost"
               onClick={() => setIsActionOpen(false)}
+              disabled={isSaving}
               className="rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
             >
               Batal
             </Button>
             <Button
-              onClick={handleConfirmAction}
+              onClick={() => {
+                if (actionType === "reject" && !notes.trim()) {
+                  setReasonError(true);
+                  return;
+                }
+                handleConfirmAction();
+              }}
               disabled={isSaving}
-              className={`font-bold rounded-xl px-5 ${
+              className={`font-bold rounded-xl px-5 disabled:opacity-60 ${
                 actionType === "approve"
-                  ? "bg-indigo-600 hover:bg-indigo-700 text-white"
-                  : actionType === "reject"
-                    ? "bg-red-650 hover:bg-red-700 text-white"
-                    : "bg-amber-600 hover:bg-amber-700 text-white"
+                  ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                  : "bg-red-600 hover:bg-red-700 text-white"
               }`}
             >
               {isSaving ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Memproses...
+                </>
               ) : (
-                <Send className="mr-2 h-4 w-4" />
+                <>
+                  <Send className="mr-2 h-4 w-4" />
+                  {actionType === "approve" ? "Ya, Setujui" : "Ya, Tolak"}
+                </>
               )}
-              Proses
             </Button>
           </DialogFooter>
         </DialogContent>

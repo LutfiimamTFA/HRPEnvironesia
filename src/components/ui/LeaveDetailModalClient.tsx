@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
 import { type LeaveRequest } from "@/lib/types";
+import { getReplacementConfirmationStatus, getReplacementStatusBadgeClass } from "@/lib/leave-replacement-status";
 
 interface LeaveDetailModalClientProps {
   isOpen: boolean;
@@ -347,23 +348,16 @@ export function LeaveDetailModalClient({
                 {(() => {
                   const confirmation = (request as any).replacementConfirmation;
                   if (!confirmation?.status) return null;
-                  const badgeClass =
-                    confirmation.status === "accepted"
-                      ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
-                      : confirmation.status === "rejected"
-                        ? "bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400"
-                        : "bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400";
+                  // Reads through the same getReplacementConfirmationStatus()
+                  // helper the manager approval page uses, so this can never
+                  // disagree with what a manager sees for the same request.
+                  const status = getReplacementConfirmationStatus(request);
                   return (
                     <div className="mt-2 space-y-1">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black border uppercase tracking-wider ${badgeClass}`}>
-                        {confirmation.label ||
-                          (confirmation.status === "accepted"
-                            ? "Pengganti Bersedia"
-                            : confirmation.status === "rejected"
-                              ? "Pengganti Menolak"
-                              : "Menunggu Konfirmasi")}
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black border uppercase tracking-wider ${getReplacementStatusBadgeClass(status.tone)}`}>
+                        {status.label}
                       </span>
-                      {confirmation.status === "rejected" && confirmation.rejectionReason && (
+                      {status.key === "declined" && confirmation.rejectionReason && (
                         <p className="text-[11px] text-red-600 dark:text-red-400 italic">
                           "{confirmation.rejectionReason}"
                         </p>

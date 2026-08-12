@@ -86,6 +86,103 @@ interface EmployeeMaster {
   nik?: string;
 }
 
+// ── Dedup: overtime_payroll_recaps can end up with more than one doc for the
+// exact same day's overtime (e.g. HRD re-approving after a revision cycle) —
+// ReviewOvertimeDialog.tsx's addDoc() there always creates a new doc rather
+// than upserting, so this page has to defend against duplicates on its own
+// rather than assume the source collection is already clean. Every
+// aggregate (total hari lembur, total menit, daily log rows, CSV export)
+// must run over the deduped set, never the raw one.
+function formatDateKey(value: any): string {
+  if (!value) return "";
+  try {
+    const date = typeof value?.toDate === "function" ? value.toDate() : new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return format(date, "yyyy-MM-dd");
+  } catch {
+    return "";
+  }
+}
+
+function getOvertimeUniqueKey(item: any): string {
+  const employeeUid = item?.employeeUid || item?.employeeId || item?.uid || item?.userId || "";
+
+  const dateKey =
+    item?.dateKey ||
+    item?.overtimeDateKey ||
+    formatDateKey(item?.overtimeDate) ||
+    "";
+
+  const start = item?.startTime || item?.startTimeText || "";
+  const end = item?.endTime || item?.endTimeText || "";
+
+  const approvedMinutes = Number(
+    item?.approvedMinutesFinal ??
+    item?.overtimeApprovedMinutes ??
+    item?.payrollMinutes ??
+    item?.hrdApprovedMinutes ??
+    item?.durationMinutes ??
+    0,
+  );
+
+  return [employeeUid, dateKey, start, end, approvedMinutes].join("__");
+}
+
+function dedupeOvertimeSubmissions<T extends Record<string, any>>(items: T[]): T[] {
+  const map = new Map<string, T>();
+
+  for (const item of items || []) {
+    const key = getOvertimeUniqueKey(item);
+    if (!key || key.includes("____")) continue;
+
+    if (!map.has(key)) {
+      map.set(key, item);
+      continue;
+    }
+
+    // Duplicate found — keep whichever was updated/reviewed more recently
+    // rather than arbitrarily the first or last one encountered.
+    const existing = map.get(key)!;
+    const existingUpdated = existing.updatedAt?.seconds || existing.hrdReviewedAt?.seconds || existing.approvedAt?.seconds || 0;
+    const currentUpdated = item.updatedAt?.seconds || item.hrdReviewedAt?.seconds || item.approvedAt?.seconds || 0;
+
+    if (currentUpdated > existingUpdated) {
+      map.set(key, item);
+    }
+  }
+
+  return Array.from(map.values());
+}
+
+function countUniqueOvertimeDays(items: any[]): number {
+  const days = new Set<string>();
+  for (const item of items || []) {
+    const dateKey = item?.dateKey || item?.overtimeDateKey || formatDateKey(item?.overtimeDate);
+    if (dateKey) days.add(dateKey);
+  }
+  return days.size;
+}
+
+// "8 jam 0 menit" is redundant when the minute part is zero — show "8 jam"
+// instead, "30 menit" alone when under an hour.
+function formatDuration(minutes: number): string {
+  const value = Number(minutes) || 0;
+  const h = Math.floor(value / 60);
+  const m = value % 60;
+  if (h <= 0) return `${m} menit`;
+  if (m <= 0) return `${h} jam`;
+  return `${h} jam ${m} menit`;
+}
+
+// Legacy docs still carry the old division code "CBDMS" — display it as its
+// current name "DTIC" everywhere without touching the stored data itself.
+function normalizeDivisionDisplayName(name: any): string {
+  const raw = String(name || "").trim();
+  if (!raw) return "";
+  if (raw.toLowerCase() === "cbdms") return "DTIC";
+  return raw;
+}
+
 export function OvertimePayrollRecapClient() {
   const firestore = useFirestore();
   const { userProfile } = useAuth();
@@ -111,6 +208,14 @@ export function OvertimePayrollRecapClient() {
 
   // Individual update note state
   const [individualNote, setIndividualNote] = useState("");
+
+  // Staged status pill selection for the detail modal — status pills only
+  // mark an intent locally; the actual write happens when "Simpan Status"
+  // is clicked in the footer, so a click never silently mutates payroll data.
+  const [pendingStatus, setPendingStatus] = useState<string | null>(null);
+  useEffect(() => {
+    setPendingStatus(null);
+  }, [selectedGroup?.id]);
 
   // Query payroll recaps — brand-scoped for HRD (Super Admin/All Companies
   // gets everyone via the same hook's internal bypass). Never a raw
@@ -144,6 +249,67 @@ export function OvertimePayrollRecapClient() {
   const { data: visibleBrandsData } = useHrdScopedBrands();
   const visibleBrands = visibleBrandsData || [];
 
+  // Stable string key for visibleBrands — `visibleBrandsData || []` produces
+  // a brand-new array reference on every render whenever visibleBrandsData
+  // is still undefined (loading), so any effect/memo depending on the raw
+  // array re-fires every render instead of only when the actual brand list
+  // changes. That was the root cause of the "Maximum update depth exceeded"
+  // loop: the masterDivisionsByBrand effect below kept depending on a
+  // reference that never stabilized, so it kept calling setState, which
+  // triggered a re-render, which produced yet another new [] reference.
+  const visibleBrandsKey = useMemo(
+    () => visibleBrands.map((b) => b.id || b.name || "").sort().join("|"),
+    [visibleBrands],
+  );
+
+  // Master division data — keyed by brand NAME (matching how brandFilter and
+  // recap docs identify a brand) — one entry per brand in visibleBrands,
+  // each holding that brand's brands/{id}/divisions subcollection. Reading
+  // this instead of `recaps.map(r => r.division)` is the whole point of
+  // section 6/7 of this fix: a brand's division list must not depend on
+  // whether anyone in it happened to submit overtime this month. Fetched
+  // imperatively (not via a hook-per-brand, which would violate the Rules
+  // of Hooks for a dynamic brand count) whenever the HRD's visible brand
+  // list changes.
+  const [masterDivisionsByBrand, setMasterDivisionsByBrand] = useState<Record<string, string[]>>({});
+  useEffect(() => {
+    if (!visibleBrandsKey) {
+      // Functional-update + emptiness guard so this never schedules a
+      // render when the map is already empty — matters while
+      // visibleBrandsData is still loading, since that state would
+      // otherwise be re-entered on every render.
+      setMasterDivisionsByBrand((prev) => (Object.keys(prev).length === 0 ? prev : {}));
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(
+        visibleBrands.map(async (brand) => {
+          const brandName = brand.name || brand.id || "";
+          try {
+            const snap = await getDocs(collection(firestore, "brands", brand.id, "divisions"));
+            const names = Array.from(
+              new Set(
+                snap.docs
+                  .map((d) => normalizeDivisionDisplayName(d.data()?.name || d.id))
+                  .filter(Boolean),
+              ),
+            ).sort();
+            return [brandName, names] as [string, string[]];
+          } catch {
+            return [brandName, []] as [string, string[]];
+          }
+        }),
+      );
+      if (!cancelled) setMasterDivisionsByBrand(Object.fromEntries(entries));
+    })();
+    return () => { cancelled = true; };
+    // visibleBrandsKey (a stable joined-id string), not visibleBrands
+    // (a reference that changes on every render while data is loading),
+    // is the real dependency here — see its definition above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firestore, visibleBrandsKey]);
+
   const employeeMetadataMap = useMemo(() => {
     const map = new Map<string, string>();
     employeesData?.forEach((emp) => {
@@ -175,7 +341,8 @@ export function OvertimePayrollRecapClient() {
     });
 
     return [...map.entries()].map(([value, label]) => ({ value, label }));
-  }, [visibleBrands, recaps]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleBrandsKey, recaps]);
 
   const isSingleBrandHrd = !isSuperAdmin && !isAllCompanies && visibleBrands.length === 1;
 
@@ -183,13 +350,18 @@ export function OvertimePayrollRecapClient() {
   // it and lock the dropdown. HRD with several sees "Semua Brand Saya" (never
   // the bare "Semua Brand" label, which would misleadingly imply every brand
   // in the system rather than just the ones this HRD is scoped to).
+  // Depends on visibleBrandsKey (stable string), not visibleBrands (a
+  // reference that changes on every render while loading) — see its
+  // definition above. The brandFilter !== onlyBrandName guard alone isn't
+  // enough to stop a loop if the effect keeps re-firing on every render.
   useEffect(() => {
     if (isSuperAdmin || isAllCompanies) return;
     const onlyBrandName = visibleBrands[0]?.name || visibleBrands[0]?.id;
     if (visibleBrands.length === 1 && onlyBrandName && brandFilter !== onlyBrandName) {
       setBrandFilter(onlyBrandName);
     }
-  }, [isSuperAdmin, isAllCompanies, visibleBrands, brandFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSuperAdmin, isAllCompanies, visibleBrandsKey, brandFilter]);
 
   if (typeof window !== "undefined") {
     console.log("[OVERTIME_PAYROLL_BRAND_SCOPE_DEBUG]", {
@@ -205,22 +377,63 @@ export function OvertimePayrollRecapClient() {
     });
   }
 
+  // Master-data-driven — a specific brand shows only ITS OWN divisions
+  // (never cross-joined with another brand's), "Semua Brand" merges every
+  // scoped brand's divisions. Falls back to whatever division names appear
+  // in this month's recap data ONLY if the master subcollection came back
+  // completely empty (e.g. not populated yet for that brand) — never used
+  // as the primary source, since that's exactly the bug this replaces
+  // (a division only showing up because someone in it happened to work
+  // overtime that month).
   const divisionOptions = useMemo(() => {
-    const map = new Map<string, string>();
-    recaps?.forEach((r) => {
-      if (r.division) map.set(r.division, r.division);
-    });
-    return [...map.keys()];
-  }, [recaps]);
+    const set = new Set<string>();
+    if (brandFilter === "all") {
+      Object.values(masterDivisionsByBrand).forEach((names) => names.forEach((n) => set.add(n)));
+    } else {
+      (masterDivisionsByBrand[brandFilter] || []).forEach((n) => set.add(n));
+    }
+
+    if (set.size === 0) {
+      recaps?.forEach((r) => {
+        if (brandFilter !== "all" && r.brand !== brandFilter) return;
+        const name = normalizeDivisionDisplayName(r.division);
+        if (name) set.add(name);
+      });
+    }
+
+    return Array.from(set).sort();
+  }, [masterDivisionsByBrand, brandFilter, recaps]);
+
+  // Stable joined key so the reset effect below only re-runs when the set of
+  // valid division names actually changes, not on every render just because
+  // divisionOptions is a fresh array/useMemo result each time.
+  const divisionOptionKey = useMemo(() => divisionOptions.join("|"), [divisionOptions]);
+
+  // A division picked while looking at one brand may not exist under a
+  // newly-selected different brand — reset rather than silently filter
+  // down to zero rows on a division that's no longer a valid choice. Guarded
+  // so it never calls setDivisionFilter when the value is already "all".
+  useEffect(() => {
+    if (divisionFilter === "all") return;
+    if (!divisionOptions.includes(divisionFilter)) {
+      setDivisionFilter("all");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [divisionFilter, divisionOptionKey]);
 
   // Group and filter recaps
   const filteredAndGroupedRecaps = useMemo(() => {
     if (!recaps) return [];
 
-    const filtered = recaps.filter((r) => {
+    // Dedup FIRST, before anything downstream (filtering, grouping, totals,
+    // the modal's daily log, CSV export) ever sees the raw collection — a
+    // duplicate here would otherwise double-count in every one of those.
+    const uniqueRecaps = dedupeOvertimeSubmissions(recaps);
+
+    const filtered = uniqueRecaps.filter((r) => {
       if (periodFilter && r.payrollMonth !== periodFilter) return false;
       if (brandFilter !== "all" && r.brand !== brandFilter) return false;
-      if (divisionFilter !== "all" && r.division !== divisionFilter) return false;
+      if (divisionFilter !== "all" && normalizeDivisionDisplayName(r.division) !== divisionFilter) return false;
       if (payrollStatusFilter !== "all" && (r.payrollStatus || "pending_payroll") !== payrollStatusFilter) return false;
       if (searchTerm) {
         const normalized = searchTerm.toLowerCase();
@@ -252,7 +465,7 @@ export function OvertimePayrollRecapClient() {
           employeeId: r.employeeId,
           employeeName: r.employeeName,
           brand: r.brand || "-",
-          division: r.division || "-",
+          division: normalizeDivisionDisplayName(r.division) || "-",
           payrollMonth: r.payrollMonth,
           totalDays: 0,
           totalMinutes: 0,
@@ -263,7 +476,6 @@ export function OvertimePayrollRecapClient() {
         };
       }
 
-      groups[key].totalDays += 1;
       groups[key].totalMinutes += r.hrdApprovedMinutes || 0;
       groups[key].items.push(r);
 
@@ -286,6 +498,14 @@ export function OvertimePayrollRecapClient() {
       } else if (currentStatus === "pending_payroll" && itemStatus === "excluded") {
         groups[key].payrollStatus = "excluded";
       }
+    });
+
+    // Total Hari Lembur = count of DISTINCT dates, not row count — items are
+    // already deduped by (employee, date, start, end, minutes), but two
+    // genuinely different jobs logged on the same day would still be two
+    // rows for one day, which must still count as 1 hari.
+    Object.values(groups).forEach((group) => {
+      group.totalDays = countUniqueOvertimeDays(group.items);
     });
 
     return Object.values(groups).sort((a, b) => a.employeeName.localeCompare(b.employeeName));
@@ -537,19 +757,20 @@ export function OvertimePayrollRecapClient() {
         "Divisi",
         "Bulan Payroll",
         "Total Hari Lembur",
-        "Total Menit Payroll",
-        "Total Durasi Format Jam",
+        "Durasi Final HRD",
+        "Total Menit",
         "Status Payroll",
+        "Tanggal Diproses",
+        "Tanggal Dibayarkan",
         "Catatan Payroll",
       ];
 
       const csvRows = [headers.join(",")];
 
+      // filteredAndGroupedRecaps is already built from dedupeOvertimeSubmissions()
+      // (see the useMemo above) — never re-derive totals from raw recaps here.
       filteredAndGroupedRecaps.forEach((g) => {
         const empNumber = employeeMetadataMap.get(g.employeeId) || "-";
-        const totalHrs = Math.floor(g.totalMinutes / 60);
-        const totalMins = g.totalMinutes % 60;
-        const durationFormat = `${totalHrs} jam ${totalMins} menit`;
 
         const statusLabel =
           g.payrollStatus === "paid" ? "Sudah Dibayarkan"
@@ -566,9 +787,11 @@ export function OvertimePayrollRecapClient() {
           `"${g.division.replace(/"/g, '""')}"`,
           `"${g.payrollMonth}"`,
           g.totalDays,
+          `"${formatDuration(g.totalMinutes)}"`,
           g.totalMinutes,
-          `"${durationFormat}"`,
           `"${statusLabel}"`,
+          `"${parseSafeFormattedDate(g.processedAt)}"`,
+          `"${parseSafeFormattedDate(g.paidAt)}"`,
           `"${notes.replace(/"/g, '""')}"`,
         ];
 
@@ -598,11 +821,10 @@ export function OvertimePayrollRecapClient() {
     }
   };
 
-  const formatMinutesToHuman = (minutes: number) => {
-    const hrs = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return hrs > 0 ? `${hrs} jam ${mins} menit` : `${mins} menit`;
-  };
+  // Delegates to the module-level formatDuration() — kept as a thin alias so
+  // every existing call site (below) automatically picks up the "8 jam"
+  // (not "8 jam 0 menit") fix without having to touch each one individually.
+  const formatMinutesToHuman = formatDuration;
 
   const getStatusBadge = (status: "pending_payroll" | "processing" | "paid" | "excluded") => {
     switch (status) {
@@ -623,6 +845,28 @@ export function OvertimePayrollRecapClient() {
     const date = typeof val.toDate === "function" ? val.toDate() : new Date(val);
     return format(date, "dd MMM yyyy, HH:mm", { locale: idLocale });
   };
+
+  // Compact stat row above the table — derived from filteredAndGroupedRecaps
+  // (already deduped + filtered), never recomputed from raw recaps.
+  const summaryStats = useMemo(() => {
+    let totalMinutes = 0;
+    let pending = 0;
+    let paid = 0;
+    let excluded = 0;
+    filteredAndGroupedRecaps.forEach((g) => {
+      totalMinutes += g.totalMinutes;
+      if (g.payrollStatus === "paid") paid += 1;
+      else if (g.payrollStatus === "excluded") excluded += 1;
+      else pending += 1; // pending_payroll + processing both read as "belum selesai"
+    });
+    return {
+      totalEmployees: filteredAndGroupedRecaps.length,
+      totalMinutes,
+      pending,
+      paid,
+      excluded,
+    };
+  }, [filteredAndGroupedRecaps]);
 
   return (
     <div className="space-y-6">
@@ -791,8 +1035,39 @@ export function OvertimePayrollRecapClient() {
         </CardContent>
       </Card>
 
+      {/* Summary Bar — compact, derived from the same already-deduped/filtered
+          data as the table below, never a separate recompute. */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950/20">
+          <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            <User className="h-3 w-3" /> Karyawan
+          </p>
+          <p className="mt-1 text-lg font-black text-slate-900 dark:text-white">{summaryStats.totalEmployees}</p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950/20">
+          <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            <Calendar className="h-3 w-3" /> Total Durasi
+          </p>
+          <p className="mt-1 text-lg font-black text-emerald-600 dark:text-emerald-400">{formatDuration(summaryStats.totalMinutes)}</p>
+        </div>
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 dark:border-blue-900 dark:bg-blue-950/20">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-blue-700 dark:text-blue-400">Menunggu Payroll</p>
+          <p className="mt-1 text-lg font-black text-blue-700 dark:text-blue-400">{summaryStats.pending}</p>
+        </div>
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 dark:border-emerald-900 dark:bg-emerald-950/20">
+          <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+            <ShieldCheck className="h-3 w-3" /> Sudah Dibayarkan
+          </p>
+          <p className="mt-1 text-lg font-black text-emerald-700 dark:text-emerald-400">{summaryStats.paid}</p>
+        </div>
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 dark:border-red-900 dark:bg-red-950/20">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-red-700 dark:text-red-400">Tidak Masuk Payroll</p>
+          <p className="mt-1 text-lg font-black text-red-700 dark:text-red-400">{summaryStats.excluded}</p>
+        </div>
+      </div>
+
       {/* Main Table */}
-      <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/20 rounded-[2rem] shadow-2xl backdrop-blur-xl">
+      <Card className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/20 shadow-sm overflow-hidden">
         <CardContent className="p-0">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center p-24 gap-3 text-slate-600 dark:text-slate-400">
@@ -800,69 +1075,76 @@ export function OvertimePayrollRecapClient() {
               <p className="text-sm font-semibold">Mengambil Data Rekapitulasi Payroll...</p>
             </div>
           ) : filteredAndGroupedRecaps.length > 0 ? (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto max-h-[70vh] overflow-y-auto">
               <Table>
-                <TableHeader className="bg-slate-50 dark:bg-slate-900/50">
-                  <TableRow className="border-slate-200 dark:border-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-900/50">
-                    <TableHead className="px-4 py-4 w-12 text-center">
+                <TableHeader className="bg-slate-50 dark:bg-slate-900/50 sticky top-0 z-10">
+                  <TableRow className="border-slate-200 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-900/50">
+                    <TableHead className="px-4 py-3 w-12 text-center">
                       <Checkbox
                         checked={filteredAndGroupedRecaps.length > 0 && selectedGroupIds.size === filteredAndGroupedRecaps.length}
                         onCheckedChange={handleSelectAll}
                         className="border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 data-[state=checked]:bg-emerald-500"
                       />
                     </TableHead>
-                    <TableHead className="px-4 py-4 text-left text-xs uppercase font-black text-slate-700 dark:text-slate-400">Nama Karyawan</TableHead>
-                    <TableHead className="px-3 py-4 text-left text-xs uppercase font-black text-slate-700 dark:text-slate-400">Brand / Divisi</TableHead>
-                    <TableHead className="px-3 py-4 text-center text-xs uppercase font-black text-slate-700 dark:text-slate-400">Bulan Payroll</TableHead>
-                    <TableHead className="px-3 py-4 text-center text-xs uppercase font-black text-slate-700 dark:text-slate-400 w-32">Total Hari Lembur</TableHead>
-                    <TableHead className="px-3 py-4 text-right text-xs uppercase font-black text-emerald-600 dark:text-emerald-400">Durasi Final HRD</TableHead>
-                    <TableHead className="px-3 py-4 text-right text-xs uppercase font-black text-slate-700 dark:text-slate-400">Total Menit</TableHead>
-                    <TableHead className="px-3 py-4 text-center text-xs uppercase font-black text-slate-700 dark:text-slate-400">Status Payroll</TableHead>
-                    <TableHead className="px-3 py-4 text-center text-xs uppercase font-black text-slate-700 dark:text-slate-400">Tanggal Diproses</TableHead>
-                    <TableHead className="px-3 py-4 text-center text-xs uppercase font-black text-slate-700 dark:text-slate-400">Tanggal Dibayarkan</TableHead>
-                    <TableHead className="px-6 py-4 text-right text-xs uppercase font-black text-slate-700 dark:text-slate-400 w-32">Aksi</TableHead>
+                    <TableHead className="px-4 py-3 text-left text-xs uppercase tracking-wide font-bold text-slate-500 dark:text-slate-400">Nama Karyawan</TableHead>
+                    <TableHead className="px-3 py-3 text-left text-xs uppercase tracking-wide font-bold text-slate-500 dark:text-slate-400">Brand / Divisi</TableHead>
+                    <TableHead className="px-3 py-3 text-center text-xs uppercase tracking-wide font-bold text-slate-500 dark:text-slate-400">Bulan Payroll</TableHead>
+                    <TableHead className="px-3 py-3 text-center text-xs uppercase tracking-wide font-bold text-slate-500 dark:text-slate-400 w-32">Total Hari Lembur</TableHead>
+                    <TableHead className="px-3 py-3 text-right text-xs uppercase tracking-wide font-bold text-emerald-600 dark:text-emerald-400">Durasi Final HRD</TableHead>
+                    <TableHead className="px-3 py-3 text-right text-xs uppercase tracking-wide font-bold text-slate-500 dark:text-slate-400">Total Menit</TableHead>
+                    <TableHead className="px-3 py-3 text-center text-xs uppercase tracking-wide font-bold text-slate-500 dark:text-slate-400">Status Payroll</TableHead>
+                    <TableHead className="px-3 py-3 text-center text-xs uppercase tracking-wide font-bold text-slate-500 dark:text-slate-400">Tanggal Diproses</TableHead>
+                    <TableHead className="px-3 py-3 text-center text-xs uppercase tracking-wide font-bold text-slate-500 dark:text-slate-400">Tanggal Dibayarkan</TableHead>
+                    <TableHead className="px-6 py-3 text-right text-xs uppercase tracking-wide font-bold text-slate-500 dark:text-slate-400 w-32">Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredAndGroupedRecaps.map((group) => (
-                    <TableRow key={group.id} className="border-slate-200 dark:border-slate-800/30 hover:bg-slate-100 dark:hover:bg-slate-900/10 transition-colors">
-                      <TableCell className="px-4 py-4 text-center">
+                    <TableRow
+                      key={group.id}
+                      className="border-slate-200 dark:border-slate-800/30 hover:bg-slate-50 dark:hover:bg-slate-900/10 transition cursor-pointer"
+                      onClick={() => {
+                        setSelectedGroup(group);
+                        setIndividualNote(group.items[0]?.payrollNotes || "");
+                      }}
+                    >
+                      <TableCell className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                         <Checkbox
                           checked={selectedGroupIds.has(group.id)}
                           onCheckedChange={(checked) => handleSelectRow(group.id, !!checked)}
                           className="border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 data-[state=checked]:bg-emerald-500"
                         />
                       </TableCell>
-                      <TableCell className="px-4 py-4 font-bold text-sm text-slate-900 dark:text-slate-200">
+                      <TableCell className="px-4 py-3 font-semibold text-sm text-slate-900 dark:text-slate-200">
                         {group.employeeName}
                       </TableCell>
-                      <TableCell className="px-3 py-4 text-sm text-slate-600 dark:text-slate-400">
+                      <TableCell className="px-3 py-3 text-sm text-slate-600 dark:text-slate-400">
                         {group.brand} / {group.division}
                       </TableCell>
-                      <TableCell className="px-3 py-4 text-center text-sm font-mono text-slate-700 dark:text-slate-300">
+                      <TableCell className="px-3 py-3 text-center text-sm font-mono text-slate-700 dark:text-slate-300">
                         {group.payrollMonth}
                       </TableCell>
-                      <TableCell className="px-3 py-4 text-center">
-                        <Badge variant="outline" className="bg-slate-100 dark:bg-slate-900 border-slate-300 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold px-2 py-0.5">
+                      <TableCell className="px-3 py-3 text-center">
+                        <Badge variant="outline" className="bg-slate-100 dark:bg-slate-900 border-slate-300 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-semibold px-2 py-0.5">
                           {group.totalDays} Hari
                         </Badge>
                       </TableCell>
-                      <TableCell className="px-3 py-4 text-right font-black text-sm text-emerald-600 dark:text-emerald-400">
+                      <TableCell className="px-3 py-3 text-right font-bold text-sm text-emerald-600 dark:text-emerald-400">
                         {formatMinutesToHuman(group.totalMinutes)}
                       </TableCell>
-                      <TableCell className="px-3 py-4 text-right font-mono text-sm text-slate-700 dark:text-slate-300">
+                      <TableCell className="px-3 py-3 text-right font-mono text-sm text-slate-700 dark:text-slate-300">
                         {group.totalMinutes} menit
                       </TableCell>
-                      <TableCell className="px-3 py-4 text-center">
+                      <TableCell className="px-3 py-3 text-center">
                         {getStatusBadge(group.payrollStatus)}
                       </TableCell>
-                      <TableCell className="px-3 py-4 text-center text-xs text-slate-600 dark:text-slate-400 font-mono">
+                      <TableCell className="px-3 py-3 text-center text-xs text-slate-600 dark:text-slate-400 font-mono">
                         {parseSafeFormattedDate(group.processedAt)}
                       </TableCell>
-                      <TableCell className="px-3 py-4 text-center text-xs text-slate-600 dark:text-slate-400 font-mono">
+                      <TableCell className="px-3 py-3 text-center text-xs text-slate-600 dark:text-slate-400 font-mono">
                         {parseSafeFormattedDate(group.paidAt)}
                       </TableCell>
-                      <TableCell className="px-6 py-4 text-right">
+                      <TableCell className="px-6 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                         <Button
                           variant="outline"
                           size="sm"
@@ -896,240 +1178,260 @@ export function OvertimePayrollRecapClient() {
 
       {/* Modal Detail Rincian Hari & Audit Trail (TUGAS 3) */}
       <Dialog open={!!selectedGroup} onOpenChange={(open) => !open && setSelectedGroup(null)}>
-        <DialogContent className="max-w-4xl max-h-[90vh] w-[90vw] bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white p-0 overflow-hidden flex flex-col">
+        {/* Fixed/centered positioning is inherited from the base DialogContent;
+            only display (grid -> flex-col) and sizing are overridden here so the
+            footer never gets pushed off-screen (see ReviewOvertimeDialog for the
+            same class of bug). */}
+        <DialogContent className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 max-w-5xl w-[92vw] h-[86dvh] bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white p-0 overflow-hidden flex flex-col">
           <DialogTitle className="sr-only">Detail Lembur Payroll</DialogTitle>
-          {selectedGroup && (
-            <>
-              {/* Header - Sticky */}
-              <div className="sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-6 py-4">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex-1">
-                    <h2 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-                      <span>📋</span> Detail Lembur Payroll
-                    </h2>
-                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                      Rincian log lembur yang disetujui untuk {selectedGroup.employeeName} periode {selectedGroup.payrollMonth}.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setSelectedGroup(null)}
-                    className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-500 dark:text-slate-400"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                </div>
-              </div>
+          {selectedGroup && (() => {
+            // Explicit modal-level dedupe — never trust that the group's
+            // items are already unique, since the same bug that duplicates
+            // overtime_payroll_recaps docs upstream can duplicate items here too.
+            const dailyLogs: OvertimePayrollRecap[] = selectedGroup.items;
+            const uniqueDailyLogs = dedupeOvertimeSubmissions(dailyLogs);
+            const duplicateRemoved = dailyLogs.length - uniqueDailyLogs.length;
+            if (duplicateRemoved > 0) {
+              console.log("[OVERTIME_PAYROLL_DETAIL_DEDUPE_DEBUG]", {
+                employeeUid: selectedGroup.employeeId,
+                payrollMonth: selectedGroup.payrollMonth,
+                rawLogsCount: dailyLogs.length,
+                uniqueLogsCount: uniqueDailyLogs.length,
+                duplicateRemoved,
+                rawKeys: dailyLogs.map(getOvertimeUniqueKey),
+              });
+            }
+            const latestItem = uniqueDailyLogs[0] || dailyLogs[0];
 
-              {/* Body - Scrollable */}
-              <div className="flex-1 overflow-y-auto"  >
-                <div className="space-y-6 px-6 py-4">
+            const statusPills: { value: "pending_payroll" | "processing" | "paid" | "excluded"; label: string; activeClass: string; idleClass: string }[] = [
+              { value: "pending_payroll", label: "Menunggu Payroll", activeClass: "bg-blue-600 border-blue-600 text-white", idleClass: "border-blue-300 dark:border-blue-600/40 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-600/10" },
+              { value: "processing", label: "Sedang Diproses", activeClass: "bg-amber-600 border-amber-600 text-white", idleClass: "border-amber-300 dark:border-amber-600/40 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-600/10" },
+              { value: "paid", label: "Sudah Dibayarkan", activeClass: "bg-emerald-600 border-emerald-600 text-white", idleClass: "border-emerald-300 dark:border-emerald-600/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-600/10" },
+              { value: "excluded", label: "Tidak Masuk Payroll", activeClass: "bg-red-600 border-red-600 text-white", idleClass: "border-red-300 dark:border-red-600/40 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-600/10" },
+            ];
+            const effectiveStatus = pendingStatus ?? selectedGroup.payrollStatus;
+            const hasPendingChange = pendingStatus !== null && pendingStatus !== selectedGroup.payrollStatus;
 
-                {/* Group summary card */}
-                <div className="grid gap-3 grid-cols-3 rounded-2xl bg-slate-50 dark:bg-slate-800 p-4 border border-slate-200 dark:border-slate-700">
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-600 dark:text-slate-400 block">Total Hari Kerja</span>
-                    <span className="text-sm font-black text-slate-900 dark:text-slate-200">{selectedGroup.totalDays} Hari</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-600 dark:text-slate-400 block">Akumulasi Payroll</span>
-                    <span className="text-sm font-black text-emerald-600 dark:text-emerald-400">{formatMinutesToHuman(selectedGroup.totalMinutes)}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-600 dark:text-slate-400 block">Status Saat Ini</span>
-                    <span className="block mt-0.5">{getStatusBadge(selectedGroup.payrollStatus)}</span>
-                  </div>
-                </div>
+            const auditSteps = [
+              { label: "Disetujui Manager", done: true, by: latestItem?.managerName || "Manager", at: null as any },
+              { label: "Disetujui HRD", done: !!latestItem?.approvedByHrd, by: latestItem?.approvedByHrd || "HRD", at: latestItem?.approvedAt },
+              { label: "Masuk Payroll", done: selectedGroup.payrollStatus !== "pending_payroll" || !!latestItem?.processedAt, by: latestItem?.payrollStatusUpdatedByName || "HRD Admin", at: latestItem?.payrollStatusUpdatedAt },
+              { label: "Diproses Payroll", done: !!latestItem?.processedAt, by: latestItem?.processedByName || "HRD Admin", at: latestItem?.processedAt },
+              { label: "Dibayarkan", done: !!latestItem?.paidAt, by: latestItem?.paidByName || "HRD Admin", at: latestItem?.paidAt },
+            ];
 
-                {/* Input Catatan & Aksi Status Payroll */}
-                <div className="space-y-3 bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">Catatan & Aksi Status</span>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">Catatan Payroll (Opsional)</label>
-                    <Textarea
-                      placeholder="Masukkan catatan payroll..."
-                      value={individualNote}
-                      onChange={(e) => setIndividualNote(e.target.value)}
-                      className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 rounded-xl text-xs h-16 text-slate-900 dark:text-white"
-                    />
-                  </div>
-
-                  <div className="flex flex-wrap gap-2 pt-2">
-                    <Button
-                      size="sm"
-                      disabled={loading || selectedGroup.payrollStatus === "pending_payroll"}
-                      variant="outline"
-                      className="border-blue-300 dark:border-blue-600/40 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-600/10 rounded-xl text-xs h-9"
-                      onClick={() => performUpdateStatus([selectedGroup], "pending_payroll", individualNote)}
+            return (
+              <>
+                {/* Header - shrink */}
+                <div className="shrink-0 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-6 py-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <h2 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+                        <span>📋</span> Detail Lembur Payroll
+                      </h2>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5 text-xs text-slate-600 dark:text-slate-400">
+                        <span className="font-bold text-slate-900 dark:text-slate-200">{selectedGroup.employeeName}</span>
+                        <span className="text-slate-300 dark:text-slate-700">•</span>
+                        <span>{selectedGroup.brand} / {selectedGroup.division}</span>
+                        <span className="text-slate-300 dark:text-slate-700">•</span>
+                        <span className="font-mono">{selectedGroup.payrollMonth}</span>
+                        <span className="text-slate-300 dark:text-slate-700">•</span>
+                        {getStatusBadge(selectedGroup.payrollStatus)}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setSelectedGroup(null)}
+                      className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-500 dark:text-slate-400"
                     >
-                      Tandai Menunggu Payroll
-                    </Button>
-                    <Button
-                      size="sm"
-                      disabled={loading || selectedGroup.payrollStatus === "processing"}
-                      variant="outline"
-                      className="border-amber-300 dark:border-amber-600/40 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-600/10 rounded-xl text-xs h-9"
-                      onClick={() => performUpdateStatus([selectedGroup], "processing", individualNote)}
-                    >
-                      Tandai Sedang Diproses
-                    </Button>
-                    <Button
-                      size="sm"
-                      disabled={loading || selectedGroup.payrollStatus === "paid"}
-                      variant="outline"
-                      className="border-emerald-300 dark:border-emerald-600/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-600/10 rounded-xl text-xs h-9"
-                      onClick={() => performUpdateStatus([selectedGroup], "paid", individualNote)}
-                    >
-                      Tandai Sudah Dibayarkan
-                    </Button>
-                    <Button
-                      size="sm"
-                      disabled={loading || selectedGroup.payrollStatus === "excluded"}
-                      variant="outline"
-                      className="border-red-300 dark:border-red-600/40 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-600/10 rounded-xl text-xs h-9"
-                      onClick={() => performUpdateStatus([selectedGroup], "excluded", individualNote)}
-                    >
-                      Tandai Tidak Masuk Payroll
-                    </Button>
+                      <X className="h-5 w-5" />
+                    </button>
                   </div>
                 </div>
 
-                {/* Log Pengajuan Harian */}
-                <div className="space-y-2">
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">Log Pengajuan Harian</span>
-                  <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-slate-50 dark:bg-slate-900/20">
-                    <Table>
-                      <TableHeader className="bg-slate-100 dark:bg-slate-900/60">
-                        <TableRow className="border-slate-200 dark:border-slate-800/50">
-                          <TableHead className="py-2 text-[10px] uppercase font-bold text-slate-700 dark:text-slate-400">Tanggal</TableHead>
-                          <TableHead className="py-2 text-[10px] uppercase font-bold text-slate-700 dark:text-slate-400">Jam Kerja</TableHead>
-                          <TableHead className="py-2 text-[10px] uppercase font-bold text-slate-700 dark:text-slate-400">Lokasi</TableHead>
-                          <TableHead className="py-2 text-[10px] uppercase font-bold text-slate-700 dark:text-slate-400">Uraian Tugas</TableHead>
-                          <TableHead className="py-2 text-[10px] uppercase font-bold text-slate-700 dark:text-slate-400 text-right">Durasi Ajuan</TableHead>
-                          <TableHead className="py-2 text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400 text-right">Durasi Payroll</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {selectedGroup.items.map((item: OvertimePayrollRecap, idx: number) => (
-                          <TableRow key={item.id || idx} className="border-slate-200 dark:border-slate-800/30 hover:bg-slate-100 dark:hover:bg-slate-900/20">
-                            <TableCell className="py-2 text-xs text-slate-700 dark:text-slate-200 font-medium">
-                              {format(new Date(item.overtimeDate), "dd MMM yyyy", { locale: idLocale })}
-                            </TableCell>
-                            <TableCell className="py-2 text-xs font-mono text-slate-600 dark:text-slate-400">
-                              {item.startTime} - {item.endTime}
-                            </TableCell>
-                            <TableCell className="py-2 text-xs text-slate-700 dark:text-slate-300">
-                              {item.location}
-                            </TableCell>
-                            <TableCell className="py-2 text-xs text-slate-600 dark:text-slate-400 max-w-[120px] truncate" title={item.taskSummary}>
-                              {item.taskSummary || item.reason || "-"}
-                            </TableCell>
-                            <TableCell className="py-2 text-xs text-slate-600 dark:text-slate-400 text-right">
-                              {formatMinutesToHuman(item.submittedMinutes || 0)}
-                            </TableCell>
-                            <TableCell className="py-2 text-xs font-bold text-emerald-600 dark:text-emerald-400 text-right">
-                              {formatMinutesToHuman(item.hrdApprovedMinutes || 0)}
-                            </TableCell>
+                {/* Body - scroll */}
+                <div className="flex-1 overflow-y-auto min-h-0">
+                  <div className="space-y-6 px-6 py-4">
+
+                  {/* Group summary card */}
+                  <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 rounded-2xl bg-slate-50 dark:bg-slate-800 p-4 border border-slate-200 dark:border-slate-700">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-600 dark:text-slate-400 block">Total Hari Kerja Lembur</span>
+                      <span className="text-sm font-black text-slate-900 dark:text-slate-200">{selectedGroup.totalDays} Hari</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-600 dark:text-slate-400 block">Akumulasi Payroll</span>
+                      <span className="text-sm font-black text-emerald-600 dark:text-emerald-400">{formatMinutesToHuman(selectedGroup.totalMinutes)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-600 dark:text-slate-400 block">Total Menit</span>
+                      <span className="text-sm font-black text-slate-900 dark:text-slate-200">{selectedGroup.totalMinutes} menit</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-600 dark:text-slate-400 block">Status Saat Ini</span>
+                      <span className="block mt-0.5">{getStatusBadge(selectedGroup.payrollStatus)}</span>
+                    </div>
+                  </div>
+
+                  {/* Input Catatan & Aksi Status Payroll */}
+                  <div className="space-y-3 bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">Catatan & Aksi Status</span>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">Catatan Payroll (Opsional)</label>
+                      <Textarea
+                        placeholder="Masukkan catatan payroll..."
+                        value={individualNote}
+                        onChange={(e) => setIndividualNote(e.target.value)}
+                        className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 rounded-xl text-xs h-16 text-slate-900 dark:text-white"
+                      />
+                    </div>
+
+                    {/* Segmented status pills — clicking only stages the choice;
+                        the write happens via "Simpan Status" in the footer. */}
+                    <div className="flex flex-wrap gap-2 pt-2">
+                      {statusPills.map((pill) => (
+                        <button
+                          key={pill.value}
+                          type="button"
+                          disabled={loading}
+                          onClick={() => setPendingStatus(pill.value)}
+                          className={`px-3 h-9 rounded-full border text-xs font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed ${
+                            effectiveStatus === pill.value ? pill.activeClass : `bg-white dark:bg-slate-900 ${pill.idleClass}`
+                          }`}
+                        >
+                          {pill.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Log Pengajuan Harian */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">Log Pengajuan Harian</span>
+                      {duplicateRemoved > 0 && (
+                        <Badge variant="outline" className="text-[10px] font-semibold border-amber-300 dark:border-amber-600/40 text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-600/10">
+                          Duplikat otomatis digabung
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-slate-50 dark:bg-slate-900/20">
+                      <Table>
+                        <TableHeader className="bg-slate-100 dark:bg-slate-900/60">
+                          <TableRow className="border-slate-200 dark:border-slate-800/50">
+                            <TableHead className="py-2 text-[10px] uppercase font-bold text-slate-700 dark:text-slate-400">Tanggal</TableHead>
+                            <TableHead className="py-2 text-[10px] uppercase font-bold text-slate-700 dark:text-slate-400">Jam Kerja</TableHead>
+                            <TableHead className="py-2 text-[10px] uppercase font-bold text-slate-700 dark:text-slate-400">Lokasi</TableHead>
+                            <TableHead className="py-2 text-[10px] uppercase font-bold text-slate-700 dark:text-slate-400">Uraian Tugas</TableHead>
+                            <TableHead className="py-2 text-[10px] uppercase font-bold text-slate-700 dark:text-slate-400 text-right">Durasi Ajuan</TableHead>
+                            <TableHead className="py-2 text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400 text-right">Durasi Payroll</TableHead>
+                            <TableHead className="py-2 text-[10px] uppercase font-bold text-slate-700 dark:text-slate-400">Status HRD</TableHead>
+                            <TableHead className="py-2 text-[10px] uppercase font-bold text-slate-700 dark:text-slate-400">Catatan HRD</TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                        </TableHeader>
+                        <TableBody>
+                          {uniqueDailyLogs.map((item: OvertimePayrollRecap, idx: number) => (
+                            <TableRow key={item.id || idx} className="border-slate-200 dark:border-slate-800/30 hover:bg-slate-100 dark:hover:bg-slate-900/20">
+                              <TableCell className="py-2 text-xs text-slate-700 dark:text-slate-200 font-medium">
+                                {format(new Date(item.overtimeDate), "dd MMM yyyy", { locale: idLocale })}
+                              </TableCell>
+                              <TableCell className="py-2 text-xs font-mono text-slate-600 dark:text-slate-400">
+                                {item.startTime} - {item.endTime}
+                              </TableCell>
+                              <TableCell className="py-2 text-xs text-slate-700 dark:text-slate-300">
+                                {item.location}
+                              </TableCell>
+                              <TableCell className="py-2 text-xs text-slate-600 dark:text-slate-400 max-w-[120px] truncate" title={item.taskSummary}>
+                                {item.taskSummary || item.reason || "-"}
+                              </TableCell>
+                              <TableCell className="py-2 text-xs text-slate-600 dark:text-slate-400 text-right">
+                                {formatMinutesToHuman(item.submittedMinutes || 0)}
+                              </TableCell>
+                              <TableCell className="py-2 text-xs font-bold text-emerald-600 dark:text-emerald-400 text-right">
+                                {formatMinutesToHuman(item.hrdApprovedMinutes || 0)}
+                              </TableCell>
+                              <TableCell className="py-2 text-xs">
+                                <Badge variant="outline" className="text-[10px] font-semibold border-emerald-300 dark:border-emerald-600/40 text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-600/10">
+                                  Disetujui HRD
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="py-2 text-xs text-slate-600 dark:text-slate-400 max-w-[140px] truncate" title={item.payrollNotes || ""}>
+                                {item.payrollNotes || "-"}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
                   </div>
-                </div>
 
-                {/* Complete Audit Trail */}
-                <div className="space-y-3 bg-slate-50 dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700">
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 block pb-1 border-b border-slate-200 dark:border-slate-700">
-                    Audit Trail Lembur & Payroll
-                  </span>
-                  <div className="space-y-3 pt-2 text-xs">
-                    {selectedGroup.items[0] && (
-                      <>
-                        <div className="flex justify-between items-start gap-4">
-                          <span className="text-slate-600 dark:text-slate-400">Disetujui Manager:</span>
-                          <span className="text-right font-medium text-slate-900 dark:text-slate-200">
-                            {selectedGroup.items[0].managerName || "Manager"}
-                          </span>
-                        </div>
-
-                        <div className="flex justify-between items-start gap-4">
-                          <span className="text-slate-600 dark:text-slate-400">Disetujui HRD:</span>
-                          <span className="text-right font-medium text-slate-900 dark:text-slate-200">
-                            {selectedGroup.items[0].approvedByHrd || "HRD"}
-                            <span className="text-slate-600 dark:text-slate-500 block text-[10px]">
-                              ({parseSafeFormattedDate(selectedGroup.items[0].approvedAt)})
+                  {/* Audit Trail — compact timeline */}
+                  <div className="space-y-3 bg-slate-50 dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 block pb-1 border-b border-slate-200 dark:border-slate-700">
+                      Audit Trail Lembur & Payroll
+                    </span>
+                    <ol className="pt-2">
+                      {auditSteps.map((step, i) => (
+                        <li key={step.label} className="flex gap-3">
+                          <div className="flex flex-col items-center">
+                            <span className={`h-3 w-3 rounded-full shrink-0 ${step.done ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-700"}`} />
+                            {i < auditSteps.length - 1 && (
+                              <span className={`w-px flex-1 min-h-[18px] ${step.done ? "bg-emerald-300 dark:bg-emerald-700" : "bg-slate-200 dark:bg-slate-700"}`} />
+                            )}
+                          </div>
+                          <div className="pb-4 text-xs">
+                            <span className={`font-bold ${step.done ? "text-slate-900 dark:text-slate-200" : "text-slate-400 dark:text-slate-600"}`}>
+                              {step.label}
                             </span>
-                          </span>
-                        </div>
-
-                        {/* Display payroll status updates */}
-                        {selectedGroup.items[0].payrollStatusUpdatedAt && (
-                          <div className="flex justify-between items-start gap-4 border-t border-slate-200 dark:border-slate-700 pt-2">
-                            <span className="text-slate-600 dark:text-slate-400">Perubahan Payroll Terakhir:</span>
-                            <span className="text-right font-medium text-slate-900 dark:text-slate-200">
-                              Oleh {selectedGroup.items[0].payrollStatusUpdatedByName || "HRD Admin"}
-                              <span className="text-slate-600 dark:text-slate-500 block text-[10px]">
-                                ({parseSafeFormattedDate(selectedGroup.items[0].payrollStatusUpdatedAt)})
+                            {step.done && (
+                              <span className="text-slate-600 dark:text-slate-400 block">
+                                {step.by}
+                                {step.at ? ` · ${parseSafeFormattedDate(step.at)}` : ""}
                               </span>
-                            </span>
+                            )}
                           </div>
-                        )}
-
-                        {/* Display processed details */}
-                        {selectedGroup.items[0].processedAt && (
-                          <div className="flex justify-between items-start gap-4">
-                            <span className="text-slate-600 dark:text-slate-400">Masuk / Diproses Payroll:</span>
-                            <span className="text-right font-medium text-slate-900 dark:text-slate-200">
-                              {selectedGroup.items[0].processedByName || "HRD Admin"}
-                              <span className="text-slate-600 dark:text-slate-500 block text-[10px]">
-                                ({parseSafeFormattedDate(selectedGroup.items[0].processedAt)})
-                              </span>
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Display paid details */}
-                        {selectedGroup.items[0].paidAt && (
-                          <div className="flex justify-between items-start gap-4">
-                            <span className="text-slate-600 dark:text-slate-400">Dibayarkan Oleh:</span>
-                            <span className="text-right font-medium text-slate-900 dark:text-slate-200">
-                              {selectedGroup.items[0].paidByName || "HRD Admin"}
-                              <span className="text-slate-600 dark:text-slate-500 block text-[10px]">
-                                ({parseSafeFormattedDate(selectedGroup.items[0].paidAt)})
-                              </span>
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Payroll Notes display */}
-                        {selectedGroup.items[0].payrollNotes && (
-                          <div className="border-t border-slate-200 dark:border-slate-700 pt-2 space-y-1">
-                            <span className="text-slate-600 dark:text-slate-400 block font-bold">Catatan Audit Payroll:</span>
-                            <p className="bg-white dark:bg-slate-900 p-2 rounded-xl text-slate-700 dark:text-slate-300 italic border border-slate-200 dark:border-slate-700">
-                              "{selectedGroup.items[0].payrollNotes}"
-                            </p>
-                          </div>
-                        )}
-                      </>
+                        </li>
+                      ))}
+                    </ol>
+                    {latestItem?.payrollNotes && (
+                      <div className="border-t border-slate-200 dark:border-slate-700 pt-2 space-y-1">
+                        <span className="text-slate-600 dark:text-slate-400 block font-bold text-xs">Catatan Audit Payroll:</span>
+                        <p className="bg-white dark:bg-slate-900 p-2 rounded-xl text-xs text-slate-700 dark:text-slate-300 italic border border-slate-200 dark:border-slate-700">
+                          "{latestItem.payrollNotes}"
+                        </p>
+                      </div>
                     )}
                   </div>
+                  </div>
                 </div>
-                </div>
-              </div>
 
-              {/* Footer - Sticky */}
-              <div className="sticky bottom-0 z-10 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-6 py-4 flex justify-end gap-3">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSelectedGroup(null)}
-                  className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-xl text-xs h-9"
-                >
-                  Tutup
-                </Button>
-              </div>
-            </>
-          )}
+                {/* Footer - shrink */}
+                <div className="shrink-0 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-6 py-4 flex justify-end gap-3">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSelectedGroup(null)}
+                    className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-xl text-xs h-9"
+                  >
+                    Tutup
+                  </Button>
+                  {hasPendingChange && (
+                    <Button
+                      size="sm"
+                      disabled={loading}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs h-9"
+                      onClick={async () => {
+                        await performUpdateStatus([selectedGroup], pendingStatus as any, individualNote);
+                        setPendingStatus(null);
+                      }}
+                    >
+                      Simpan Status
+                    </Button>
+                  )}
+                </div>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 

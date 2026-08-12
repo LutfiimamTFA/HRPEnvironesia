@@ -126,6 +126,7 @@ import {
   type UserProfile,
 } from "@/lib/types";
 import { getLeaveProcessStage } from "@/lib/leave-process-stage";
+import { getReplacementConfirmationStatus, getReplacementStatusBadgeClass } from "@/lib/leave-replacement-status";
 import { useLiveLeaveBalance } from "@/hooks/use-live-leave-balance";
 
 import { LeaveDetailModalClient } from "@/components/ui/LeaveDetailModalClient";
@@ -1808,30 +1809,20 @@ export function LeaveSubmissionClient() {
     return null;
   };
 
+  // Reads through the same getReplacementConfirmationStatus() helper the
+  // manager approval page and modal use, so this badge can never disagree
+  // with what a manager sees for the same request.
   const getReplacementBadge = (req: LeaveRequest) => {
     const confirmation = (req as any).replacementConfirmation;
     if (!confirmation?.status) return null;
-    switch (confirmation.status) {
-      case "accepted":
-        return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black border uppercase tracking-wider bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400">
-            Pengganti Bersedia
-          </span>
-        );
-      case "rejected":
-        return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black border uppercase tracking-wider bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400">
-            Pengganti Menolak
-          </span>
-        );
-      case "pending":
-      default:
-        return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black border uppercase tracking-wider bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400">
-            Menunggu Konfirmasi
-          </span>
-        );
-    }
+    const status = getReplacementConfirmationStatus(req);
+    return (
+      <span
+        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black border uppercase tracking-wider ${getReplacementStatusBadgeClass(status.tone)}`}
+      >
+        {status.label}
+      </span>
+    );
   };
 
   if (
