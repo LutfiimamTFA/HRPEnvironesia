@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, CheckCircle, XCircle, Send, Info, FileText, Image as ImageIcon, ExternalLink } from "lucide-react";
+import { Loader2, CheckCircle, XCircle, Send, Info, ExternalLink } from "lucide-react";
 import {
   OvertimeSubmission,
   isFinalStatus,
@@ -27,7 +27,10 @@ import {
   arrayUnion,
 } from "firebase/firestore";
 import { sendNotification, sendHrdNotification } from "@/lib/notifications";
-import { getOvertimeStatusLabel, getAnomalyFlagLabel } from "@/lib/overtime-utils";
+import {
+  getOvertimeStatusLabel, getAnomalyFlagLabel,
+  getCurrentUserOvertimeRoles, getReviewerRoleDisplayLabel,
+} from "@/lib/overtime-utils";
 import { format } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,6 +46,7 @@ import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -50,6 +54,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  type EvidenceItem, isImageEvidence, collectJobEvidence, collectSubmissionOnlyEvidence,
+  EvidenceThumbnailGrid, EvidenceLightbox, openEvidenceInNewTab,
+} from "@/components/dashboard/karyawan/OvertimeEvidencePreview";
 
 interface ReviewOvertimeDialogProps {
   open: boolean;
@@ -128,6 +136,12 @@ export function ReviewOvertimeDialog({
   const [proxyNote, setProxyNote] = useState("");
   const [revisionNote, setRevisionNote] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
+  // Manager mode no longer opens a separate dialog just to collect a note
+  // (see handleApprove/handleDecision below) — this is the inline "Catatan
+  // Manager (opsional)" field shown in the main modal body instead. Kept
+  // separate from hrdNotes, which stays HRD-mode-only, so the two review
+  // roles' notes are never accidentally conflated.
+  const [managerNoteInput, setManagerNoteInput] = useState("");
   const [hrdHours, setHrdHours] = useState(0);
   const [hrdMinutes, setHrdMinutes] = useState(0);
   const [hrdNotes, setHrdNotes] = useState("");
@@ -135,6 +149,17 @@ export function ReviewOvertimeDialog({
   const { userProfile } = useAuth();
   const firestore = useFirestore();
   const { toast } = useToast();
+  const [previewFile, setPreviewFile] = useState<EvidenceItem | null>(null);
+
+  const handleOpenEvidence = (file: EvidenceItem) => {
+    if (isImageEvidence(file)) {
+      setPreviewFile(file);
+      return;
+    }
+    openEvidenceInNewTab(file, (message) => {
+      toast({ variant: "destructive", title: "Gagal Membuka Bukti", description: message });
+    }, submission.id);
+  };
 
   const formatMinutesToHuman = (minutes: number): string => {
     if (!minutes) return "0 menit";
@@ -158,6 +183,7 @@ export function ReviewOvertimeDialog({
       setRevisionNote(submission.revisionNote || "");
       setRejectionReason(submission.rejectionReason || "");
       setOverLimitDecision(submission.overLimitDecision || "");
+      setManagerNoteInput(submission.managerNotes || "");
     }
   }, [open, submission]);
 
@@ -190,6 +216,10 @@ export function ReviewOvertimeDialog({
     (sum, task) => sum + (task.estimatedMinutes || 0),
     0,
   );
+  // "Output & Bukti per Pekerjaan" above already shows each job's own
+  // evidence — this is only the extra evidence attached at the submission
+  // level that isn't already covered under a job, so nothing repeats.
+  const submissionOnlyEvidence = collectSubmissionOnlyEvidence(submission);
   const submittedAt =
     parseSafeDate((submission as any).submittedAt ?? submission.createdAt) ||
     new Date();
@@ -233,6 +263,12 @@ export function ReviewOvertimeDialog({
 
   const canAct = getCanActStrict();
   const operatorName = userProfile?.fullName || userProfile?.email || "";
+  // Display only — approval rights never come from these roles directly,
+  // they're derived from getCanActStrict() above. Surfaces e.g. Daniel being
+  // BOTH the real atasan and the coordinator on the same submission, instead
+  // of the header implying he's only one or the other.
+  const reviewerRoles = mode === "manager" ? getCurrentUserOvertimeRoles(submission, userProfile?.uid) : [];
+  const reviewerRoleLabel = reviewerRoles.length > 0 ? getReviewerRoleDisplayLabel(reviewerRoles) : null;
 
   const isManagerOrHrd = mode === "hrd" || (userProfile && (submission.directSupervisorUid === userProfile.uid || submission.managerUid === userProfile.uid));
   const canRecordProxyApproval = resolvedStatus === "pending_coordinator" && !!isManagerOrHrd && submission.overtimeCoordinatorUid !== userProfile?.uid;
@@ -482,7 +518,14 @@ export function ReviewOvertimeDialog({
               approvalStatus: "pending_hrd_review",
               status: "pending_hrd_review",
               currentApprovalStep: "hrd",
+              // HRD review isn't scoped to one specific uid the way manager
+              // review is (any HRD user in the brand's scope can act), so
+              // there's no single uid to point currentApproverUid/
+              // waitingForUid at — only the role.
               currentApproverUid: null,
+              waitingForUid: null,
+              waitingForName: null,
+              waitingForRole: "hrd",
               supervisorApprovedAt: serverTimestamp() as any,
               supervisorApprovedBy: userProfile.uid,
               supervisorApprovedByName: operatorName || null,
@@ -507,23 +550,11 @@ export function ReviewOvertimeDialog({
               managerReviewedByName: operatorName || null,
               managerNotes: note || null,
             };
-          } else if (decision === "revise") {
-            payload = {
-              approvalStatus: "revision_requested",
-              status: "revision_requested",
-              revisionRequestedAt: serverTimestamp() as any,
-              revisionRequestedBy: userProfile.uid,
-              revisionRequestedAtStage: "manager",
-              revisionNote: note || null,
-              revisionReason: note || null,
-              managerDecisionAt: serverTimestamp() as any,
-              managerDecision: "revision_requested",
-              managerReviewedAt: serverTimestamp() as any,
-              managerReviewedBy: userProfile.uid,
-              managerReviewedByName: operatorName || null,
-              managerNotes: note || null,
-            };
           }
+          // No "revise" case here — manager alur is Setujui/Tolak only (see
+          // the footer above, which no longer renders "Minta Revisi" for
+          // mode === "manager"). handleDecision("revise", ...) is only ever
+          // called from the HRD branch below now.
         }
       } else {
         let status: OvertimeSubmission["status"] =
@@ -952,7 +983,7 @@ export function ReviewOvertimeDialog({
   const handleApproveConfirm = async () => {
     setShowApproveDialog(false);
     setIsSaving(true);
-    await handleDecision("approve", hrdNotes);
+    await handleDecision("approve", mode === "hrd" ? hrdNotes : managerNoteInput);
   };
 
   const handleRevisionSubmit = async () => {
@@ -970,7 +1001,7 @@ export function ReviewOvertimeDialog({
   };
 
   const handleRejectSubmit = async () => {
-    const finalNote = rejectionReason.trim() || hrdNotes.trim();
+    const finalNote = rejectionReason.trim() || (mode === "hrd" ? hrdNotes.trim() : managerNoteInput.trim());
     if (!finalNote) {
       toast({
         variant: "destructive",
@@ -1125,7 +1156,7 @@ export function ReviewOvertimeDialog({
                 />
                 <SummaryTile
                   label="Jabatan"
-                  value={submission.workRole || submission.positionTitle}
+                  value={submission.workRole || submission.positionTitle || (submission as any).position}
                 />
                 <SummaryTile
                   label="Tanggal Lembur"
@@ -1264,12 +1295,12 @@ export function ReviewOvertimeDialog({
                               <p className="text-sm text-slate-700">{job.workOutput || "-"}</p>
                             </div>
                             {((job.evidenceFiles?.length || 0) + (job.evidenceLinks?.length || 0)) > 0 ? (
-                              <div className="space-y-1 pt-1">
-                                {(job.evidenceFiles || []).map((f, fi) => (
-                                  <a key={`f-${fi}`} href={f.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-blue-600 hover:underline">
-                                    <FileText className="h-3 w-3 shrink-0" /> {f.name || `Lampiran ${fi + 1}`}
-                                  </a>
-                                ))}
+                              <div className="space-y-2 pt-1">
+                                <EvidenceThumbnailGrid
+                                  files={collectJobEvidence(job)}
+                                  submissionId={submission.id}
+                                  onOpen={handleOpenEvidence}
+                                />
                                 {(job.evidenceLinks || []).map((link, li) => (
                                   <a key={`l-${li}`} href={link} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-blue-600 hover:underline">
                                     <ExternalLink className="h-3 w-3 shrink-0" /> {link}
@@ -1304,61 +1335,27 @@ export function ReviewOvertimeDialog({
                       </div>
                     )}
 
-                    {submission.attachments?.length ? (
+                    {submissionOnlyEvidence.length > 0 ? (
                       <div className="rounded-2xl border border-slate-200 bg-white p-5">
                         <p className="text-sm font-bold text-slate-950">
                           Bukti Lembur
                         </p>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          Lampiran ini digunakan sebagai bukti pendukung bahwa
-                          pekerjaan lembur benar-benar dilakukan.
+                          Lampiran tambahan di level pengajuan — bukti per pekerjaan sudah tampil di atas.
                         </p>
-                        <div className="mt-3 space-y-2">
-                          {submission.attachments.map((attachment, index) => {
-                            const isObj = typeof attachment === "object" && attachment !== null;
-                            const fileUrl = isObj
-                              ? (attachment as any).fileUrl || (attachment as any).url || ""
-                              : attachment;
-                            const fileName = isObj
-                              ? (attachment as any).fileName || (attachment as any).name || `Lampiran ${index + 1}`
-                              : `Lampiran ${index + 1}`;
-                            const fileType = isObj ? (attachment as any).mimeType || (attachment as any).contentType || "" : "";
-                            const uploadedAt = isObj ? (attachment as any).uploadedAt : null;
-                            const isImage = fileType.startsWith("image/") || /\.(png|jpe?g|gif|webp)$/i.test(fileName);
-                            return (
-                              <a
-                                key={index}
-                                href={fileUrl || undefined}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 hover:bg-slate-100 transition-colors"
-                              >
-                                {isImage && fileUrl ? (
-                                  <img src={fileUrl} alt={fileName} className="h-12 w-12 rounded-lg object-cover border border-slate-200" />
-                                ) : (
-                                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-white border border-slate-200">
-                                    {isImage ? <ImageIcon className="h-5 w-5 text-slate-400" /> : <FileText className="h-5 w-5 text-slate-400" />}
-                                  </div>
-                                )}
-                                <div className="min-w-0 flex-1">
-                                  <p className="truncate text-sm font-medium text-slate-800">{fileName}</p>
-                                  {uploadedAt && (
-                                    <p className="text-xs text-muted-foreground">
-                                      Diunggah {new Date(uploadedAt).toLocaleString("id-ID")}
-                                    </p>
-                                  )}
-                                </div>
-                                <ExternalLink className="h-4 w-4 shrink-0 text-slate-400" />
-                              </a>
-                            );
-                          })}
+                        <div className="mt-3">
+                          <EvidenceThumbnailGrid
+                            files={submissionOnlyEvidence}
+                            submissionId={submission.id}
+                            onOpen={handleOpenEvidence}
+                          />
                         </div>
                       </div>
-                    ) : (
+                    ) : !jobs ? (
                       <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
                         Pengajuan ini belum memiliki lampiran bukti lembur.
                       </div>
-                    )}
+                    ) : null}
                   </CardContent>
                 </Card>
 
@@ -1897,6 +1894,31 @@ export function ReviewOvertimeDialog({
                   </Card>
                 </div>
               </div>
+
+              {mode === "manager" && canAct && (
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="manager-note-input" className="text-sm font-semibold text-slate-900">
+                      Catatan Manager (opsional)
+                    </Label>
+                    <Textarea
+                      id="manager-note-input"
+                      value={managerNoteInput}
+                      onChange={(e) => setManagerNoteInput(e.target.value)}
+                      placeholder="Tambahkan catatan jika ada hal yang perlu diperhatikan HRD."
+                      rows={2}
+                      className="rounded-xl border-slate-200"
+                    />
+                  </div>
+                  <Alert className="border-slate-200 bg-slate-50">
+                    <Info className="h-4 w-4 text-slate-500" />
+                    <AlertDescription className="text-sm text-slate-600">
+                      Jika disetujui, pengajuan akan masuk ke HRD untuk verifikasi final dan penentuan durasi payroll.
+                    </AlertDescription>
+                  </Alert>
+                </div>
+              )}
+
               <Alert className="border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950">
                 <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                 <AlertTitle className="text-blue-900 dark:text-blue-100">
@@ -1930,14 +1952,21 @@ export function ReviewOvertimeDialog({
             )}
             {canAct && (
               <>
-                <Button
-                  variant="outline"
-                  onClick={() => setShowRevisionDialog(true)}
-                  disabled={isSaving}
-                  className="h-11 rounded-xl border-amber-300 px-5 font-semibold text-amber-700 hover:bg-amber-50"
-                >
-                  Minta Revisi
-                </Button>
+                {/* Manager alur is Setujui/Tolak only — HRD is the final
+                    decision-maker for payroll, so revision requests from a
+                    manager no longer exist as an action (legacy
+                    revision_requested* docs are still readable, just never
+                    created from here anymore). HRD keeps this button. */}
+                {mode !== "manager" && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowRevisionDialog(true)}
+                    disabled={isSaving}
+                    className="h-11 rounded-xl border-amber-300 px-5 font-semibold text-amber-700 hover:bg-amber-50"
+                  >
+                    Minta Revisi
+                  </Button>
+                )}
                 <Button
                   variant="destructive"
                   onClick={() => setShowRejectDialog(true)}
@@ -2002,6 +2031,12 @@ export function ReviewOvertimeDialog({
                     <p className="italic text-slate-700">"{hrdNotes}"</p>
                   </div>
                 )}
+              </div>
+            )}
+            {mode === "manager" && managerNoteInput.trim() && (
+              <div className="mt-4 p-4 rounded-2xl border border-emerald-200 bg-emerald-50 text-xs space-y-1">
+                <span className="text-slate-600">Catatan Manager:</span>
+                <p className="italic text-slate-700">"{managerNoteInput}"</p>
               </div>
             )}
             <p className="mt-4 text-xs text-slate-500">
@@ -2285,6 +2320,13 @@ export function ReviewOvertimeDialog({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <EvidenceLightbox
+        file={previewFile}
+        submissionId={submission.id}
+        onClose={() => setPreviewFile(null)}
+        onError={(message) => toast({ variant: "destructive", title: "Gagal Membuka Bukti", description: message })}
+      />
     </>
   );
 }

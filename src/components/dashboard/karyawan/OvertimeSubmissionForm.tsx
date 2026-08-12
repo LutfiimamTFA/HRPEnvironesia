@@ -62,12 +62,12 @@ import { useAuth } from "@/providers/auth-provider";
 import {
   useFirestore, useDoc, useCollection, useMemoFirebase,
 } from "@/firebase";
-import { sendNotification } from "@/lib/notifications";
 import { uploadFile } from "@/lib/storage/storage-adapter";
 import {
   doc, addDoc, updateDoc, collection, query, where, serverTimestamp,
   Timestamp, arrayUnion,
 } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 import type { OvertimeSubmission, EmployeeProfile, Brand } from "@/lib/types";
 import { resolveApprovalTarget, type DivisionMasterOrganization } from "@/lib/approval-flow";
 import {
@@ -82,6 +82,10 @@ import {
 import { GoogleDatePicker } from "@/components/ui/google-date-picker";
 import { format } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
+import {
+  type EvidenceItem, isImageEvidence, collectOvertimeEvidence,
+  EvidenceThumbnailGrid, EvidenceLightbox, openEvidenceInNewTab,
+} from "./OvertimeEvidencePreview";
 
 // Indonesian 24-jam format with a dot separator ("17.00", "21.30") —
 // deliberately NOT "HH:mm" and NOT a native <input type="time">, which
@@ -179,6 +183,80 @@ function emptyJob(): JobFormValue {
   return { id: newJobId(), title: "", projectOrClient: "", workSummary: "", workOutput: "", estimatedDurationMinutes: 0, evidenceLinks: [] };
 }
 
+// ── overtime_submissions create-payload sanitizer ───────────────────────────
+// firestore.rules validates create with request.resource.data.keys().hasOnly(
+// [...]) — one field outside that whitelist and the whole write is denied.
+// basePayload is built as a precise literal object (never a spread of form
+// state), so nothing here SHOULD leak in, but this is a defensive backstop —
+// and the debug log below makes a future whitelist/payload drift visible
+// immediately instead of surfacing as a bare permission error again.
+function removeUndefinedDeep(value: any): any {
+  if (Array.isArray(value)) {
+    return value.map(removeUndefinedDeep);
+  }
+  if (
+    value &&
+    typeof value === "object" &&
+    !(value instanceof Date) &&
+    typeof value.toDate !== "function" &&
+    typeof value.isEqual !== "function" // Firestore Timestamp/FieldValue sentinels — never treat these as plain objects to recurse into.
+  ) {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, v]) => v !== undefined)
+        .map(([k, v]) => [k, removeUndefinedDeep(v)]),
+    );
+  }
+  return value;
+}
+
+const FORBIDDEN_OVERTIME_CREATE_KEYS = [
+  "division", "workRole", "holidayTypeOther", "isDirectSupervisor",
+  "selectedAssigner", "selectedTaskAssigner", "tempFiles", "localFiles",
+  "fileObjects", "rawFile", "previewUrl", "durationLabel", "validationLabel",
+  "validationStatus", "formStep", "draftId", "lastSavedAt", "isSubmitting",
+  "debugData", "evidenceFileObjects", "jobEvidenceFileObjects",
+];
+
+function sanitizeOvertimeCreatePayload(payload: any) {
+  const cleaned = removeUndefinedDeep(payload);
+  for (const key of FORBIDDEN_OVERTIME_CREATE_KEYS) {
+    delete cleaned[key];
+  }
+  return cleaned;
+}
+
+// Mirrors manualOvertimeCreateKeys() in firestore.rules — kept here only for
+// the [OVERTIME_UNKNOWN_PAYLOAD_KEYS] debug log, not as the enforcement
+// mechanism (rules remain the actual source of truth).
+const ALLOWED_OVERTIME_CREATE_KEYS = new Set([
+  "employeeUid", "uid", "userId", "employeeName", "employeeCode", "employeeType", "position", "jobTitle",
+  "brandId", "brandName", "companyId", "companyName", "divisionId", "divisionName",
+  "inputMode",
+  "overtimeDate", "overtimeDateStr", "overtimeMonthKey", "overtimeDay",
+  "startTime", "endTime", "startTimeMinutes", "endTimeMinutes",
+  "durationMinutes", "durationHours", "totalDurationMinutes", "isCrossDay",
+  "overtimeType", "overtimeTypeLabel", "holidayType", "holidayTypeLabel",
+  "workLocation", "workLocationLabel", "workLocationOther", "workLocationDetail", "location", "locationDetail",
+  "taskAssignerUid", "taskAssignerName", "taskAssignerRole", "taskAssignerRoleLabel",
+  "taskAssignerPosition", "taskAssignerDivisionId", "taskAssignerDivisionName",
+  "taskAssignerBrandId", "taskAssignerBrandName", "taskAssignerGroup",
+  "overtimeCoordinatorUid", "overtimeCoordinatorName", "overtimeCoordinatorRole",
+  "overtimeCoordinatorPosition", "overtimeCoordinatorEmail", "overtimeInstructionNote",
+  "assignmentType", "assignmentTypeLabel", "assignmentTypeOther", "projectOrClient",
+  "jobs", "tasks", "taskDetails", "totalJobDurationMinutes",
+  "workSummary", "workOutput", "overtimeReason", "reason", "reasonDetail", "notes", "employeeNotes",
+  "evidenceFiles", "evidenceLinks", "attachments", "attachmentUrls", "supportingEvidence", "hasSupportingEvidence",
+  "declarationAccepted", "declarationAcceptedAt",
+  "anomalyFlags", "reviewLevel", "reviewStatus",
+  "status", "approvalStatus", "approvalLevel", "approvalFlowType", "approvalFlow",
+  "currentApprovalStep", "currentApproverUid", "approvalTargetUid",
+  "waitingForUid", "waitingForName", "waitingForRole",
+  "directSupervisorUid", "directSupervisorName", "managerUid", "managerName", "managerDivisionName",
+  "timeline", "activityLog", "createdAt", "updatedAt", "submittedAt",
+  "createdByUid", "createdByName", "submittedByUid", "submittedByName",
+]);
+
 function InfoRow({ label, value }: { label: string; value: string | number | null | undefined }) {
   return (
     <div className="flex justify-between items-start gap-4">
@@ -212,6 +290,19 @@ function OvertimeSubmissionDetailView({
   onRequestEdit?: () => void;
   onClose: () => void;
 }) {
+  const { toast } = useToast();
+  const [previewFile, setPreviewFile] = useState<EvidenceItem | null>(null);
+
+  const handleOpenEvidence = (file: EvidenceItem) => {
+    if (isImageEvidence(file)) {
+      setPreviewFile(file);
+      return;
+    }
+    openEvidenceInNewTab(file, (message) => {
+      toast({ variant: "destructive", title: "Gagal Membuka Bukti", description: message });
+    }, submission.id);
+  };
+
   const overtimeDate = toJsDate(submission.overtimeDate);
   const jobs = submission.jobs?.length
     ? submission.jobs
@@ -226,17 +317,15 @@ function OvertimeSubmissionDetailView({
           evidenceLinks: submission.evidenceLinks || [],
         }]
       : [];
-  const topLevelEvidenceFiles = submission.evidenceFiles?.length
-    ? submission.evidenceFiles
-    : (submission.attachments || []).map((a) =>
-        typeof a === "string" ? { url: a, name: a } : { url: a.fileUrl || a.url || "", name: a.name || a.fileName },
-      );
+  // All evidence in one deduped list (evidenceFiles + attachments + every
+  // job's evidenceFiles overlap heavily — see collectOvertimeEvidence).
+  const allEvidence = collectOvertimeEvidence(submission);
   const topLevelEvidenceLinks = submission.evidenceLinks || [];
   const anomalyFlags = submission.anomalyFlags || [];
 
   return (
-    <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-      <DialogHeader>
+    <DialogContent className="max-w-7xl w-[94vw] max-h-[90vh] p-0 overflow-hidden flex flex-col">
+      <DialogHeader className="shrink-0 border-b px-6 py-4">
         <DialogTitle className="flex items-center gap-2 flex-wrap">
           Detail Pengajuan Lembur
           <ToneBadge tone={getOvertimeStatusTone(submission.status)}>{getOvertimeStatusLabel(submission.status)}</ToneBadge>
@@ -247,136 +336,155 @@ function OvertimeSubmissionDetailView({
         </DialogDescription>
       </DialogHeader>
 
-      <div className="space-y-5">
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Waktu & Kategori</CardTitle></CardHeader>
-          <CardContent className="space-y-2">
-            <InfoRow label="Jam Mulai - Selesai" value={`${submission.startTime} - ${submission.endTime}${submission.isCrossDay ? " (lintas hari)" : ""}`} />
-            <InfoRow label="Total Durasi Lembur" value={formatDurationLabel(submission.totalDurationMinutes)} />
-            <InfoRow label="Tipe Lembur" value={submission.overtimeTypeLabel || getOvertimeTypeLabel(submission.overtimeType)} />
-            {submission.overtimeType === "hari_libur" && (
-              <InfoRow label="Jenis Hari Libur" value={getHolidayTypeLabel(submission.holidayType, submission.holidayTypeOther)} />
-            )}
-            <InfoRow label="Lokasi / Kondisi Lembur" value={submission.workLocationLabel || getWorkLocationLabel(submission.workLocation)} />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Penugasan</CardTitle></CardHeader>
-          <CardContent className="space-y-2">
-            <InfoRow
-              label="Pemberi Tugas"
-              value={[
-                submission.taskAssignerName || submission.overtimeCoordinatorName,
-                [
-                  submission.isDirectSupervisor ? "Atasan Langsung" : null,
-                  submission.taskAssignerRoleLabel || submission.taskAssignerPosition,
-                  submission.taskAssignerDivisionName,
-                ].filter(Boolean).join(" / "),
-              ].filter(Boolean).join(" — ")}
-            />
-            <InfoRow label="Jenis Penugasan" value={getAssignmentTypeLabel(submission.assignmentType, submission.assignmentTypeOther)} />
-            <InfoRow label="Project / Klien / Divisi" value={submission.projectOrClient} />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Daftar Pekerjaan Lembur ({jobs.length})</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            {jobs.map((job, i) => (
-              <div key={job.id || i} className="rounded-xl border p-3 space-y-2">
-                <p className="text-sm font-bold">{i + 1}. {job.title}</p>
-                {job.projectOrClient && <p className="text-xs text-muted-foreground">{job.projectOrClient}</p>}
-                <div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Ringkasan</p>
-                  <p className="text-sm">{job.workSummary || "-"}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Output</p>
-                  <p className="text-sm">{job.workOutput || "-"}</p>
-                </div>
-                <InfoRow label="Estimasi Durasi" value={formatDurationLabel(job.estimatedDurationMinutes)} />
-                {((job.evidenceFiles?.length || 0) + (job.evidenceLinks?.length || 0)) > 0 ? (
-                  <div className="space-y-1 pt-1">
-                    {(job.evidenceFiles || []).map((f, fi) => (
-                      <a key={`f-${fi}`} href={f.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-xs text-blue-600 hover:underline">
-                        <FileText className="h-3 w-3 shrink-0" /> {f.name || `Lampiran ${fi + 1}`}
-                      </a>
-                    ))}
-                    {(job.evidenceLinks || []).map((link, li) => (
-                      <a key={`l-${li}`} href={link} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-xs text-blue-600 hover:underline">
-                        <LinkIcon className="h-3 w-3 shrink-0" /> {link}
-                      </a>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-amber-600">Bukti belum lengkap untuk pekerjaan ini.</p>
-                )}
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Alasan Lembur</CardTitle></CardHeader>
-          <CardContent>
-            <p className="text-sm">{submission.overtimeReason || submission.reason || "-"}</p>
-          </CardContent>
-        </Card>
-
-        {(topLevelEvidenceFiles.length > 0 || topLevelEvidenceLinks.length > 0) && (
+      <div className="flex-1 overflow-y-auto px-6 py-5">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+          {/* A. Ringkasan Pengajuan */}
           <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm">Semua Bukti Pendukung ({topLevelEvidenceFiles.length + topLevelEvidenceLinks.length})</CardTitle></CardHeader>
+            <CardHeader className="pb-2"><CardTitle className="text-sm">A. Ringkasan Pengajuan</CardTitle></CardHeader>
             <CardContent className="space-y-2">
-              {topLevelEvidenceFiles.map((f, i) => (
-                <a key={`tf-${i}`} href={f.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
-                  <FileText className="h-3.5 w-3.5 shrink-0" /> {f.name || `Lampiran ${i + 1}`}
-                </a>
-              ))}
-              {topLevelEvidenceLinks.map((link, i) => (
-                <a key={`tl-${i}`} href={link} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
-                  <LinkIcon className="h-3.5 w-3.5 shrink-0" /> {link}
-                </a>
+              <InfoRow label="Jam Mulai - Selesai" value={`${submission.startTime} - ${submission.endTime}${submission.isCrossDay ? " (lintas hari)" : ""}`} />
+              <InfoRow label="Total Durasi Lembur" value={formatDurationLabel(submission.totalDurationMinutes)} />
+              <InfoRow label="Tipe Lembur" value={submission.overtimeTypeLabel || getOvertimeTypeLabel(submission.overtimeType)} />
+              {submission.overtimeType === "hari_libur" && (
+                <InfoRow label="Jenis Hari Libur" value={(submission as any).holidayTypeLabel || getHolidayTypeLabel(submission.holidayType, submission.holidayTypeOther)} />
+              )}
+              <InfoRow label="Lokasi / Kondisi Lembur" value={submission.workLocationLabel || getWorkLocationLabel(submission.workLocation)} />
+              <InfoRow label="Status" value={getOvertimeStatusLabel(submission.status)} />
+              <InfoRow
+                label="Pemberi Tugas"
+                value={[
+                  submission.taskAssignerName || submission.overtimeCoordinatorName,
+                  [
+                    // taskAssignerGroup is what new submissions write; legacy
+                    // docs (before this field existed) still have the older
+                    // isDirectSupervisor boolean, so both are checked.
+                    (submission as any).taskAssignerGroup === "direct_supervisor" || submission.isDirectSupervisor ? "Atasan Langsung" : null,
+                    submission.taskAssignerRoleLabel || submission.taskAssignerPosition,
+                    submission.taskAssignerDivisionName,
+                  ].filter(Boolean).join(" / "),
+                ].filter(Boolean).join(" — ")}
+              />
+              <InfoRow label="Jenis Penugasan" value={getAssignmentTypeLabel(submission.assignmentType, submission.assignmentTypeOther)} />
+              <InfoRow label="Project / Klien / Divisi" value={submission.projectOrClient} />
+            </CardContent>
+          </Card>
+
+          {/* C. Alasan Lembur + E. Indikator Review */}
+          <div className="space-y-5">
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">C. Alasan Lembur</CardTitle></CardHeader>
+              <CardContent>
+                <p className="text-sm">{submission.overtimeReason || submission.reason || "-"}</p>
+              </CardContent>
+            </Card>
+
+            {anomalyFlags.length > 0 && (
+              <Alert className="border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30">
+                <AlertTriangle className="h-4 w-4 text-amber-600" />
+                <AlertTitle className="text-amber-800 dark:text-amber-300">E. Indikator Perlu Review</AlertTitle>
+                <AlertDescription className="text-amber-700 dark:text-amber-400">
+                  <div className="flex flex-wrap gap-1.5 mt-1">
+                    {anomalyFlags.map((flag) => <ToneBadge key={flag} tone="warning">{getAnomalyFlagLabel(flag)}</ToneBadge>)}
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+
+          {/* B. Daftar Pekerjaan */}
+          <Card className="lg:col-span-2">
+            <CardHeader className="pb-2"><CardTitle className="text-sm">B. Daftar Pekerjaan Lembur ({jobs.length})</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              {jobs.map((job, i) => (
+                <div key={job.id || i} className="rounded-xl border p-3 space-y-2">
+                  <p className="text-sm font-bold">{i + 1}. {job.title}</p>
+                  {job.projectOrClient && <p className="text-xs text-muted-foreground">{job.projectOrClient}</p>}
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Ringkasan</p>
+                    <p className="text-sm">{job.workSummary || "-"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Output</p>
+                    <p className="text-sm">{job.workOutput || "-"}</p>
+                  </div>
+                  <InfoRow label="Estimasi Durasi" value={formatDurationLabel(job.estimatedDurationMinutes)} />
+                  {/* Thumbnails intentionally live only in section D below —
+                      evidenceFiles here is the same list flattened into
+                      submission.evidenceFiles, so a second thumbnail grid
+                      per job showed every image twice. */}
+                  {(job.evidenceFiles?.length || 0) > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Bukti pekerjaan: {job.evidenceFiles!.length} file, lihat di bagian D. Bukti Pendukung.
+                    </p>
+                  )}
+                  {(job.evidenceLinks || []).length > 0 && (
+                    <div className="space-y-1 pt-1">
+                      {(job.evidenceLinks || []).map((link, li) => (
+                        <a key={`l-${li}`} href={link} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-xs text-blue-600 hover:underline">
+                          <LinkIcon className="h-3 w-3 shrink-0" /> {link}
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                  {((job.evidenceFiles?.length || 0) + (job.evidenceLinks?.length || 0)) === 0 && (
+                    <p className="text-xs text-amber-600">Bukti belum lengkap untuk pekerjaan ini.</p>
+                  )}
+                </div>
               ))}
             </CardContent>
           </Card>
-        )}
 
-        {anomalyFlags.length > 0 && (
-          <Alert className="border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30">
-            <AlertTriangle className="h-4 w-4 text-amber-600" />
-            <AlertTitle className="text-amber-800 dark:text-amber-300">Indikator Perlu Review</AlertTitle>
-            <AlertDescription className="text-amber-700 dark:text-amber-400">
-              <div className="flex flex-wrap gap-1.5 mt-1">
-                {anomalyFlags.map((flag) => <ToneBadge key={flag} tone="warning">{getAnomalyFlagLabel(flag)}</ToneBadge>)}
-              </div>
-            </AlertDescription>
-          </Alert>
-        )}
+          {/* D. Bukti Pendukung */}
+          {(allEvidence.length > 0 || topLevelEvidenceLinks.length > 0) && (
+            <Card className="lg:col-span-2">
+              <CardHeader className="pb-2"><CardTitle className="text-sm">D. Bukti Pendukung ({allEvidence.length + topLevelEvidenceLinks.length})</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <EvidenceThumbnailGrid files={allEvidence} submissionId={submission.id} onOpen={handleOpenEvidence} />
+                {topLevelEvidenceLinks.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    {topLevelEvidenceLinks.map((link, i) => (
+                      <a key={`tl-${i}`} href={link} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
+                        <LinkIcon className="h-3.5 w-3.5 shrink-0" /> {link}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><UserCheck className="h-4 w-4" /> Persetujuan Atasan</CardTitle></CardHeader>
-          <CardContent>
-            <InfoRow label="Keputusan" value={submission.managerDecision ? (submission.managerDecision === "approved" ? "Disetujui" : submission.managerDecision === "rejected" ? "Ditolak" : "Revisi") : "Menunggu"} />
-            {submission.managerReviewedByName && <InfoRow label="Oleh" value={submission.managerReviewedByName} />}
-            {submission.managerNotes && <p className="text-sm italic text-muted-foreground mt-2">"{submission.managerNotes}"</p>}
-          </CardContent>
-        </Card>
+          {/* F. Timeline Approval */}
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><UserCheck className="h-4 w-4" /> F. Persetujuan Atasan</CardTitle></CardHeader>
+            <CardContent>
+              <InfoRow label="Keputusan" value={submission.managerDecision ? (submission.managerDecision === "approved" ? "Disetujui" : submission.managerDecision === "rejected" ? "Ditolak" : "Revisi") : "Menunggu"} />
+              {submission.managerReviewedByName && <InfoRow label="Oleh" value={submission.managerReviewedByName} />}
+              {submission.managerNotes && <p className="text-sm italic text-muted-foreground mt-2">"{submission.managerNotes}"</p>}
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><UserCheck className="h-4 w-4" /> Verifikasi HRD</CardTitle></CardHeader>
-          <CardContent>
-            <InfoRow label="Keputusan" value={submission.hrdDecision ? (submission.hrdDecision === "approved" ? "Disetujui" : submission.hrdDecision === "rejected" ? "Ditolak" : "Revisi") : "Menunggu"} />
-            {submission.hrdReviewedByName && <InfoRow label="Oleh" value={submission.hrdReviewedByName} />}
-            {submission.hrdNotes && <p className="text-sm italic text-muted-foreground mt-2">"{submission.hrdNotes}"</p>}
-          </CardContent>
-        </Card>
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><UserCheck className="h-4 w-4" /> F. Verifikasi HRD</CardTitle></CardHeader>
+            <CardContent>
+              <InfoRow label="Keputusan" value={submission.hrdDecision ? (submission.hrdDecision === "approved" ? "Disetujui" : submission.hrdDecision === "rejected" ? "Ditolak" : "Revisi") : "Menunggu"} />
+              {submission.hrdReviewedByName && <InfoRow label="Oleh" value={submission.hrdReviewedByName} />}
+              {submission.hrdNotes && <p className="text-sm italic text-muted-foreground mt-2">"{submission.hrdNotes}"</p>}
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
-      <DialogFooter className="sticky bottom-0 z-10 border-t bg-background/95 px-6 py-4 -mx-6 -mb-6 mt-2 backdrop-blur flex justify-end gap-3">
+      <DialogFooter className="shrink-0 border-t bg-background px-6 py-4 flex justify-end gap-3">
         <Button variant="ghost" onClick={onClose}>Tutup</Button>
         {canEdit && onRequestEdit && <Button variant="secondary" onClick={onRequestEdit}>Edit Pengajuan</Button>}
       </DialogFooter>
+
+      <EvidenceLightbox
+        file={previewFile}
+        submissionId={submission.id}
+        onClose={() => setPreviewFile(null)}
+        onError={(message) => toast({ variant: "destructive", title: "Gagal Membuka Bukti", description: message })}
+      />
     </DialogContent>
   );
 }
@@ -399,6 +507,11 @@ export function OvertimeSubmissionForm({
   const [showDraftPrompt, setShowDraftPrompt] = useState(false);
   const draftKey = userProfile?.uid ? `overtime-form-draft:${userProfile.uid}` : null;
   const skipNextAutosaveRef = useRef(false);
+  // setIsSaving(true) below doesn't disable the submit button until the next
+  // render commits, leaving a brief window where a fast double-click can
+  // invoke onSubmit twice (observed as [OVERTIME_CREATE_PAYLOAD_DEBUG]
+  // logging twice for one click) — this ref closes that gap synchronously.
+  const submitLockRef = useRef(false);
 
   const staffBrandId = useMemo(() => {
     const brandId = (employeeProfile as any)?.brandId || (userProfile as any)?.brandId;
@@ -415,6 +528,17 @@ export function OvertimeSubmissionForm({
     const hrd = (employeeProfile as any)?.hrdEmploymentInfo;
     return hrd?.brandName || (employeeProfile as any)?.brandName || brands.find((b) => b.id === staffBrandId)?.name || "";
   }, [employeeProfile, staffBrandId, brands]);
+
+  // staffDivisionId (above) is name-first by design — it's used as the
+  // query key for divisionNameQuery/divisionDocRef, which look division
+  // docs up BY NAME — so it can legitimately hold a divisionId when no name
+  // is on file. The submitted doc's own divisionName field needs an actual
+  // name, so it's sourced separately here instead of reusing staffDivisionId.
+  const staffDivisionName = useMemo(() => {
+    const hrd = (employeeProfile as any)?.hrdEmploymentInfo;
+    const struktur = (employeeProfile as any)?.strukturKepegawaian;
+    return hrd?.divisionName || (employeeProfile as any)?.divisionName || hrd?.divisi || struktur?.divisionName || staffDivisionId || "";
+  }, [employeeProfile, staffDivisionId]);
 
   const divisionNameQuery = useMemoFirebase(() => {
     if (!firestore || !staffBrandId || !staffDivisionId) return null;
@@ -785,6 +909,7 @@ export function OvertimeSubmissionForm({
 
   const onSubmit = async (values: FormValues) => {
     if (!userProfile || !firestore) return;
+    if (submitLockRef.current) return;
 
     if (totalEvidenceCount === 0) {
       toast({
@@ -795,6 +920,7 @@ export function OvertimeSubmissionForm({
       return;
     }
 
+    submitLockRef.current = true;
     setIsSaving(true);
     try {
       const duration = computeOvertimeDuration(values.startTime, values.endTime);
@@ -807,6 +933,17 @@ export function OvertimeSubmissionForm({
       const isStaffAssigner = assigner?.category === "same_division_staff";
       const approverUid = isStaffAssigner ? (primaryTarget.approvalTargetUid || values.taskAssignerUid) : values.taskAssignerUid;
       const approver = isStaffAssigner ? taskAssignerCandidates.find((c) => c.uid === approverUid) : assigner;
+
+      // firestore.rules' hasManualOvertimeRequiredFields() rejects a create
+      // with an empty or self-referential approver — checking it here first
+      // turns that into a clear Indonesian message instead of a raw
+      // "Missing or insufficient permissions" from Firestore.
+      if (!approverUid) {
+        throw new Error("Atasan/approver lembur belum diatur. Hubungi HRD.");
+      }
+      if (approverUid === userProfile.uid) {
+        throw new Error("Approver lembur tidak boleh diri sendiri.");
+      }
 
       // Upload every job's pending files, keyed by job id.
       const uploadedByJob: Record<string, { name: string; url: string; mimeType?: string }[]> = {};
@@ -876,11 +1013,16 @@ export function OvertimeSubmissionForm({
         brandId: staffBrandId,
         brandName: staffBrandName,
         divisionId: (employeeProfile as any)?.hrdEmploymentInfo?.divisionId || (employeeProfile as any)?.divisionId || "",
-        divisionName: staffDivisionId,
-        division: staffDivisionId,
-        workRole: position,
+        divisionName: staffDivisionName,
         position,
         overtimeDate: Timestamp.fromDate(values.overtimeDate),
+        // format() reads the Date object's LOCAL (WIB) calendar fields —
+        // never derive these from toISOString()/getUTCMonth(), which read
+        // UTC and can push a WIB midnight-of-the-1st into the previous UTC
+        // day/month. OvertimeApprovalClient.tsx's month filter matches
+        // against overtimeMonthKey for exactly this reason.
+        overtimeDateStr: format(values.overtimeDate, "yyyy-MM-dd"),
+        overtimeMonthKey: format(values.overtimeDate, "yyyy-MM"),
         startTime: values.startTime,
         endTime: values.endTime,
         startTimeMinutes: parseTimeToMinutes(values.startTime) ?? undefined,
@@ -892,7 +1034,10 @@ export function OvertimeSubmissionForm({
         overtimeType: values.overtimeType,
         overtimeTypeLabel: getOvertimeTypeLabel(values.overtimeType),
         holidayType: values.overtimeType === "hari_libur" ? values.holidayType || null : null,
-        holidayTypeOther: values.overtimeType === "hari_libur" ? values.holidayTypeOther || null : null,
+        // holidayTypeOther isn't in the rules whitelist and never will be
+        // whitelisted separately — the "Lainnya: <custom text>" case is
+        // folded straight into the label instead of kept as its own field.
+        holidayTypeLabel: values.overtimeType === "hari_libur" ? getHolidayTypeLabel(values.holidayType, values.holidayTypeOther) : null,
         workLocation: values.workLocation,
         workLocationLabel: getWorkLocationLabel(values.workLocation),
         workLocationDetail: values.workLocationDetail || null,
@@ -910,7 +1055,10 @@ export function OvertimeSubmissionForm({
         taskAssignerDivisionName: assigner?.divisionName || undefined,
         taskAssignerBrandId: assigner?.brandId || undefined,
         taskAssignerBrandName: assigner?.brandName || undefined,
-        isDirectSupervisor: assigner?.isDirectSupervisor || false,
+        // isDirectSupervisor isn't in the rules whitelist — taskAssignerGroup
+        // ("direct_supervisor" vs the other categories) already carries the
+        // same information, so the detail view derives the "Atasan
+        // Langsung" tag from that instead (see OvertimeSubmissionDetailView).
         // Never an approver by itself — approval routing (atasan -> HRD)
         // stays exactly the same regardless of this value; it's purely
         // informational for the review dialog/audit trail.
@@ -943,6 +1091,10 @@ export function OvertimeSubmissionForm({
         anomalyFlags,
         reviewLevel: getReviewLevelFromFlags(anomalyFlags),
         status: "pending_manager_review",
+        // Mirror of `status` — ReviewOvertimeDialog.tsx/OvertimeApprovalClient.tsx
+        // read `approvalStatus || status` for display, and some legacy docs
+        // only ever had approvalStatus, so both are written going forward.
+        approvalStatus: "pending_manager_review",
         currentApprovalStep: "manager",
         currentApproverUid: approverUid || undefined,
         updatedAt: serverTimestamp() as any,
@@ -951,19 +1103,27 @@ export function OvertimeSubmissionForm({
       let submissionId = submission?.id;
 
       if (!submission) {
-        const createPayload = {
+        const createPayload = sanitizeOvertimeCreatePayload({
           ...basePayload,
           submittedAt: serverTimestamp(),
           submittedByUid: userProfile.uid,
           submittedByName: employeeName,
           createdAt: serverTimestamp(),
-        };
+        });
+
+        const unknownKeys = Object.keys(createPayload).filter((key) => !ALLOWED_OVERTIME_CREATE_KEYS.has(key));
+        console.log("[OVERTIME_UNKNOWN_PAYLOAD_KEYS]", unknownKeys);
+        if (unknownKeys.length > 0) {
+          console.warn("[OVERTIME_CREATE_BLOCKED_BY_UNKNOWN_KEYS]", unknownKeys);
+        }
+
         // Temporary debug — remove once confirmed fixed in production.
-        console.log("[OVERTIME_CREATE_PAYLOAD_DEBUG]", {
-          employeeUid: createPayload.employeeUid,
+        console.log("[OVERTIME_CREATE_PAYLOAD_DEBUG]", JSON.stringify({
           authUid: userProfile.uid,
+          employeeUid: createPayload.employeeUid,
           brandId: createPayload.brandId,
           status: createPayload.status,
+          approvalStatus: createPayload.approvalStatus,
           currentApprovalStep: createPayload.currentApprovalStep,
           currentApproverUid: createPayload.currentApproverUid,
           overtimeDate: createPayload.overtimeDate,
@@ -972,8 +1132,14 @@ export function OvertimeSubmissionForm({
           durationMinutes: createPayload.durationMinutes,
           hasSupportingEvidence: createPayload.hasSupportingEvidence,
           declarationAccepted: createPayload.declarationAccepted,
-          keys: Object.keys(createPayload),
-        });
+          evidenceFilesLength: createPayload.evidenceFiles?.length || 0,
+          evidenceLinksLength: createPayload.evidenceLinks?.length || 0,
+          jobsLength: createPayload.jobs?.length || 0,
+          keys: Object.keys(createPayload).sort(),
+        }, null, 2));
+        // Reaching this line means overtime_submissions accepted the write —
+        // any error from here on (notification side-effect below) must
+        // never be reported to the user as "the submission failed".
         const docRef = await addDoc(collection(firestore, "overtime_submissions"), createPayload);
         submissionId = docRef.id;
       } else {
@@ -997,25 +1163,45 @@ export function OvertimeSubmissionForm({
 
       if (draftKey) window.localStorage.removeItem(draftKey);
 
-      if (approverUid && submissionId) {
-        await sendNotification(firestore, {
-          userId: approverUid,
-          type: "status_update",
-          module: "overtime",
-          title: "Pengajuan Lembur Baru",
-          message: `${employeeName} mengajukan lembur ${format(values.overtimeDate, "dd MMM yyyy", { locale: idLocale })} (${jobsPayload.length} pekerjaan) menunggu validasi Anda.`,
-          targetType: "employee",
-          targetId: submissionId,
-          actionUrl: "/admin/manager/persetujuan-lembur",
-        } as any);
-      }
-
       toast({ title: "Pengajuan Lembur Terkirim", description: "Pengajuan Anda menunggu validasi atasan." });
       onSuccess();
       onOpenChange(false);
+
+      // Notifying the approver is a write into a DIFFERENT uid's
+      // users/{uid}/notifications — firestore.rules only lets HRD/Super
+      // Admin `create` there (see /users/{userId}/notifications), so a
+      // karyawan can never do this directly even for their own approver.
+      // That's what was throwing "Missing or insufficient permissions"
+      // right after a perfectly successful overtime_submissions write. The
+      // fix is a server-side route (Admin SDK bypasses rules), called here
+      // in its own try/catch — the submission above already succeeded and
+      // the success toast/close already ran, so a failure here is purely a
+      // best-effort delivery hiccup, never something that should undo or
+      // relabel the submission as failed.
+      if (submissionId) {
+        try {
+          const auth = getAuth();
+          const token = await auth.currentUser?.getIdToken();
+          const res = await fetch("/api/overtime/send-notifications", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ overtimeSubmissionId: submissionId }),
+          });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body?.error || `send-notifications responded ${res.status}`);
+          }
+        } catch (notifError) {
+          console.warn("[OVERTIME_NOTIFICATION_DELAYED]", { submissionId, error: notifError });
+        }
+      }
     } catch (e: any) {
       toast({ variant: "destructive", title: "Gagal Mengirim Pengajuan", description: e.message || "Terjadi kesalahan." });
     } finally {
+      submitLockRef.current = false;
       setIsSaving(false);
     }
   };
@@ -1491,7 +1677,7 @@ export function OvertimeSubmissionForm({
 
             <DialogFooter className="sticky bottom-0 z-10 border-t bg-background/95 -mx-6 -mb-6 px-6 py-4 backdrop-blur flex justify-end gap-3">
               <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={isSaving}>Batal</Button>
-              <Button type="submit" disabled={isSaving || totalEvidenceCount === 0 || !watchAll.declarationAccepted}>
+              <Button type="submit" disabled={isSaving || form.formState.isSubmitting || totalEvidenceCount === 0 || !watchAll.declarationAccepted}>
                 {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                 Kirim Pengajuan
               </Button>

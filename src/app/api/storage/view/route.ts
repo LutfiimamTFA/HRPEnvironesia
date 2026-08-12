@@ -16,6 +16,8 @@ import admin from "@/lib/firebase/admin";
 export async function GET(req: NextRequest) {
   try {
     const fileId = req.nextUrl.searchParams.get("fileId");
+    const submissionId = req.nextUrl.searchParams.get("submissionId");
+    const fileType = req.nextUrl.searchParams.get("type");
     if (!fileId) {
       return new NextResponse("Missing fileId parameter", { status: 400 });
     }
@@ -30,14 +32,25 @@ export async function GET(req: NextRequest) {
       req.cookies.get("__session")?.value;
     const token = authHeader?.replace("Bearer ", "") || cookieToken;
 
+    let decodedUid: string | undefined;
     if (token) {
       try {
         const decoded = await admin.auth().verifyIdToken(token);
         uid = decoded.uid;
+        decodedUid = decoded.uid;
       } catch {
         // Token invalid/expired
       }
     }
+
+    console.log("[STORAGE_VIEW_AUTH_DEBUG]", {
+      hasAuthHeader: Boolean(authHeader),
+      hasToken: Boolean(token),
+      uid: decodedUid,
+      fileId,
+      submissionId,
+      fileType,
+    });
 
     if (!uid) {
       return new NextResponse("Unauthorized. Please login to HRP.", {
@@ -140,6 +153,69 @@ export async function GET(req: NextRequest) {
             const appData = appDoc.data();
             const appJson = JSON.stringify(appData);
             if (appJson.includes(fileId)) {
+              hasAccess = true;
+              break;
+            }
+          }
+        } catch {
+          // Continue
+        }
+      }
+
+      // 4. Overtime lembur evidence — lives on overtime_submissions, which
+      // the checks above never look at, so every overtime evidence file was
+      // unconditionally 403ing for the submitter themselves. Access is
+      // granted to the submission's own employeeUid, its resolved approver
+      // (currentApproverUid/approvalTargetUid/directSupervisorUid/managerUid),
+      // and the informational taskAssignerUid (read-only viewer, matches
+      // firestore.rules' isNamedTaskAssigner()).
+      if (!hasAccess && fileType === "overtime" && submissionId) {
+        try {
+          const submissionDoc = await admin
+            .firestore()
+            .collection("overtime_submissions")
+            .doc(submissionId)
+            .get();
+          const submissionData = submissionDoc.data();
+          if (submissionData) {
+            const relatedUids = [
+              submissionData.employeeUid,
+              submissionData.uid,
+              submissionData.userId,
+              submissionData.currentApproverUid,
+              submissionData.approvalTargetUid,
+              submissionData.waitingForUid,
+              submissionData.directSupervisorUid,
+              submissionData.managerUid,
+              submissionData.taskAssignerUid,
+              submissionData.overtimeCoordinatorUid,
+            ];
+            if (relatedUids.includes(uid)) {
+              // Confirm fileId is actually referenced on this submission —
+              // a related uid alone shouldn't unlock an arbitrary fileId.
+              const submissionJson = JSON.stringify(submissionData);
+              if (submissionJson.includes(fileId)) {
+                hasAccess = true;
+              }
+            }
+          }
+        } catch {
+          // Continue — fall through to the generic scan below.
+        }
+      }
+
+      // Fallback: no submissionId/type passed (older call sites) — scan the
+      // requester's own overtime_submissions for the fileId, same heuristic
+      // as the employee_profiles/profiles checks above.
+      if (!hasAccess && fileType !== "overtime") {
+        try {
+          const ownSubmissions = await admin
+            .firestore()
+            .collection("overtime_submissions")
+            .where("employeeUid", "==", uid)
+            .get();
+          for (const subDoc of ownSubmissions.docs) {
+            if (JSON.stringify(subDoc.data()).includes(fileId)) {
               hasAccess = true;
               break;
             }

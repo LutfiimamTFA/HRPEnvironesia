@@ -797,7 +797,7 @@ service cloud.firestore {
           // overtime mode
           'inputMode',
           // date/time
-          'overtimeDate', 'overtimeDateStr', 'overtimeDay',
+          'overtimeDate', 'overtimeDateStr', 'overtimeMonthKey', 'overtimeDay',
           'startTime', 'endTime', 'startTimeMinutes', 'endTimeMinutes',
           'durationMinutes', 'durationHours', 'totalDurationMinutes', 'isCrossDay',
           // type/category
@@ -907,7 +907,7 @@ service cloud.firestore {
           ]
           && request.resource.data.get('status', '') in ['pending_manager_review', 'submitted']
           && changed.hasOnly([
-            'overtimeDate', 'overtimeDateStr', 'overtimeDay',
+            'overtimeDate', 'overtimeDateStr', 'overtimeMonthKey', 'overtimeDay',
             'startTime', 'endTime', 'startTimeMinutes', 'endTimeMinutes',
             'durationMinutes', 'durationHours', 'totalDurationMinutes', 'isCrossDay',
             'overtimeType', 'overtimeTypeLabel', 'holidayType', 'holidayTypeLabel', 'holidayTypeOther',

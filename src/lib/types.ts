@@ -2265,6 +2265,14 @@ export type OvertimeSubmission = {
   /** Alias of workRole/positionTitle — the exact field name the "Waktu & Lokasi Lembur" payload spec asks for. */
   position?: string;
   overtimeDate: Timestamp | string | Date;
+  /** "yyyy-MM-dd" in LOCAL (WIB) time, computed via date-fns format() — never
+   * derive the calendar date from overtimeDate.toISOString() or getUTCDate(),
+   * WIB is UTC+7 so a UTC-based read can land on the wrong day/month. */
+  overtimeDateStr?: string;
+  /** "yyyy-MM" mirror of overtimeDateStr — the canonical key OvertimeApprovalClient.tsx's
+   * month filter matches against, so a month-boundary date never gets pulled
+   * into the wrong month by a UTC/local offset. */
+  overtimeMonthKey?: string;
   date?: Timestamp;
   /** Display value, Indonesian 24-jam dot format ("17.00") — older docs may still carry "HH:mm" (colon). */
   startTime: string;
@@ -2300,7 +2308,9 @@ export type OvertimeSubmission = {
   overtimeTypeLabel?: string;
   /** Only meaningful when overtimeType === "hari_libur". */
   holidayType?: "weekend" | "libur_nasional" | "libur_perusahaan" | "cuti_bersama" | "lainnya" | null;
+  /** holidayTypeOther is legacy-read-only now — not in the firestore.rules create whitelist, so new writes fold the custom "Lainnya" text straight into holidayTypeLabel instead. */
   holidayTypeOther?: string | null;
+  holidayTypeLabel?: string | null;
   taskDetails?: {
     description: string;
     estimatedMinutes?: number;

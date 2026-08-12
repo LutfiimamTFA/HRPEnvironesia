@@ -692,3 +692,81 @@ export function getTaskAssignerSummaryLabel(candidate: TaskAssignerCandidate): s
   parts.push(positionWithDivision || candidate.roleLabel);
   return `${candidate.name} — ${parts.join(' / ')}`;
 }
+
+// ── Reviewer role display (Persetujuan Lembur Tim) ──────────────────────────
+// A single person can legitimately be BOTH the real approver (direct
+// atasan/manager divisi) AND the informational taskAssigner/coordinator on
+// the same submission — e.g. a staff member submits with their own real
+// atasan picked as "pemberi tugas", which is the common case, not a data
+// bug. Approval RIGHTS never come from the task-assigner role alone (see
+// isAssignedApprover()-equivalent checks in firestore.rules and
+// getCanActStrict() in ReviewOvertimeDialog.tsx, both of which intentionally
+// omit taskAssignerUid) — these helpers are purely for DISPLAY, so a manager
+// who is also the coordinator sees both roles instead of only one.
+export type ReviewerRoleKey = 'direct_supervisor' | 'task_assigner';
+export type ReviewerRole = {
+  key: ReviewerRoleKey;
+  label: string;
+  shortLabel: string;
+  canApprove: boolean;
+};
+
+export function getCurrentUserOvertimeRoles(submission: any, currentUserUid: string | null | undefined): ReviewerRole[] {
+  if (!currentUserUid || !submission) return [];
+  const roles: ReviewerRole[] = [];
+
+  const isDirectSupervisor =
+    submission.directSupervisorUid === currentUserUid ||
+    submission.managerUid === currentUserUid ||
+    submission.currentApproverUid === currentUserUid ||
+    submission.approvalTargetUid === currentUserUid ||
+    submission.waitingForUid === currentUserUid;
+
+  // overtimeCoordinatorUid is checked here (not just taskAssignerUid)
+  // because older docs, from before taskAssignerUid existed, only ever had
+  // this field to identify the coordinator — dropping it would make legacy
+  // submissions lose the "Koordinator" role entirely.
+  const isTaskAssigner =
+    submission.taskAssignerUid === currentUserUid ||
+    submission.overtimeCoordinatorUid === currentUserUid;
+
+  if (isDirectSupervisor) {
+    roles.push({ key: 'direct_supervisor', label: 'Atasan Langsung / Manager Divisi', shortLabel: 'Atasan Langsung', canApprove: true });
+  }
+  if (isTaskAssigner) {
+    roles.push({ key: 'task_assigner', label: 'Koordinator / Pemberi Tugas', shortLabel: 'Koordinator', canApprove: false });
+  }
+  return roles;
+}
+
+/** Short form — table badges, modal "Peran Anda" line. */
+export function getReviewerRoleDisplayLabel(roles: ReviewerRole[]): string {
+  const hasSupervisor = roles.some((r) => r.key === 'direct_supervisor');
+  const hasCoordinator = roles.some((r) => r.key === 'task_assigner');
+  if (hasSupervisor && hasCoordinator) return 'Atasan Langsung & Koordinator';
+  if (hasSupervisor) return 'Atasan Langsung / Manager Divisi';
+  if (hasCoordinator) return 'Koordinator / Pemberi Tugas';
+  return 'Reviewer';
+}
+
+/** Longer form — "Scope Persetujuan Anda" card's "Fungsi Approval Saat Ini". */
+export function getReviewerScopeLabel(roles: ReviewerRole[]): string {
+  const hasSupervisor = roles.some((r) => r.key === 'direct_supervisor');
+  const hasCoordinator = roles.some((r) => r.key === 'task_assigner');
+  if (hasSupervisor && hasCoordinator) return 'Atasan Langsung / Manager Divisi & Koordinator Lembur';
+  if (hasSupervisor) return 'Atasan Langsung / Manager Divisi';
+  if (hasCoordinator) return 'Koordinator / Pengawas Lembur';
+  return 'Reviewer';
+}
+
+/** Dedupe by document id — a safeguard for pipelines that might merge
+ * results from more than one query/field match down the line; a single
+ * Firestore or() query already returns each doc once. */
+export function uniqueById<T extends { id?: string }>(items: T[]): T[] {
+  const map = new Map<string, T>();
+  for (const item of items) {
+    if (!item?.id) continue;
+    if (!map.has(item.id)) map.set(item.id, item);
+  }
+  return Array.from(map.values());
+}
