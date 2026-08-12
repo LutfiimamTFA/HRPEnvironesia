@@ -354,6 +354,95 @@ export function getOvertimeStatusLabel(status: string | null | undefined): strin
   return OVERTIME_STATUS_LABELS[status as OvertimeSubmissionStatus] || status || 'Tidak Diketahui';
 }
 
+/** Main approval status shown to a manager. Approval state is deliberately
+ * kept separate from anomaly/advisory labels. */
+export function getOvertimeMainStatusLabel(item: any): string {
+  const status = item?.status || item?.approvalStatus || '';
+
+  if (status === 'pending_manager_review' || status === 'submitted') return 'Menunggu Review Anda';
+  if (status === 'approved_by_manager' || status === 'pending_hrd_review') return 'Diteruskan ke HRD';
+  if (status === 'pending_hrd') return 'Menunggu Verifikasi HRD';
+  if (status === 'approved_by_hrd' || status === 'approved' || status === 'approved_hrd') return 'Disetujui HRD';
+  if (status === 'rejected_by_manager' || status === 'rejected_manager') return 'Ditolak Manager';
+  if (status === 'rejected_by_hrd' || status === 'rejected_hrd' || status === 'rejected') return 'Ditolak HRD';
+  if (status === 'cancelled') return 'Dibatalkan';
+
+  return OVERTIME_STATUS_LABELS[status as OvertimeSubmissionStatus] || 'Status Tidak Dikenal';
+}
+
+export function isOvertimeAfterManagerApproval(item: any): boolean {
+  const status = item?.status || item?.approvalStatus || '';
+  return [
+    'approved_by_manager',
+    'pending_hrd_review',
+    'pending_hrd',
+    'approved_by_hrd',
+    'approved_hrd',
+    'approved',
+  ].includes(status);
+}
+
+export const HRD_PENDING_OVERTIME_STATUSES = [
+  'pending_hrd_review',
+  'pending_hrd',
+  'approved_by_manager',
+] as const;
+
+/** Accepts both the canonical status fields and the denormalized flow step so
+ * repaired/legacy documents still reach HRD even when one status mirror is
+ * stale. */
+export function isPendingHrdReview(item: any): boolean {
+  if (!item) return false;
+  return (
+    HRD_PENDING_OVERTIME_STATUSES.includes(item.status as any) ||
+    HRD_PENDING_OVERTIME_STATUSES.includes(item.approvalStatus as any) ||
+    item.currentApprovalStep === 'hrd'
+  );
+}
+
+/** True only while the current-flow submission is explicitly assigned to
+ * this manager. Informational task-assigner/coordinator fields are excluded. */
+export function isWaitingForManagerAction(item: any, currentUserUid: string | null | undefined): boolean {
+  if (!item || !currentUserUid) return false;
+  const status = item.status || item.approvalStatus || '';
+  if (!['pending_manager_review', 'submitted'].includes(status)) return false;
+
+  return [
+    item.currentApproverUid,
+    item.approvalTargetUid,
+    item.waitingForUid,
+    item.directSupervisorUid,
+    item.managerUid,
+  ].includes(currentUserUid);
+}
+
+/** Status-aware anomaly labels. Once manager approval is complete, the same
+ * facts become HRD notes and must no longer imply pending manager work. */
+export function getOvertimeAnomalyLabels(item: any, currentUserUid?: string | null): string[] {
+  const flags: string[] = Array.isArray(item?.anomalyFlags) ? item.anomalyFlags : [];
+  const isAfterManagerApproval = isOvertimeAfterManagerApproval(item);
+  const isWaitingForManager = isWaitingForManagerAction(item, currentUserUid);
+
+  const labels = flags.map((flag) => {
+    if (['duration_high', 'durasi_tinggi', 'durasi_lebih_4_jam', 'durasi_lebih_6_jam'].includes(flag)) {
+      return isAfterManagerApproval || !isWaitingForManager
+        ? 'Durasi Melebihi Acuan'
+        : 'Perlu Review Durasi';
+    }
+
+    if (['job_duration_mismatch', 'durasi_pekerjaan_tidak_sesuai'].includes(flag)) {
+      return isAfterManagerApproval
+        ? 'Catatan Durasi untuk HRD'
+        : 'Durasi Pekerjaan Tidak Sesuai';
+    }
+
+    if (flag === 'holiday' || flag === 'hari_libur') return 'Hari Libur';
+    return getAnomalyFlagLabel(flag as OvertimeAnomalyFlag);
+  });
+
+  return Array.from(new Set(labels));
+}
+
 export type OvertimeStatusTone = 'neutral' | 'info' | 'warning' | 'success' | 'danger';
 
 const OVERTIME_STATUS_TONES: Partial<Record<OvertimeSubmissionStatus, OvertimeStatusTone>> = {
@@ -523,10 +612,476 @@ export const TASK_ASSIGNER_CATEGORY_LABELS: Record<TaskAssignerCategory, string>
 };
 
 /** True unless the employee doc explicitly signals they're no longer active — never assumes inactive just because the flag is missing. */
-function isActiveEmployee(candidate: any): boolean {
+export function isActiveEmployee(candidate: any): boolean {
   if (candidate?.isActive === false) return false;
-  const status = normalizeText(candidate?.employmentStatus || candidate?.status || candidate?.hrdEmploymentInfo?.employmentStatus);
+  const status = normalizeText(
+    candidate?.employmentStatus ||
+      candidate?.statusKerja ||
+      candidate?.status ||
+      candidate?.hrdEmploymentInfo?.employmentStatus ||
+      candidate?.hrdEmploymentInfo?.statusKerja,
+  );
   return !['resigned', 'terminated', 'inactive', 'nonaktif'].includes(status);
+}
+
+export type OvertimeDivisionOption = {
+  /** Select value. For the all-brand view this is brandId::divisionId. */
+  id: string;
+  name: string;
+  brandId: string;
+  divisionId: string;
+};
+export type OvertimeManagerOption = {
+  uid: string;
+  name: string;
+  position: string;
+  divisionId: string;
+  divisionName: string;
+  brandId: string;
+};
+
+function resolveEmployeeBrandId(employee: any): string {
+  const raw =
+    employee?.brandId ||
+    employee?.companyId ||
+    employee?.hrdEmploymentInfo?.brandId ||
+    employee?.hrdEmploymentInfo?.companyId ||
+    employee?.strukturKepegawaian?.brandId ||
+    '';
+  return String(Array.isArray(raw) ? raw[0] || '' : raw).trim();
+}
+
+function resolveEmployeeDivisionOption(employee: any): { id: string; name: string } {
+  const id = String(
+    employee?.divisionId ||
+      employee?.hrdEmploymentInfo?.divisionId ||
+      employee?.strukturKepegawaian?.divisionId ||
+      '',
+  ).trim();
+  const name = normalizeDivisionDisplayName(
+    employee?.divisionName ||
+      employee?.division ||
+      employee?.hrdEmploymentInfo?.divisionName ||
+      employee?.hrdEmploymentInfo?.divisi ||
+      employee?.strukturKepegawaian?.divisionName ||
+      '',
+  );
+  return { id: id || name, name };
+}
+
+export function normalizeDivisionName(name: any): string {
+  return normalizeText(normalizeDivisionDisplayName(name));
+}
+
+export function normalizeDivisionDisplayName(name: any): string {
+  const raw = String(name || '').trim();
+  if (!raw) return '';
+  return normalizeText(raw) === 'cbdms' ? 'DTIC' : raw;
+}
+
+export function isInvalidDivisionName(name: any): boolean {
+  return [
+    'semua brand',
+    'semua divisi',
+    'semua brand / perusahaan',
+    'seluruh brand / perusahaan',
+    'seluruh brand',
+    'seluruh perusahaan',
+    'perusahaan',
+    'company',
+    'all brands',
+    'all brands / companies',
+    'brand',
+    'unit',
+  ].includes(normalizeText(name));
+}
+
+export function isDivisionNode(item: any): boolean {
+  const type = normalizeText(item?.type || item?.nodeType || item?.category);
+  if (
+    ['brand', 'company', 'perusahaan', 'root', 'organization_root', 'unit_root'].includes(type)
+  ) return false;
+  return (
+    type === 'division' ||
+    type === 'divisi' ||
+    !!item?.divisionId ||
+    !!item?.parentBrandId ||
+    !!item?.brandId ||
+    !!item?.parentId ||
+    !!item?.brand?.id
+  );
+}
+
+export function getCurrentEmployeeProfile(
+  submission: any,
+  employeeMap: Map<string, any>,
+): any | null {
+  const uid =
+    submission?.employeeUid || submission?.uid || submission?.userId || '';
+  return uid ? employeeMap.get(String(uid)) || null : null;
+}
+
+export type ResolvedOvertimeEmployeeDivision = {
+  divisionId: string;
+  divisionName: string;
+  snapshotDivisionName: string;
+};
+
+/** Resolve an overtime row against the live employee profile. Submission
+ * fields remain an audit snapshot and are used only when no current profile
+ * value exists. */
+export function getResolvedEmployeeDivision(
+  submission: any,
+  employeeMap: Map<string, any>,
+): ResolvedOvertimeEmployeeDivision {
+  const employee = getCurrentEmployeeProfile(submission, employeeMap);
+  const currentDivisionId = String(
+    employee?.divisionId ||
+      employee?.hrdEmploymentInfo?.divisionId ||
+      employee?.strukturKepegawaian?.divisionId ||
+      '',
+  ).trim();
+  const currentDivisionName = normalizeDivisionDisplayName(
+    employee?.divisionName ||
+      employee?.hrdEmploymentInfo?.divisionName ||
+      employee?.hrdEmploymentInfo?.divisi ||
+      employee?.strukturKepegawaian?.divisionName ||
+      '',
+  );
+  const fallbackDivisionName = normalizeDivisionDisplayName(
+    submission?.divisionName || submission?.division || '',
+  );
+
+  return {
+    divisionId: currentDivisionId || String(submission?.divisionId || '').trim(),
+    divisionName:
+      currentDivisionName ||
+      fallbackDivisionName ||
+      'Divisi belum diatur',
+    snapshotDivisionName: String(
+      submission?.divisionName || submission?.division || '',
+    ).trim(),
+  };
+}
+
+export function getResolvedManagerUid(submission: any): string {
+  return String(
+    submission?.managerReviewedBy ||
+      submission?.managerUid ||
+      submission?.directSupervisorUid ||
+      submission?.supervisorUid ||
+      submission?.overtimeCoordinatorUid ||
+      submission?.taskAssignerUid ||
+      '',
+  ).trim();
+}
+
+export function getResolvedManagerName(
+  submission: any,
+  employeeMap: Map<string, any>,
+): string {
+  const managerUid = getResolvedManagerUid(submission);
+  const currentManager = managerUid ? employeeMap.get(managerUid) : null;
+  return String(
+    currentManager?.fullName ||
+      currentManager?.displayName ||
+      currentManager?.name ||
+      submission?.managerReviewedByName ||
+      submission?.managerName ||
+      submission?.directSupervisorName ||
+      submission?.supervisorName ||
+      submission?.overtimeCoordinatorName ||
+      submission?.taskAssignerName ||
+      '',
+  ).trim();
+}
+
+export function uniqueDivisionOptions(
+  options: any[] | null | undefined,
+  selectedBrandId = 'all',
+): OvertimeDivisionOption[] {
+  const map = new Map<string, OvertimeDivisionOption & { legacyAlias: boolean }>();
+
+  for (const option of options || []) {
+    const rawName = String(
+      option?.rawName || option?.name || option?.divisionName || option?.divisi || '',
+    ).trim();
+    const name = normalizeDivisionDisplayName(rawName);
+    const normalizedName = normalizeDivisionName(name);
+    const brandId = String(
+      option?.brandId ||
+        option?.companyId ||
+        option?.parentBrandId ||
+        option?.parentId ||
+        option?.brand?.id ||
+        '',
+    ).trim();
+    const divisionId = String(
+      option?.divisionId || option?.id || option?.code || name,
+    ).trim();
+    if (
+      !brandId ||
+      !divisionId ||
+      !name ||
+      normalizedName === 'divisi belum diatur' ||
+      isInvalidDivisionName(name)
+    ) continue;
+
+    const key = `${brandId}::${normalizedName}`;
+    const candidate = {
+      id: selectedBrandId === 'all' ? `${brandId}::${divisionId}` : divisionId,
+      divisionId,
+      name,
+      brandId,
+      legacyAlias: normalizeText(rawName) === 'cbdms',
+    };
+    const existing = map.get(key);
+    // If both legacy CBDMS and canonical DTIC exist, the canonical id wins.
+    if (!existing || (existing.legacyAlias && !candidate.legacyAlias)) {
+      map.set(key, candidate);
+    }
+  }
+
+  return [
+    { id: 'all', name: 'Semua Divisi', brandId: '', divisionId: '' },
+    ...Array.from(map.values())
+      .map((option) => ({
+        id: option.id,
+        name: option.name,
+        brandId: option.brandId,
+        divisionId: option.divisionId,
+      }))
+      .sort((a, b) =>
+        a.name.localeCompare(b.name, 'id') || a.brandId.localeCompare(b.brandId),
+      ),
+  ];
+}
+
+type BuildHrdDivisionOptionsArgs = {
+  selectedBrandId: string;
+  allowedBrandIds: string[];
+  allDivisions: any[] | null | undefined;
+  allEmployees: any[] | null | undefined;
+  overtimeSubmissions: any[] | null | undefined;
+};
+
+export function buildHrdDivisionOptions({
+  selectedBrandId,
+  allowedBrandIds,
+  allDivisions,
+  allEmployees,
+  overtimeSubmissions,
+}: BuildHrdDivisionOptionsArgs): OvertimeDivisionOption[] {
+  const availableBrandIds = Array.from(
+    new Set(
+      [
+        ...(allDivisions || []).map((item) =>
+          item?.brandId ||
+            item?.companyId ||
+            item?.parentBrandId ||
+            item?.parentId ||
+            item?.brand?.id ||
+            '',
+        ),
+        ...(allEmployees || []).map((item) => resolveEmployeeBrandId(item)),
+        ...(overtimeSubmissions || []).map((item) =>
+          item?.brandId || item?.companyId || '',
+        ),
+      ].filter(Boolean),
+    ),
+  ).map(String);
+  const effectiveBrandIds =
+    selectedBrandId === 'all'
+      ? (allowedBrandIds.length > 0 ? allowedBrandIds : availableBrandIds)
+      : [selectedBrandId];
+  const effectiveBrandSet = new Set(effectiveBrandIds);
+  const rawOptions: any[] = [];
+  const brandsWithMasterDivisions = new Set<string>();
+
+  for (const division of allDivisions || []) {
+    const divisionStatus = normalizeText(division?.status);
+    if (
+      division?.isActive === false ||
+      ['inactive', 'nonaktif', 'archived'].includes(divisionStatus) ||
+      !isDivisionNode(division)
+    ) continue;
+    const brandId = String(
+      division?.brandId ||
+        division?.companyId ||
+        division?.parentBrandId ||
+        division?.parentId ||
+        division?.brand?.id ||
+        '',
+    ).trim();
+    if (!effectiveBrandSet.has(brandId)) continue;
+    const name = normalizeDivisionDisplayName(
+      division?.name || division?.divisionName || division?.divisi || division?.label,
+    );
+    const companyName =
+      division?.brandName || division?.companyName || division?.parentBrandName;
+    if (
+      !name ||
+      isInvalidDivisionName(name) ||
+      (companyName && normalizeText(name) === normalizeText(companyName))
+    ) continue;
+    rawOptions.push({
+      id: division?.id || division?.divisionId || division?.code || name,
+      divisionId: division?.divisionId || division?.id || division?.code || name,
+      name,
+      brandId,
+      rawName:
+        division?.name || division?.divisionName || division?.divisi || division?.label,
+      source: 'master',
+    });
+    brandsWithMasterDivisions.add(brandId);
+  }
+
+  for (const employee of allEmployees || []) {
+    if (!isActiveEmployee(employee)) continue;
+    const brandId = resolveEmployeeBrandId(employee);
+    if (!effectiveBrandSet.has(brandId)) continue;
+    if (brandsWithMasterDivisions.has(brandId)) continue;
+    const division = resolveEmployeeDivisionOption(employee);
+    const companyName =
+      employee?.brandName ||
+      employee?.companyName ||
+      employee?.hrdEmploymentInfo?.brandName ||
+      employee?.hrdEmploymentInfo?.companyName;
+    if (
+      !division.name ||
+      isInvalidDivisionName(division.name) ||
+      (companyName && normalizeText(division.name) === normalizeText(companyName))
+    ) continue;
+    rawOptions.push({
+      id: division.id,
+      divisionId: division.id,
+      name: division.name,
+      brandId,
+      rawName:
+        employee?.divisionName ||
+        employee?.hrdEmploymentInfo?.divisionName ||
+        employee?.hrdEmploymentInfo?.divisi ||
+        employee?.strukturKepegawaian?.divisionName,
+      source: 'employee',
+    });
+  }
+
+  const brandsWithEmployeeDivisions = new Set(
+    rawOptions
+      .filter((option) => option.source === 'employee')
+      .map((option) => String(option.brandId)),
+  );
+
+  for (const submission of overtimeSubmissions || []) {
+    const brandId = String(submission?.brandId || submission?.companyId || '').trim();
+    if (!effectiveBrandSet.has(brandId)) continue;
+    if (
+      brandsWithMasterDivisions.has(brandId) ||
+      brandsWithEmployeeDivisions.has(brandId)
+    ) continue;
+    const rawName = submission?.divisionName || submission?.division || '';
+    const name = normalizeDivisionDisplayName(rawName);
+    const companyName = submission?.brandName || submission?.companyName;
+    if (
+      !name ||
+      isInvalidDivisionName(name) ||
+      (companyName && normalizeText(name) === normalizeText(companyName))
+    ) continue;
+    rawOptions.push({
+      id: submission?.divisionId || name,
+      divisionId: submission?.divisionId || name,
+      name,
+      brandId,
+      rawName,
+      source: 'submission',
+    });
+  }
+
+  return uniqueDivisionOptions(rawOptions, selectedBrandId);
+}
+
+/** Master divisions first, scoped employee profiles only as a compatibility
+ * fallback. Never derives options from the already-filtered overtime table. */
+export function getDivisionOptionsByBrand(
+  allDivisions: any[] | null | undefined,
+  allEmployees: any[] | null | undefined,
+  selectedBrandId: string,
+  fallbackSubmissions?: any[] | null,
+): OvertimeDivisionOption[] {
+  const allowedBrandIds = Array.from(
+    new Set(
+      [
+        ...(allDivisions || []).map((item) => item?.brandId || item?.companyId || item?.parentBrandId),
+        ...(allEmployees || []).map((item) => resolveEmployeeBrandId(item)),
+      ].filter(Boolean),
+    ),
+  ).map(String);
+  return buildHrdDivisionOptions({
+    selectedBrandId,
+    allowedBrandIds,
+    allDivisions,
+    allEmployees,
+    overtimeSubmissions: fallbackSubmissions,
+  });
+}
+
+export function isManagerLike(employee: any): boolean {
+  if (employee?.isDivisionManager === true) return true;
+  const hrd = employee?.hrdEmploymentInfo || {};
+  const role = normalizeText(
+    employee?.role || employee?.userRole || employee?.structuralLevel ||
+      employee?.structuralPosition || hrd.role || hrd.structuralPosition,
+  );
+  const position = normalizeText(
+    employee?.position || employee?.positionTitle || employee?.jobTitle ||
+      employee?.jabatan || employee?.workRole || hrd.position || hrd.jobTitle ||
+      hrd.jabatan || hrd.workRole,
+  );
+
+  return (
+    ['division_manager', 'manager', 'management'].includes(role) ||
+    position.includes('manager') ||
+    position.includes('kepala') ||
+    position.includes('head')
+  );
+}
+
+export function getManagerOptionsByBrandDivision(
+  allEmployees: any[] | null | undefined,
+  selectedBrandId: string,
+  selectedDivisionId: string,
+): OvertimeManagerOption[] {
+  const map = new Map<string, OvertimeManagerOption>();
+
+  for (const employee of allEmployees || []) {
+    if (!isActiveEmployee(employee) || !isManagerLike(employee)) continue;
+
+    const uid = String(employee?.uid || employee?.id || '').trim();
+    const name = String(employee?.fullName || employee?.displayName || employee?.name || '').trim();
+    const brandId = resolveEmployeeBrandId(employee);
+    const division = resolveEmployeeDivisionOption(employee);
+    if (!uid || !name) continue;
+    if (selectedBrandId !== 'all' && brandId !== selectedBrandId) continue;
+    if (
+      selectedDivisionId !== 'all' &&
+      division.id !== selectedDivisionId &&
+      normalizeDivisionName(division.name) !== normalizeDivisionName(selectedDivisionId)
+    ) continue;
+
+    map.set(uid, {
+      uid,
+      name,
+      position: getDisplayPosition(employee),
+      divisionId: division.id,
+      divisionName: division.name,
+      brandId,
+    });
+  }
+
+  return [
+    { uid: 'all', name: 'Semua Manager', position: '', divisionId: '', divisionName: '', brandId: '' },
+    ...Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, 'id')),
+  ];
 }
 
 /**
@@ -757,6 +1312,25 @@ export function getReviewerScopeLabel(roles: ReviewerRole[]): string {
   if (hasSupervisor) return 'Atasan Langsung / Manager Divisi';
   if (hasCoordinator) return 'Koordinator / Pengawas Lembur';
   return 'Reviewer';
+}
+
+/**
+ * Approval authority is intentionally narrower than the display roles above.
+ * A task assigner/coordinator may be shown as a reviewer, but that relationship
+ * alone must never enable manager approval actions.
+ */
+export function canCurrentUserApproveOvertime(
+  submission: any,
+  currentUserUid: string | null | undefined,
+): boolean {
+  if (!currentUserUid || !submission) return false;
+
+  return [
+    submission.currentApproverUid,
+    submission.approvalTargetUid,
+    submission.directSupervisorUid,
+    submission.managerUid,
+  ].includes(currentUserUid);
 }
 
 /** Dedupe by document id — a safeguard for pipelines that might merge

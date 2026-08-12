@@ -217,6 +217,7 @@ interface OvertimeApprovalStatusBadgeProps {
   mode: "manager" | "hrd";
   divisionName?: string;
   payrollStatus?: "pending_payroll" | "processing" | "paid" | "excluded" | null;
+  labelOverride?: string;
   className?: string;
 }
 
@@ -225,6 +226,7 @@ export function OvertimeApprovalStatusBadge({
   mode,
   divisionName,
   payrollStatus,
+  labelOverride,
   className,
 }: OvertimeApprovalStatusBadgeProps) {
   // If approved and payrollStatus is set, show payroll-specific status badge
@@ -247,7 +249,7 @@ export function OvertimeApprovalStatusBadge({
   }
 
   const config = statusConfig[status] || statusConfig.draft;
-  const label = (() => {
+  const label = labelOverride || (() => {
     if (status === "pending_supervisor" && mode === "hrd") {
       return divisionName
         ? `Menunggu Manager Divisi ${divisionName}`

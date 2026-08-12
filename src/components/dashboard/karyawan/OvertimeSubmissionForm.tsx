@@ -521,7 +521,14 @@ export function OvertimeSubmissionForm({
 
   const staffDivisionId = useMemo(() => {
     const hrd = (employeeProfile as any)?.hrdEmploymentInfo;
-    return hrd?.divisionName || hrd?.divisionId || (employeeProfile as any)?.division || (userProfile as any)?.managedDivision || (userProfile as any)?.division || "";
+    const struktur = (employeeProfile as any)?.strukturKepegawaian;
+    return (
+      (employeeProfile as any)?.divisionId ||
+      hrd?.divisionId ||
+      struktur?.divisionId ||
+      (userProfile as any)?.divisionId ||
+      ""
+    );
   }, [employeeProfile, userProfile]);
 
   const staffBrandName = useMemo(() => {
@@ -529,21 +536,26 @@ export function OvertimeSubmissionForm({
     return hrd?.brandName || (employeeProfile as any)?.brandName || brands.find((b) => b.id === staffBrandId)?.name || "";
   }, [employeeProfile, staffBrandId, brands]);
 
-  // staffDivisionId (above) is name-first by design — it's used as the
-  // query key for divisionNameQuery/divisionDocRef, which look division
-  // docs up BY NAME — so it can legitimately hold a divisionId when no name
-  // is on file. The submitted doc's own divisionName field needs an actual
-  // name, so it's sourced separately here instead of reusing staffDivisionId.
+  // ID and name intentionally come from separate current-profile fields.
+  // Never write an id into divisionName or reuse a stale submission snapshot.
   const staffDivisionName = useMemo(() => {
     const hrd = (employeeProfile as any)?.hrdEmploymentInfo;
     const struktur = (employeeProfile as any)?.strukturKepegawaian;
-    return hrd?.divisionName || (employeeProfile as any)?.divisionName || hrd?.divisi || struktur?.divisionName || staffDivisionId || "";
-  }, [employeeProfile, staffDivisionId]);
+    return (
+      (employeeProfile as any)?.divisionName ||
+      hrd?.divisionName ||
+      hrd?.divisi ||
+      struktur?.divisionName ||
+      (userProfile as any)?.divisionName ||
+      (userProfile as any)?.division ||
+      ""
+    );
+  }, [employeeProfile, userProfile]);
 
   const divisionNameQuery = useMemoFirebase(() => {
-    if (!firestore || !staffBrandId || !staffDivisionId) return null;
-    return query(collection(firestore, "brands", staffBrandId, "divisions"), where("name", "==", staffDivisionId));
-  }, [firestore, staffBrandId, staffDivisionId]);
+    if (!firestore || !staffBrandId || !staffDivisionName) return null;
+    return query(collection(firestore, "brands", staffBrandId, "divisions"), where("name", "==", staffDivisionName));
+  }, [firestore, staffBrandId, staffDivisionName]);
   const { data: divisionsResult } = useCollection<DivisionMasterOrganization>(divisionNameQuery);
 
   const divisionDocRef = useMemoFirebase(() => {
@@ -574,9 +586,9 @@ export function OvertimeSubmissionForm({
   const currentEmployeeForAssigner = useMemo(() => ({
     uid: userProfile?.uid,
     brandId: staffBrandId,
-    divisionId: (employeeProfile as any)?.hrdEmploymentInfo?.divisionId || (employeeProfile as any)?.divisionId || undefined,
-    divisionName: staffDivisionId,
-  }), [userProfile?.uid, staffBrandId, staffDivisionId, employeeProfile]);
+    divisionId: staffDivisionId || undefined,
+    divisionName: staffDivisionName,
+  }), [userProfile?.uid, staffBrandId, staffDivisionId, staffDivisionName]);
 
   const taskAssignerCandidates = useMemo(
     () => buildTaskAssignerCandidates(allUsers, userProfile?.uid, primaryTarget, currentEmployeeForAssigner),
@@ -1012,7 +1024,7 @@ export function OvertimeSubmissionForm({
         employeeCode: (employeeProfile as any)?.employeeId || (employeeProfile as any)?.nomorIndukKaryawan || "",
         brandId: staffBrandId,
         brandName: staffBrandName,
-        divisionId: (employeeProfile as any)?.hrdEmploymentInfo?.divisionId || (employeeProfile as any)?.divisionId || "",
+        divisionId: staffDivisionId,
         divisionName: staffDivisionName,
         position,
         overtimeDate: Timestamp.fromDate(values.overtimeDate),

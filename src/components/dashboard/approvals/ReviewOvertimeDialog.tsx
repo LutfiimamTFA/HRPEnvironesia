@@ -28,8 +28,16 @@ import {
 } from "firebase/firestore";
 import { sendNotification, sendHrdNotification } from "@/lib/notifications";
 import {
-  getOvertimeStatusLabel, getAnomalyFlagLabel,
+  canCurrentUserApproveOvertime,
+  getOvertimeStatusLabel,
+  getOvertimeAnomalyLabels,
+  getOvertimeMainStatusLabel,
   getCurrentUserOvertimeRoles, getReviewerRoleDisplayLabel,
+  getCurrentEmployeeProfile,
+  getDisplayPosition,
+  getResolvedEmployeeDivision,
+  getResolvedManagerName,
+  isOvertimeAfterManagerApproval,
 } from "@/lib/overtime-utils";
 import { format } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
@@ -66,6 +74,7 @@ interface ReviewOvertimeDialogProps {
   onSuccess: () => void;
   mode: "manager" | "hrd";
   dailyTotalMinutes?: number;
+  employeeMap?: Map<string, any>;
 }
 
 const InfoRow = ({
@@ -90,6 +99,13 @@ const workLocationLabels: Record<string, string> = {
   remote: "Rumah / WFH",
   site: "Site / Lokasi Klien",
 };
+
+const DAILY_LIMIT_MINUTES = 240;
+
+type HrdApprovalChoice =
+  | "full_approved_override"
+  | "partial_approved"
+  | "";
 
 const getWorkLocationDisplay = (submission: OvertimeSubmission) => {
   const rawLocation =
@@ -126,6 +142,7 @@ export function ReviewOvertimeDialog({
   onSuccess,
   mode,
   dailyTotalMinutes = 0,
+  employeeMap = new Map(),
 }: ReviewOvertimeDialogProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [showApproveDialog, setShowApproveDialog] = useState(false);
@@ -145,7 +162,8 @@ export function ReviewOvertimeDialog({
   const [hrdHours, setHrdHours] = useState(0);
   const [hrdMinutes, setHrdMinutes] = useState(0);
   const [hrdNotes, setHrdNotes] = useState("");
-  const [overLimitDecision, setOverLimitDecision] = useState<"full_approved" | "partial_approved" | "">("");
+  const [overLimitDecision, setOverLimitDecision] =
+    useState<HrdApprovalChoice>("");
   const { userProfile } = useAuth();
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -172,17 +190,35 @@ export function ReviewOvertimeDialog({
 
   useEffect(() => {
     if (open && submission) {
+      const requestedMinutes = Number(
+        (submission as any).durationMinutes ||
+          submission.totalDurationMinutes ||
+          (submission as any).totalJobDurationMinutes ||
+          0,
+      );
+      const savedDecision = submission.overLimitDecision;
+      const initialDecision: HrdApprovalChoice =
+        savedDecision === "partial_approved"
+          ? "partial_approved"
+          : savedDecision === "full_approved" ||
+              savedDecision === "full_approved_override"
+            ? "full_approved_override"
+            : requestedMinutes > DAILY_LIMIT_MINUTES
+              ? "partial_approved"
+              : "full_approved_override";
       const initialMinutes =
         submission.approvedMinutesFinal !== undefined &&
         submission.approvedMinutesFinal !== null
           ? submission.approvedMinutesFinal
-          : submission.totalDurationMinutes || 0;
+          : initialDecision === "partial_approved"
+            ? Math.min(requestedMinutes, DAILY_LIMIT_MINUTES)
+            : requestedMinutes;
       setHrdHours(Math.floor(initialMinutes / 60));
       setHrdMinutes(initialMinutes % 60);
       setHrdNotes(submission.hrdNotes || "");
       setRevisionNote(submission.revisionNote || "");
       setRejectionReason(submission.rejectionReason || "");
-      setOverLimitDecision(submission.overLimitDecision || "");
+      setOverLimitDecision(initialDecision);
       setManagerNoteInput(submission.managerNotes || "");
     }
   }, [open, submission]);
@@ -208,10 +244,49 @@ export function ReviewOvertimeDialog({
   // same {description, estimatedMinutes} shape so the existing table below
   // keeps working for both, with a richer per-job output/evidence panel
   // added separately for jobs[] submissions only.
-  const jobs = submission.jobs && submission.jobs.length > 0 ? submission.jobs : null;
+  // submission.jobs is already properly typed as OvertimeJobItem[] on
+  // OvertimeSubmission — casting through `as any` here (as this used to)
+  // collapsed every downstream .map()/.reduce() on `tasks`/`jobs` to an
+  // implicit `any`, which is what noImplicitAny was flagging below.
+  const rawJobs = Array.isArray(submission.jobs) ? submission.jobs : [];
+  const jobs = rawJobs.length > 0 ? rawJobs : null;
+  const legacyTasks = (submission as any).taskDetails || (submission as any).tasks || [];
   const tasks = jobs
-    ? jobs.map((j) => ({ description: j.title, estimatedMinutes: j.estimatedDurationMinutes, actualMinutes: null as number | null }))
-    : (submission.taskDetails || submission.tasks || []);
+    ? jobs.map((job: any) => ({
+        description: job.title || job.description || job.task || "Pekerjaan lembur",
+        estimatedMinutes:
+          job.estimatedDurationMinutes || job.estimatedMinutes || job.durationMinutes || 0,
+        actualMinutes: job.actualMinutes ?? null,
+      }))
+    : (Array.isArray(legacyTasks) ? legacyTasks : []).map((task: any) =>
+        typeof task === "string"
+          ? { description: task, estimatedMinutes: 0, actualMinutes: null }
+          : {
+              description: task.description || task.title || task.task || "Pekerjaan lembur",
+              estimatedMinutes:
+                task.estimatedMinutes || task.estimatedDurationMinutes || task.durationMinutes || 0,
+              actualMinutes: task.actualMinutes ?? null,
+            },
+      );
+  const submittedDurationMinutes = Number(
+    (submission as any).durationMinutes ||
+      submission.totalDurationMinutes ||
+      (submission as any).totalJobDurationMinutes ||
+      0,
+  );
+  const overtimeReason =
+    (submission as any).overtimeReason ||
+    submission.reason ||
+    (submission as any).reasonDetail ||
+    "Tidak ada alasan tambahan.";
+  const legacyWorkOutput =
+    (submission as any).workOutput || jobs?.[0]?.workOutput || "";
+  const currentEmployee = getCurrentEmployeeProfile(submission, employeeMap);
+  const resolvedDivision = getResolvedEmployeeDivision(submission, employeeMap);
+  const resolvedManagerName = getResolvedManagerName(submission, employeeMap);
+  const currentPosition = currentEmployee
+    ? getDisplayPosition(currentEmployee)
+    : submission.workRole || submission.positionTitle || (submission as any).position;
   const totalEstimatedMinutes = tasks.reduce(
     (sum, task) => sum + (task.estimatedMinutes || 0),
     0,
@@ -225,34 +300,45 @@ export function ReviewOvertimeDialog({
     new Date();
   const overtimeDate =
     parseSafeDate((submission as any).overtimeDate ?? submission.date) || null;
-  const managerDecisionAt = parseSafeDate(submission.managerDecisionAt);
+  const managerDecisionAt = parseSafeDate(
+    submission.managerDecisionAt || submission.supervisorApprovedAt,
+  );
   const isFinal = isFinalStatus(resolvedStatus);
+
+  useEffect(() => {
+    if (!open || mode !== "hrd") return;
+    console.log("[HRD_OVERTIME_DETAIL_MODAL_DEBUG]", {
+      submissionId: submission?.id,
+      employeeUid: submission?.employeeUid,
+      employeeName: submission?.employeeName,
+      submissionDivisionId: submission?.divisionId,
+      submissionDivisionName: submission?.divisionName,
+      resolvedDivision: getResolvedEmployeeDivision(submission, employeeMap),
+      status: submission?.status,
+      approvalStatus: (submission as any)?.approvalStatus,
+      currentApprovalStep: (submission as any)?.currentApprovalStep,
+      jobs: (submission as any)?.jobs,
+      evidenceFiles: (submission as any)?.evidenceFiles,
+      attachments: (submission as any)?.attachments,
+      durationMinutes: (submission as any)?.durationMinutes,
+      totalDurationMinutes: submission?.totalDurationMinutes,
+    });
+  }, [employeeMap, mode, open, submission]);
 
   const getCanActStrict = () => {
     if (isFinal) return false;
     if (!userProfile) return false;
     if (mode === "manager") {
-      if (resolvedStatus === "pending_coordinator") {
-        return submission.overtimeCoordinatorUid === userProfile.uid;
-      }
       if (
+        resolvedStatus === "pending_coordinator" ||
         resolvedStatus === "submitted" ||
         resolvedStatus === "pending_manager_review" ||
         resolvedStatus === "pending_supervisor" ||
         resolvedStatus === "pending_manager" ||
+        resolvedStatus === "pending_atasan" ||
         resolvedStatus === "revision_manager"
       ) {
-        // taskAssignerUid is intentionally NOT checked here — it can now
-        // be a same-division staff colleague picked purely as an
-        // informational "pemberi tugas" (see OvertimeSubmissionForm.tsx's
-        // same_division_staff group), who must never gain approval
-        // rights. overtimeCoordinatorUid is always written to the real
-        // atasan/manager approver regardless of who taskAssignerUid is.
-        return (
-          submission.overtimeCoordinatorUid === userProfile.uid ||
-          submission.directSupervisorUid === userProfile.uid ||
-          submission.managerUid === userProfile.uid
-        );
+        return canCurrentUserApproveOvertime(submission, userProfile.uid);
       }
     }
     if (mode === "hrd") {
@@ -269,6 +355,9 @@ export function ReviewOvertimeDialog({
   // of the header implying he's only one or the other.
   const reviewerRoles = mode === "manager" ? getCurrentUserOvertimeRoles(submission, userProfile?.uid) : [];
   const reviewerRoleLabel = reviewerRoles.length > 0 ? getReviewerRoleDisplayLabel(reviewerRoles) : null;
+  const mainStatusLabel = getOvertimeMainStatusLabel(submission);
+  const isAfterManagerApproval = isOvertimeAfterManagerApproval(submission);
+  const anomalyLabels = getOvertimeAnomalyLabels(submission, userProfile?.uid);
 
   const isManagerOrHrd = mode === "hrd" || (userProfile && (submission.directSupervisorUid === userProfile.uid || submission.managerUid === userProfile.uid));
   const canRecordProxyApproval = resolvedStatus === "pending_coordinator" && !!isManagerOrHrd && submission.overtimeCoordinatorUid !== userProfile?.uid;
@@ -462,8 +551,14 @@ export function ReviewOvertimeDialog({
           if (decision === "approve") {
             if (isSame) {
               payload = {
-                approvalStatus: "pending_hrd",
-                status: "pending_hrd",
+                approvalStatus: "pending_hrd_review",
+                status: "pending_hrd_review",
+                currentApprovalStep: "hrd",
+                currentApproverUid: "",
+                approvalTargetUid: "",
+                waitingForUid: "",
+                waitingForRole: "hrd",
+                waitingForName: "Tim HRD",
                 coordinatorDecision: "approved",
                 coordinatorDecisionAt: serverTimestamp() as any,
                 coordinatorDecisionBy: userProfile.uid,
@@ -474,6 +569,11 @@ export function ReviewOvertimeDialog({
                 coordinatorNotes: note || null,
                 managerNotes: note || null,
                 managerDecisionAt: serverTimestamp() as any,
+                managerDecision: "approved",
+                managerReviewedAt: serverTimestamp() as any,
+                managerReviewedBy: userProfile.uid,
+                managerReviewedByName: operatorName || null,
+                updatedAt: serverTimestamp() as any,
               };
             } else {
               payload = {
@@ -522,9 +622,10 @@ export function ReviewOvertimeDialog({
               // review is (any HRD user in the brand's scope can act), so
               // there's no single uid to point currentApproverUid/
               // waitingForUid at — only the role.
-              currentApproverUid: null,
-              waitingForUid: null,
-              waitingForName: null,
+              currentApproverUid: "",
+              approvalTargetUid: "",
+              waitingForUid: "",
+              waitingForName: "Tim HRD",
               waitingForRole: "hrd",
               supervisorApprovedAt: serverTimestamp() as any,
               supervisorApprovedBy: userProfile.uid,
@@ -535,6 +636,7 @@ export function ReviewOvertimeDialog({
               managerReviewedAt: serverTimestamp() as any,
               managerReviewedBy: userProfile.uid,
               managerReviewedByName: operatorName || null,
+              updatedAt: serverTimestamp() as any,
             };
           } else if (decision === "reject") {
             payload = {
@@ -576,18 +678,17 @@ export function ReviewOvertimeDialog({
           hrdReviewedByName: operatorName || null,
           ...(decision === "revise" && { revisionRequestedAtStage: "hrd", revisionReason: note || null }),
           approvedMinutesFinal: finalApprovedMinutes,
-          // Over-limit audit fields
-          ...(isOverLimit && {
-            isOverDailyLimit: true,
+          // Payroll duration audit fields
+          ...(decision === "approve" && {
+            isOverDailyLimit: isOverLimit,
             dailyOvertimeLimitMinutes: DAILY_LIMIT_MINUTES,
-            overtimeRequestedMinutes: submission.totalDurationMinutes || 0,
+            overtimeRequestedMinutes: submittedDurationMinutes,
             overtimeApprovedMinutes: finalApprovedMinutes,
-            overtimeRejectedMinutes: finalApprovedMinutes != null
-              ? Math.max(0, (submission.totalDurationMinutes || 0) - finalApprovedMinutes)
-              : null,
+            overtimeRejectedMinutes: rejectedMinutes,
             overtimeExcessMinutes: excessMinutes,
-            overLimitDecision: decision === "approve" ? (overLimitDecision || "full_approved") : null,
-            hrdOverLimitNote: note || null,
+            overLimitDecision:
+              overLimitDecision || "full_approved_override",
+            hrdOverLimitNote: isOverLimit ? note || null : null,
           }),
         };
 
@@ -636,10 +737,13 @@ export function ReviewOvertimeDialog({
               : format(new Date(), "yyyy-MM-dd"),
             startTime: submission.startTime || "",
             endTime: submission.endTime || "",
-            submittedMinutes: submission.totalDurationMinutes || 0,
+            submittedMinutes: submittedDurationMinutes,
             estimatedMinutes: totalEstimatedMinutes,
-            managerApprovedMinutes: submission.totalDurationMinutes || 0,
+            managerApprovedMinutes: submittedDurationMinutes,
             hrdApprovedMinutes: approvedMinutesFinal,
+            overtimeRequestedMinutes: submittedDurationMinutes,
+            overtimeApprovedMinutes: approvedMinutesFinal,
+            overtimeRejectedMinutes: rejectedMinutes,
             location: workLocationLabel,
             workMode,
             taskSummary,
@@ -650,8 +754,10 @@ export function ReviewOvertimeDialog({
             approvedAt: serverTimestamp(),
             // Over-limit fields for rekap payroll
             isOverDailyLimit: isOverLimit,
-            overtimeExcessMinutes: isOverLimit ? excessMinutes : 0,
-            overLimitDecision: isOverLimit ? (overLimitDecision || "full_approved") : null,
+            dailyOvertimeLimitMinutes: DAILY_LIMIT_MINUTES,
+            overtimeExcessMinutes: excessMinutes,
+            overLimitDecision:
+              overLimitDecision || "full_approved_override",
             hrdOverLimitNote: isOverLimit ? (note || null) : null,
           });
 
@@ -942,38 +1048,95 @@ export function ReviewOvertimeDialog({
     }
   };
 
-  const DAILY_LIMIT_MINUTES = 240;
-  const approvedMinutesFinal = hrdHours * 60 + Number(hrdMinutes || 0);
+  const enteredApprovedMinutes = hrdHours * 60 + Number(hrdMinutes || 0);
+  const approvedMinutesFinal =
+    overLimitDecision === "full_approved_override"
+      ? submittedDurationMinutes
+      : enteredApprovedMinutes;
+  const rejectedMinutes = Math.max(
+    0,
+    submittedDurationMinutes - approvedMinutesFinal,
+  );
   const isDurationChanged =
-    approvedMinutesFinal !== (submission.totalDurationMinutes || 0);
-  const isOverLimit = dailyTotalMinutes > DAILY_LIMIT_MINUTES;
-  const excessMinutes = isOverLimit ? dailyTotalMinutes - DAILY_LIMIT_MINUTES : 0;
+    approvedMinutesFinal !== submittedDurationMinutes;
+  const isOverLimit = submittedDurationMinutes > DAILY_LIMIT_MINUTES;
+  const excessMinutes = Math.max(
+    0,
+    submittedDurationMinutes - DAILY_LIMIT_MINUTES,
+  );
+  const isApprovedDurationInvalid =
+    approvedMinutesFinal <= 0 ||
+    approvedMinutesFinal > submittedDurationMinutes;
+  const isHrdNoteRequired =
+    overLimitDecision === "partial_approved" ||
+    (overLimitDecision === "full_approved_override" && isOverLimit) ||
+    isDurationChanged;
+  const partialPreviewMinutes =
+    overLimitDecision === "partial_approved"
+      ? approvedMinutesFinal
+      : Math.min(submittedDurationMinutes, DAILY_LIMIT_MINUTES);
+  const approvalChoiceLabel =
+    overLimitDecision === "partial_approved"
+      ? "Setujui Sebagian"
+      : "Setujui Penuh";
+
+  const handleHrdApprovalChoiceChange = (choice: HrdApprovalChoice) => {
+    setOverLimitDecision(choice);
+    const nextApprovedMinutes =
+      choice === "partial_approved"
+        ? Math.min(submittedDurationMinutes, DAILY_LIMIT_MINUTES)
+        : submittedDurationMinutes;
+    setHrdHours(Math.floor(nextApprovedMinutes / 60));
+    setHrdMinutes(nextApprovedMinutes % 60);
+    // Temporary debug — remove once footer position is confirmed stable.
+    console.log("[OVERTIME_DIALOG_LAYOUT_STATE]", {
+      choice,
+      overLimitDecision: choice,
+      isPartialApproved: choice === "partial_approved",
+      isFullApproved: choice === "full_approved_override",
+    });
+  };
 
   const handleApprove = () => {
-    if (mode === "hrd" && isDurationChanged && !hrdNotes.trim()) {
-      toast({
-        variant: "destructive",
-        title: "Catatan HRD Wajib Diisi",
-        description:
-          "Harap berikan penjelasan mengapa durasi final diubah dari durasi pengajuan.",
-      });
-      return;
-    }
-    if (mode === "hrd" && isOverLimit && !hrdNotes.trim()) {
-      toast({
-        variant: "destructive",
-        title: "Catatan HRD Wajib Diisi",
-        description:
-          "Pengajuan ini melebihi acuan 4 jam per hari. Harap berikan catatan keputusan.",
-      });
-      return;
-    }
-    if (mode === "hrd" && isOverLimit && !overLimitDecision) {
+    if (mode === "hrd" && !overLimitDecision) {
       toast({
         variant: "destructive",
         title: "Pilih Jenis Persetujuan",
         description:
-          "Pilih apakah lembur ini disetujui penuh atau sebagian untuk rekap payroll.",
+          "Pilih apakah durasi disetujui penuh atau disesuaikan untuk payroll.",
+      });
+      return;
+    }
+    if (mode === "hrd" && approvedMinutesFinal <= 0) {
+      toast({
+        variant: "destructive",
+        title: "Durasi Tidak Valid",
+        description:
+          "Durasi yang disetujui harus lebih dari 0 menit.",
+      });
+      return;
+    }
+    if (
+      mode === "hrd" &&
+      approvedMinutesFinal > submittedDurationMinutes
+    ) {
+      toast({
+        variant: "destructive",
+        title: "Durasi Tidak Valid",
+        description:
+          "Durasi disetujui tidak boleh lebih besar dari durasi pengajuan.",
+      });
+      return;
+    }
+    if (mode === "hrd" && isHrdNoteRequired && !hrdNotes.trim()) {
+      const isFullOverride =
+        overLimitDecision === "full_approved_override" && isOverLimit;
+      toast({
+        variant: "destructive",
+        title: "Catatan HRD Wajib Diisi",
+        description: isFullOverride
+          ? "Catatan HRD wajib diisi karena HRD menyetujui durasi melebihi acuan harian."
+          : "Catatan HRD wajib diisi karena durasi payroll berbeda dari durasi pengajuan.",
       });
       return;
     }
@@ -1111,38 +1274,64 @@ export function ReviewOvertimeDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="w-[94vw] max-w-[1200px] h-[92vh] max-h-[92vh] overflow-hidden rounded-[28px] border border-slate-200 bg-white p-0 shadow-2xl flex flex-col">
-          <DialogHeader className="shrink-0 border-b border-slate-200 bg-gradient-to-br from-white via-emerald-50/50 to-white px-7 py-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <DialogTitle className="text-2xl font-bold tracking-tight text-slate-950">
+        <DialogContent className="flex h-[88vh] max-h-[88vh] w-[94vw] max-w-7xl flex-col gap-0 overflow-hidden rounded-[28px] border border-slate-200 bg-white p-0 shadow-2xl sm:max-w-7xl [&>button]:z-30">
+          {/* The base DialogContent (src/components/ui/dialog.tsx) is
+              `display:grid` by default — overridden to `flex` above so this
+              wrapper's own height actually resolves against a real flex
+              parent instead of grid's content-sized implicit rows (which
+              left blank space below a content-height-sized child).
+              The wrapper itself uses grid-rows-[auto_minmax(0,1fr)_auto]
+              rather than flex's min-h-0/flex-1 trick: with 3 fixed rows,
+              the header/footer rows are ALWAYS sized to their own content
+              and the middle row gets exactly the remainder — genuinely
+              incapable of being pushed around by how tall the HRD decision
+              panel's content happens to be (unlike flex-basis calculations,
+              which can misbehave when box-sizing/intrinsic sizing changes
+              inside a min-h-0 flex item — this is what let picking an
+              overLimitDecision option shove the footer toward mid-modal). */}
+          <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] bg-white">
+          <DialogHeader className="z-20 border-b border-slate-200 bg-gradient-to-br from-white via-emerald-50/50 to-white px-7 py-5 pr-14">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <DialogTitle className="truncate text-2xl font-bold tracking-tight text-slate-950">
                   {submission.employeeName || submission.fullName}
                 </DialogTitle>
-                <DialogDescription className="mt-1 text-sm text-slate-600">
+                <DialogDescription className="mt-1 truncate text-sm text-slate-600">
                   {mode === "manager"
-                    ? isCoordinatorReview
-                      ? "Tinjau detail pengajuan untuk membuat keputusan persetujuan sebagai Koordinator."
-                      : "Tinjau detail pengajuan untuk membuat keputusan persetujuan sebagai Manager Divisi."
+                    ? "Tinjau detail pengajuan sebelum membuat keputusan persetujuan."
                     : "Tinjau detail pengajuan dan bukti approval sebelum memutuskan."}
                 </DialogDescription>
+                {mode === "manager" && reviewerRoleLabel && (
+                  <p className="mt-1 truncate text-xs text-slate-600">
+                    Peran Anda:{" "}
+                    <span className="font-semibold text-teal-700">
+                      {reviewerRoleLabel}
+                    </span>
+                  </p>
+                )}
               </div>
-              <div className="flex flex-col items-start gap-2 sm:items-end">
-                {canAct && (
+              <div className="flex shrink-0 flex-col items-end gap-2">
+                {canAct ? (
                   <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">
                     Menunggu Review Anda
                   </span>
+                ) : (
+                  <OvertimeApprovalStatusBadge
+                    status={resolvedStatus as any}
+                    mode={mode}
+                    divisionName={resolvedDivision.divisionName}
+                    labelOverride={mode === "manager" ? mainStatusLabel : undefined}
+                  />
                 )}
-                <OvertimeApprovalStatusBadge
-                  status={resolvedStatus as any}
-                  mode={mode}
-                  divisionName={submission.divisionName || submission.division}
-                />
               </div>
             </div>
           </DialogHeader>
 
-          <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50/70 px-7 py-6 pb-32">
+          <div className="min-h-0 overscroll-contain overflow-y-auto bg-slate-50/70 px-7 py-5">
             <div className="space-y-6">
+              <h3 className="text-sm font-bold uppercase tracking-wide text-slate-600">
+                Ringkasan Pengajuan
+              </h3>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <SummaryTile
                   label="Pengaju"
@@ -1151,12 +1340,12 @@ export function ReviewOvertimeDialog({
                 <SummaryTile
                   label="Brand / Divisi"
                   value={`${submission.brandName || "-"} / ${
-                    submission.divisionName || submission.division || "-"
+                    resolvedDivision.divisionName
                   }`}
                 />
                 <SummaryTile
                   label="Jabatan"
-                  value={submission.workRole || submission.positionTitle || (submission as any).position}
+                  value={currentPosition}
                 />
                 <SummaryTile
                   label="Tanggal Lembur"
@@ -1169,24 +1358,51 @@ export function ReviewOvertimeDialog({
                 <SummaryTile label="Tipe Lembur" value={overtimeTypeLabel} />
                 <SummaryTile label="Lokasi Kerja" value={workLocationLabel} />
                 <SummaryTile
+                  label="Jam Lembur"
+                  value={`${submission.startTime || "-"} - ${submission.endTime || "-"}`}
+                />
+                <SummaryTile
+                  label="Durasi Pengajuan"
+                  value={formatMinutesToHuman(submittedDurationMinutes)}
+                />
+                <SummaryTile
                   label="Koordinator/Pengawas"
                   value={(submission as any).overtimeCoordinatorName || "Koordinator"}
                 />
                 <SummaryTile
                   label="Status Saat Ini"
-                  value={getApprovalStatusLabel(resolvedStatus)}
+                  value={mode === "manager" ? mainStatusLabel : getApprovalStatusLabel(resolvedStatus)}
                 />
               </div>
 
-              {(submission.anomalyFlags?.length || 0) > 0 && (
+              {resolvedDivision.snapshotDivisionName &&
+                resolvedDivision.snapshotDivisionName !== resolvedDivision.divisionName && (
+                  <p className="text-xs text-slate-500">
+                    Divisi saat ini: <span className="font-semibold text-slate-700">{resolvedDivision.divisionName}</span>
+                    {" · "}Saat pengajuan dibuat: <span className="font-medium">{resolvedDivision.snapshotDivisionName}</span>
+                  </p>
+                )}
+
+              {isAfterManagerApproval && (
+                <Alert className="border-blue-200 bg-blue-50">
+                  <Info className="h-4 w-4 text-blue-600" />
+                  <AlertDescription className="text-sm text-blue-800">
+                    Manager sudah menyetujui pengajuan ini. HRD akan melakukan verifikasi final untuk durasi payroll.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {anomalyLabels.length > 0 && (
                 <Alert className="border-amber-200 bg-amber-50">
                   <Info className="h-4 w-4 text-amber-600" />
                   <AlertDescription className="text-amber-800">
-                    <p className="mb-1 font-semibold">Indikator Perlu Review:</p>
+                    <p className="mb-1 font-semibold">
+                      {isAfterManagerApproval ? "Catatan untuk HRD:" : "Indikator Perlu Review:"}
+                    </p>
                     <div className="flex flex-wrap gap-1.5">
-                      {(submission.anomalyFlags || []).map((flag) => (
-                        <span key={flag} className="rounded-full border border-amber-300 bg-white px-2.5 py-0.5 text-xs font-semibold text-amber-700">
-                          {getAnomalyFlagLabel(flag)}
+                      {anomalyLabels.map((label) => (
+                        <span key={label} className="rounded-full border border-amber-300 bg-white px-2.5 py-0.5 text-xs font-semibold text-amber-700">
+                          {label}
                         </span>
                       ))}
                     </div>
@@ -1194,7 +1410,8 @@ export function ReviewOvertimeDialog({
                 </Alert>
               )}
 
-              <div className="grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.9fr)]">
+              <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(380px,0.9fr)]">
+                <div className="min-w-0 space-y-5">
                 <Card className="rounded-3xl border border-slate-200 bg-white shadow-sm">
                   <CardHeader className="border-b border-slate-100 px-6 py-5">
                     <CardTitle className="text-lg text-slate-950">
@@ -1258,17 +1475,17 @@ export function ReviewOvertimeDialog({
                                 Total Durasi Aktual
                               </p>
                               <p className="mt-1 text-3xl font-bold text-slate-950">
-                                {formatMinutesToHuman(submission.totalDurationMinutes || 0)}
+                                {formatMinutesToHuman(submittedDurationMinutes)}
                               </p>
                             </div>
                             {totalEstimatedMinutes !==
-                              (submission.totalDurationMinutes || 0) && (
+                              submittedDurationMinutes && (
                               <Alert className="w-auto border-amber-200 bg-amber-50 px-3 py-2">
                                 <AlertDescription className="text-xs font-semibold text-amber-800">
                                   ⚠️ Selisih:{" "}
                                   {Math.abs(
                                     totalEstimatedMinutes -
-                                      (submission.totalDurationMinutes || 0),
+                                      submittedDurationMinutes,
                                   )}{" "}
                                   menit
                                 </AlertDescription>
@@ -1292,7 +1509,9 @@ export function ReviewOvertimeDialog({
                             {job.projectOrClient && <p className="text-xs text-slate-500">{job.projectOrClient}</p>}
                             <div>
                               <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Output</p>
-                              <p className="text-sm text-slate-700">{job.workOutput || "-"}</p>
+                              <p className="text-sm text-slate-700">
+                                {job.workOutput || (i === 0 ? legacyWorkOutput : "") || "-"}
+                              </p>
                             </div>
                             {((job.evidenceFiles?.length || 0) + (job.evidenceLinks?.length || 0)) > 0 ? (
                               <div className="space-y-2 pt-1">
@@ -1320,9 +1539,16 @@ export function ReviewOvertimeDialog({
                         Alasan Lembur
                       </p>
                       <p className="mt-3 text-sm leading-7 text-slate-700">
-                        {submission.reason || "Tidak ada alasan tambahan."}
+                        {overtimeReason}
                       </p>
                     </div>
+
+                    {!jobs && legacyWorkOutput && (
+                      <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                        <p className="text-sm font-bold text-slate-950">Output Pekerjaan</p>
+                        <p className="mt-3 text-sm leading-7 text-slate-700">{legacyWorkOutput}</p>
+                      </div>
+                    )}
 
                     {submission.employeeNotes && (
                       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
@@ -1359,7 +1585,50 @@ export function ReviewOvertimeDialog({
                   </CardContent>
                 </Card>
 
-                <div className="space-y-4">
+                <Card className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+                  <CardHeader className="border-b border-slate-100 px-5 py-4">
+                    <CardTitle className="text-base text-slate-950">
+                      Validasi Durasi Kerja
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4 px-5 py-4">
+                    <InfoRow
+                      label="Durasi Pengajuan"
+                      value={formatMinutesToHuman(submittedDurationMinutes)}
+                    />
+                    <InfoRow
+                      label="Estimasi Pekerjaan"
+                      value={formatMinutesToHuman(totalEstimatedMinutes)}
+                    />
+                    <InfoRow
+                      label="Selisih Durasi"
+                      value={formatMinutesToHuman(
+                        Math.abs(submittedDurationMinutes - totalEstimatedMinutes),
+                      )}
+                    />
+                    {submission.approvedMinutesFinal !== undefined &&
+                      submission.approvedMinutesFinal !== null && (
+                        <InfoRow
+                          label="Durasi Final HRD"
+                          value={formatMinutesToHuman(submission.approvedMinutesFinal)}
+                        />
+                      )}
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs">
+                      {totalEstimatedMinutes !== submittedDurationMinutes ? (
+                        <p className="text-amber-700">
+                          ⚠️ Selisih durasi terdeteksi. Tinjau kesesuaian durasi dengan rincian pekerjaan.
+                        </p>
+                      ) : (
+                        <p className="text-emerald-700">
+                          Durasi pengajuan sesuai dengan estimasi rincian pekerjaan.
+                        </p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+                </div>
+
+                <aside className="min-w-0 space-y-5">
                   {/* Over-limit warning */}
                   {isOverLimit && (
                     <Alert className="border-amber-300 bg-amber-50">
@@ -1369,8 +1638,14 @@ export function ReviewOvertimeDialog({
                       </AlertTitle>
                       <AlertDescription className="text-amber-700 text-xs mt-1 space-y-1">
                         <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-2">
-                          <span className="text-amber-600">Total diajukan hari ini:</span>
-                          <span className="font-semibold">{formatMinutesToHuman(dailyTotalMinutes)}</span>
+                          <span className="text-amber-600">Durasi pengajuan:</span>
+                          <span className="font-semibold">{formatMinutesToHuman(submittedDurationMinutes)}</span>
+                          {dailyTotalMinutes > submittedDurationMinutes && (
+                            <>
+                              <span className="text-amber-600">Total lembur hari ini:</span>
+                              <span className="font-semibold">{formatMinutesToHuman(dailyTotalMinutes)}</span>
+                            </>
+                          )}
                           <span className="text-amber-600">Acuan maksimal:</span>
                           <span className="font-semibold">{formatMinutesToHuman(DAILY_LIMIT_MINUTES)}</span>
                           <span className="text-amber-600">Kelebihan:</span>
@@ -1390,91 +1665,243 @@ export function ReviewOvertimeDialog({
                         </CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-4 px-5 py-4">
-                        {/* Over-limit decision selector */}
-                        {isOverLimit && (
-                          <div className="space-y-2">
-                            <Label className="text-xs uppercase tracking-wide text-amber-700 font-bold flex items-center gap-1.5">
-                              <Info className="h-3.5 w-3.5" />
-                              Jenis Persetujuan Lembur (Wajib)
+                        <fieldset className="space-y-3">
+                          <legend className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-700">
+                            <Info className="h-3.5 w-3.5 text-emerald-600" />
+                            Jenis Persetujuan Lembur
+                            <span className="text-red-500">*</span>
+                          </legend>
+
+                          <label
+                            className={`block cursor-pointer rounded-2xl border p-4 transition-colors focus-within:ring-2 focus-within:ring-emerald-200 ${
+                              overLimitDecision === "full_approved_override"
+                                ? "border-emerald-400 bg-emerald-50 ring-2 ring-emerald-100"
+                                : "border-slate-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/40"
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="hrd-approval-choice"
+                              value="full_approved_override"
+                              checked={
+                                overLimitDecision ===
+                                "full_approved_override"
+                              }
+                              onChange={() =>
+                                handleHrdApprovalChoiceChange(
+                                  "full_approved_override",
+                                )
+                              }
+                              className="sr-only"
+                            />
+                            <div className="flex items-start gap-3">
+                              <span
+                                className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                                  overLimitDecision ===
+                                  "full_approved_override"
+                                    ? "border-emerald-600 bg-emerald-600"
+                                    : "border-slate-300 bg-white"
+                                }`}
+                              >
+                                {overLimitDecision ===
+                                  "full_approved_override" && (
+                                  <span className="h-2 w-2 rounded-full bg-white" />
+                                )}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block text-sm font-bold text-slate-900">
+                                  Setujui Penuh / Override Ajuan
+                                </span>
+                                <span className="mt-1 block text-xs leading-5 text-slate-600">
+                                  Seluruh durasi yang diajukan akan dibayar.
+                                </span>
+                                <span className="mt-2 block rounded-lg bg-white/80 px-3 py-2 text-xs text-slate-700">
+                                  Durasi dibayar: {" "}
+                                  <strong>
+                                    {formatMinutesToHuman(
+                                      submittedDurationMinutes,
+                                    )}
+                                  </strong>
+                                </span>
+                                {isOverLimit && (
+                                  <span className="mt-2 block rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium leading-5 text-amber-800">
+                                    Ini adalah override acuan lembur 4 jam/hari.
+                                    HRD wajib memberi catatan.
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                          </label>
+
+                          <label
+                            className={`block cursor-pointer rounded-2xl border p-4 transition-colors focus-within:ring-2 focus-within:ring-teal-200 ${
+                              overLimitDecision === "partial_approved"
+                                ? "border-teal-400 bg-teal-50 ring-2 ring-teal-100"
+                                : "border-slate-200 bg-white hover:border-teal-200 hover:bg-teal-50/40"
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="hrd-approval-choice"
+                              value="partial_approved"
+                              checked={
+                                overLimitDecision === "partial_approved"
+                              }
+                              onChange={() =>
+                                handleHrdApprovalChoiceChange(
+                                  "partial_approved",
+                                )
+                              }
+                              className="sr-only"
+                            />
+                            <div className="flex items-start gap-3">
+                              <span
+                                className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                                  overLimitDecision === "partial_approved"
+                                    ? "border-teal-600 bg-teal-600"
+                                    : "border-slate-300 bg-white"
+                                }`}
+                              >
+                                {overLimitDecision ===
+                                  "partial_approved" && (
+                                  <span className="h-2 w-2 rounded-full bg-white" />
+                                )}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block text-sm font-bold text-slate-900">
+                                  Setujui Sebagian / Sesuaikan Durasi Payroll
+                                </span>
+                                <span className="mt-1 block text-xs leading-5 text-slate-600">
+                                  Hanya durasi final yang disetujui HRD yang
+                                  akan dibayar.
+                                </span>
+                                <span className="mt-2 grid grid-cols-2 gap-1 rounded-lg bg-white/80 px-3 py-2 text-xs text-slate-700">
+                                  <span>Diajukan</span>
+                                  <strong className="text-right">
+                                    {formatMinutesToHuman(
+                                      submittedDurationMinutes,
+                                    )}
+                                  </strong>
+                                  <span>Estimasi dibayar</span>
+                                  <strong className="text-right text-teal-700">
+                                    {formatMinutesToHuman(
+                                      partialPreviewMinutes,
+                                    )}
+                                  </strong>
+                                </span>
+                                <span className="mt-2 block text-xs font-medium text-teal-700">
+                                  Selisih durasi tidak masuk payroll lembur.
+                                </span>
+                              </span>
+                            </div>
+                          </label>
+                        </fieldset>
+
+                        {overLimitDecision === "partial_approved" ? (
+                          <div className="space-y-2 rounded-2xl border border-teal-200 bg-teal-50/50 p-4">
+                            <Label className="text-xs font-bold uppercase tracking-wide text-teal-700">
+                              Durasi Final HRD untuk Payroll
                             </Label>
-                            <Select
-                              value={overLimitDecision}
-                              onValueChange={(v) => setOverLimitDecision(v as any)}
-                            >
-                              <SelectTrigger className="bg-white border-slate-200">
-                                <SelectValue placeholder="Pilih jenis persetujuan..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="full_approved">Setujui Penuh — bayar seluruh durasi diajukan</SelectItem>
-                                <SelectItem value="partial_approved">Setujui Sebagian — atur durasi final di bawah</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            {overLimitDecision === "partial_approved" && (
-                              <p className="text-[10px] text-amber-400 italic">
-                                Atur jam &amp; menit di bawah untuk menentukan durasi yang akan dibayar ke payroll.
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="space-y-1">
+                                <span className="text-[10px] text-slate-500">
+                                  Jam
+                                </span>
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  value={hrdHours}
+                                  onChange={(e) =>
+                                    setHrdHours(
+                                      Math.max(
+                                        0,
+                                        parseInt(e.target.value) || 0,
+                                      ),
+                                    )
+                                  }
+                                  className="bg-white focus:border-teal-500"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <span className="text-[10px] text-slate-500">
+                                  Menit
+                                </span>
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  max={59}
+                                  value={hrdMinutes}
+                                  onChange={(e) =>
+                                    setHrdMinutes(
+                                      Math.max(
+                                        0,
+                                        Math.min(
+                                          59,
+                                          parseInt(e.target.value) || 0,
+                                        ),
+                                      ),
+                                    )
+                                  }
+                                  className="bg-white focus:border-teal-500"
+                                />
+                              </div>
+                            </div>
+                            <p className="text-xs text-slate-600">
+                              Durasi dibayar: {" "}
+                              <span className="font-bold text-teal-700">
+                                {formatMinutesToHuman(approvedMinutesFinal)}
+                              </span>{" "}
+                              ({approvedMinutesFinal} menit)
+                            </p>
+                            {isApprovedDurationInvalid && (
+                              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+                                {approvedMinutesFinal <= 0
+                                  ? "Durasi yang disetujui harus lebih dari 0 menit."
+                                  : "Durasi disetujui tidak boleh lebih besar dari durasi pengajuan."}
                               </p>
                             )}
                           </div>
+                        ) : (
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600">
+                            Durasi payroll dikunci mengikuti pengajuan:{" "}
+                            <strong className="text-slate-900">
+                              {formatMinutesToHuman(submittedDurationMinutes)}
+                            </strong>
+                          </div>
                         )}
 
-                        <div className="space-y-2">
-                          <Label className="text-xs uppercase tracking-wide text-emerald-700 font-bold">
-                            Durasi Final HRD untuk Payroll
-                          </Label>
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="space-y-1">
-                              <span className="text-[10px] text-slate-500">
-                                Jam
-                              </span>
-                              <Input
-                                type="number"
-                                min={0}
-                                value={hrdHours}
-                                onChange={(e) =>
-                                  setHrdHours(
-                                    Math.max(0, parseInt(e.target.value) || 0),
-                                  )
-                                }
-                                className="focus:border-emerald-500"
-                              />
-                            </div>
-                            <div className="space-y-1">
-                              <span className="text-[10px] text-slate-500">
-                                Menit
-                              </span>
-                              <Input
-                                type="number"
-                                min={0}
-                                max={59}
-                                value={hrdMinutes}
-                                onChange={(e) =>
-                                  setHrdMinutes(
-                                    Math.max(
-                                      0,
-                                      Math.min(
-                                        59,
-                                        parseInt(e.target.value) || 0,
-                                      ),
-                                    ),
-                                  )
-                                }
-                                className="focus:border-emerald-500"
-                              />
-                            </div>
-                          </div>
-                          <p className="text-xs text-slate-500 italic">
-                            Konversi:{" "}
-                            <span className="font-semibold text-emerald-700">
-                              {formatMinutesToHuman(approvedMinutesFinal)}
-                            </span>{" "}
-                            ({approvedMinutesFinal} menit)
+                        <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4">
+                          <p className="text-xs font-bold uppercase tracking-wide text-blue-800">
+                            Dampak Payroll
                           </p>
+                          <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                            <span className="text-slate-600">Diajukan</span>
+                            <span className="text-right font-semibold text-slate-900">
+                              {formatMinutesToHuman(submittedDurationMinutes)}
+                            </span>
+                            <span className="text-slate-600">Dibayar</span>
+                            <span className="text-right font-bold text-emerald-700">
+                              {formatMinutesToHuman(approvedMinutesFinal)}
+                            </span>
+                            <span className="text-slate-600">
+                              Tidak dibayar
+                            </span>
+                            <span className="text-right font-bold text-red-700">
+                              {formatMinutesToHuman(rejectedMinutes)}
+                            </span>
+                            <span className="text-slate-600">Status</span>
+                            <span className="text-right font-semibold text-blue-800">
+                              {overLimitDecision === "partial_approved"
+                                ? "Disetujui sebagian oleh HRD"
+                                : "Disetujui penuh oleh HRD"}
+                            </span>
+                          </div>
                         </div>
 
                         <div className="space-y-2">
                           <Label className="text-xs uppercase tracking-wide text-slate-600 font-bold flex justify-between">
                             <span>Catatan HRD</span>
-                            {isDurationChanged && (
+                            {isHrdNoteRequired && (
                               <span className="text-[10px] text-amber-600 font-normal">
                                 Wajib diisi *
                               </span>
@@ -1486,14 +1913,11 @@ export function ReviewOvertimeDialog({
                             placeholder="Berikan catatan persetujuan, penolakan, atau alasan perubahan durasi..."
                             className="w-full min-h-[90px] rounded-lg border border-slate-200 bg-white p-3 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                           />
-                          {isDurationChanged && !hrdNotes.trim() && (
+                          {isHrdNoteRequired && !hrdNotes.trim() && (
                             <p className="text-[10px] text-amber-500 italic">
-                              * Catatan wajib diisi karena durasi final diubah
-                              dari durasi pengajuan (
-                              {formatMinutesToHuman(
-                                submission.totalDurationMinutes || 0,
-                              )}
-                              ).
+                              * {overLimitDecision === "full_approved_override" && isOverLimit
+                                ? "Catatan HRD wajib diisi karena HRD menyetujui durasi melebihi acuan harian."
+                                : "Catatan HRD wajib diisi karena durasi payroll berbeda dari durasi pengajuan."}
                             </p>
                           )}
                         </div>
@@ -1555,70 +1979,6 @@ export function ReviewOvertimeDialog({
                     </Card>
                   )}
 
-                  <Card className="rounded-3xl border border-slate-200 bg-white shadow-sm">
-                    <CardHeader className="border-b border-slate-100 px-5 py-4">
-                      <CardTitle className="text-base text-slate-950">
-                        Validasi Durasi Kerja
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4 px-5 py-4">
-                      <InfoRow
-                        label="Durasi Pengajuan"
-                        value={formatMinutesToHuman(
-                          submission.totalDurationMinutes || 0,
-                        )}
-                      />
-                      <InfoRow
-                        label="Estimasi Pekerjaan"
-                        value={formatMinutesToHuman(totalEstimatedMinutes)}
-                      />
-                      <InfoRow
-                        label="Selisih Durasi"
-                        value={formatMinutesToHuman(
-                          Math.abs(
-                            (submission.totalDurationMinutes || 0) -
-                              totalEstimatedMinutes,
-                          ),
-                        )}
-                      />
-                      {submission.approvedMinutesFinal !== undefined &&
-                        submission.approvedMinutesFinal !== null && (
-                          <InfoRow
-                            label="Durasi Final HRD"
-                            value={formatMinutesToHuman(
-                              submission.approvedMinutesFinal,
-                            )}
-                          />
-                        )}
-
-                      {approvedMinutesFinal > totalEstimatedMinutes && (
-                        <Alert className="mt-2 w-full border-amber-200 bg-amber-50">
-                          <AlertTitle className="text-xs font-bold text-amber-800">
-                            Selisih durasi cukup besar
-                          </AlertTitle>
-                          <AlertDescription className="text-xs leading-5 text-amber-700">
-                            Mohon tinjau apakah durasi aktual sesuai dengan rincian tugas.
-                          </AlertDescription>
-                        </Alert>
-                      )}
-
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs">
-                        {totalEstimatedMinutes !==
-                        (submission.totalDurationMinutes || 0) ? (
-                          <p className="text-amber-700 dark:text-amber-200">
-                            ⚠️ Selisih durasi terdeteksi. Durasi pengajuan
-                            berbeda dengan estimasi rincian tugas.
-                          </p>
-                        ) : (
-                          <p className="text-emerald-700 dark:text-emerald-200">
-                            Durasi pengajuan sudah sesuai dengan estimasi
-                            rincian tugas.
-                          </p>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-
                   {/* Audit Trail Waktu */}
                   {((submission as any).formCreatedAt || (submission as any).startTimeAdjusted || (submission as any).actualEndTime) && (
                     <Card className="rounded-3xl border border-slate-200 bg-white shadow-sm">
@@ -1671,7 +2031,7 @@ export function ReviewOvertimeDialog({
                         {(submission as any).actualDurationMinutes && (
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Durasi realisasi</span>
-                            <span className={`font-semibold ${(submission as any).actualDurationMinutes > submission.totalDurationMinutes ? "text-orange-600" : "text-teal-600"}`}>
+                            <span className={`font-semibold ${(submission as any).actualDurationMinutes > submittedDurationMinutes ? "text-orange-600" : "text-teal-600"}`}>
                               {formatMinutesToHuman((submission as any).actualDurationMinutes)}
                             </span>
                           </div>
@@ -1685,6 +2045,33 @@ export function ReviewOvertimeDialog({
                       </CardContent>
                     </Card>
                   )}
+
+                  <Card className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+                    <CardHeader className="border-b border-slate-100 px-5 py-4">
+                      <CardTitle className="text-base text-slate-950">
+                        Catatan Manager
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3 px-5 py-4">
+                      <InfoRow label="Disetujui oleh" value={resolvedManagerName || "Belum disetujui"} />
+                      <InfoRow
+                        label="Waktu persetujuan"
+                        value={
+                          managerDecisionAt
+                            ? format(managerDecisionAt, "dd MMMM yyyy HH:mm", { locale: idLocale })
+                            : "-"
+                        }
+                      />
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Catatan
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-slate-700">
+                          {submission.managerNotes || "Tidak ada catatan manager."}
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
 
                   <Card className="rounded-3xl border border-slate-200 bg-white shadow-sm">
                     <CardHeader className="border-b border-slate-100 px-5 py-4">
@@ -1736,6 +2123,7 @@ export function ReviewOvertimeDialog({
                         <OvertimeApprovalStatusBadge
                           status={resolvedStatus as any}
                           mode={mode}
+                          labelOverride={mode === "manager" ? mainStatusLabel : undefined}
                         />
                       </div>
                       <Separator className="my-2 opacity-50" />
@@ -1892,7 +2280,7 @@ export function ReviewOvertimeDialog({
                       )}
                     </CardContent>
                   </Card>
-                </div>
+                </aside>
               </div>
 
               {mode === "manager" && canAct && (
@@ -1932,64 +2320,52 @@ export function ReviewOvertimeDialog({
             </div>
           </div>
 
-          <DialogFooter className="shrink-0 border-t border-slate-200 bg-white/95 px-7 py-4 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] backdrop-blur flex flex-col gap-3 sm:flex-row sm:justify-end">
-            <Button
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              className="h-11 rounded-xl border-slate-300 px-5"
-            >
-              Tutup
-            </Button>
-            {canRecordProxyApproval && (
+          <div className="z-20 border-t border-slate-200 bg-white px-7 py-4 shadow-[0_-8px_24px_rgba(15,23,42,0.06)]">
+            <div className="flex items-center justify-end gap-3 overflow-x-auto overflow-y-hidden">
               <Button
-                variant="secondary"
-                onClick={() => setShowProxyDialog(true)}
-                disabled={isSaving}
-                className="h-11 rounded-xl border border-amber-200 bg-amber-50 px-5 font-semibold text-amber-700 hover:bg-amber-100"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                className="h-11 whitespace-nowrap rounded-xl border-slate-300 px-5"
               >
-                Catat Konfirmasi Koordinator
+                Tutup
               </Button>
-            )}
-            {canAct && (
-              <>
-                {/* Manager alur is Setujui/Tolak only — HRD is the final
-                    decision-maker for payroll, so revision requests from a
-                    manager no longer exist as an action (legacy
-                    revision_requested* docs are still readable, just never
-                    created from here anymore). HRD keeps this button. */}
-                {mode !== "manager" && (
+              {canRecordProxyApproval && (
+                <Button
+                  variant="secondary"
+                  onClick={() => setShowProxyDialog(true)}
+                  disabled={isSaving}
+                  className="h-11 whitespace-nowrap rounded-xl border border-amber-200 bg-amber-50 px-5 font-semibold text-amber-700 hover:bg-amber-100"
+                >
+                  Catat Konfirmasi Koordinator
+                </Button>
+              )}
+              {canAct && (
+                <>
                   <Button
-                    variant="outline"
-                    onClick={() => setShowRevisionDialog(true)}
+                    variant="destructive"
+                    onClick={() => setShowRejectDialog(true)}
                     disabled={isSaving}
-                    className="h-11 rounded-xl border-amber-300 px-5 font-semibold text-amber-700 hover:bg-amber-50"
+                    className="h-11 whitespace-nowrap rounded-xl px-5 font-semibold"
                   >
-                    Minta Revisi
+                    Tolak
                   </Button>
-                )}
-                <Button
-                  variant="destructive"
-                  onClick={() => setShowRejectDialog(true)}
-                  disabled={isSaving}
-                  className="h-11 rounded-xl px-5 font-semibold"
-                >
-                  Tolak
-                </Button>
-                <Button
-                  onClick={handleApprove}
-                  disabled={isSaving}
-                  className="h-11 rounded-xl bg-emerald-600 px-6 font-semibold text-white hover:bg-emerald-700"
-                >
-                  {isSaving ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <CheckCircle className="mr-2 h-4 w-4" />
-                  )}
-                  Setujui
-                </Button>
-              </>
-            )}
-          </DialogFooter>
+                  <Button
+                    onClick={handleApprove}
+                    disabled={isSaving}
+                    className="h-11 whitespace-nowrap rounded-xl bg-emerald-600 px-6 font-semibold text-white hover:bg-emerald-700"
+                  >
+                    {isSaving ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                    )}
+                    {mode === "hrd" ? approvalChoiceLabel : "Setujui"}
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -1999,7 +2375,7 @@ export function ReviewOvertimeDialog({
           <DialogHeader>
             <DialogTitle>
               {mode === "hrd"
-                ? "Setujui Lembur Secara Final?"
+                ? `${approvalChoiceLabel} untuk Payroll?`
                 : "Setujui Pengajuan Lembur?"}
             </DialogTitle>
             <DialogDescription className="text-slate-600">
@@ -2023,6 +2399,12 @@ export function ReviewOvertimeDialog({
                   <span className="text-slate-600">Durasi Final HRD:</span>
                   <span className="font-bold text-emerald-700">
                     {formatMinutesToHuman(approvedMinutesFinal)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Tidak Dibayar:</span>
+                  <span className="font-bold text-red-700">
+                    {formatMinutesToHuman(rejectedMinutes)}
                   </span>
                 </div>
                 {hrdNotes.trim() && (
@@ -2059,7 +2441,7 @@ export function ReviewOvertimeDialog({
                 <CheckCircle className="mr-2 h-4 w-4" />
               )}
               {mode === "hrd"
-                ? "Setujui Secara Final"
+                ? approvalChoiceLabel
                 : isCoordinatorReview
                   ? (submission.overtimeCoordinatorUid === (submission.managerUid || submission.directSupervisorUid || submission.supervisorUid)
                     ? "Setujui & Teruskan ke HRD"

@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef, Fragment } from "react";
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
-import { collection, query, where, or, orderBy } from "firebase/firestore";
+import { collection, getDocs, query, where, or } from "firebase/firestore";
 import type { OvertimeSubmission, UserProfile, Brand } from "@/lib/types";
 import { useAuth } from "@/providers/auth-provider";
 import { useRouter, usePathname, useSearchParams } from "@/navigation";
@@ -16,7 +16,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Search, UserCheck, AlertTriangle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, Eye, RotateCcw, Search, Timer, UserCheck, X, XCircle } from "lucide-react";
+import type { ReactNode } from "react";
 import {
   Table,
   TableBody,
@@ -33,7 +34,22 @@ import { KpiCard } from "@/components/recruitment/KpiCard";
 import { ReviewOvertimeDialog } from "./ReviewOvertimeDialog";
 import { OVERTIME_SUBMISSION_STATUSES, isFinalStatus } from "@/lib/types";
 import {
-  getCurrentUserOvertimeRoles, getReviewerRoleDisplayLabel, getReviewerScopeLabel, uniqueById,
+  canCurrentUserApproveOvertime,
+  buildHrdDivisionOptions,
+  getCurrentUserOvertimeRoles,
+  getManagerOptionsByBrandDivision,
+  getResolvedEmployeeDivision,
+  getResolvedManagerName,
+  getResolvedManagerUid,
+  normalizeDivisionName,
+  getOvertimeAnomalyLabels,
+  getOvertimeMainStatusLabel,
+  getReviewerRoleDisplayLabel,
+  getReviewerScopeLabel,
+  isPendingHrdReview,
+  isOvertimeAfterManagerApproval,
+  isWaitingForManagerAction,
+  uniqueById,
 } from "@/lib/overtime-utils";
 import {
   Card,
@@ -72,6 +88,74 @@ const getWorkLocationDisplay = (submission: OvertimeSubmissionRecord) => {
   const detail = (submission as any).workLocationDetail?.trim?.();
   return rawLocation === "lainnya" && detail ? `${label} - ${detail}` : label;
 };
+
+function getSubmissionDurationMinutes(item: OvertimeSubmissionRecord): number {
+  return Number(
+    item.approvedMinutesFinal ??
+      item.durationMinutes ??
+      item.totalDurationMinutes ??
+      (item as any).totalJobDurationMinutes ??
+      0,
+  );
+}
+
+function formatDuration(minutes: any): string {
+  const value = Number(minutes) || 0;
+  const hours = Math.floor(value / 60);
+  const remainingMinutes = value % 60;
+  if (hours <= 0) return `${remainingMinutes} menit`;
+  if (remainingMinutes <= 0) return `${hours} jam`;
+  return `${hours} jam ${remainingMinutes} menit`;
+}
+
+function getHrdIndicatorLabel(label: string): string {
+  const normalized = label.toLowerCase();
+  if (normalized.includes("review durasi") || normalized.includes("selisih durasi")) {
+    return "Catatan Durasi untuk HRD";
+  }
+  if (normalized.includes("durasi") && normalized.includes("tinggi")) {
+    return "Durasi Melebihi Acuan";
+  }
+  return label;
+}
+
+function HrdKpiCard({
+  label,
+  value,
+  subtitle,
+  icon,
+  tone,
+}: {
+  label: string;
+  value: number;
+  subtitle: string;
+  icon: ReactNode;
+  tone: "teal" | "amber" | "emerald" | "red" | "blue";
+}) {
+  const styles = {
+    teal: "from-teal-50 to-white border-teal-100 text-teal-700 bg-teal-100",
+    amber: "from-amber-50 to-white border-amber-100 text-amber-700 bg-amber-100",
+    emerald: "from-emerald-50 to-white border-emerald-100 text-emerald-700 bg-emerald-100",
+    red: "from-red-50 to-white border-red-100 text-red-700 bg-red-100",
+    blue: "from-blue-50 to-white border-blue-100 text-blue-700 bg-blue-100",
+  }[tone].split(" ");
+  const [gradientFrom, gradientTo, border, textColor, iconBg] = styles;
+
+  return (
+    <div className={`group rounded-2xl border bg-gradient-to-br ${gradientFrom} ${gradientTo} ${border} p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p>
+          <p className={`mt-1.5 text-2xl font-bold tracking-tight ${textColor}`}>{value}</p>
+          <p className="mt-1 text-xs text-slate-500">{subtitle}</p>
+        </div>
+        <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${iconBg} ${textColor}`}>
+          {icon}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── Local-date-safe month key + "still pending" helpers ─────────────────────
 // The old month filter compared epoch timestamps (new Date(`${periodFilter}-01`),
@@ -163,7 +247,15 @@ const HRD_PENDING_SUPERVISOR_STATUSES = ["pending_supervisor", "submitted", "pen
 // as "waiting for me" after this manager already approved it and it moved
 // on to approved_by_manager/pending_hrd_review (their old
 // directSupervisorUid/managerUid stays on the doc even after they've acted).
-const MANAGER_STAGE_STATUSES = ["pending_coordinator", "submitted", "pending_manager_review", "pending_supervisor"];
+const MANAGER_ACTIONABLE_STATUSES = [
+  "pending_coordinator",
+  "submitted",
+  "pending_manager_review",
+  "pending_supervisor",
+  "pending_manager",
+  "pending_atasan",
+  "revision_manager",
+];
 
 // Same predicate drives BOTH the "Menunggu Validasi Saya" table rows and the
 // "Menunggu Persetujuan Anda" KPI — a single source of truth so the two can
@@ -181,22 +273,6 @@ function formatMonthKeyLabel(monthKey: string): string {
   const month = Number(monthStr);
   if (!year || !month) return monthKey;
   return format(new Date(year, month - 1, 1), "MMMM yyyy", { locale: idLocale });
-}
-
-function isWaitingForCurrentManager(item: OvertimeSubmissionRecord, uid: string | undefined): boolean {
-  if (!uid) return false;
-  const status = item.status || (item as any).approvalStatus || "";
-  if (!MANAGER_STAGE_STATUSES.includes(status)) return false;
-  const approverIds = [
-    (item as any).currentApproverUid,
-    (item as any).approvalTargetUid,
-    (item as any).waitingForUid,
-    (item as any).taskAssignerUid,
-    item.directSupervisorUid,
-    item.managerUid,
-    item.overtimeCoordinatorUid,
-  ].filter(Boolean);
-  return approverIds.includes(uid);
 }
 
 export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
@@ -288,18 +364,24 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
 
   const queryStatePrefix = `overtime-approval-${mode}`;
 
-  const updateUrlParam = (key: string, value: string | null) => {
+  const updateUrlParams = (updates: Record<string, string | null>) => {
     if (!router || !pathname) return;
     const params = new URLSearchParams(searchParams?.toString() ?? "");
 
-    if (value === null || value === "all" || value === "") {
-      params.delete(key);
-    } else {
-      params.set(key, value);
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === null || value === "all" || value === "") {
+        params.delete(key);
+      } else {
+        params.set(key, value);
+      }
     }
 
     const newUrl = `${pathname}${params.toString() ? `?${params.toString()}` : ""}`;
     router.replace(newUrl);
+  };
+
+  const updateUrlParam = (key: string, value: string | null) => {
+    updateUrlParams({ [key]: value });
   };
 
   const setLocalStorageValue = (key: string, value: string) => {
@@ -445,14 +527,26 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
 
   const setPersistedBrandFilter = (value: string) => {
     setBrandFilter(value);
+    setDivisionFilter("all");
+    setManagerFilter("all");
     setLocalStorageValue(`${queryStatePrefix}-brand`, value);
-    updateUrlParam("brand", value === "all" ? null : value);
+    setLocalStorageValue(`${queryStatePrefix}-division`, "all");
+    setLocalStorageValue(`${queryStatePrefix}-manager`, "all");
+    updateUrlParams({
+      brand: value === "all" ? null : value,
+      division: null,
+      manager: null,
+    });
   };
-
   const setPersistedDivisionFilter = (value: string) => {
     setDivisionFilter(value);
+    setManagerFilter("all");
     setLocalStorageValue(`${queryStatePrefix}-division`, value);
-    updateUrlParam("division", value === "all" ? null : value);
+    setLocalStorageValue(`${queryStatePrefix}-manager`, "all");
+    updateUrlParams({
+      division: value === "all" ? null : value,
+      manager: null,
+    });
   };
 
   const setPersistedManagerFilter = (value: string) => {
@@ -481,6 +575,31 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
     updateUrlParam("search", value || null);
   };
 
+  const resetHrdFilters = () => {
+    setBrandFilter("all");
+    setDivisionFilter("all");
+    setManagerFilter("all");
+    setStatusFilter("all");
+    setMonthFilterModeState("all");
+    setSearchTerm("");
+    for (const [key, value] of [
+      [`${queryStatePrefix}-brand`, "all"],
+      [`${queryStatePrefix}-division`, "all"],
+      [`${queryStatePrefix}-manager`, "all"],
+      [`${queryStatePrefix}-status`, "all"],
+      [`${queryStatePrefix}-month`, "all"],
+      [`${queryStatePrefix}-search`, ""],
+    ]) setLocalStorageValue(key, value);
+    updateUrlParams({
+      brand: null,
+      division: null,
+      manager: null,
+      status: null,
+      month: null,
+      search: null,
+    });
+  };
+
   const getEffectiveStatus = (submission: OvertimeSubmission) =>
     (submission as any).approvalStatus || submission.status || "draft";
 
@@ -498,21 +617,20 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
       return query(
         collection(firestore, "overtime_submissions"),
         or(
+          where("currentApproverUid", "==", userProfile.uid),
+          where("approvalTargetUid", "==", userProfile.uid),
+          where("waitingForUid", "==", userProfile.uid),
           where("directSupervisorUid", "==", userProfile.uid),
           where("managerUid", "==", userProfile.uid),
+          where("taskAssignerUid", "==", userProfile.uid),
           where("overtimeCoordinatorUid", "==", userProfile.uid),
         ),
-        orderBy("submittedAt", "desc"),
       );
     }
 
     return null;
   }, [userProfile, firestore, mode]);
 
-  const hrdSubmissionConstraints = useMemo(
-    () => [orderBy("submittedAt", "desc")],
-    [],
-  );
   const {
     data: managerSubmissions,
     isLoading: managerSubmissionsLoading,
@@ -524,8 +642,8 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
     mutate: mutateHrdSubmissions,
     isScopeConfigured,
     emptyStateMessage,
+    scope: hrdScope,
   } = useHrdScopedCollection<OvertimeSubmissionRecord>("overtime_submissions", {
-    constraints: hrdSubmissionConstraints,
     enabled: mode === "hrd",
   });
   const submissionsRaw = mode === "hrd" ? hrdSubmissions : managerSubmissions;
@@ -559,58 +677,239 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
   const allBrands = mode === "hrd" ? hrdBrands : managerBrands;
   const brandsLoading = mode === "hrd" ? hrdBrandsLoading : managerBrandsLoading;
 
-  const brandOptions = useMemo(() => {
-    const map = new Map<string, string>();
+  const brandOptions = useMemo(
+    () =>
+      (allBrands || [])
+        .filter((brand) => !!brand.id && !!brand.name)
+        .map((brand) => ({ value: brand.id!, label: brand.name }))
+        .sort((a, b) => a.label.localeCompare(b.label, "id")),
+    [allBrands],
+  );
+  const brandNameById = useMemo(
+    () => new Map(brandOptions.map((brand) => [brand.value, brand.label])),
+    [brandOptions],
+  );
 
-    // Prioritas 1: Ambil dari master brands
-    allBrands?.forEach((brand) => {
-      const value = brand.id;
-      const label = brand.name || brand.id || "Unknown";
-      if (value && !map.has(value)) map.set(value, label);
-    });
+  // HRD filter masters are independent from overtime rows. The scope hook
+  // chunks allowedBrandIds automatically for profiles/users; the selected
+  // brand's nested division master is read directly from its canonical path.
+  const { data: scopedEmployeeProfiles = [], isLoading: employeeProfilesLoading } =
+    useHrdScopedCollection<any>("employee_profiles", { enabled: mode === "hrd" });
+  const { data: scopedUsers = [], isLoading: scopedUsersLoading } =
+    useHrdScopedCollection<any>("users", { enabled: mode === "hrd" });
 
-    // Prioritas 2: Tambahkan brand dari submissions yang belum ada di master
-    submissions?.forEach((submission) => {
-      const value = submission.brandId || submission.brandName || "unknown";
-      const label = submission.brandName || submission.brandId || "Unknown";
-      if (value && !map.has(value)) map.set(value, label);
-    });
+  const allowedBrandIds = useMemo(() => {
+    if (mode !== "hrd") return [];
+    if (hrdScope?.scopeType === "all_companies") {
+      return brandOptions.map((brand) => brand.value);
+    }
+    const scopedBrandIds = hrdScope?.allowedBrandIds || [];
+    // Super Admin is unscoped by role, so its normalized HRD scope may not
+    // carry ids even though useHrdScopedBrands() correctly returns all brands.
+    return scopedBrandIds.length > 0
+      ? scopedBrandIds
+      : brandOptions.map((brand) => brand.value);
+  }, [brandOptions, hrdScope, mode]);
+  const effectiveDivisionBrandIds = useMemo(
+    () => (brandFilter === "all" ? allowedBrandIds : [brandFilter]).filter(Boolean),
+    [allowedBrandIds, brandFilter],
+  );
+  const [masterDivisions, setMasterDivisions] = useState<any[]>([]);
+  const [masterDivisionsLoading, setMasterDivisionsLoading] = useState(false);
 
-    return [...map.entries()].map(([value, label]) => ({ value, label }));
-  }, [allBrands, submissions]);
+  useEffect(() => {
+    if (mode !== "hrd" || brandsLoading) return;
+    let cancelled = false;
+    setMasterDivisionsLoading(true);
 
-  const divisionOptions = useMemo(() => {
-    const map = new Map<string, string>();
-    submissions?.forEach((submission) => {
-      const value =
-        submission.divisionId ||
-        submission.divisionName ||
-        submission.division ||
-        "unknown";
-      const label = submission.divisionName || submission.division || "Unknown";
-      if (!map.has(value)) map.set(value, label);
-    });
-    return [...map.entries()].map(([value, label]) => ({ value, label }));
-  }, [submissions]);
+    Promise.all(
+      effectiveDivisionBrandIds.map(async (brandId) => {
+        try {
+          const snapshot = await getDocs(
+            collection(firestore, "brands", brandId, "divisions"),
+          );
+          return snapshot.docs.map((divisionDoc) => ({
+            id: divisionDoc.id,
+            ...divisionDoc.data(),
+            brandId,
+            brandName: brandNameById.get(brandId) || "",
+          }));
+        } catch (error) {
+          console.error("Gagal memuat master divisi HRD", { brandId, error });
+          return [];
+        }
+      }),
+    )
+      .then((rows) => {
+        if (!cancelled) setMasterDivisions(rows.flat());
+      })
+      .finally(() => {
+        if (!cancelled) setMasterDivisionsLoading(false);
+      });
 
-  const managerOptions = useMemo(() => {
-    const map = new Map<string, string>();
-    submissions?.forEach((submission) => {
-      const value =
-        submission.directSupervisorUid ||
-        submission.supervisorUid ||
-        submission.directSupervisorName ||
-        submission.supervisorName ||
-        "unknown";
-      const label =
-        submission.directSupervisorName ||
-        submission.supervisorName ||
-        value ||
-        "Unknown";
-      if (!map.has(value)) map.set(value, label);
-    });
-    return [...map.entries()].map(([value, label]) => ({ value, label }));
-  }, [submissions]);
+    return () => {
+      cancelled = true;
+    };
+  }, [brandNameById, brandsLoading, effectiveDivisionBrandIds, firestore, mode]);
+
+  const masterEmployees = useMemo(() => {
+    const byUid = new Map<string, any>();
+    for (const user of scopedUsers || []) {
+      const uid = user.uid || user.id;
+      if (uid) byUid.set(uid, { ...user, uid });
+    }
+    for (const profile of scopedEmployeeProfiles || []) {
+      const uid = profile.uid || profile.id;
+      if (!uid) continue;
+      const user = byUid.get(uid) || {};
+      const profileBrandId =
+        profile.brandId ||
+        profile.companyId ||
+        profile.hrdEmploymentInfo?.brandId ||
+        profile.hrdEmploymentInfo?.companyId ||
+        profile.strukturKepegawaian?.brandId ||
+        "";
+      const profileBrandName =
+        profile.brandName ||
+        profile.companyName ||
+        profile.hrdEmploymentInfo?.brandName ||
+        profile.hrdEmploymentInfo?.companyName ||
+        "";
+      const profileDivisionId =
+        profile.divisionId ||
+        profile.hrdEmploymentInfo?.divisionId ||
+        profile.strukturKepegawaian?.divisionId ||
+        "";
+      const profileDivisionName =
+        profile.divisionName ||
+        profile.hrdEmploymentInfo?.divisionName ||
+        profile.hrdEmploymentInfo?.divisi ||
+        profile.strukturKepegawaian?.divisionName ||
+        "";
+      byUid.set(uid, {
+        ...user,
+        ...profile,
+        uid,
+        brandId: profileBrandId || user.brandId || user.companyId || "",
+        brandName: profileBrandName || user.brandName || user.companyName || "",
+        divisionId: profileDivisionId || user.divisionId || "",
+        divisionName: profileDivisionName || user.divisionName || user.division || "",
+        role: profile.role || user.role,
+        structuralLevel: profile.structuralLevel || user.structuralLevel,
+        structuralPosition: profile.structuralPosition || user.structuralPosition,
+        isDivisionManager: profile.isDivisionManager ?? user.isDivisionManager,
+        hrdEmploymentInfo: {
+          ...(user.hrdEmploymentInfo || {}),
+          ...(profile.hrdEmploymentInfo || {}),
+        },
+      });
+    }
+    return Array.from(byUid.values());
+  }, [scopedEmployeeProfiles, scopedUsers]);
+
+  const employeeMap = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const employee of masterEmployees) {
+      const keys = [employee.uid, employee.id, employee.userId].filter(Boolean);
+      for (const key of keys) map.set(String(key), employee);
+    }
+    return map;
+  }, [masterEmployees]);
+
+  const divisionOptions = useMemo(
+    () =>
+      buildHrdDivisionOptions({
+        selectedBrandId: brandFilter,
+        allowedBrandIds,
+        allDivisions: masterDivisions,
+        allEmployees: masterEmployees,
+        overtimeSubmissions: submissions,
+      }),
+    [allowedBrandIds, brandFilter, masterDivisions, masterEmployees, submissions],
+  );
+
+  const selectedDivisionOption = useMemo(
+    () => divisionOptions.find((option) => option.id === divisionFilter),
+    [divisionFilter, divisionOptions],
+  );
+
+  const managerOptions = useMemo(
+    () =>
+      getManagerOptionsByBrandDivision(
+        masterEmployees,
+        selectedDivisionOption?.brandId || brandFilter,
+        selectedDivisionOption?.divisionId || divisionFilter,
+      ),
+    [brandFilter, divisionFilter, masterEmployees, selectedDivisionOption],
+  );
+  const selectedBrandLabel =
+    brandOptions.find((brand) => brand.value === brandFilter)?.label || "";
+  const selectedManagerLabel =
+    managerOptions.find((manager) => manager.uid === managerFilter)?.name || "";
+  const statusFilterLabels: Record<string, string> = {
+    pending_hrd: "Menunggu Review HRD",
+    pending_supervisor: "Dalam Review Manager",
+    approved: "Disetujui",
+    approved_hrd: "Disetujui HRD",
+    rejected_manager: "Ditolak Manager",
+    rejected_hrd: "Ditolak HRD",
+    revision_manager: "Revisi Manager",
+    revision_hrd: "Revisi HRD",
+  };
+  const hasActiveHrdFilters =
+    brandFilter !== "all" ||
+    divisionFilter !== "all" ||
+    managerFilter !== "all" ||
+    statusFilter !== "all" ||
+    monthFilterMode !== "all" ||
+    !!searchTerm.trim();
+
+  useEffect(() => {
+    if (
+      mode === "hrd" &&
+      !employeeProfilesLoading &&
+      !masterDivisionsLoading &&
+      divisionFilter !== "all" &&
+      !divisionOptions.some((option) => option.id === divisionFilter)
+    ) {
+      setPersistedDivisionFilter("all");
+    }
+  }, [
+    divisionFilter,
+    divisionOptions,
+    employeeProfilesLoading,
+    masterDivisionsLoading,
+    mode,
+  ]);
+
+  useEffect(() => {
+    if (
+      mode === "hrd" &&
+      !employeeProfilesLoading &&
+      !scopedUsersLoading &&
+      managerFilter !== "all" &&
+      !managerOptions.some((option) => option.uid === managerFilter)
+    ) {
+      setPersistedManagerFilter("all");
+    }
+  }, [
+    employeeProfilesLoading,
+    managerFilter,
+    managerOptions,
+    mode,
+    scopedUsersLoading,
+  ]);
+
+  useEffect(() => {
+    if (
+      mode === "hrd" &&
+      !brandsLoading &&
+      brandFilter !== "all" &&
+      !brandOptions.some((brand) => brand.value === brandFilter)
+    ) {
+      setPersistedBrandFilter("all");
+    }
+  }, [brandFilter, brandOptions, brandsLoading, mode]);
 
   // Current flow has no coordinator stage — "pending_coordinator" is kept as
   // the tab KEY (URL/localStorage compat) but now also covers the new
@@ -620,7 +919,7 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
     if (mode === "manager") {
       switch (activeTab) {
         case "pending_coordinator":
-          return ["pending_coordinator", "submitted", "pending_manager_review"];
+          return ["submitted", "pending_manager_review"];
         case "pending_supervisor":
           return ["pending_supervisor"];
         case "riwayat_saya":
@@ -682,6 +981,21 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
     }
   }, [isPendingForMeTab]);
 
+  // Pending approvals default to all months on the initial visit as well as
+  // when crossing back from a history tab. An explicit ?month= URL remains
+  // authoritative, so shared/filter links still work.
+  const didApplyInitialPendingMonthDefaultRef = useRef(false);
+  useEffect(() => {
+    if (
+      didApplyInitialPendingMonthDefaultRef.current ||
+      !hasHydratedParams.current
+    ) return;
+    didApplyInitialPendingMonthDefaultRef.current = true;
+    if (isPendingForMeTab && !searchParams?.get("month")) {
+      setMonthFilterModeState("all");
+    }
+  }, [isPendingForMeTab, searchParams]);
+
   const filteredSubmissions = useMemo(() => {
     if (!submissions) return [];
 
@@ -696,13 +1010,15 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
           ? activeTabStatuses.includes(effectiveStatus as any)
           : mode !== "hrd" || activeTab === "all"
             ? true
-            : activeTabStatuses.includes(effectiveStatus as any);
+            : activeTab === "pending_hrd"
+              ? isPendingHrdReview(s)
+              : activeTabStatuses.includes(effectiveStatus as any);
       if (!activeTabMatch) return false;
 
       // Role-specific filtering in manager mode
       if (mode === "manager") {
         if (activeTab === "pending_coordinator") {
-          if (!isWaitingForCurrentManager(s, userProfile.uid)) return false;
+          if (!isWaitingForManagerAction(s, userProfile.uid)) return false;
         } else if (activeTab === "pending_supervisor") {
           if (
             s.directSupervisorUid !== userProfile.uid &&
@@ -714,6 +1030,7 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
             s.coordinatorDecisionBy === userProfile.uid ||
             (s as any).coordinatorApprovedBy === userProfile.uid ||
             s.supervisorApprovedBy === userProfile.uid ||
+            (s as any).managerReviewedBy === userProfile.uid ||
             s.rejectedBy === userProfile.uid ||
             s.revisionRequestedBy === userProfile.uid;
           if (!hasDecision) return false;
@@ -721,35 +1038,34 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
       }
 
       // Status filter (only for HRD if set)
-      if (
-        mode === "hrd" &&
-        statusFilter !== "all" &&
-        effectiveStatus !== statusFilter
-      )
-        return false;
+      if (mode === "hrd" && statusFilter !== "all") {
+        const statusMatches =
+          statusFilter === "pending_hrd"
+            ? isPendingHrdReview(s)
+            : effectiveStatus === statusFilter;
+        if (!statusMatches) return false;
+      }
 
       // Brand and division filters (only for HRD)
       if (mode === "hrd") {
         if (brandFilter !== "all") {
-          if ((s.brandId || s.brandName || "") !== brandFilter) return false;
+          if (s.brandId !== brandFilter) return false;
         }
 
         if (divisionFilter !== "all") {
+          const resolvedDivision = getResolvedEmployeeDivision(s, employeeMap);
           if (
-            (s.divisionId || s.divisionName || s.division || "") !==
-            divisionFilter
-          )
-            return false;
+            !selectedDivisionOption ||
+            (selectedDivisionOption.brandId &&
+              s.brandId !== selectedDivisionOption.brandId) ||
+            (resolvedDivision.divisionId !== selectedDivisionOption.divisionId &&
+              normalizeDivisionName(resolvedDivision.divisionName) !==
+                normalizeDivisionName(selectedDivisionOption.name))
+          ) return false;
         }
 
         if (managerFilter !== "all") {
-          const managerId =
-            s.directSupervisorUid ||
-            s.supervisorUid ||
-            s.directSupervisorName ||
-            s.supervisorName ||
-            "";
-          if (managerId !== managerFilter) return false;
+          if (getResolvedManagerUid(s) !== managerFilter) return false;
         }
       }
 
@@ -766,12 +1082,39 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
 
       // Search filter
       if (searchTerm) {
-        const normalized = searchTerm.toLowerCase();
-        const target = [s.employeeName, s.fullName]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        if (!target.includes(normalized)) return false;
+        const normalized = searchTerm.toLowerCase().trim();
+        const resolvedDivision = getResolvedEmployeeDivision(s, employeeMap);
+        const resolvedManagerName = getResolvedManagerName(s, employeeMap);
+        const jobSearchValues = ((s as any).jobs || []).flatMap((job: any) => [
+          job.title,
+          job.description,
+          job.workOutput,
+          job.projectOrClient,
+        ]);
+        const taskSearchValues = [
+          ...(s.taskDetails || []).map((task: any) => task.description || task.title),
+          ...(s.tasks || []).map((task: any) => task.description || task.title),
+        ];
+        const values = [
+          s.employeeName,
+          s.fullName,
+          s.employeeCode,
+          s.brandName,
+          resolvedDivision.divisionName,
+          resolvedManagerName,
+          (s as any).managerName,
+          (s as any).overtimeReason,
+          s.reason,
+          (s as any).workSummary,
+          (s as any).projectOrClient,
+          ...jobSearchValues,
+          ...taskSearchValues,
+        ];
+        if (
+          !values.some((value) =>
+            String(value || "").toLowerCase().includes(normalized),
+          )
+        ) return false;
       }
 
       return true;
@@ -782,13 +1125,22 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
     searchTerm,
     brandFilter,
     divisionFilter,
+    divisionOptions,
+    employeeMap,
+    managerFilter,
     monthFilterMode,
     selectedMonth,
     currentMonthKey,
     activeTab,
     mode,
     activeTabStatuses,
+    selectedDivisionOption,
   ]);
+
+  const pendingHrdItems = useMemo(
+    () => uniqueById((submissions || []).filter((item) => isPendingHrdReview(item))),
+    [submissions],
+  );
 
   const sortedSubmissions = useMemo(() => {
     const list = [...filteredSubmissions];
@@ -811,40 +1163,6 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
       (a, b) => getSubmittedAt(b).getTime() - getSubmittedAt(a).getTime(),
     );
   }, [filteredSubmissions, sortOption]);
-
-  // Temporary debug — remove once confirmed fixed in production.
-  useEffect(() => {
-    if (!submissions || !userProfile) return;
-    const pendingForMeCount = mode === "manager"
-      ? submissions.filter((item) => isWaitingForCurrentManager(item, userProfile.uid)).length
-      : submissions.filter((item) => HRD_PENDING_HRD_STATUSES.includes(getEffectiveStatus(item))).length;
-    console.log("[OVERTIME_MONTH_AND_PENDING_FILTER_DEBUG]", {
-      mode,
-      selectedTab: activeTab,
-      monthFilterMode,
-      selectedMonth: getSelectedMonthKey(monthFilterMode, selectedMonth, currentMonthKey) || "all",
-      isPendingForMeTab,
-      currentUserUid: userProfile.uid,
-      totalFetched: submissions.length,
-      pendingForMeCount,
-      visibleCount: filteredSubmissions.length,
-      items: submissions.map((item) => ({
-        id: item.id,
-        employeeName: item.employeeName,
-        overtimeDateStr: (item as any).overtimeDateStr,
-        overtimeMonthKey: (item as any).overtimeMonthKey,
-        resolvedMonthKey: getOvertimeMonthKey(item),
-        status: item.status,
-        approvalStatus: (item as any).approvalStatus,
-        currentApproverUid: (item as any).currentApproverUid,
-        approvalTargetUid: (item as any).approvalTargetUid,
-        waitingForUid: (item as any).waitingForUid,
-        isStillOpen: isOvertimeStillOpen(item),
-        isWaitingForMe: isWaitingForCurrentManager(item, userProfile.uid),
-        isFinal: isFinalOvertimeStatus(item),
-      })),
-    });
-  }, [submissions, filteredSubmissions, activeTab, monthFilterMode, selectedMonth, currentMonthKey, isPendingForMeTab, mode, userProfile]);
 
   // "Semua Pengajuan"/"Semua Riwayat" with a specific month picked would
   // otherwise hide a still-pending item from a different month entirely —
@@ -965,7 +1283,7 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
         const overtimeDate = getOvertimeDate(s);
 
         if (mode === "hrd") {
-          if (HRD_PENDING_HRD_STATUSES.includes(effectiveStatus)) acc.pendingHrd++;
+          if (isPendingHrdReview(s)) acc.pendingHrd++;
           if (HRD_PENDING_SUPERVISOR_STATUSES.includes(effectiveStatus)) acc.pendingManager++;
 
           const decisionDate = s.hrdDecisionAt?.toDate();
@@ -988,13 +1306,10 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
             acc.total++;
           }
         } else {
-          // Same predicate the pending_coordinator/pending_supervisor tab
-          // rows use (see isWaitingForCurrentManager above) — this KPI used
-          // to only match the exact legacy "pending_coordinator" status via
-          // overtimeCoordinatorUid, so it under-counted relative to what the
-          // table actually showed once new-flow statuses/approver fields
-          // (taskAssignerUid, currentApproverUid, submitted, etc.) existed.
-          if (isWaitingForCurrentManager(s, userProfile.uid)) acc.pending++;
+          // Exactly the same strict predicate used by "Menunggu Validasi Saya":
+          // only current-flow manager-stage statuses and an explicit approver
+          // target count toward this KPI.
+          if (isWaitingForManagerAction(s, userProfile.uid)) acc.pending++;
 
           if (
             effectiveStatus === "revision_manager" ||
@@ -1063,6 +1378,160 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
     );
   }, [submissions, userProfile]);
 
+  useEffect(() => {
+    if (mode !== "hrd" || !userProfile) return;
+    console.log("[HRD_OVERTIME_FILTER_DEBUG]", {
+      currentUserUid: userProfile.uid,
+      selectedBrandId: brandFilter,
+      selectedDivisionId: divisionFilter,
+      selectedManagerUid: managerFilter,
+      selectedStatus: statusFilter,
+      monthFilterMode,
+      selectedMonth,
+      allowedBrandIds: (hrdScope as any)?.allowedBrandIds || [],
+      totalFetched: submissions?.length || 0,
+      pendingHrdCount: pendingHrdItems.length,
+      visibleCount: filteredSubmissions.length,
+      divisionOptions,
+      managerOptions,
+      items: (submissions || []).map((item) => ({
+        ...(() => {
+          const resolvedDivision = getResolvedEmployeeDivision(item, employeeMap);
+          return {
+            resolvedDivisionId: resolvedDivision.divisionId,
+            resolvedDivisionName: resolvedDivision.divisionName,
+            snapshotDivisionName: resolvedDivision.snapshotDivisionName,
+            resolvedManagerName: getResolvedManagerName(item, employeeMap),
+          };
+        })(),
+        id: item.id,
+        employeeName: item.employeeName,
+        brandId: item.brandId,
+        brandName: item.brandName,
+        divisionId: item.divisionId,
+        divisionName: item.divisionName,
+        status: item.status,
+        approvalStatus: (item as any).approvalStatus,
+        currentApprovalStep: (item as any).currentApprovalStep,
+        currentApproverUid: (item as any).currentApproverUid,
+        managerUid: item.managerUid,
+        managerName: (item as any).managerName || item.directSupervisorName,
+        managerReviewedBy: (item as any).managerReviewedBy,
+        overtimeDateStr: (item as any).overtimeDateStr,
+        overtimeMonthKey: (item as any).overtimeMonthKey,
+      })),
+    });
+  }, [
+    brandFilter,
+    divisionFilter,
+    divisionOptions,
+    employeeMap,
+    filteredSubmissions,
+    hrdScope,
+    managerFilter,
+    managerOptions,
+    mode,
+    monthFilterMode,
+    pendingHrdItems,
+    selectedMonth,
+    statusFilter,
+    submissions,
+    userProfile,
+  ]);
+
+  useEffect(() => {
+    if (mode !== "hrd" || !userProfile) return;
+    console.log("[HRD_DIVISION_OPTIONS_DEBUG]", {
+      selectedBrandId: brandFilter,
+      allowedBrandIds,
+      effectiveBrandIds: effectiveDivisionBrandIds,
+      allDivisionsCount: masterDivisions.length,
+      allEmployeesCount: masterEmployees.length,
+      overtimeSubmissionsCount: submissions?.length || 0,
+      divisionOptions,
+      rawDivisionNames: {
+        fromMaster: masterDivisions.map((division) => ({
+          id: division.id,
+          name: division.name || division.divisionName || division.divisi,
+          brandId:
+            division.brandId || division.companyId || division.parentBrandId,
+          type: division.type || division.nodeType,
+        })),
+        fromEmployees: masterEmployees.map((employee) => ({
+          uid: employee.uid,
+          name: employee.fullName || employee.name,
+          divisionName:
+            employee.divisionName ||
+            employee.hrdEmploymentInfo?.divisionName ||
+            employee.hrdEmploymentInfo?.divisi,
+          brandId:
+            employee.brandId ||
+            employee.companyId ||
+            employee.hrdEmploymentInfo?.brandId,
+        })),
+        fromSubmissions: (submissions || []).map((submission) => ({
+          id: submission.id,
+          employeeName: submission.employeeName,
+          divisionName: submission.divisionName || submission.division,
+          brandId: submission.brandId,
+        })),
+      },
+    });
+    console.log("[HRD_DIVISION_FILTER_DEBUG]", {
+      selectedBrandId: brandFilter,
+      selectedDivisionValue: divisionFilter,
+      allowedBrandIds,
+      divisionOptions,
+      allBrands: (allBrands || []).map((brand) => ({
+        id: brand.id || (brand as any).brandId,
+        name: brand.name || (brand as any).brandName,
+      })),
+      rawMasterDivisions: masterDivisions.map((division) => ({
+        id: division.id || division.divisionId,
+        name: division.name || division.divisionName || division.divisi,
+        brandId:
+          division.brandId ||
+          division.companyId ||
+          division.parentBrandId ||
+          division.parentId ||
+          division.brand?.id,
+        type: division.type || division.nodeType,
+      })),
+      employeeDivisionSamples: masterEmployees.map((employee) => ({
+        uid: employee.uid,
+        name: employee.fullName || employee.name,
+        brandId:
+          employee.brandId ||
+          employee.companyId ||
+          employee.hrdEmploymentInfo?.brandId,
+        divisionId:
+          employee.divisionId || employee.hrdEmploymentInfo?.divisionId,
+        divisionName:
+          employee.divisionName ||
+          employee.hrdEmploymentInfo?.divisionName ||
+          employee.hrdEmploymentInfo?.divisi,
+      })),
+      submissionDivisionSamples: (submissions || []).map((submission) => ({
+        id: submission.id,
+        employeeName: submission.employeeName,
+        brandId: submission.brandId,
+        divisionId: submission.divisionId,
+        divisionName: submission.divisionName || submission.division,
+      })),
+    });
+  }, [
+    allowedBrandIds,
+    allBrands,
+    brandFilter,
+    divisionOptions,
+    effectiveDivisionBrandIds,
+    masterDivisions,
+    masterEmployees,
+    mode,
+    submissions,
+    userProfile,
+  ]);
+
   // Union of roles across the data currently shown (filteredSubmissions) —
   // e.g. Daniel is both the real atasan AND the coordinator on Lutfi's
   // submission, so this picks up BOTH roles instead of only whichever field
@@ -1115,6 +1584,7 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
 
     if (mode === "hrd") {
       return [
+        "pending_hrd_review",
         "pending_hrd",
         "approved_by_manager",
         "revision_hrd",
@@ -1124,19 +1594,10 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
     }
 
     if (mode === "manager") {
-      if (status === "pending_coordinator") {
-        return s.overtimeCoordinatorUid === userProfile.uid;
-      }
-      if (
-        status === "pending_supervisor" ||
-        status === "pending_manager" ||
-        status === "revision_manager"
-      ) {
-        return (
-          s.directSupervisorUid === userProfile.uid ||
-          s.managerUid === userProfile.uid
-        );
-      }
+      return (
+        MANAGER_ACTIONABLE_STATUSES.includes(status) &&
+        canCurrentUserApproveOvertime(s, userProfile.uid)
+      );
     }
 
     return false;
@@ -1148,22 +1609,44 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         {mode === "hrd" ? (
           <>
-            <KpiCard title="Menunggu Review HRD" value={kpis.pendingHrd} />
-            <KpiCard
-              title="Dalam Review Manager"
+            <HrdKpiCard
+              label="Menunggu Review HRD"
+              value={pendingHrdItems.length}
+              subtitle="Butuh keputusan"
+              tone="teal"
+              icon={<Clock3 className="h-5 w-5" />}
+            />
+            <HrdKpiCard
+              label="Dalam Review Manager"
               value={kpis.pendingManager}
-              deltaType="inverse"
+              subtitle="Menunggu validasi atasan"
+              tone="amber"
+              icon={<UserCheck className="h-5 w-5" />}
             />
-            <KpiCard title="Disetujui Bulan Ini" value={kpis.approved} />
-            <KpiCard
-              title="Ditolak Bulan Ini"
+            <HrdKpiCard
+              label="Disetujui Bulan Ini"
+              value={kpis.approved}
+              subtitle="Final HRD"
+              tone="emerald"
+              icon={<CheckCircle2 className="h-5 w-5" />}
+            />
+            <HrdKpiCard
+              label="Ditolak Bulan Ini"
               value={kpis.rejected}
-              deltaType="inverse"
+              subtitle="Keputusan ditolak"
+              tone="red"
+              icon={<XCircle className="h-5 w-5" />}
             />
-            <KpiCard title="Total Lembur Bulan Ini" value={kpis.total} />
+            <HrdKpiCard
+              label="Total Lembur Bulan Ini"
+              value={kpis.total}
+              subtitle="Akumulasi pengajuan"
+              tone="blue"
+              icon={<Timer className="h-5 w-5" />}
+            />
           </>
         ) : (
           <>
@@ -1184,15 +1667,17 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
         </p>
       )}
 
-      <Card>
-        <CardHeader className="space-y-4">
+      <Card className="overflow-hidden rounded-2xl border-slate-200 bg-white shadow-sm">
+        <CardHeader className="space-y-4 border-b border-slate-200 bg-slate-50/70">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <CardTitle>Persetujuan Lembur Tim</CardTitle>
+              <CardTitle className="text-xl font-bold tracking-tight text-slate-950">
+                {mode === "hrd" ? "Approval Workspace Lembur" : "Persetujuan Lembur Tim"}
+              </CardTitle>
               <CardDescription>
                 {mode === "manager"
                   ? "Tinjau dan setujui pengajuan lembur staff Anda sebagai Koordinator atau Manager Divisi."
-                  : "Tinjau dan setujui pengajuan lembur staff Anda sebagai HRD."}
+                  : "Prioritaskan, tinjau, dan putuskan pengajuan lembur dalam satu workspace HRD."}
               </CardDescription>
             </div>
             <div className="w-full">
@@ -1201,17 +1686,17 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                   value={activeTab}
                   onValueChange={(value) => setPersistedActiveTab(value as any)}
                 >
-                  <TabsList className="grid w-full grid-cols-6 gap-1">
-                    <TabsTrigger value="pending_hrd">Menunggu HRD</TabsTrigger>
-                    <TabsTrigger value="pending_supervisor">
+                  <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-2xl bg-slate-100 p-1 sm:grid-cols-3 xl:grid-cols-6">
+                    <TabsTrigger className="rounded-xl py-2.5 text-slate-500 data-[state=active]:bg-white data-[state=active]:text-slate-950 data-[state=active]:shadow-sm" value="pending_hrd">Menunggu HRD</TabsTrigger>
+                    <TabsTrigger className="rounded-xl py-2.5 text-slate-500 data-[state=active]:bg-white data-[state=active]:text-slate-950 data-[state=active]:shadow-sm" value="pending_supervisor">
                       Dalam Review Manager
                     </TabsTrigger>
-                    <TabsTrigger value="approved">Disetujui</TabsTrigger>
-                    <TabsTrigger value="rejected">Ditolak</TabsTrigger>
-                    <TabsTrigger value="rekap_payroll">
+                    <TabsTrigger className="rounded-xl py-2.5 text-slate-500 data-[state=active]:bg-white data-[state=active]:text-slate-950 data-[state=active]:shadow-sm" value="approved">Disetujui</TabsTrigger>
+                    <TabsTrigger className="rounded-xl py-2.5 text-slate-500 data-[state=active]:bg-white data-[state=active]:text-slate-950 data-[state=active]:shadow-sm" value="rejected">Ditolak</TabsTrigger>
+                    <TabsTrigger className="rounded-xl py-2.5 text-slate-500 data-[state=active]:bg-white data-[state=active]:text-slate-950 data-[state=active]:shadow-sm" value="rekap_payroll">
                       Rekap Payroll
                     </TabsTrigger>
-                    <TabsTrigger value="all">Semua Riwayat</TabsTrigger>
+                    <TabsTrigger className="rounded-xl py-2.5 text-slate-500 data-[state=active]:bg-white data-[state=active]:text-slate-950 data-[state=active]:shadow-sm" value="all">Semua Riwayat</TabsTrigger>
                   </TabsList>
                 </Tabs>
               ) : (
@@ -1288,37 +1773,55 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
             </div>
           ) : null}
 
+          {mode === "hrd" && (
+            <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                <Input
+                  placeholder="Cari karyawan, NIK, divisi, manager, pekerjaan..."
+                  value={searchTerm}
+                  onChange={(event) => setPersistedSearchTerm(event.target.value)}
+                  className="h-11 rounded-xl border-slate-200 bg-slate-50/60 pl-10 focus:bg-white"
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={resetHrdFilters}
+                disabled={!hasActiveHrdFilters}
+                className="h-11 rounded-xl border-slate-200 px-4"
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Reset Filter
+              </Button>
+            </div>
+          )}
+
           <div
-            className={`grid gap-3 items-end ${
+            className={`grid items-end gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm ${
               mode === "hrd"
-                ? "md:grid-cols-2 xl:grid-cols-[1.1fr_1.1fr_1.1fr_1.1fr_1.8fr]"
+                ? "md:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))_auto]"
                 : "lg:grid-cols-[1fr_1.8fr]"
             }`}
           >
             {mode === "hrd" && (
               <>
-                {brandOptions.length === 1 ? (
-                  <div className="w-full rounded-md border bg-background px-3 py-2 text-sm font-medium">
-                    Perusahaan: {brandOptions[0].label}
-                  </div>
-                ) : (
-                  <Select
-                    value={brandFilter}
-                    onValueChange={(val) => setPersistedBrandFilter(val)}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Semua Brand" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Semua Brand</SelectItem>
-                      {brandOptions.map((brand) => (
-                        <SelectItem key={brand.value} value={brand.value}>
-                          {brand.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
+                <Select
+                  value={brandFilter}
+                  onValueChange={(val) => setPersistedBrandFilter(val)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Semua Brand" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua Brand</SelectItem>
+                    {brandOptions.map((brand) => (
+                      <SelectItem key={brand.value} value={brand.value}>
+                        {brand.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Select
                   value={divisionFilter}
                   onValueChange={(val) => setPersistedDivisionFilter(val)}
@@ -1327,10 +1830,12 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                     <SelectValue placeholder="Semua Divisi" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Semua Divisi</SelectItem>
                     {divisionOptions.map((division) => (
-                      <SelectItem key={division.value} value={division.value}>
-                        {division.label}
+                      <SelectItem key={division.id} value={division.id}>
+                        {division.name}
+                        {brandFilter === "all" && division.brandId
+                          ? ` — ${brandNameById.get(division.brandId) || division.brandId}`
+                          : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1343,10 +1848,10 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                     <SelectValue placeholder="Manager Divisi" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Semua Manager</SelectItem>
                     {managerOptions.map((manager) => (
-                      <SelectItem key={manager.value} value={manager.value}>
-                        {manager.label}
+                      <SelectItem key={manager.uid} value={manager.uid}>
+                        {manager.name}
+                        {manager.position ? ` — ${manager.position}` : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1427,11 +1932,13 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                   `Menampilkan pengajuan sesuai bulan yang dipilih (${formatMonthKeyLabel(selectedMonth)}).`}
               </p>
             </div>
-            <div className="relative w-full">
+            <div className={mode === "hrd" ? "hidden" : "relative w-full"}>
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder={
-                  mode === "hrd" ? "Cari karyawan..." : "Cari nama staff..."
+                  mode === "hrd"
+                    ? "Cari karyawan, NIK, divisi, manager, pekerjaan..."
+                    : "Cari nama staff..."
                 }
                 value={searchTerm}
                 onChange={(e) => setPersistedSearchTerm(e.target.value)}
@@ -1439,6 +1946,66 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
               />
             </div>
           </div>
+
+          {mode === "hrd" && hasActiveHrdFilters && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-slate-500">Filter aktif:</span>
+              {brandFilter !== "all" && (
+                <Badge variant="secondary" className="gap-1 rounded-full bg-blue-50 text-blue-700">
+                  Brand: {selectedBrandLabel || brandFilter}
+                  <button type="button" onClick={() => setPersistedBrandFilter("all")} aria-label="Hapus filter brand">
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              )}
+              {divisionFilter !== "all" && selectedDivisionOption && (
+                <Badge variant="secondary" className="gap-1 rounded-full bg-teal-50 text-teal-700">
+                  Divisi: {selectedDivisionOption.name}
+                  <button type="button" onClick={() => setPersistedDivisionFilter("all")} aria-label="Hapus filter divisi">
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              )}
+              {managerFilter !== "all" && (
+                <Badge variant="secondary" className="gap-1 rounded-full bg-violet-50 text-violet-700">
+                  Manager: {selectedManagerLabel || managerFilter}
+                  <button type="button" onClick={() => setPersistedManagerFilter("all")} aria-label="Hapus filter manager">
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              )}
+              {statusFilter !== "all" && (
+                <Badge variant="secondary" className="gap-1 rounded-full bg-amber-50 text-amber-700">
+                  Status: {statusFilterLabels[statusFilter] || statusFilter}
+                  <button type="button" onClick={() => setPersistedStatusFilter("all")} aria-label="Hapus filter status">
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              )}
+              {monthFilterMode !== "all" && (
+                <Badge variant="secondary" className="gap-1 rounded-full bg-indigo-50 text-indigo-700">
+                  Bulan: {monthFilterMode === "current" ? "Bulan Ini" : formatMonthKeyLabel(selectedMonth)}
+                  <button type="button" onClick={() => setPersistedMonthFilterMode("all")} aria-label="Hapus filter bulan">
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              )}
+              {searchTerm.trim() && (
+                <Badge variant="secondary" className="gap-1 rounded-full">
+                  Pencarian: {searchTerm}
+                  <button type="button" onClick={() => setPersistedSearchTerm("")} aria-label="Hapus pencarian">
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              )}
+            </div>
+          )}
+
+          {mode === "hrd" && activeTab === "pending_hrd" && hasActiveHrdFilters && (
+            <p className="text-xs text-slate-500">
+              {pendingHrdItems.length} data menunggu HRD tersedia, {filteredSubmissions.length} tampil setelah filter.
+            </p>
+          )}
 
           {mode === "hrd" && activeTab === "pending_supervisor" && (
             <Alert className="border-emerald-200 bg-emerald-50 text-emerald-900">
@@ -1475,7 +2042,7 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
             </Alert>
           )}
         </CardHeader>
-        <CardContent className="overflow-x-auto">
+        <CardContent className="p-0">
           {isLoading ? (
             <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
               Memuat daftar pengajuan...
@@ -1761,9 +2328,10 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
             )
           ) : sortedSubmissions.length > 0 ? (
             <div className="min-w-full">
-              <Table>
-                <TableHeader>
-                  <TableRow>
+              <div className="overflow-x-auto bg-white">
+              <Table className={mode === "hrd" ? "min-w-[1120px]" : undefined}>
+                <TableHeader className="sticky top-0 z-10 bg-slate-50">
+                  <TableRow className="border-slate-200 hover:bg-slate-50">
                     <TableHead className="px-3 py-3 text-left text-xs uppercase tracking-wide text-muted-foreground">
                       {mode === "hrd" ? "Karyawan" : "Staff"}
                     </TableHead>
@@ -1773,10 +2341,13 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                           Brand / Divisi
                         </TableHead>
                         <TableHead className="px-3 py-3 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                          Manager Divisi
+                          Manager
                         </TableHead>
                         <TableHead className="px-3 py-3 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                          Tanggal & Durasi
+                          Tanggal & Jam
+                        </TableHead>
+                        <TableHead className="px-3 py-3 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                          Durasi
                         </TableHead>
                         <TableHead className="px-3 py-3 text-left text-xs uppercase tracking-wide text-muted-foreground">
                           Status
@@ -1810,6 +2381,8 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                   {sortedSubmissions.map((s) => {
                     const effectiveStatus = getEffectiveStatus(s) as any;
                     const overtimeDate = getOvertimeDate(s);
+                    const resolvedDivision = getResolvedEmployeeDivision(s, employeeMap);
+                    const resolvedManagerName = getResolvedManagerName(s, employeeMap);
                     const submissionMonthKey = getOvertimeMonthKey(s);
                     const isOverdueMonth =
                       isOvertimeStillOpen(s) &&
@@ -1822,22 +2395,71 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                       "-";
                     const isTurn = isUserTurn(s);
                     const actionLabel = isTurn ? "Review" : "Detail";
+                    const durationMinutes = getSubmissionDurationMinutes(s);
+                    const isAfterManagerApproval = isOvertimeAfterManagerApproval(s);
+                    const employeeName = s.employeeName || s.fullName || "Karyawan";
+                    const employeeInitials = employeeName
+                      .split(/\s+/)
+                      .filter(Boolean)
+                      .slice(0, 2)
+                      .map((part) => part[0]?.toUpperCase())
+                      .join("") || "K";
 
                     const dailyTotal = getDailyTotal(s);
                     const isOverLimit = dailyTotal > DAILY_LIMIT_MINUTES;
+                    const anomalyLabels = getOvertimeAnomalyLabels(
+                      {
+                        ...s,
+                        anomalyFlags: [
+                          ...(s.anomalyFlags || []),
+                          ...(isOverLimit ? ["duration_high"] : []),
+                        ],
+                      },
+                      userProfile?.uid,
+                    );
+                    const displayAnomalyLabels = Array.from(
+                      new Set([
+                        ...anomalyLabels.map(getHrdIndicatorLabel),
+                        ...((s as any).overtimeType === "hari_libur" ? ["Hari Libur"] : []),
+                        ...((s as any).isCrossDay ? ["Lintas Hari"] : []),
+                      ]),
+                    );
+                    const rowPriorityClass = isPendingHrdReview(s)
+                      ? "border-l-4 border-l-teal-500 bg-teal-50/20 hover:bg-teal-50/60"
+                      : String(effectiveStatus).includes("rejected")
+                        ? "border-l-4 border-l-red-400 hover:bg-red-50/50"
+                        : String(effectiveStatus).includes("approved")
+                          ? "border-l-4 border-l-emerald-400 hover:bg-emerald-50/40"
+                          : "border-l-4 border-l-transparent hover:bg-slate-50";
 
                     return (
                       <TableRow
                         key={s.id}
-                        className="cursor-pointer hover:bg-muted transition-colors"
+                        className={`cursor-pointer border-b border-slate-100 transition-colors last:border-b-0 ${
+                          mode === "hrd" ? rowPriorityClass : "hover:bg-muted"
+                        }`}
                         onClick={() => setSelectedSubmission(s)}
                       >
                         <TableCell className="px-3 py-3 align-top">
-                          <div className="font-medium text-sm truncate">
-                            {s.employeeName || s.fullName}
-                          </div>
-                          <div className="text-xs text-muted-foreground truncate">
-                            {s.workRole || s.positionTitle || (s as any).position || "-"}
+                          <div className="flex min-w-[190px] items-start gap-2.5">
+                            {mode === "hrd" && (
+                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-50 text-xs font-bold text-teal-700 ring-1 ring-teal-100">
+                                {employeeInitials}
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-bold text-slate-900">
+                                {employeeName}
+                              </div>
+                              <div className="truncate text-xs text-muted-foreground">
+                                {s.workRole || s.positionTitle || (s as any).position || "-"}
+                              </div>
+                              {mode === "hrd" && s.employeeCode && (
+                                <div className="mt-1 text-[11px] font-medium text-slate-400">
+                                  NIK: {s.employeeCode}
+                                </div>
+                              )}
+                            </div>
                           </div>
                           {mode === "manager" ? (() => {
                             const rowRoles = getCurrentUserOvertimeRoles(s, userProfile?.uid);
@@ -1857,17 +2479,27 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                         {mode === "hrd" ? (
                           <>
                             <TableCell className="px-3 py-3 align-top">
-                              {(s.brandName || "-") +
-                                " / " +
-                                (s.divisionName || s.division || "-")}
+                              <div className="text-sm font-semibold text-slate-800">{s.brandName || "-"}</div>
+                              <div className="mt-0.5 text-sm text-teal-700">{resolvedDivision.divisionName}</div>
+                              {resolvedDivision.snapshotDivisionName &&
+                                resolvedDivision.snapshotDivisionName.trim().toLowerCase() !==
+                                  resolvedDivision.divisionName.trim().toLowerCase() && (
+                                  <div className="mt-1 text-[10px] text-slate-400">
+                                    Saat pengajuan: {resolvedDivision.snapshotDivisionName}
+                                  </div>
+                                )}
                             </TableCell>
                             <TableCell className="px-3 py-3 align-top">
-                              {s.directSupervisorName ||
-                                s.supervisorName ||
-                                "-"}
+                              <div className="text-sm font-semibold text-slate-800">{resolvedManagerName || "-"}</div>
+                              <div className="mt-0.5 text-xs text-slate-500">Manager Divisi / Atasan Langsung</div>
+                              {isAfterManagerApproval && (
+                                <Badge variant="outline" className="mt-1.5 border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-700">
+                                  <CheckCircle2 className="mr-1 h-3 w-3" /> Disetujui Manager
+                                </Badge>
+                              )}
                             </TableCell>
                             <TableCell className="px-3 py-3 align-top">
-                              <div className="text-sm truncate">
+                              <div className="text-sm font-semibold text-slate-800 truncate">
                                 {overtimeDate
                                   ? format(overtimeDate, "dd MMM yyyy", {
                                       locale: idLocale,
@@ -1875,15 +2507,27 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                                   : "-"}
                               </div>
                               <div className="text-xs text-muted-foreground">
-                                {s.startTime} - {s.endTime} ·{" "}
-                                {s.approvedMinutesFinal !== undefined &&
-                                s.approvedMinutesFinal !== null
-                                  ? `${s.approvedMinutesFinal}m final`
-                                  : `${s.totalDurationMinutes}m ajuan`}
+                                {s.startTime || "-"} - {s.endTime || "-"}
                               </div>
+                              {(s as any).isCrossDay && (
+                                <Badge variant="outline" className="mt-1.5 border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] text-violet-700">
+                                  Lintas Hari
+                                </Badge>
+                              )}
                               {isOverdueMonth && (
                                 <Badge variant="outline" className="mt-1.5 border-amber-300 bg-amber-50 text-amber-700 text-[10px] px-1.5 py-0.5">
                                   Tertunda dari {formatMonthKeyLabel(submissionMonthKey)}
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="px-3 py-3 align-top">
+                              <div className="text-sm font-bold text-slate-900">
+                                {formatDuration(durationMinutes)}
+                              </div>
+                              <div className="mt-0.5 text-xs text-slate-500">{durationMinutes} menit</div>
+                              {isOverLimit && (
+                                <Badge variant="outline" className="mt-1.5 border-orange-200 bg-orange-50 px-2 py-0.5 text-[10px] text-orange-700">
+                                  Durasi Melebihi Acuan
                                 </Badge>
                               )}
                             </TableCell>
@@ -1935,17 +2579,18 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                           <OvertimeApprovalStatusBadge
                             status={effectiveStatus}
                             mode={mode}
-                            divisionName={s.divisionName || s.division}
+                            divisionName={resolvedDivision.divisionName}
                             payrollStatus={s.payrollStatus}
+                            labelOverride={mode === "manager" ? getOvertimeMainStatusLabel(s) : undefined}
                           />
-                          {isOverLimit && (
-                            <div className="mt-1.5 flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 w-fit">
-                              <AlertTriangle className="h-3 w-3 text-amber-500 flex-shrink-0" />
-                              <span className="text-[10px] font-semibold text-amber-700 leading-tight">
-                                {s.isOverDailyLimit !== undefined ? "Melebihi Acuan 4 Jam" : "Perlu Review Durasi"}
+                          <div className="mt-1.5 flex max-h-11 max-w-[240px] flex-wrap gap-1 overflow-hidden">
+                            {displayAnomalyLabels.map((label) => (
+                              <span key={label} className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold leading-tight text-amber-700">
+                                <AlertTriangle className="h-3 w-3 shrink-0" />
+                                {label}
                               </span>
-                            </div>
-                          )}
+                            ))}
+                          </div>
                         </TableCell>
                         <TableCell className="px-3 py-3 align-top text-right">
                           <Button
@@ -1957,10 +2602,15 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                             }}
                             className={
                               isTurn
-                                ? "bg-emerald-600 hover:bg-emerald-700 text-white border-none"
-                                : ""
+                                ? "rounded-lg border-none bg-teal-600 text-white shadow-sm hover:bg-teal-700"
+                                : "rounded-lg border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
                             }
                           >
+                            {isTurn ? (
+                              <CheckCircle2 className="mr-1.5 h-4 w-4" />
+                            ) : (
+                              <Eye className="mr-1.5 h-4 w-4" />
+                            )}
                             {actionLabel}
                           </Button>
                           {mode === "manager" &&
@@ -1979,6 +2629,7 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                   })}
                 </TableBody>
               </Table>
+              </div>
             </div>
           ) : (
             <div className="flex flex-col h-64 items-center justify-center text-center p-8 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
@@ -1986,15 +2637,31 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
                 <Search className="h-6 w-6 text-slate-400" />
               </div>
               <h3 className="text-lg font-semibold text-slate-700">
-                {mode === "manager" && activeTab === "perlu_diproses"
+                {mode === "hrd"
+                  ? "Tidak ada pengajuan lembur ditemukan"
+                  : mode === "manager" && activeTab === "perlu_diproses"
                   ? "Tidak ada pengajuan yang perlu Anda proses saat ini."
                   : "Tidak ada pengajuan ditemukan."}
               </h3>
               <p className="text-sm text-slate-500 mt-2 max-w-xs">
-                {mode === "manager" && activeTab === "perlu_diproses"
+                {mode === "hrd" && hasActiveHrdFilters
+                  ? "Coba ubah filter brand, divisi, status, manager, atau bulan."
+                  : mode === "hrd" && activeTab === "pending_hrd"
+                    ? "Belum ada pengajuan yang menunggu verifikasi HRD."
+                    : mode === "manager" && activeTab === "perlu_diproses"
                   ? "Semua pengajuan staff Anda telah diproses atau belum ada pengajuan baru."
                   : "Coba ubah filter atau periode untuk melihat data lainnya."}
               </p>
+              {mode === "hrd" && hasActiveHrdFilters && (
+                <Button
+                  variant="outline"
+                  className="mt-5 rounded-xl"
+                  onClick={resetHrdFilters}
+                >
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Reset Filter
+                </Button>
+              )}
               {mode === "manager" && activeTab === "perlu_diproses" && (
                 <Button
                   variant="outline"
@@ -2022,6 +2689,7 @@ export function OvertimeApprovalClient({ mode }: OvertimeApprovalClientProps) {
           }}
           mode={mode}
           dailyTotalMinutes={getDailyTotal(selectedSubmission)}
+          employeeMap={employeeMap}
         />
       )}
     </div>

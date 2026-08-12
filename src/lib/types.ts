@@ -2497,7 +2497,11 @@ export type OvertimeSubmission = {
   overtimeApprovedMinutes?: number | null;
   overtimeRejectedMinutes?: number | null;
   overtimeExcessMinutes?: number | null;
-  overLimitDecision?: "full_approved" | "partial_approved" | null;
+  overLimitDecision?:
+    | "full_approved"
+    | "full_approved_override"
+    | "partial_approved"
+    | null;
   hrdOverLimitNote?: string | null;
 
   payrollStatus?: "pending_payroll" | "processing" | "paid" | "excluded" | null;

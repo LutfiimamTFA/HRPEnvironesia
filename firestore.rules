@@ -720,16 +720,21 @@ service cloud.firestore {
       // approval rights on its own. overtimeCoordinatorUid is always
       // written to the REAL approver (atasan/manager) by
       // OvertimeSubmissionForm.tsx regardless of who taskAssignerUid is, so
-      // write authorization keys off that (plus directSupervisorUid/
-      // managerUid) instead — see isAssignedApprover() below.
+      // read access can include every reviewer field, while write approval is
+      // intentionally restricted to the explicit approver/manager fields —
+      // see isAssignedApprover() below.
       function isNamedTaskAssigner(submission) {
         return request.auth.uid == submission.get('taskAssignerUid', null) ||
                request.auth.uid == submission.get('overtimeCoordinatorUid', null) ||
+               request.auth.uid == submission.get('currentApproverUid', null) ||
+               request.auth.uid == submission.get('approvalTargetUid', null) ||
+               request.auth.uid == submission.get('waitingForUid', null) ||
                request.auth.uid == submission.get('directSupervisorUid', null) ||
                request.auth.uid == submission.get('managerUid', null);
       }
       function isAssignedApprover(submission) {
-        return request.auth.uid == submission.get('overtimeCoordinatorUid', null) ||
+        return request.auth.uid == submission.get('currentApproverUid', null) ||
+               request.auth.uid == submission.get('approvalTargetUid', null) ||
                request.auth.uid == submission.get('directSupervisorUid', null) ||
                request.auth.uid == submission.get('managerUid', null);
       }
