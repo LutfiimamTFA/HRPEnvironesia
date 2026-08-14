@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { GoogleDatePicker } from "@/components/ui/google-date-picker";
 import {
   Search,
   Paperclip,
@@ -34,6 +35,7 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
+  Users,
 } from "lucide-react";
 import {
   format,
@@ -545,37 +547,44 @@ export function PermissionApprovalClient({
       const ep = eps.find((e) => e.uid === uid) || null;
       const user = users.find((u) => u.uid === uid) || null;
 
-      // Resolve position (priority per spec)
+      // Resolve position — canonical employee profile first, snapshot on the
+      // request doc only as a fallback (never the other way around), so a
+      // stale snapshot (e.g. an old division from before the employee moved
+      // teams) never wins over the employee's current profile.
       const position =
-        s.applicantPosition ||
         ep?.positionTitle ||
         (ep as any)?.position ||
         (ep as any)?.jobTitle ||
         (ep as any)?.roleName ||
         (ep?.hrdEmploymentInfo as any)?.positionName ||
         ep?.hrdEmploymentInfo?.jabatan ||
+        s.applicantPosition ||
         user?.positionTitle ||
         user?.roleName ||
         null;
 
       // Resolve division name: avoid showing raw IDs
       let division =
-        s.applicantDivisionName ||
         ep?.hrdEmploymentInfo?.divisionName ||
         (ep as any)?.divisionName ||
         (ep as any)?.division ||
+        ep?.hrdEmploymentInfo?.divisi ||
+        s.applicantDivisionName ||
         null;
       if (division && /^[A-Za-z0-9_-]{6,}$/.test(String(division)))
         division = null;
 
       // Resolve brand name with flexible matching
-      let brand = s.applicantBrandName || s.applicantCompanyName || null;
+      let brand =
+        ep?.hrdEmploymentInfo?.brandName ||
+        ep?.brandName ||
+        (ep as any)?.companyName ||
+        null;
       if (!brand) {
         const staffBrandId =
+          (ep as any)?.brandId ||
           s.applicantBrandId ||
           s.brandId ||
-          (ep as any)?.brandId ||
-          (ep as any)?.companyName ||
           null;
         if (staffBrandId) {
           const b = brands.find(
@@ -589,9 +598,8 @@ export function PermissionApprovalClient({
       }
       if (!brand)
         brand =
-          ep?.hrdEmploymentInfo?.brandName ||
-          ep?.brandName ||
-          (ep as any)?.companyName ||
+          s.applicantBrandName ||
+          s.applicantCompanyName ||
           user?.brandName ||
           null;
 
@@ -862,7 +870,7 @@ export function PermissionApprovalClient({
         const formLabel = getFormLabel(s).toLowerCase();
         const reasonLabel = (getReasonLabel(s) || "").toLowerCase();
         const reason = (s.reason || s.detailedReason || "").toLowerCase();
-        const division = (s.division || "").toLowerCase();
+        const division = (s._resolvedApplicantDivision || s.division || "").toLowerCase();
         if (
           !name.includes(q) &&
           !formLabel.includes(q) &&
@@ -1203,11 +1211,6 @@ export function PermissionApprovalClient({
       count: tabCounts.approved_by_me,
     },
     {
-      id: "revision_by_me",
-      label: "Perlu Revisi",
-      count: tabCounts.revision_by_me,
-    },
-    {
       id: "rejected_by_me",
       label: "Saya Tolak",
       count: tabCounts.rejected_by_me,
@@ -1226,25 +1229,36 @@ export function PermissionApprovalClient({
   return (
     <div className="space-y-6">
       {/* ── KPI Cards ── */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className={cn("grid gap-4 sm:grid-cols-2", mode === "manager" ? "lg:grid-cols-4" : "lg:grid-cols-5")}>
         {mode === "manager" ? (
           <>
             <KpiCard
               title="Butuh Tindakan Saya"
               value={kpis.actionNeeded}
-              deltaType={kpis.actionNeeded > 0 ? "inverse" : undefined}
+              icon={<Clock />}
+              variant="amber"
+              subtitle={kpis.actionNeeded > 0 ? "Perlu ditinjau" : "Tidak ada yang menunggu"}
             />
-            <KpiCard title="Menunggu HRD" value={kpis.waitingHrd} />
-            <KpiCard title="Disetujui Bulan Ini" value={kpis.approvedMonth} />
+            <KpiCard
+              title="Menunggu HRD"
+              value={kpis.waitingHrd}
+              icon={<Users />}
+              variant="blue"
+              subtitle="Sudah Anda setujui"
+            />
+            <KpiCard
+              title="Disetujui Bulan Ini"
+              value={kpis.approvedMonth}
+              icon={<CheckCircle2 />}
+              variant="green"
+              subtitle="Bulan berjalan"
+            />
             <KpiCard
               title="Ditolak Bulan Ini"
               value={kpis.rejectedMonth}
-              deltaType="inverse"
-            />
-            <KpiCard
-              title="Perlu Revisi"
-              value={kpis.revision}
-              deltaType={kpis.revision > 0 ? "inverse" : undefined}
+              icon={<XCircle />}
+              variant="red"
+              subtitle="Bulan berjalan"
             />
           </>
         ) : (
@@ -1632,26 +1646,18 @@ export function PermissionApprovalClient({
                 </Select>
 
                 {/* Periode Pengajuan */}
-                <div className="flex items-end gap-2">
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Dari</label>
-                    <Input
-                      type="date"
-                      value={filterDateFrom}
-                      onChange={(e) => setFilterDateFrom(e.target.value)}
-                      className="w-[130px] h-9 text-sm bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Sampai</label>
-                    <Input
-                      type="date"
-                      value={filterDateTo}
-                      onChange={(e) => setFilterDateTo(e.target.value)}
-                      className="w-[130px] h-9 text-sm bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
-                    />
-                  </div>
-                </div>
+                <GoogleDatePicker
+                  value={filterDateFrom ? new Date(filterDateFrom) : null}
+                  onChange={(d) => setFilterDateFrom(d ? format(d, "yyyy-MM-dd") : "")}
+                  placeholder="Dari tanggal"
+                  className="w-[160px] h-9 text-sm bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800"
+                />
+                <GoogleDatePicker
+                  value={filterDateTo ? new Date(filterDateTo) : null}
+                  onChange={(d) => setFilterDateTo(d ? format(d, "yyyy-MM-dd") : "")}
+                  placeholder="Sampai tanggal"
+                  className="w-[160px] h-9 text-sm bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800"
+                />
 
                 {/* Sort */}
                 <Button

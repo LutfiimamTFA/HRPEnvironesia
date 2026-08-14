@@ -47,6 +47,7 @@ import {
   Briefcase as BriefcaseIcon,
   Package,
   ShieldAlert,
+  Layers,
 } from "lucide-react";
 import type { UserRole } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
@@ -132,6 +133,12 @@ const RECRUITMENT_MENU_ITEMS: MenuGroup = {
       href: "/admin/hrd/assessments",
       label: "Assessments",
       icon: createElement(ClipboardCheck),
+    },
+    {
+      key: "recruitment.batch",
+      href: "/admin/hrd/recruitment-batches",
+      label: "Batch Magang",
+      icon: createElement(Layers),
     },
   ],
 };
@@ -885,6 +892,12 @@ export const MENU_CONFIG: Record<string, MenuGroup[]> = {
           href: "/admin/recruitment/my-tasks",
           label: "Tugas Rekrutmen",
           icon: createElement(CheckSquare),
+        },
+        {
+          key: "recruitment.batch",
+          href: "/admin/hrd/recruitment-batches",
+          label: "Batch Magang",
+          icon: createElement(Layers),
         },
       ],
     },

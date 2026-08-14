@@ -34,6 +34,7 @@ import { useAuth } from "@/providers/auth-provider";
 import { useToast } from "@/hooks/use-toast";
 import { Link, useRouter, usePathname } from "@/navigation";
 import { normalizeJobCoverImageUrl } from "@/lib/utils";
+import { isJobVisible } from "@/components/careers/JobExplorer";
 
 function JobDetailSkeleton() {
   return (
@@ -154,7 +155,7 @@ export default function JobDetailPage() {
       return undefined;
     }
     const j = jobs[0];
-    if (isInternalUser || j.publishStatus === "published") {
+    if (isInternalUser || j.publishStatus === "published" || j.publishStatus === "reopened") {
       return j;
     }
     return undefined;
@@ -164,8 +165,8 @@ export default function JobDetailPage() {
     if (!firestore || !job) return null;
     return query(
       collection(firestore, "jobs"),
-      where("publishStatus", "==", "published"),
-      limit(4), // Fetch one more than needed
+      where("publishStatus", "in", ["published", "reopened"]),
+      limit(10), // Over-fetch; visibility + exclusion filtering happens client-side
     );
   }, [firestore, job]);
 
@@ -173,8 +174,10 @@ export default function JobDetailPage() {
 
   const otherJobs = useMemo(() => {
     if (!job || !otherJobsData) return [];
-    // Filter out the current job and take the first 3
-    return otherJobsData.filter((j) => j.id !== job.id).slice(0, 3);
+    // Only show genuinely active, non-expired listings, excluding the current job
+    return otherJobsData
+      .filter((j) => j.id !== job.id && isJobVisible(j))
+      .slice(0, 3);
   }, [job, otherJobsData]);
 
   const isLoading = authLoading || isLoadingJob;
@@ -309,8 +312,12 @@ export default function JobDetailPage() {
                   <CardTitle className="text-xl">Lamar Posisi Ini</CardTitle>
                 </CardHeader>
                 <CardContent className="grid grid-cols-[max-content_1fr] items-center gap-x-4 gap-y-2 text-sm">
-                  <span className="font-semibold text-foreground">Divisi</span>
-                  <span className="text-foreground">{job.division}</span>
+                  {(job.divisionName || job.division) && (
+                    <>
+                      <span className="font-semibold text-foreground">Divisi</span>
+                      <span className="text-foreground">{job.divisionName || job.division}</span>
+                    </>
+                  )}
 
                   <span className="font-semibold text-foreground">Tipe</span>
                   <span className="capitalize text-foreground">

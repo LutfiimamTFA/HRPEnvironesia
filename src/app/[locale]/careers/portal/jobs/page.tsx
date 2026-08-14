@@ -31,9 +31,11 @@ const JobCard = ({ job, isSaved, onToggleSave }: { job: Job, isSaved: boolean, o
                         <MapPin className="h-3.5 w-3.5" />
                         {job.location}
                     </Badge>
-                     <Badge variant="secondary" className="py-1 px-2.5">
-                        {job.division}
-                    </Badge>
+                    {(job.divisionName || job.division) && (
+                        <Badge variant="secondary" className="py-1 px-2.5">
+                            {job.divisionName || job.division}
+                        </Badge>
+                    )}
                     <Badge variant="secondary" className="capitalize flex items-center gap-1.5 py-1 px-2.5">
                         <Briefcase className="h-3.5 w-3.5" />
                         {job.statusJob}

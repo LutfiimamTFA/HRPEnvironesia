@@ -125,6 +125,16 @@ function removeUndefinedDeep(obj: any): any {
   return obj;
 }
 
+/** "2 jam" / "1 jam 30 menit" — used for the self-reported Jam Keluar–Jam Kembali duration. */
+function formatKeluarKantorDuration(minutes: number): string {
+  if (minutes <= 0) return "0 menit";
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h > 0 && m > 0) return `${h} jam ${m} menit`;
+  if (h > 0) return `${h} jam`;
+  return `${m} menit`;
+}
+
 const PERMISSION_TYPE_LABELS: Record<PermissionType, string> = {
   sakit: "Izin Sakit",
   tidak_masuk: "Izin Tidak Masuk",
@@ -218,13 +228,13 @@ const formSchema = z
     }
 
     // no JSX should be inside superRefine — validation only
-    // Izin Keluar
+    // Izin Keluar — self-reported jam keluar & jam kembali, durasi dihitung otomatis
     if (data.formType === "keluar_kantor") {
       if (!data.startTime || !data.endTime) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["endTime"],
-          message: "Jam mulai dan selesai harus diisi.",
+          message: "Jam keluar dan jam kembali harus diisi.",
         });
         return;
       }
@@ -238,16 +248,7 @@ const formSchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["endTime"],
-          message: "Jam selesai harus setelah jam mulai.",
-        });
-      }
-      // Maks 4 jam
-      if (differenceInMinutes(end, start) > 240) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["endTime"],
-          message:
-            "Izin meninggalkan kantor sementara maksimal 4 jam. Untuk durasi lebih panjang gunakan Izin Pulang Lebih Awal atau Izin Tidak Masuk.",
+          message: "Jam kembali harus setelah jam keluar.",
         });
       }
     }
@@ -585,8 +586,6 @@ export function PermissionRequestForm({
   // For sakit, block if no attachment is present (covers local file, existing URL, etc.)
   const blockSickNoAttachment =
     selectedReason === "sakit" && !attachmentPresent;
-  const blockKeluarOver4 =
-    selectedForm === "keluar_kantor" && durationMinutes > 240;
 
   const missingRequired =
     !selectedForm ||
@@ -600,8 +599,7 @@ export function PermissionRequestForm({
   const canSubmit =
     !isSaving &&
     !missingRequired &&
-    !blockSickNoAttachment &&
-    !blockKeluarOver4;
+    !blockSickNoAttachment;
 
   // Resolve manager using new function that skips self-approval
   const directManager = useMemo(() => {
@@ -1056,7 +1054,7 @@ export function PermissionRequestForm({
                   name="reasonDetail"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Alasan/Keterangan*</FormLabel>
+                      <FormLabel>{selectedForm === "keluar_kantor" ? "Keperluan*" : "Alasan/Keterangan*"}</FormLabel>
                       <FormControl>
                         <Textarea
                           rows={3}
@@ -1109,18 +1107,6 @@ export function PermissionRequestForm({
                     </AlertDescription>
                   </Alert>
                 )}
-                {blockKeluarOver4 && (
-                  <Alert className="my-2">
-                    <AlertTitle className="text-destructive">
-                      Batas Durasi Terlampaui
-                    </AlertTitle>
-                    <AlertDescription>
-                      Izin meninggalkan kantor sementara maksimal 4 jam. Silakan
-                      gunakan izin lain jika durasi lebih panjang.
-                    </AlertDescription>
-                  </Alert>
-                )}
-
                 {/* Alur Persetujuan Card */}
                 <div className="rounded-xl border border-border bg-muted/20 p-4 space-y-3 mb-2">
                   <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
@@ -1260,9 +1246,15 @@ export function PermissionRequestForm({
                 </div>
 
                 <div className="text-sm text-muted-foreground mb-2">
-                  Durasi: {computedDays} hari
-                  {selectedForm === "keluar_kantor" &&
-                    ` — ${Math.round(durationMinutes / 60)} jam`}
+                  {selectedForm === "keluar_kantor" ? (
+                    durationMinutes > 0 ? (
+                      <>Durasi: {formatKeluarKantorDuration(durationMinutes)}</>
+                    ) : (
+                      <>Durasi: isi jam keluar &amp; jam kembali</>
+                    )
+                  ) : (
+                    <>Durasi: {computedDays} hari</>
+                  )}
                 </div>
 
                 {/* Date & Time Fields */}
@@ -1314,7 +1306,7 @@ export function PermissionRequestForm({
                         name="startTime"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Jam Mulai*</FormLabel>
+                            <FormLabel>Jam Keluar*</FormLabel>
                             <FormControl>
                               <Input
                                 type="time"
@@ -1331,7 +1323,7 @@ export function PermissionRequestForm({
                         name="endTime"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Jam Selesai*</FormLabel>
+                            <FormLabel>Jam Kembali*</FormLabel>
                             <FormControl>
                               <Input
                                 type="time"

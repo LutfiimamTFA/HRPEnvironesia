@@ -315,10 +315,12 @@ export default function JobApplyPage() {
           <CardDescription>{job.brandName}</CardDescription>
         </CardHeader>
         <CardContent className="text-sm space-y-3">
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <Building className="h-4 w-4" />
-            <span>{job.division}</span>
-          </div>
+          {(job.divisionName || job.division) && (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Building className="h-4 w-4" />
+              <span>{job.divisionName || job.division}</span>
+            </div>
+          )}
           <div className="flex items-center gap-2 text-muted-foreground">
             <MapPin className="h-4 w-4" />
             <span>{job.location}</span>

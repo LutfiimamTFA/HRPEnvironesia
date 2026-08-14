@@ -12,7 +12,7 @@ export const permissionStatusDisplay: Record<PermissionRequestStatus, { label: s
     approved_by_manager: { label: 'Disetujui Atasan', className: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' },
     pending_hrd: { label: 'Menunggu HRD', className: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' },
     rejected_hrd: { label: 'Ditolak HRD', className: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300' },
-    revision_hrd: { label: 'Perlu Revisi (HRD)', className: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300' },
+    revision_hrd: { label: 'Perlu Perbaikan', className: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300' },
     approved: { label: 'Disetujui', className: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' },
     reported: { label: 'Dilaporkan Keluar', className: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300' },
     returned: { label: 'Sudah Kembali', className: 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300' },
@@ -33,7 +33,7 @@ export function getHumanStatusLabel(status: string, submission?: Pick<Permission
         case 'approved_by_manager': return isHrdRequester ? 'Disetujui' : 'Disetujui Atasan → Menunggu HRD';
         case 'pending_hrd': return 'Menunggu validasi HRD';
         case 'rejected_hrd': return 'Ditolak HRD';
-        case 'revision_hrd': return 'Perlu revisi dari HRD';
+        case 'revision_hrd': return 'Perlu Perbaikan — dikembalikan oleh HRD';
         case 'approved': return 'Disetujui';
         case 'reported': return 'Dilaporkan Keluar';
         case 'returned': return 'Sudah Kembali';

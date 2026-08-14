@@ -828,6 +828,79 @@ export type InviteBatch = {
   notes?: string | null;
 };
 
+// Batch Recruitment is scoped to internship ("Magang") programs only for
+// now — probation/contract/fulltime/general_recruitment batch concepts were
+// removed from the UI. The union stays a union (not a single literal) so a
+// future phase can reintroduce other batch types additively, without a type
+// migration; only "internship" is ever offered/written today.
+export const RECRUITMENT_BATCH_TYPES = ["internship"] as const;
+export type RecruitmentBatchType = (typeof RECRUITMENT_BATCH_TYPES)[number];
+export const RECRUITMENT_BATCH_TYPE_LABELS: Record<RecruitmentBatchType, string> = {
+  internship: "Magang",
+};
+
+// "running" (tied to a program-period concept) was removed along with
+// programStartDate/programEndDate — a Magang batch now only tracks its
+// pendaftaran (registration) window, selection, and a manual close/complete/
+// cancel outcome.
+export const RECRUITMENT_BATCH_STATUSES = ["draft", "open", "selection", "closed", "completed", "cancelled"] as const;
+export type RecruitmentBatchStatus = (typeof RECRUITMENT_BATCH_STATUSES)[number];
+export const RECRUITMENT_BATCH_STATUS_LABELS: Record<RecruitmentBatchStatus, string> = {
+  draft: "Draft",
+  open: "Dibuka",
+  selection: "Dalam Seleksi",
+  closed: "Ditutup",
+  completed: "Selesai",
+  cancelled: "Dibatalkan",
+};
+
+export type RecruitmentBatch = {
+  id?: string;
+  batchName: string;
+  batchCode: string;
+  batchType: RecruitmentBatchType;
+  /** Denormalized display label ("Magang") alongside the type code, per the simplified Batch Magang spec. */
+  batchTypeLabel?: string;
+  /** "Gelombang Ke" — which wave of the internship intake this batch is (1, 2, 3, ...).
+   * Optional so batches created before this field existed still load without error. */
+  batchNumber?: number;
+  brandId: string;
+  brandName: string;
+  divisionIds: string[];
+  divisionNames: string[];
+  /** Free text — no position master-data collection exists in this codebase (Job.position is free text too). */
+  positionNames: string[];
+  quota: number;
+  registrationStartDate: Timestamp;
+  registrationEndDate: Timestamp;
+  /** Program-period fields are no longer collected in the UI — a Magang
+   * batch only governs registration/selection, not the internship's actual
+   * start/end dates (those are set later during onboarding/data karyawan).
+   * Left optional (not removed) so older batch docs that still carry them
+   * don't break anything reading this type. */
+  programStartDate?: Timestamp;
+  programEndDate?: Timestamp;
+  durationMonths?: number;
+  status: RecruitmentBatchStatus;
+  description: string;
+  /** Populated by the "Hubungkan Lowongan" picker against `jobs`. Always [] until then. */
+  linkedJobIds: string[];
+  linkedJobTitles: string[];
+  /** Derived from `applications`/`employee_profiles` once wired. Always 0 until then. */
+  totalApplicants: number;
+  totalShortlisted: number;
+  totalInterview: number;
+  totalAccepted: number;
+  totalRejected: number;
+  totalOnboarded: number;
+  createdAt: Timestamp;
+  createdByUid: string;
+  createdByName: string;
+  updatedAt: Timestamp;
+  updatedByUid: string;
+  updatedByName: string;
+};
+
 export type JobDeadlineExtension = {
   oldDeadline: Timestamp;
   newDeadline: Timestamp;
@@ -856,12 +929,28 @@ export type Job = {
   generalRequirementsHtml: string;
   specialRequirementsHtml: string;
   publishStatus: "draft" | "published" | "closed" | "expired" | "reopened" | "archived" | "deleted";
+  /** Set once, the first time this job is published — never cleared back to null on a later edit. */
+  publishedAt?: Timestamp;
   applyDeadline?: Timestamp;
   applicationDeadline?: Timestamp; // alias kept for backward compat
   originalDeadline?: Timestamp;
   deadlineExtended?: boolean;
   extensionHistory?: JobDeadlineExtension[];
   numberOfOpenings?: number;
+  // Batch Recruitment relation — optional; a job posting is linked to at most
+  // one batch. batchId is the source of truth (query jobs where batchId ==
+  // batch.id); the rest are a denormalized snapshot taken at link time so
+  // this data displays without a second read. Written as explicit `null`
+  // (not omitted) when unlinked, so a merge-write actually clears them.
+  // Snapshots the batch's REGISTRATION window only (not a program period —
+  // that concept was removed from Batch Magang).
+  batchId?: string | null;
+  batchName?: string | null;
+  batchCode?: string | null;
+  batchType?: RecruitmentBatchType | null;
+  batchTypeLabel?: string | null;
+  batchRegistrationStartDate?: Timestamp | null;
+  batchRegistrationEndDate?: Timestamp | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   createdBy: string;

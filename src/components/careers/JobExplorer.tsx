@@ -56,7 +56,7 @@ function normalizeCity(raw: string | null | undefined): string | null {
 // ─── Visibility ───────────────────────────────────────────────────────────────
 
 // Only show published/reopened and not yet expired, not archived, not deleted
-function isJobVisible(job: Job): boolean {
+export function isJobVisible(job: Job): boolean {
   // Exclude deleted or archived jobs
   if (job.isDeleted || job.isArchived || job.publishStatus === 'archived' || job.publishStatus === 'deleted') {
     return false;
@@ -128,15 +128,10 @@ const JobCard = ({ job }: { job: Job }) => {
         </h3>
 
         {/* Division */}
-        {divisionLabel ? (
+        {divisionLabel && (
           <p className="mt-1.5 flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
             <Tag className="h-3 w-3 shrink-0" />
             <span className="truncate">{divisionLabel}</span>
-          </p>
-        ) : (
-          <p className="mt-1.5 flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500 italic">
-            <Tag className="h-3 w-3 shrink-0" />
-            Level Brand/Unit
           </p>
         )}
       </div>
@@ -310,7 +305,7 @@ export function JobExplorerClient() {
       result = result.filter(j =>
         j.position.toLowerCase().includes(q) ||
         ((j as any).brandName || '').toLowerCase().includes(q) ||
-        (j.division || j.divisionName || '').toLowerCase().includes(q) ||
+        (j.divisionName || j.division || '').toLowerCase().includes(q) ||
         (j.location || '').toLowerCase().includes(q)
       );
     }

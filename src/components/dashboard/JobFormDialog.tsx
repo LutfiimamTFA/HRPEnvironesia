@@ -4,7 +4,6 @@ import { useEffect, useState, useMemo } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { useRouter } from 'next/navigation';
 import { doc, collection, serverTimestamp, query, where, Timestamp } from 'firebase/firestore';
 import { uploadFile } from '@/lib/storage/storage-adapter';
 import { validateStorageFile, compressImage, handleStorageError } from "@/lib/storage-utils";
@@ -20,10 +19,12 @@ import {
 } from '@/components/ui/form';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, UploadCloud, Info, SaveIcon, SendIcon } from 'lucide-react';
-import type { Job, Brand, Division } from '@/lib/types';
+import { Loader2, UploadCloud, Info, SaveIcon, SendIcon, Layers } from 'lucide-react';
+import type { Job, Brand, Division, RecruitmentBatch } from '@/lib/types';
 import { RichTextEditor } from '../ui/RichTextEditor';
 import { GoogleDatePicker } from '../ui/google-date-picker';
+import { format } from 'date-fns';
+import { id as idLocale } from 'date-fns/locale';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -49,6 +50,7 @@ const formSchema = z.object({
   position: z.string().min(3, { message: 'Posisi harus diisi.' }),
   statusJob: z.enum(['fulltime', 'internship']),
   divisionId: z.string().optional().nullable(),
+  batchId: z.string().optional().nullable(),
   location: z.string().min(2, { message: 'Lokasi harus diisi.' }),
   brandId: z.string({ required_error: 'Brand/Perusahaan wajib dipilih.' }),
   workMode: z.enum(['onsite', 'hybrid', 'remote']).optional(),
@@ -61,17 +63,23 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
+const BATCH_SELECTABLE_STATUSES = ['draft', 'open', 'selection'];
+
 interface JobFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   job: Job | null;
   brands: Brand[];
+  batches: RecruitmentBatch[];
+  /** Prefills brand + batch on create — used when opening this dialog from a
+   * batch's detail page ("Buat Job Posting untuk Batch Ini"), so HRD never
+   * re-types data already known from the batch. */
+  presetBatch?: RecruitmentBatch | null;
 }
 
-export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialogProps) {
+export function JobFormDialog({ open, onOpenChange, job, brands, batches, presetBatch }: JobFormDialogProps) {
   const firestore = useFirestore();
   const firebaseApp = useFirebaseApp();
-  const router = useRouter();
   const { userProfile } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
@@ -85,6 +93,7 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
       position: '',
       statusJob: 'fulltime',
       divisionId: null,
+      batchId: null,
       location: '',
       brandId: undefined,
       workMode: 'onsite',
@@ -96,6 +105,8 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
   });
 
   const selectedBrandId = form.watch('brandId');
+  const selectedBatchId = form.watch('batchId');
+  const selectedBatch = batches.find(b => b.id === selectedBatchId) || null;
 
   const divisionsQuery = useMemoFirebase(() => {
     if (!selectedBrandId) return null;
@@ -110,12 +121,69 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
   const hasDivisions = !isLoadingDivisions && !!divisions && divisions.length > 0;
   const noDivisions = !isLoadingDivisions && selectedBrandId && divisions?.length === 0;
 
-  // Reset division when brand changes
+  // Fields Batch Magang already determines — locked (readonly/disabled) so
+  // Job Posting can never independently drift from the batch's own data.
+  // Divisi only locks when the batch pins exactly one division; with 0 or
+  // several, HRD still needs to pick one from the (already batch-restricted)
+  // list, so the picker stays interactive rather than fully locked.
+  const hasBatchLink = Boolean(selectedBatchId);
+  const isDivisionLockedByBatch = Boolean(selectedBatch) && selectedBatch!.divisionIds?.length === 1;
+
+  // A batch can optionally restrict itself to specific divisions — when it
+  // does, the division picker for a job posting inside that batch only
+  // offers those divisions, not every division of the brand.
+  const visibleDivisions = useMemo(() => {
+    if (!divisions) return [];
+    if (!selectedBatch?.divisionIds?.length) return divisions;
+    return divisions.filter(d => selectedBatch.divisionIds.includes(d.id!));
+  }, [divisions, selectedBatch]);
+
+  const batchOptions = useMemo(() => {
+    return batches.filter(b =>
+      (!selectedBrandId || b.brandId === selectedBrandId) &&
+      (BATCH_SELECTABLE_STATUSES.includes(b.status) || b.id === job?.batchId || b.id === presetBatch?.id)
+    );
+  }, [batches, selectedBrandId, job?.batchId, presetBatch?.id]);
+
+  // Reset division when brand changes; also clear a selected batch that no
+  // longer belongs to the newly selected brand (a batch->brand sync below
+  // sets brandId to match a *newly selected* batch, so this never fights
+  // that direction — the brands already agree in that case).
   useEffect(() => {
     if (form.formState.isDirty) {
       form.setValue('divisionId', null);
     }
-  }, [selectedBrandId, form]);
+    const currentBatchId = form.getValues('batchId');
+    if (currentBatchId) {
+      const currentBatch = batches.find(b => b.id === currentBatchId);
+      if (currentBatch && currentBatch.brandId !== selectedBrandId) {
+        form.setValue('batchId', null);
+      }
+    }
+  }, [selectedBrandId, form, batches]);
+
+  // Batch Magang is the source of truth for every field it already
+  // determines — picking a batch (or opening this dialog already linked to
+  // one) syncs brand/divisi(if singular)/kuota/deadline/tipe pekerjaan from
+  // it immediately, so HRD is never asked to re-enter data already decided
+  // at the batch level. Position is intentionally NOT force-synced here
+  // (only seeded once, in the initial form.reset below) — a job title is
+  // allowed to read slightly differently from the batch name.
+  useEffect(() => {
+    if (!selectedBatch) return;
+    if (form.getValues('brandId') !== selectedBatch.brandId) {
+      form.setValue('brandId', selectedBatch.brandId, { shouldDirty: true });
+    }
+    if (selectedBatch.divisionIds?.length === 1) {
+      form.setValue('divisionId', selectedBatch.divisionIds[0], { shouldDirty: true });
+    }
+    form.setValue('numberOfOpenings', selectedBatch.quota, { shouldDirty: true });
+    form.setValue('applyDeadline', selectedBatch.registrationEndDate.toDate(), { shouldDirty: true });
+    form.setValue('statusJob', 'internship', { shouldDirty: true });
+    if (!form.getValues('position')) {
+      form.setValue('position', selectedBatch.batchName, { shouldDirty: true });
+    }
+  }, [selectedBatchId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     return () => {
@@ -131,6 +199,7 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
         form.reset({
           ...job,
           divisionId: job.divisionId || null,
+          batchId: job.batchId || null,
           applyDeadline: job.applyDeadline ? job.applyDeadline.toDate() : null,
           numberOfOpenings: job.numberOfOpenings ?? 1,
           coverImage: undefined,
@@ -138,14 +207,17 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
         setImagePreview(job.coverImageUrl || null);
       } else {
         form.reset({
-          position: '', statusJob: 'fulltime', divisionId: null, location: '',
-          brandId: undefined, workMode: 'onsite', applyDeadline: null,
+          position: '', statusJob: 'fulltime', divisionId: null,
+          batchId: presetBatch?.id || null,
+          location: '',
+          brandId: presetBatch?.brandId || undefined,
+          workMode: 'onsite', applyDeadline: null,
           numberOfOpenings: 1, generalRequirementsHtml: '', specialRequirementsHtml: '',
         });
         setImagePreview(null);
       }
     }
-  }, [open, job, form]);
+  }, [open, job, presetBatch, form]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -170,14 +242,28 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
     return "";
   };
 
-  const onSubmit = async (values: FormValues) => {
+  // `mode` is passed explicitly by whichever button was clicked (see the
+  // form.handleSubmit((values) => onSubmit(values, 'draft'|'publish'))
+  // wiring below) — NEVER read from the `submitMode` state here. Reading it
+  // from state was the actual bug: setSubmitMode(...) and
+  // form.handleSubmit(onSubmit)() were called back-to-back in the same
+  // click handler, so onSubmit's closure still saw the PREVIOUS render's
+  // submitMode value (a state update never applies until the next render) —
+  // clicking "Publish & Kembali ke List" as the first interaction always
+  // read the stale initial 'draft', silently writing publishStatus: 'draft'
+  // to Firestore no matter which button was pressed. `submitMode` state
+  // still exists, but purely to drive which button shows its own loading
+  // spinner — it never again decides what gets written.
+  const onSubmit = async (values: FormValues, mode: 'draft' | 'publish') => {
     if (!userProfile) {
       toast({ variant: 'destructive', title: 'Error', description: 'Anda harus login.' });
       return;
     }
 
-    // Validation for publish mode
-    if (submitMode === 'publish') {
+    // Validation for publish mode — if this fails, we return BEFORE
+    // setLoading/before any Firestore write, so a failed Publish can never
+    // silently fall back to saving a Draft.
+    if (mode === 'publish') {
       const missingFields = [];
       if (!values.position) missingFields.push('Posisi');
       if (!values.brandId) missingFields.push('Brand/Perusahaan');
@@ -198,6 +284,7 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
       }
     }
 
+    setSubmitMode(mode);
     setLoading(true);
 
     try {
@@ -219,6 +306,12 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
       const divisionId = values.divisionId || null;
       const scopeType: Job['scopeType'] = divisionId ? 'division' : 'brand';
 
+      // Resolve batch snapshot — written as explicit null (not omitted) when
+      // unselected, since setDocumentNonBlocking merges: an omitted key
+      // would leave a previous link in place, but this is how "unlink" via
+      // this same form (picking "— Tanpa Batch —") actually clears it.
+      const linkedBatch = values.batchId ? batches.find(b => b.id === values.batchId) : null;
+
       // Slug: keep existing on edit, generate new on create/duplicate
       const shortId = generateShortId();
       const baseSlug = slugify(values.position);
@@ -227,7 +320,11 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
 
       const { coverImage, ...restOfValues } = values;
 
-      const publishStatus: Job['publishStatus'] = submitMode === 'publish' ? 'published' : 'draft';
+      // `mode` is the explicit parameter passed in from the button click —
+      // this is the single, unambiguous source of truth for what gets
+      // written, independent of any component state.
+      const isPublish = mode === 'publish';
+      const publishStatus: Job['publishStatus'] = isPublish ? 'published' : 'draft';
 
       const jobData: Omit<Job, 'id'> = {
         ...restOfValues,
@@ -235,14 +332,19 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
         divisionId,              // null if no division, string if division exists
         divisionName,            // null if no division, string if division exists
         scopeType,
+        batchId: values.batchId || null,
+        batchName: linkedBatch?.batchName || null,
+        batchCode: linkedBatch?.batchCode || null,
+        batchType: linkedBatch?.batchType || null,
+        batchTypeLabel: linkedBatch?.batchTypeLabel || (linkedBatch ? 'Magang' : null),
+        batchRegistrationStartDate: linkedBatch?.registrationStartDate || null,
+        batchRegistrationEndDate: linkedBatch?.registrationEndDate || null,
         numberOfOpenings: values.numberOfOpenings || 1,
         applyDeadline: values.applyDeadline ? Timestamp.fromDate(values.applyDeadline) : null,
         coverImageUrl: finalCoverImageUrl,
         slug,
         baseSlug,
         jobCode,
-        publishStatus,
-        publishedAt: publishStatus === 'published' && !job?.publishedAt ? serverTimestamp() as any : job?.publishedAt,
         createdAt: job?.createdAt || serverTimestamp() as any,
         updatedAt: serverTimestamp() as any,
         createdBy: job?.createdBy || userProfile.uid,
@@ -252,13 +354,32 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
         originalDeadline: job?.originalDeadline || job?.applyDeadline || null,
         deadlineExtended: job?.deadlineExtended ?? false,
         extensionHistory: job?.extensionHistory ?? [],
+        // publishStatus/publishedAt are set LAST, after the spread and after
+        // every other key — so nothing above (and no leftover value from
+        // `values`/`restOfValues`) can ever overwrite the button's own
+        // decision. A batch-derived job posting goes through this exact
+        // same object; nothing about being linked to a Batch Magang changes
+        // publishStatus.
+        publishStatus,
+        // Set the first time this job is published; saving as draft later
+        // (e.g. unpublishing) never clears it — it stays as a historical
+        // "first published" record, same spirit as originalDeadline above.
+        publishedAt: isPublish ? (job?.publishedAt || serverTimestamp() as any) : job?.publishedAt,
       };
+
+      // Temporary debug — safe to remove once Publish is confirmed to save
+      // as "published" in Firestore.
+      console.log('[JOB_POSTING_SAVE]', {
+        mode,
+        publishStatus: jobData.publishStatus,
+        jobId,
+      });
 
       // Remove undefined values before saving to Firestore
       const cleanedData = cleanUndefined(jobData as any);
       await setDocumentNonBlocking(doc(firestore, 'jobs', jobId), cleanedData, { merge: true });
 
-      if (submitMode === 'draft') {
+      if (mode === 'draft') {
         toast({
           title: 'Draft Lowongan Tersimpan',
           description: `Lowongan "${values.position}" telah disimpan sebagai draft.`,
@@ -268,8 +389,15 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
           title: 'Lowongan Berhasil Dipublish',
           description: `Lowongan "${values.position}" sudah dipublikasikan dan terlihat di Career Page.`,
         });
+        // No router.push here — this dialog is opened both from the Job
+        // Postings list and from a batch's detail page, and both already
+        // read `jobs` through a realtime (onSnapshot) listener, so closing
+        // the dialog is enough for the underlying list to already be
+        // showing "Published" the instant Firestore confirms the write.
+        // (The previous redirect target, /admin/hrd/job-postings, doesn't
+        // exist as a route — it silently broke this exact behavior for
+        // Publish.)
         onOpenChange(false);
-        router.push('/admin/hrd/job-postings');
       }
     } catch (error: any) {
       handleStorageError(error);
@@ -289,32 +417,43 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
         </DialogHeader>
         <div className="flex-grow overflow-y-auto px-6">
           <Form {...form}>
-            <form id="job-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4">
+            {/* Implicit submit (e.g. Enter key in a field) defaults to
+                'draft' — never silently publishes. */}
+            <form id="job-form" onSubmit={form.handleSubmit((values) => onSubmit(values, 'draft'))} className="space-y-4 py-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Position */}
+                {/* Position — pre-filled from the batch's name when a batch
+                    is linked, but always stays freely editable (a job title
+                    is allowed to read differently from the batch name). */}
                 <FormField control={form.control} name="position" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Posisi <span className="text-red-500">*</span></FormLabel>
                     <FormControl><Input placeholder="cth. Staff Finance" {...field} /></FormControl>
+                    {hasBatchLink && <p className="text-xs text-muted-foreground">Terisi otomatis dari Batch Magang — boleh diubah.</p>}
                     <FormMessage />
                   </FormItem>
                 )} />
 
-                {/* Brand */}
+                {/* Brand — locked to the linked batch's brand so Job Posting
+                    can never independently drift from it; unlink the batch
+                    (or edit the batch itself) to change it. */}
                 <FormField control={form.control} name="brandId" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Brand / Perusahaan <span className="text-red-500">*</span></FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
+                    <Select onValueChange={field.onChange} value={field.value} disabled={hasBatchLink}>
                       <FormControl><SelectTrigger><SelectValue placeholder="Pilih brand" /></SelectTrigger></FormControl>
                       <SelectContent>
                         {brands.map(b => <SelectItem key={b.id} value={b.id!}>{b.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
+                    {hasBatchLink && <p className="text-xs text-muted-foreground flex items-center gap-1"><Layers className="h-3 w-3" /> Mengikuti data Batch Magang. Ubah lewat Edit Batch.</p>}
                     <FormMessage />
                   </FormItem>
                 )} />
 
-                {/* Division — optional */}
+                {/* Division — optional; locked only when the batch pins
+                    exactly one division (fully determined). With 0 or
+                    several divisions the batch still narrows the choices,
+                    but HRD must pick which one this specific job is for. */}
                 <FormField control={form.control} name="divisionId" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Divisi <span className="text-slate-400 text-xs font-normal">(opsional)</span></FormLabel>
@@ -327,7 +466,7 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
                       <Select
                         onValueChange={(v) => field.onChange(v === '__none__' ? null : v)}
                         value={field.value || '__none__'}
-                        disabled={!selectedBrandId || isLoadingDivisions}
+                        disabled={!selectedBrandId || isLoadingDivisions || isDivisionLockedByBatch}
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -340,7 +479,7 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
                         </FormControl>
                         <SelectContent>
                           <SelectItem value="__none__">— Tanpa Divisi (Level Brand) —</SelectItem>
-                          {hasDivisions && divisions!.map((div) => (
+                          {hasDivisions && visibleDivisions.map((div) => (
                             <SelectItem key={div.id!} value={div.id!}>
                               {div.name}
                             </SelectItem>
@@ -348,6 +487,42 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
                         </SelectContent>
                       </Select>
                     )}
+                    {isDivisionLockedByBatch ? (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1"><Layers className="h-3 w-3" /> Mengikuti data Batch Magang. Ubah lewat Edit Batch.</p>
+                    ) : selectedBatch?.divisionIds?.length ? (
+                      <p className="text-xs text-muted-foreground">Dibatasi ke divisi batch "{selectedBatch.batchName}".</p>
+                    ) : null}
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                {/* Batch Magang — optional. Choosing (or clearing) a batch
+                    here is always allowed; it's the fields it determines
+                    (brand/divisi/kuota/deadline/tipe) that lock once linked. */}
+                <FormField control={form.control} name="batchId" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Batch Magang <span className="text-slate-400 text-xs font-normal">(opsional)</span></FormLabel>
+                    <Select
+                      onValueChange={(v) => field.onChange(v === '__none__' ? null : v)}
+                      value={field.value || '__none__'}
+                    >
+                      <FormControl>
+                        <SelectTrigger><SelectValue placeholder="Pilih batch magang" /></SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="__none__">— Tanpa Batch —</SelectItem>
+                        {batchOptions.map(b => (
+                          <SelectItem key={b.id} value={b.id!}>
+                            {b.batchName}{b.batchNumber != null ? ` — Gelombang ${b.batchNumber}` : ''}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Layers className="h-3 w-3" /> {hasBatchLink
+                        ? 'Brand, divisi, kuota, deadline, dan tipe pekerjaan mengikuti batch ini.'
+                        : 'Menghubungkan lowongan ini ke gelombang pendaftaran magang tertentu.'}
+                    </p>
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -361,17 +536,19 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
                   </FormItem>
                 )} />
 
-                {/* Job Type */}
+                {/* Job Type — locked to "internship" whenever a batch is
+                    linked, since every Batch Magang is internship-only. */}
                 <FormField control={form.control} name="statusJob" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Tipe Pekerjaan</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
+                    <Select onValueChange={field.onChange} value={field.value} disabled={hasBatchLink}>
                       <FormControl><SelectTrigger><SelectValue placeholder="Pilih tipe" /></SelectTrigger></FormControl>
                       <SelectContent>
                         <SelectItem value="fulltime">Full-time</SelectItem>
                         <SelectItem value="internship">Internship / Magang</SelectItem>
                       </SelectContent>
                     </Select>
+                    {hasBatchLink && <p className="text-xs text-muted-foreground flex items-center gap-1"><Layers className="h-3 w-3" /> Mengikuti data Batch Magang.</p>}
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -392,30 +569,45 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
                   </FormItem>
                 )} />
 
-                {/* Deadline */}
+                {/* Deadline — locked to the batch's own registration end
+                    date whenever a batch is linked; the old "use batch
+                    deadline" suggestion button is gone because this is now
+                    authoritative, not just a suggestion. */}
                 <FormField control={form.control} name="applyDeadline" render={({ field }) => (
                   <FormItem className="flex flex-col pt-2">
                     <FormLabel>Deadline Lamaran</FormLabel>
                     <FormControl>
-                      <GoogleDatePicker value={field.value} onChange={field.onChange} portalled={false} />
+                      <GoogleDatePicker value={field.value} onChange={field.onChange} portalled={false} disabled={hasBatchLink} />
                     </FormControl>
+                    {hasBatchLink && selectedBatch && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Layers className="h-3 w-3" /> Mengikuti akhir pendaftaran Batch Magang ({format(selectedBatch.registrationEndDate.toDate(), 'dd MMM yyyy', { locale: idLocale })}). Ubah lewat Edit Batch.
+                      </p>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )} />
 
-                {/* Openings */}
+                {/* Openings — locked to the batch's own kuota whenever a
+                    batch is linked, so "Kuota batch = 5" and "Jumlah
+                    Dibutuhkan = 3" can never disagree. */}
                 <FormField control={form.control} name="numberOfOpenings" render={({ field }) => (
                   <FormItem className="flex flex-col pt-2">
                     <FormLabel>Jumlah yang Dibutuhkan</FormLabel>
                     <FormControl>
                       <Input
                         type="number" placeholder="cth. 2"
+                        disabled={hasBatchLink}
                         {...field}
                         value={field.value ?? ""}
                         onChange={e => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
                       />
                     </FormControl>
-                    <FormDescription>Berapa orang yang dibutuhkan untuk posisi ini.</FormDescription>
+                    <FormDescription>
+                      {hasBatchLink
+                        ? <span className="flex items-center gap-1"><Layers className="h-3 w-3" /> Mengikuti kuota Batch Magang. Ubah lewat Edit Batch.</span>
+                        : 'Berapa orang yang dibutuhkan untuk posisi ini.'}
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -487,10 +679,7 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
             <Button
               type="button"
               variant="outline"
-              onClick={() => {
-                setSubmitMode('draft');
-                form.handleSubmit(onSubmit)();
-              }}
+              onClick={() => form.handleSubmit((values) => onSubmit(values, 'draft'))()}
               disabled={loading}
             >
               {loading && submitMode === 'draft' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -499,10 +688,7 @@ export function JobFormDialog({ open, onOpenChange, job, brands }: JobFormDialog
             </Button>
             <Button
               type="button"
-              onClick={() => {
-                setSubmitMode('publish');
-                form.handleSubmit(onSubmit)();
-              }}
+              onClick={() => form.handleSubmit((values) => onSubmit(values, 'publish'))()}
               disabled={loading}
               className="bg-teal-600 hover:bg-teal-700 text-white"
             >

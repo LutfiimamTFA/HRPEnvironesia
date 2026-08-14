@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Fragment } from 'react';
 import { useCollection, useFirestore, useMemoFirebase, setDocumentNonBlocking } from '@/firebase';
 import { collection, doc, serverTimestamp, where, writeBatch, updateDoc, getDoc } from 'firebase/firestore';
 import { resolveApprovalTarget } from '@/lib/approval-flow';
@@ -18,9 +18,13 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { sendLeaveNotification } from '@/lib/leave-notifications';
 import { type LeaveRequest, type LeaveBalance, type LeaveBalanceAdjustment, type LeavePolicy } from '@/lib/types';
-import { calculateLeaveBalance, calculateLeaveBalanceForRequest } from '@/lib/leave-balance';
+import { calculateLeaveBalance } from '@/lib/leave-balance';
+import { useLiveLeaveBalance } from '@/hooks/use-live-leave-balance';
 import { getLeaveProcessStage } from '@/lib/leave-process-stage';
 import { getRequestEmployeeProfile, resolveCurrentEmployeeDivision } from '@/lib/employee-division';
+import { getReplacementConfirmationStatus, getReplacementStatusBadgeClass } from '@/lib/leave-replacement-status';
+import { formatPeriodLabel, matchesPeriod } from '@/lib/period';
+import { MonthYearPicker } from '@/components/ui/MonthYearPicker';
 import {
   Loader2,
   CalendarOff,
@@ -65,7 +69,8 @@ export default function HrdLeaveApprovalPage() {
   
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isActionOpen, setIsActionOpen] = useState(false);
-  const [actionType, setActionType] = useState<'approve' | 'reject' | 'revise' | null>(null);
+  const [reasonError, setReasonError] = useState(false);
+  const [actionType, setActionType] = useState<'approve' | 'reject' | null>(null);
   const [notes, setNotes] = useState('');
   
   const [isSaving, setIsSaving] = useState(false);
@@ -78,15 +83,14 @@ export default function HrdLeaveApprovalPage() {
   const [cashoutAmount, setCashoutAmount] = useState<number>(0);
   const [cashoutReason, setCashoutReason] = useState('Pencairan Nilai Cuti ke Payroll');
   
-  const [showFilters, setShowFilters] = useState(false);
   const [filterBrand, setFilterBrand] = useState('all');
   const [filterDivision, setFilterDivision] = useState('all');
   const [filterLeaveType, setFilterLeaveType] = useState('all');
+  const [filterSupervisorStatus, setFilterSupervisorStatus] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterSearch, setFilterSearch] = useState('');
   const [filterManager, setFilterManager] = useState('all');
-  const [filterMonth, setFilterMonth] = useState('all');
-  const [filterYear, setFilterYear] = useState('all');
+  const [filterPeriod, setFilterPeriod] = useState('all'); // "all" | "YYYY-MM"
   const [filterRequesterType, setFilterRequesterType] = useState('all');
   
   const [filterAdjustmentType, setFilterAdjustmentType] = useState('all');
@@ -163,6 +167,63 @@ export default function HrdLeaveApprovalPage() {
            "Nama belum tersedia";
   };
 
+  // Emergency contact fields have been stored under many different key
+  // spellings/nesting across form revisions over the years (raw fields on
+  // the leave_requests doc, nested `emergencyContact.*`, personalInfo.*,
+  // hrdPersonalInfo.*, dataDiriIdentitas.* Indonesian-labeled variants) —
+  // this walks every known variant on both the request snapshot and the
+  // current employee profile so a phone number stored under any of them
+  // still surfaces instead of showing "Tidak ada kontak" incorrectly.
+  const resolveEmergencyContact = (request: any, profile: any) => {
+    const name =
+      request?.emergencyContactName ||
+      request?.emergencyContact?.name ||
+      request?.emergencyContactFullName ||
+      request?.kontakDaruratNama ||
+      profile?.emergencyContactName ||
+      profile?.emergencyContact?.name ||
+      profile?.personalInfo?.emergencyContactName ||
+      profile?.personalInfo?.emergencyContact?.name ||
+      profile?.hrdPersonalInfo?.emergencyContactName ||
+      profile?.hrdPersonalInfo?.emergencyContact?.name ||
+      profile?.dataDiriIdentitas?.emergencyContactName ||
+      profile?.dataDiriIdentitas?.namaKontakDarurat ||
+      null;
+
+    const phone =
+      request?.emergencyContactPhone ||
+      request?.emergencyContact?.phone ||
+      request?.emergencyContactNumber ||
+      request?.emergencyContactPhoneNumber ||
+      request?.kontakDaruratTelepon ||
+      request?.kontakDaruratNomor ||
+      profile?.emergencyContactPhone ||
+      profile?.emergencyContact?.phone ||
+      profile?.personalInfo?.emergencyContactPhone ||
+      profile?.personalInfo?.emergencyContact?.phone ||
+      profile?.hrdPersonalInfo?.emergencyContactPhone ||
+      profile?.hrdPersonalInfo?.emergencyContact?.phone ||
+      profile?.dataDiriIdentitas?.emergencyContactPhone ||
+      profile?.dataDiriIdentitas?.nomorKontakDarurat ||
+      null;
+
+    const relation =
+      request?.emergencyContactRelation ||
+      request?.emergencyContact?.relation ||
+      request?.emergencyContactRelationship ||
+      request?.kontakDaruratHubungan ||
+      profile?.emergencyContactRelation ||
+      profile?.emergencyContact?.relation ||
+      profile?.personalInfo?.emergencyContactRelation ||
+      profile?.personalInfo?.emergencyContact?.relation ||
+      profile?.hrdPersonalInfo?.emergencyContactRelation ||
+      profile?.hrdPersonalInfo?.emergencyContact?.relation ||
+      profile?.dataDiriIdentitas?.hubunganKontakDarurat ||
+      null;
+
+    return { name, phone, relation };
+  };
+
   const formatRupiah = (value: number) => {
     return new Intl.NumberFormat('id-ID', {
       style: 'currency',
@@ -216,17 +277,86 @@ export default function HrdLeaveApprovalPage() {
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [masterDivisions, filterBrand]);
 
+  // The leave_requests doc's managerName is a SNAPSHOT taken at submission
+  // time — if that manager's display name has since changed in
+  // employee_profiles (the exact "Mandor" vs "Daniel" bug), the dropdown
+  // must show the CURRENT name, not the stale one frozen on old requests.
+  // De-duped by uid (not name), so the same manager under two different
+  // historical name spellings still collapses to one option.
+  const getRequestManagerUid = (r: LeaveRequest) =>
+    r.managerId || (r as any).managerUid || (r as any).directManagerUid || (r as any).currentApproverUid || null;
+
   const managerOptions = useMemo(() => {
     const map = new Map<string, string>();
     if (requests) {
       requests.forEach(r => {
-        if (r.managerId && r.managerName) {
-          map.set(r.managerId, r.managerName);
-        }
+        const managerUid = getRequestManagerUid(r);
+        if (!managerUid || map.has(managerUid)) return;
+        const profile = employeeProfilesMap.get(String(managerUid));
+        const employee = employeesMap.get(String(managerUid));
+        const user = usersMap.get(String(managerUid));
+        const resolvedName = resolveEmployeeName(profile, employee, user, null);
+        // Only fall back to the request's own stale snapshot name when NO
+        // current profile/employee/user record exists at all for this uid.
+        const name = resolvedName !== 'Nama belum tersedia' ? resolvedName : (r.managerName || 'Nama belum tersedia');
+        map.set(managerUid, name);
       });
     }
-    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-  }, [requests]);
+    return Array.from(map.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [requests, employeeProfilesMap, employeesMap, usersMap]);
+
+  const leaveTypeChipLabel: Record<string, string> = {
+    tahunan: 'Cuti Tahunan',
+    besar: 'Cuti Besar',
+    menikah: 'Cuti Menikah',
+    melahirkan: 'Cuti Melahirkan',
+  };
+
+  const statusChipLabel: Record<string, string> = {
+    pending_hrd: 'Antrean HRD',
+    approved: 'Disetujui HRD',
+    rejected_by_hrd: 'Ditolak HRD',
+    revision_requested_by_hrd: 'Revisi HRD',
+  };
+
+  const requesterTypeChipLabel: Record<string, string> = {
+    staff: 'Staff/Karyawan',
+    manager: 'Manager Divisi',
+  };
+
+  const supervisorStatusChipLabel: Record<string, string> = {
+    pending: 'Menunggu Atasan',
+    approved: 'Disetujui Atasan',
+    rejected: 'Ditolak Atasan',
+  };
+
+  // Active filter chips — lets HRD see at a glance what's narrowing the
+  // table, and clear any single one without reopening the filter panel.
+  const activeFilterChips = [
+    filterBrand !== 'all' && { key: 'brand', label: `Brand: ${brandOptions.find(b => b.id === filterBrand)?.name || filterBrand}`, onRemove: () => setFilterBrand('all') },
+    filterDivision !== 'all' && { key: 'division', label: `Divisi: ${divisionOptions.find(d => `${d.brandId}__${d.id}` === filterDivision)?.name || filterDivision}`, onRemove: () => setFilterDivision('all') },
+    filterLeaveType !== 'all' && { key: 'leaveType', label: `Jenis Cuti: ${leaveTypeChipLabel[filterLeaveType] || filterLeaveType}`, onRemove: () => setFilterLeaveType('all') },
+    filterSupervisorStatus !== 'all' && { key: 'supervisorStatus', label: `Status Atasan: ${supervisorStatusChipLabel[filterSupervisorStatus] || filterSupervisorStatus}`, onRemove: () => setFilterSupervisorStatus('all') },
+    filterStatus !== 'all' && { key: 'status', label: `Status HRD: ${statusChipLabel[filterStatus] || filterStatus}`, onRemove: () => setFilterStatus('all') },
+    filterRequesterType !== 'all' && { key: 'requesterType', label: `Tipe: ${requesterTypeChipLabel[filterRequesterType] || filterRequesterType}`, onRemove: () => setFilterRequesterType('all') },
+    filterManager !== 'all' && { key: 'manager', label: `Atasan: ${managerOptions.find(m => m.id === filterManager)?.name || filterManager}`, onRemove: () => setFilterManager('all') },
+    filterPeriod !== 'all' && { key: 'period', label: `Periode: ${formatPeriodLabel(filterPeriod)}`, onRemove: () => setFilterPeriod('all') },
+    filterSearch && { key: 'search', label: `Cari: "${filterSearch}"`, onRemove: () => setFilterSearch('') },
+  ].filter(Boolean) as { key: string; label: string; onRemove: () => void }[];
+
+  const handleResetFilters = () => {
+    setFilterBrand('all');
+    setFilterDivision('all');
+    setFilterLeaveType('all');
+    setFilterSupervisorStatus('all');
+    setFilterStatus('all');
+    setFilterRequesterType('all');
+    setFilterSearch('');
+    setFilterManager('all');
+    setFilterPeriod('all');
+  };
 
   // Compute 5 indicators dynamically
   const approvedThisMonthCount = useMemo(() => {
@@ -297,10 +427,6 @@ export default function HrdLeaveApprovalPage() {
            (req as any).approvalFlowType === "manager_to_director_to_hrd";
   };
 
-  const isStaffRequest = (req: LeaveRequest) => {
-    return !isManagerRequest(req);
-  };
-
   const getRequesterPositionLabel = (req: LeaveRequest) => {
     const level = (req as any).requesterStructuralPosition || 
                   (req as any).structuralLevel || 
@@ -309,21 +435,69 @@ export default function HrdLeaveApprovalPage() {
     return level;
   };
 
-  const getApprovalFlowBadge = (req: LeaveRequest) => {
+  // Alur Approval — a real step indicator (Staff → Pengganti → Manager
+  // Divisi/Direktur → HRD → Selesai), not just a static flow label. Pengganti
+  // is skipped entirely when the request never named a replacement. Each
+  // dot's state (done/current/rejected/upcoming) comes from the same
+  // getLeaveProcessStage() the Status Atasan/Status HRD columns use, so the
+  // stepper can never disagree with the badges next to it.
+  type ApprovalStepState = 'done' | 'current' | 'rejected' | 'upcoming';
+  const renderApprovalFlowSteps = (req: LeaveRequest) => {
+    const stage = getLeaveProcessStage(req);
     const isMgr = isManagerRequest(req);
-    if (isMgr) {
-      return (
-        <Badge variant="outline" className="bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 font-medium text-[10px] rounded-md px-1.5 py-0.5">
-          Manager Divisi → Direktur → HRD
-        </Badge>
-      );
-    } else {
-      return (
-        <Badge variant="outline" className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-medium text-[10px] rounded-md px-1.5 py-0.5">
-          Staff → Manager Divisi → HRD
-        </Badge>
-      );
+    const hasReplacement =
+      Boolean((req as any)?.replacementEmployeeUid) ||
+      (Boolean((req as any)?.handoverEmployeeId) && (req as any)?.handoverEmployeeId !== 'manual');
+    const approvalBlocked = stage.stage === 'replacement_pending' || stage.stage === 'replacement_rejected';
+
+    const steps: { key: string; label: string; state: ApprovalStepState }[] = [
+      { key: 'staff', label: 'Staff', state: 'done' },
+    ];
+
+    if (hasReplacement) {
+      steps.push({
+        key: 'replacement',
+        label: 'Pengganti',
+        state: stage.stage === 'replacement_pending' ? 'current' : stage.stage === 'replacement_rejected' ? 'rejected' : 'done',
+      });
     }
+
+    let approvalState: ApprovalStepState = 'upcoming';
+    if (!approvalBlocked) {
+      if (stage.stage === 'manager_pending') approvalState = 'current';
+      else if (stage.stage === 'hrd_pending' || stage.stage === 'approved') approvalState = 'done';
+      else if (req.status.includes('rejected') && !req.status.includes('hrd')) approvalState = 'rejected';
+    }
+    steps.push({ key: 'manager', label: isMgr ? 'Direktur' : 'Manager Divisi', state: approvalState });
+
+    let hrdState: ApprovalStepState = 'upcoming';
+    if (stage.stage === 'hrd_pending') hrdState = 'current';
+    else if (stage.stage === 'approved') hrdState = 'done';
+    else if (req.status === 'rejected_by_hrd') hrdState = 'rejected';
+    steps.push({ key: 'hrd', label: 'HRD', state: hrdState });
+
+    steps.push({ key: 'done', label: 'Selesai', state: stage.stage === 'approved' ? 'done' : 'upcoming' });
+
+    const dotClass = (state: ApprovalStepState) =>
+      state === 'done' ? 'bg-emerald-500' : state === 'current' ? 'bg-amber-500 animate-pulse' : state === 'rejected' ? 'bg-red-500' : 'bg-slate-300 dark:bg-slate-700';
+    const labelClass = (state: ApprovalStepState) =>
+      state === 'done' ? 'text-emerald-600 dark:text-emerald-400' : state === 'current' ? 'text-amber-600 dark:text-amber-400 font-bold' : state === 'rejected' ? 'text-red-600 dark:text-red-400' : 'text-slate-400 dark:text-slate-600';
+    const lineClass = (state: ApprovalStepState) =>
+      state === 'done' ? 'bg-emerald-300 dark:bg-emerald-800' : 'bg-slate-200 dark:bg-slate-800';
+
+    return (
+      <div className="flex items-start">
+        {steps.map((step, i) => (
+          <Fragment key={step.key}>
+            <div className="flex flex-col items-center gap-1 w-14 shrink-0" title={step.label}>
+              <span className={`h-2 w-2 rounded-full ${dotClass(step.state)}`} />
+              <span className={`text-[11px] font-semibold text-center leading-tight ${labelClass(step.state)}`}>{step.label}</span>
+            </div>
+            {i < steps.length - 1 && <div className={`h-px w-3 mt-1.5 shrink-0 ${lineClass(step.state)}`} />}
+          </Fragment>
+        ))}
+      </div>
+    );
   };
 
   const getSupervisorStatusLabel = (req: LeaveRequest) => {
@@ -376,11 +550,11 @@ export default function HrdLeaveApprovalPage() {
 
   const getSupervisorStatusBadgeClass = (req: LeaveRequest) => {
     const label = getSupervisorStatusLabel(req);
-    if (label.includes('Disetujui')) return 'bg-emerald-550/10 border-emerald-500/20 text-emerald-400';
-    if (label.includes('Ditolak')) return 'bg-red-500/10 border-red-500/20 text-red-400';
-    if (label.includes('Revisi')) return 'bg-amber-500/10 border-amber-500/20 text-amber-400';
-    if (label.includes('Menunggu')) return 'bg-blue-500/10 border border-blue-500/20 text-blue-400';
-    return 'bg-slate-700/10 border border-slate-750 text-slate-400';
+    if (label.includes('Disetujui')) return 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/40 text-emerald-700 dark:text-emerald-400';
+    if (label.includes('Ditolak')) return 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900/40 text-red-700 dark:text-red-400';
+    if (label.includes('Revisi')) return 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40 text-amber-700 dark:text-amber-400';
+    if (label.includes('Menunggu')) return 'bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/40 text-blue-700 dark:text-blue-400';
+    return 'bg-slate-100 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400';
   };
 
   const getHrdStatusLabel = (req: LeaveRequest) => {
@@ -400,27 +574,34 @@ export default function HrdLeaveApprovalPage() {
 
   const getHrdStatusBadgeClass = (req: LeaveRequest) => {
     const label = getHrdStatusLabel(req);
-    if (label === 'Disetujui HRD') return 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400';
-    if (label === 'Ditolak HRD') return 'bg-red-500/10 border-red-500/20 text-red-400';
-    if (label === 'Pengganti Menolak') return 'bg-red-500/10 border-red-500/20 text-red-400';
-    if (label === 'Menunggu Konfirmasi Pengganti') return 'bg-amber-500/10 border-amber-500/20 text-amber-400';
-    if (label === 'Revisi Diminta HRD') return 'bg-amber-500/10 border-amber-500/20 text-amber-400';
-    if (label === 'Menunggu Tindakan HRD') return 'bg-blue-550/10 border border-blue-550/20 text-blue-400';
-    return 'bg-slate-700/10 border border-slate-750 text-slate-400';
+    if (label === 'Disetujui HRD') return 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/40 text-emerald-700 dark:text-emerald-400';
+    if (label === 'Ditolak HRD') return 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900/40 text-red-700 dark:text-red-400';
+    if (label === 'Pengganti Menolak') return 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900/40 text-red-700 dark:text-red-400';
+    if (label === 'Menunggu Konfirmasi Pengganti') return 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40 text-amber-700 dark:text-amber-400';
+    if (label === 'Revisi Diminta HRD') return 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40 text-amber-700 dark:text-amber-400';
+    if (label === 'Menunggu Tindakan HRD') return 'bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/40 text-blue-700 dark:text-blue-400';
+    return 'bg-slate-100 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400';
   };
 
   // General leaves requests filtered by interactive filters
   const filteredRequests = useMemo(() => {
     if (!requests) return [];
     return requests.filter(r => {
-      // 1. Search text
+      const profile = getRequestEmployeeProfile(r, employeeProfilesMap);
+      // 1. Search text — nama, jabatan, brand, divisi, jenis cuti, status
       if (filterSearch) {
         const queryStr = filterSearch.toLowerCase();
-        const nameMatch = r.employeeName?.toLowerCase().includes(queryStr);
-        const reasonMatch = r.reason?.toLowerCase().includes(queryStr);
-        if (!nameMatch && !reasonMatch) return false;
+        const haystack = [
+          r.employeeName,
+          getRequesterPositionLabel(r),
+          profile?.brandName || profile?.hrdEmploymentInfo?.brandName || r.brandName,
+          resolveCurrentEmployeeDivision(r, profile).divisionName,
+          r.leaveType,
+          getSupervisorStatusLabel(r),
+          getHrdStatusLabel(r),
+        ].filter(Boolean).join(' ').toLowerCase();
+        if (!haystack.includes(queryStr)) return false;
       }
-      const profile = getRequestEmployeeProfile(r, employeeProfilesMap);
       // 2. Brand
       if (filterBrand !== 'all') {
         const bBrandId = profile?.brandId || profile?.hrdEmploymentInfo?.brandId || r.brandId || '';
@@ -438,7 +619,7 @@ export default function HrdLeaveApprovalPage() {
       if (filterLeaveType !== 'all') {
         if (r.leaveType !== filterLeaveType) return false;
       }
-      // 5. Status
+      // 5. Status HRD
       if (filterStatus !== 'all') {
         if (filterStatus === 'pending_hrd') {
           if (r.status !== 'pending_hrd' && r.status !== 'pending_hrd_review') return false;
@@ -448,16 +629,23 @@ export default function HrdLeaveApprovalPage() {
           if (r.status !== filterStatus) return false;
         }
       }
-      // 6. Manager
-      if (filterManager !== 'all') {
-        if (r.managerId !== filterManager) return false;
+      // 5b. Status Atasan — categorized off the same label HRD sees in the
+      // table/modal (Disetujui/Ditolak/Menunggu), so the filter option
+      // always matches what's actually displayed.
+      if (filterSupervisorStatus !== 'all') {
+        const label = getSupervisorStatusLabel(r);
+        if (filterSupervisorStatus === 'approved' && !label.includes('Disetujui')) return false;
+        if (filterSupervisorStatus === 'rejected' && !label.includes('Ditolak')) return false;
+        if (filterSupervisorStatus === 'pending' && !label.includes('Menunggu')) return false;
       }
-      // 7. Month/Year filter
-      if (filterMonth !== 'all' || filterYear !== 'all') {
+      // 6. Manager — matched by uid via the same resolver managerOptions uses.
+      if (filterManager !== 'all') {
+        if (getRequestManagerUid(r) !== filterManager) return false;
+      }
+      // 7. Periode (YYYY-MM) filter
+      if (filterPeriod !== 'all') {
         try {
-          const date = r.startDate.toDate();
-          if (filterMonth !== 'all' && date.getMonth().toString() !== filterMonth) return false;
-          if (filterYear !== 'all' && date.getFullYear().toString() !== filterYear) return false;
+          if (!matchesPeriod(r.startDate.toDate(), filterPeriod)) return false;
         } catch {
           return false;
         }
@@ -470,7 +658,7 @@ export default function HrdLeaveApprovalPage() {
       }
       return true;
     });
-  }, [requests, filterSearch, filterBrand, filterDivision, filterLeaveType, filterStatus, filterManager, filterMonth, filterYear, filterRequesterType, employeeProfilesMap]);
+  }, [requests, filterSearch, filterBrand, filterDivision, filterLeaveType, filterStatus, filterSupervisorStatus, filterManager, filterPeriod, filterRequesterType, employeeProfilesMap]);
 
   // Tab 1 List: Need HRD Action
   const needHrdActionList = useMemo(() => {
@@ -483,25 +671,7 @@ export default function HrdLeaveApprovalPage() {
     });
   }, [filteredRequests]);
 
-  // Tab 2 List: Division Managers
-  const managerRequestsList = useMemo(() => {
-    return filteredRequests.filter(isManagerRequest).sort((a, b) => {
-      const aTime = a.updatedAt?.toMillis ? a.updatedAt.toMillis() : 0;
-      const bTime = b.updatedAt?.toMillis ? b.updatedAt.toMillis() : 0;
-      return bTime - aTime;
-    });
-  }, [filteredRequests]);
-
-  // Tab 3 List: Staff members
-  const staffRequestsList = useMemo(() => {
-    return filteredRequests.filter(isStaffRequest).sort((a, b) => {
-      const aTime = a.updatedAt?.toMillis ? a.updatedAt.toMillis() : 0;
-      const bTime = b.updatedAt?.toMillis ? b.updatedAt.toMillis() : 0;
-      return bTime - aTime;
-    });
-  }, [filteredRequests]);
-
-  // Tab 4 List: All Requests
+  // Tab 2 List: All Requests (filtered further by "Tipe Pengaju" in the filter panel)
   const allRequestsList = useMemo(() => {
     return [...filteredRequests].sort((a, b) => {
       const aTime = a.updatedAt?.toMillis ? a.updatedAt.toMillis() : 0;
@@ -599,12 +769,11 @@ export default function HrdLeaveApprovalPage() {
         const fDivId = filterDivision.split('__')[1] || filterDivision;
         if (a.divisionId !== fDivId) return false;
       }
-      // 4. Month/Year filter
-      if (filterMonth !== 'all' || filterYear !== 'all') {
+      // 4. Periode (YYYY-MM) filter
+      if (filterPeriod !== 'all') {
         try {
           const date = a.createdAt?.toDate ? a.createdAt.toDate() : new Date();
-          if (filterMonth !== 'all' && date.getMonth().toString() !== filterMonth) return false;
-          if (filterYear !== 'all' && date.getFullYear().toString() !== filterYear) return false;
+          if (!matchesPeriod(date, filterPeriod)) return false;
         } catch {
           return false;
         }
@@ -624,45 +793,39 @@ export default function HrdLeaveApprovalPage() {
       const bTime = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
       return bTime - aTime;
     });
-  }, [adjustments, filterSearch, filterBrand, filterDivision, filterMonth, filterYear, filterAdjustmentType, filterAdjustmentChange, employeeProfilesMap]);
+  }, [adjustments, filterSearch, filterBrand, filterDivision, filterPeriod, filterAdjustmentType, filterAdjustmentChange, employeeProfilesMap]);
 
-  // Live, period-aware balance for the "Ringkasan Saldo Cuti" panel — same
-  // calculateLeaveBalanceForRequest() Data Karyawan and every other leave
-  // balance display calls. Unlike the OLD leave_balances doc (which for an
-  // ALREADY-APPROVED request already has this request's own days
-  // subtracted), this always excludes the request itself from "days used
-  // before it" — so "Saldo Sebelumnya" reads the balance BEFORE this
-  // request, not after, whether it's pending or already approved.
-  const selectedRequestPolicyBalance = useMemo(() => {
+  // Live "Ringkasan Saldo Cuti" panel — calls the EXACT SAME calculateLeaveBalance()
+  // used by the "Saldo & Hak Cuti" tab (filteredBalances above) and the
+  // Directory Karyawan / Policy Cuti pages, with the SAME arguments
+  // (employee, requests, leavePolicies). Previously this called the sibling
+  // calculateLeaveBalanceForRequest() instead — a different function with a
+  // different framing (excludes the request being reviewed from "pending"),
+  // so a pending request's own days silently vanished from "Sisa Bisa
+  // Diajukan" here while Directory Karyawan still counted them. Same
+  // function + same inputs is the only way these can never drift apart again.
+  // The modal's "Ringkasan Saldo Cuti" — calls useLiveLeaveBalance(), the
+  // EXACT SAME hook Directory Karyawan and the Policy Cuti summary card use
+  // (src/hooks/use-live-leave-balance.ts → GET /api/leave/my-balance, Admin
+  // SDK, server-side). Deliberately NOT a local calculateLeaveBalance() call
+  // against this page's own client-scoped `requests`/`employeeProfiles` —
+  // that's what caused the drift this fixes: useHrdScopedCollection's single
+  // brand-scoped query doesn't do the same multi-field owner-UID join
+  // (employeeUid/requesterUid/uid/userId/employeeId/createdByUid) the API
+  // route does server-side, so an approved leave_requests doc whose owner
+  // field didn't line up with this page's query silently dropped out of
+  // "Terpakai" here while Directory Karyawan (via the API) still counted it.
+  const selectedEmployeeUid = useMemo(() => {
     if (!selectedRequest) return null;
-    const employeeProfile = getRequestEmployeeProfile(selectedRequest, employeeProfilesMap);
-    if (!employeeProfile) return null;
-    const result = calculateLeaveBalanceForRequest({
-      employee: employeeProfile,
-      leaveRequests: requests,
-      leavePolicies,
-      request: selectedRequest,
-    });
+    const profile = getRequestEmployeeProfile(selectedRequest, employeeProfilesMap);
+    return profile?.uid || profile?.id || (selectedRequest as any)?.employeeUid || selectedRequest.employeeId || null;
+  }, [selectedRequest, employeeProfilesMap]);
 
-    console.log('[LEAVE_DETAIL_BALANCE_DEBUG]', JSON.stringify({
-      employeeName: resolveEmployeeName(employeeProfile, employeesMap.get(selectedRequest.employeeId), usersMap.get(selectedRequest.employeeId), null),
-      employeeUid: selectedRequest.employeeId,
-      requestId: selectedRequest.id,
-      requestDurationDays: selectedRequest.durationDays,
-      requestStatus: selectedRequest.status,
-      found: result.found,
-      reason: result.found ? undefined : result.reason,
-      entitlementDays: result.found ? result.entitlementDays : null,
-      carryOverDays: result.found ? result.carryOverDays : null,
-      usedDaysBeforeThisRequest: result.found ? result.usedDaysBeforeThisRequest : null,
-      usedDaysIncludingThisRequest: result.found ? result.usedDaysIncludingThisRequest : null,
-      previousBalance: result.found ? result.previousBalance : null,
-      balanceAfterApproval: result.found ? result.balanceAfterApproval : null,
-      calculatedAt: new Date().toISOString(),
-    }, null, 2));
-
-    return result;
-  }, [selectedRequest, employeeProfilesMap, requests, leavePolicies, employeesMap, usersMap]);
+  const {
+    balance: selectedRequestBalance,
+    loading: isLoadingSelectedBalance,
+    refetch: refetchSelectedBalance,
+  } = useLiveLeaveBalance(selectedEmployeeUid);
 
   const [isMigrating, setIsMigrating] = useState(false);
 
@@ -746,10 +909,11 @@ export default function HrdLeaveApprovalPage() {
     setIsDetailOpen(true);
   };
 
-  const handleOpenAction = (type: 'approve' | 'reject' | 'revise', req: LeaveRequest) => {
+  const handleOpenAction = (type: 'approve' | 'reject', req: LeaveRequest) => {
     setSelectedRequest(req);
     setActionType(type);
     setNotes('');
+    setReasonError(false);
     setIsActionOpen(true);
   };
 
@@ -770,7 +934,7 @@ export default function HrdLeaveApprovalPage() {
       return;
     }
 
-    if ((actionType === 'reject' || actionType === 'revise') && notes.trim().length < 5) {
+    if (actionType === 'reject' && notes.trim().length < 5) {
       toast({
         variant: 'destructive',
         title: "Keterangan Wajib Diisi",
@@ -790,9 +954,6 @@ export default function HrdLeaveApprovalPage() {
       if (actionType === 'reject') {
         newStatus = 'rejected_by_hrd';
         notificationType = "hrd_rejection";
-      } else if (actionType === 'revise') {
-        newStatus = 'revision_requested_by_hrd';
-        notificationType = "hrd_revision";
       }
 
       // 1. Update Leave Request Status
@@ -841,14 +1002,16 @@ export default function HrdLeaveApprovalPage() {
         managerName: selectedRequest.managerName,
         startDate: selectedRequest.startDate,
         endDate: selectedRequest.endDate,
-        notes: actionType === 'revise' ? notes : undefined,
         reason: actionType === 'reject' ? notes : undefined,
         requestId: selectedRequest.id!
       });
 
       toast({
-        title: actionType === 'approve' ? "Cuti Disetujui (Final)" : (actionType === 'reject' ? "Cuti Ditolak" : "Revisi Dikirim"),
-        description: `Pengajuan cuti ${selectedRequest.employeeName} berhasil diselesaikan.`
+        title: actionType === 'approve' ? "Cuti Disetujui (Final)" : "Cuti Ditolak",
+        description:
+          actionType === 'approve'
+            ? "Pengajuan cuti berhasil disetujui."
+            : "Pengajuan cuti berhasil ditolak.",
       });
 
       setIsActionOpen(false);
@@ -856,8 +1019,9 @@ export default function HrdLeaveApprovalPage() {
       mutateRequests();
       mutateBalances();
       mutateAdjustments();
+      refetchSelectedBalance();
     } catch (e: any) {
-      toast({ variant: 'destructive', title: "Gagal Memproses Cuti", description: e.message });
+      toast({ variant: 'destructive', title: "Gagal Memproses", description: "Terjadi kesalahan saat memproses keputusan." });
     } finally {
       setIsSaving(false);
     }
@@ -1001,54 +1165,43 @@ export default function HrdLeaveApprovalPage() {
   // headline badge and the two per-stage columns never contradict each
   // other (e.g. badge saying "Menunggu Persetujuan Atasan" while the HRD
   // column correctly says "Menunggu Konfirmasi Pengganti").
-  const getStatusBadgeClass = (request: LeaveRequest) => {
+  // Visual priority accent for table rows — a colored left border so HRD can
+  // scan which rows need action vs. which are already resolved, without
+  // reading every status badge individually.
+  const getRowAccentClass = (request: LeaveRequest) => {
     const stage = getLeaveProcessStage(request);
-    switch (stage.stage) {
-      case 'replacement_pending':
-      case 'replacement_rejected':
-        return 'bg-amber-500/10 border-amber-500/20 text-amber-600';
-      case 'manager_pending':
-      case 'hrd_pending':
-        return 'bg-indigo-500/10 border-indigo-500/20 text-indigo-600';
-      case 'approved':
-        return 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600';
-      default:
-        break;
-    }
-    switch (request.status) {
-      case 'active_leave': return 'bg-blue-500/10 border-blue-500/20 text-blue-600';
-      case 'completed': return 'bg-slate-500/10 border-slate-500/20 text-slate-600';
-      case 'cancelled': return 'bg-gray-500/10 border-gray-500/20 text-gray-500';
-      case 'rejected_by_manager':
-      case 'rejected_by_director':
-      case 'rejected_by_hrd': return 'bg-red-500/10 border-red-500/20 text-red-600';
-      case 'revision_requested':
-      case 'revision_requested_by_manager':
-      case 'revision_requested_by_director':
-      case 'revision_requested_by_hrd': return 'bg-amber-500/10 border-amber-500/20 text-amber-600';
-      default: return 'bg-indigo-500/10 border-indigo-500/20 text-indigo-600';
-    }
+    // Butuh tindakan HRD right now — the row that actually matters most to
+    // this workspace — gets the strongest accent (blue), per spec.
+    if (stage.stage === 'hrd_pending') return 'border-l-4 border-l-blue-500';
+    if (stage.stage === 'approved') return 'border-l-4 border-l-emerald-500';
+    if (stage.stage === 'replacement_pending' || stage.stage === 'manager_pending') return 'border-l-4 border-l-amber-400';
+    if (stage.stage === 'replacement_rejected') return 'border-l-4 border-l-red-400';
+    if (request.status.includes('rejected')) return 'border-l-4 border-l-red-400';
+    if (request.status.includes('revision')) return 'border-l-4 border-l-amber-400';
+    return 'border-l-4 border-l-transparent';
   };
 
-  const getStatusLabel = (request: LeaveRequest) => {
-    const stage = getLeaveProcessStage(request);
-    if (stage.stage !== 'unknown') return stage.label;
-    switch (request.status) {
-      case 'revision_requested':
-      case 'revision_requested_by_manager': return 'Perlu Revisi (Atasan)';
-      case 'rejected_by_manager': return 'Ditolak Atasan';
-      case 'revision_requested_by_hrd': return 'Perlu Revisi (HRD)';
-      case 'rejected_by_hrd': return 'Ditolak HRD';
-      case 'active_leave': return 'Cuti Aktif';
-      case 'completed': return 'Cuti Selesai';
-      case 'cancelled': return 'Dibatalkan';
-      default: return status;
-    }
-  };
+  const renderRequestsTable = (list: LeaveRequest[], emptyMessage: string, isFilteredEmpty?: boolean) => {
+    const EmptyState = ({ compact }: { compact?: boolean }) => (
+      <div className={`flex flex-col items-center justify-center gap-3 text-center px-4 ${compact ? 'h-44' : 'h-56'}`}>
+        <div className={`h-14 w-14 rounded-2xl flex items-center justify-center ${isFilteredEmpty ? 'bg-slate-100 dark:bg-slate-900' : 'bg-emerald-50 dark:bg-emerald-950/20'}`}>
+          {isFilteredEmpty ? (
+            <Search className="h-6 w-6 text-slate-400 dark:text-slate-600" />
+          ) : (
+            <CheckCircle2 className="h-6 w-6 text-emerald-500" />
+          )}
+        </div>
+        <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
+          {isFilteredEmpty ? 'Tidak ada pengajuan cuti ditemukan.' : emptyMessage}
+        </p>
+        {isFilteredEmpty && (
+          <p className="text-xs text-slate-500 dark:text-slate-500 max-w-xs">Coba ubah filter atau pilih tab lain.</p>
+        )}
+      </div>
+    );
 
-  const renderRequestsTable = (list: LeaveRequest[], emptyMessage: string) => {
     return (
-      <Card className="border-slate-100 dark:border-slate-800 shadow-md rounded-2xl overflow-hidden">
+      <Card className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-sm overflow-hidden">
         <CardContent className="p-0">
           {/* Mobile card list (< md) — same data/logic as the desktop table below, just laid out as stacked cards instead of a squeezed table. */}
           <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
@@ -1058,100 +1211,86 @@ export default function HrdLeaveApprovalPage() {
                 const rBrand = profile?.brandName || profile?.hrdEmploymentInfo?.brandName || profile?.hrdEmploymentInfo?.brand || r.brandName || '-';
                 const rDivision = resolveCurrentEmployeeDivision(r, profile).divisionName;
                 const jobTitle = getRequesterPositionLabel(r);
-                const stage = getLeaveProcessStage(r);
-                const canAction = stage.hrdCanApprove;
+                const needsAction = getLeaveProcessStage(r).hrdCanApprove;
                 return (
-                  <div key={r.id} className="p-4 space-y-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-slate-850 dark:text-white font-black text-sm truncate">{r.employeeName}</p>
-                        <p className="text-xs font-semibold text-slate-500 capitalize truncate">{jobTitle}</p>
-                      </div>
-                      {getApprovalFlowBadge(r)}
+                  <div
+                    key={r.id}
+                    onClick={() => handleViewDetails(r)}
+                    className={`p-4 space-y-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-900/40 transition-colors ${getRowAccentClass(r)}`}
+                  >
+                    <div className="min-w-0">
+                      <p className="text-slate-900 dark:text-white font-bold text-base truncate">{r.employeeName}</p>
+                      <p className="text-sm font-semibold text-slate-500 capitalize truncate">{jobTitle}</p>
                     </div>
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                    <div className="overflow-x-auto -mx-1 px-1">{renderApprovalFlowSteps(r)}</div>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-2.5 text-sm">
                       <div>
-                        <p className="text-[9px] uppercase font-black text-slate-400 tracking-wider">Brand / Divisi</p>
-                        <p className="font-bold text-slate-600 dark:text-slate-300 truncate">{rBrand}</p>
-                        <p className="text-[10px] text-slate-400 font-semibold truncate">{rDivision}</p>
+                        <p className="text-xs uppercase font-bold text-slate-400 tracking-wide">Brand / Divisi</p>
+                        <p className="font-semibold text-slate-600 dark:text-slate-300 truncate">{rBrand}</p>
+                        <p className="text-xs text-slate-400 font-medium truncate">{rDivision}</p>
                       </div>
                       <div>
-                        <p className="text-[9px] uppercase font-black text-slate-400 tracking-wider">Jenis Cuti</p>
-                        <p className="font-bold text-indigo-500 capitalize">
+                        <p className="text-xs uppercase font-bold text-slate-400 tracking-wide">Jenis Cuti</p>
+                        <p className="font-semibold text-indigo-500 capitalize">
                           Cuti {r.leaveType === 'tahunan' ? 'Tahunan' : r.leaveType === 'besar' ? 'Besar' : r.leaveType === 'menikah' ? 'Menikah' : r.leaveType === 'melahirkan' ? 'Melahirkan' : 'Tahunan'}
                         </p>
                       </div>
                       <div className="col-span-2">
-                        <p className="text-[9px] uppercase font-black text-slate-400 tracking-wider">Periode</p>
-                        <p className="font-semibold text-slate-500">
+                        <p className="text-xs uppercase font-bold text-slate-400 tracking-wide">Periode</p>
+                        <p className="font-medium text-slate-600 dark:text-slate-300">
                           {format(r.startDate.toDate(), 'dd MMM yyyy', { locale: idLocale })} - {format(r.endDate.toDate(), 'dd MMM yyyy', { locale: idLocale })}
-                          <span className="ml-1.5 font-black text-slate-700 dark:text-slate-200">({r.durationDays} Hari)</span>
+                          <span className="ml-1.5 font-bold text-slate-800 dark:text-slate-100">({r.durationDays} Hari)</span>
                         </p>
                       </div>
                       <div>
-                        <p className="text-[9px] uppercase font-black text-slate-400 tracking-wider">Status Atasan</p>
-                        <Badge variant="outline" className={`mt-0.5 px-2 py-0.5 rounded-full text-[9px] font-black border uppercase tracking-wider ${getSupervisorStatusBadgeClass(r)}`}>
+                        <p className="text-xs uppercase font-bold text-slate-400 tracking-wide">Status Atasan</p>
+                        <Badge variant="outline" className={`mt-1 px-2.5 py-1 rounded-full text-xs font-semibold border ${getSupervisorStatusBadgeClass(r)}`}>
                           {getSupervisorStatusLabel(r)}
                         </Badge>
                       </div>
                       <div>
-                        <p className="text-[9px] uppercase font-black text-slate-400 tracking-wider">Status HRD</p>
-                        <Badge variant="outline" className={`mt-0.5 px-2 py-0.5 rounded-full text-[9px] font-black border uppercase tracking-wider ${getHrdStatusBadgeClass(r)}`}>
+                        <p className="text-xs uppercase font-bold text-slate-400 tracking-wide">Status HRD</p>
+                        <Badge variant="outline" className={`mt-1 px-2.5 py-1 rounded-full text-xs font-semibold border ${getHrdStatusBadgeClass(r)}`}>
                           {getHrdStatusLabel(r)}
                         </Badge>
                       </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      <Button variant="ghost" size="sm" onClick={() => handleViewDetails(r)} className="rounded-xl hover:bg-slate-100 font-bold text-xs gap-1">
+                    <div className="pt-1" onClick={(e) => e.stopPropagation()}>
+                      <Button
+                        variant={needsAction ? 'default' : 'ghost'}
+                        size="sm"
+                        onClick={() => handleViewDetails(r)}
+                        className={
+                          needsAction
+                            ? 'w-full rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs gap-1 shadow-sm'
+                            : 'w-full rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold text-xs gap-1'
+                        }
+                      >
                         <Eye className="h-3.5 w-3.5" /> Detail
                       </Button>
-                      {canAction ? (
-                        <>
-                          <Button variant="outline" size="sm" onClick={() => handleOpenAction('approve', r)} className="rounded-xl border-emerald-500/20 hover:bg-emerald-950/20 text-emerald-600 font-bold text-xs">
-                            Setujui
-                          </Button>
-                          <Button variant="outline" size="sm" onClick={() => handleOpenAction('reject', r)} className="rounded-xl border-red-500/20 hover:bg-red-950/20 text-red-600 font-bold text-xs">
-                            Tolak
-                          </Button>
-                          <Button variant="outline" size="sm" onClick={() => handleOpenAction('revise', r)} className="rounded-xl border-amber-500/20 hover:bg-amber-950/20 text-amber-600 font-bold text-xs">
-                            Revisi
-                          </Button>
-                        </>
-                      ) : (
-                        <span
-                          title="Pengajuan ini masih menunggu konfirmasi pengganti / persetujuan atasan."
-                          className="rounded-xl border border-slate-200 dark:border-slate-800 px-2.5 py-1 text-[11px] font-bold text-slate-400 cursor-help"
-                        >
-                          Belum Masuk Tahap HRD
-                        </span>
-                      )}
                     </div>
                   </div>
                 );
               })
             ) : (
-              <div className="h-44 flex flex-col items-center justify-center gap-2 text-center px-4">
-                <CheckCircle2 className="h-10 w-10 text-slate-400 opacity-40" />
-                <p className="text-sm font-bold text-slate-500">{emptyMessage}</p>
-              </div>
+              <EmptyState compact />
             )}
           </div>
 
           {/* Desktop/tablet table (>= md) */}
           <div className="hidden md:block overflow-x-auto w-full min-w-0">
-            <Table className="w-full min-w-[1100px]">
-              <TableHeader className="bg-slate-50/20 dark:bg-slate-900/10">
-                <TableRow>
-                  <TableHead className="pl-6 py-4 font-bold text-slate-850 dark:text-slate-200">Karyawan</TableHead>
-                  <TableHead className="py-4 font-bold text-slate-850 dark:text-slate-200">Jabatan/Level</TableHead>
-                  <TableHead className="py-4 font-bold text-slate-850 dark:text-slate-200">Brand / Divisi</TableHead>
-                  <TableHead className="py-4 font-bold text-slate-850 dark:text-slate-200">Alur Approval</TableHead>
-                  <TableHead className="py-4 font-bold text-slate-850 dark:text-slate-200">Jenis Cuti</TableHead>
-                  <TableHead className="py-4 font-bold text-slate-850 dark:text-slate-200">Periode Cuti</TableHead>
-                  <TableHead className="py-4 font-bold text-slate-850 dark:text-slate-200">Durasi</TableHead>
-                  <TableHead className="py-4 font-bold text-slate-850 dark:text-slate-200">Status Atasan</TableHead>
-                  <TableHead className="py-4 font-bold text-slate-850 dark:text-slate-200">Status HRD</TableHead>
-                  <TableHead className="text-right pr-6 py-4 font-bold text-slate-850 dark:text-slate-200">Aksi</TableHead>
+            <Table className="w-full min-w-[1260px]">
+              <TableHeader className="bg-slate-50 dark:bg-slate-900/50 sticky top-0 z-10">
+                <TableRow className="border-b border-slate-200 dark:border-slate-800">
+                  <TableHead className="pl-6 py-3 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Karyawan</TableHead>
+                  <TableHead className="py-3 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Brand / Divisi</TableHead>
+                  <TableHead className="py-3 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Jenis Cuti</TableHead>
+                  <TableHead className="py-3 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Periode Cuti</TableHead>
+                  <TableHead className="py-3 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Durasi</TableHead>
+                  <TableHead className="py-3 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Alur Approval</TableHead>
+                  <TableHead className="py-3 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Status Atasan</TableHead>
+                  <TableHead className="py-3 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Status HRD</TableHead>
+                  <TableHead className="text-right pr-6 py-3 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1161,97 +1300,67 @@ export default function HrdLeaveApprovalPage() {
                     const rBrand = profile?.brandName || profile?.hrdEmploymentInfo?.brandName || profile?.hrdEmploymentInfo?.brand || r.brandName || '-';
                     const rDivision = resolveCurrentEmployeeDivision(r, profile).divisionName;
                     const jobTitle = getRequesterPositionLabel(r);
-                    const stage = getLeaveProcessStage(r);
-                    const canAction = stage.hrdCanApprove;
+                    const needsAction = getLeaveProcessStage(r).hrdCanApprove;
 
                     return (
-                      <TableRow key={r.id} className="hover:bg-slate-50/30 dark:hover:bg-slate-900/10 transition-colors border-b border-slate-100 dark:border-slate-800/80">
-                        <TableCell className="pl-6 py-5">
-                          <span className="text-slate-850 dark:text-white font-black text-sm block">{r.employeeName}</span>
+                      <TableRow
+                        key={r.id}
+                        onClick={() => handleViewDetails(r)}
+                        className={`hover:bg-slate-50 dark:hover:bg-slate-900/40 transition-colors border-b border-slate-100 dark:border-slate-800/80 cursor-pointer ${getRowAccentClass(r)}`}
+                      >
+                        <TableCell className="pl-6 py-4">
+                          <span className="text-slate-900 dark:text-white font-bold text-base block">{r.employeeName}</span>
+                          <span className="text-sm font-semibold text-slate-500 capitalize block">{jobTitle}</span>
                         </TableCell>
-                        <TableCell className="py-5 font-semibold text-slate-500 text-xs capitalize">
-                          {jobTitle}
-                        </TableCell>
-                        <TableCell className="py-5 font-bold text-slate-500 text-xs uppercase tracking-wider">
+                        <TableCell className="py-4 text-sm">
                           <div className="flex flex-col">
-                            <span>{rBrand}</span>
-                            <span className="text-[10px] text-slate-400 font-semibold">{rDivision}</span>
+                            <span className="font-semibold text-slate-600 dark:text-slate-300">{rBrand}</span>
+                            <span className="text-xs text-slate-400 font-medium">{rDivision}</span>
                           </div>
                         </TableCell>
-                        <TableCell className="py-5">
-                          {getApprovalFlowBadge(r)}
-                        </TableCell>
-                        <TableCell className="py-5 text-xs font-bold text-indigo-500 capitalize">
+                        <TableCell className="py-4 text-sm font-semibold text-indigo-500 capitalize">
                           Cuti {r.leaveType === 'tahunan' ? 'Tahunan' : r.leaveType === 'besar' ? 'Besar' : r.leaveType === 'menikah' ? 'Menikah' : r.leaveType === 'melahirkan' ? 'Melahirkan' : 'Tahunan'}
                         </TableCell>
-                        <TableCell className="py-5 text-xs text-slate-500 font-semibold">
+                        <TableCell className="py-4 text-sm text-slate-600 dark:text-slate-300 font-medium">
                           {format(r.startDate.toDate(), 'dd MMM yyyy', { locale: idLocale })} - {format(r.endDate.toDate(), 'dd MMM yyyy', { locale: idLocale })}
                         </TableCell>
-                        <TableCell className="py-5 font-black text-slate-700 dark:text-slate-200 text-sm">
+                        <TableCell className="py-4 font-bold text-slate-800 dark:text-slate-100 text-base">
                           {r.durationDays} Hari
                         </TableCell>
-                        <TableCell className="py-5">
-                          <Badge variant="outline" className={`px-2 py-0.5 rounded-full text-[9px] font-black border uppercase tracking-wider ${getSupervisorStatusBadgeClass(r)}`}>
+                        <TableCell className="py-4">
+                          {renderApprovalFlowSteps(r)}
+                        </TableCell>
+                        <TableCell className="py-4">
+                          <Badge variant="outline" className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${getSupervisorStatusBadgeClass(r)}`}>
                             {getSupervisorStatusLabel(r)}
                           </Badge>
                         </TableCell>
-                        <TableCell className="py-5">
-                          <Badge variant="outline" className={`px-2 py-0.5 rounded-full text-[9px] font-black border uppercase tracking-wider ${getHrdStatusBadgeClass(r)}`}>
+                        <TableCell className="py-4">
+                          <Badge variant="outline" className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${getHrdStatusBadgeClass(r)}`}>
                             {getHrdStatusLabel(r)}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right pr-6 py-5">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <Button variant="ghost" size="sm" onClick={() => handleViewDetails(r)} className="rounded-xl hover:bg-slate-100 font-bold text-xs gap-1">
-                              <Eye className="h-3.5 w-3.5" /> Detail
-                            </Button>
-                            {canAction ? (
-                              <>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleOpenAction('approve', r)}
-                                  className="rounded-xl border-emerald-500/20 hover:bg-emerald-950/20 text-emerald-600 font-bold text-xs"
-                                >
-                                  Setujui
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleOpenAction('reject', r)}
-                                  className="rounded-xl border-red-500/20 hover:bg-red-950/20 text-red-600 font-bold text-xs"
-                                >
-                                  Tolak
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleOpenAction('revise', r)}
-                                  className="rounded-xl border-amber-500/20 hover:bg-amber-950/20 text-amber-600 font-bold text-xs"
-                                >
-                                  Revisi
-                                </Button>
-                              </>
-                            ) : (
-                              <span
-                                title="Pengajuan ini masih menunggu konfirmasi pengganti / persetujuan atasan."
-                                className="rounded-xl border border-slate-200 dark:border-slate-800 px-2.5 py-1 text-[11px] font-bold text-slate-400 cursor-help"
-                              >
-                                Belum Masuk Tahap HRD
-                              </span>
-                            )}
-                          </div>
+                        <TableCell className="text-right pr-6 py-4" onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            variant={needsAction ? 'default' : 'ghost'}
+                            size="sm"
+                            onClick={() => handleViewDetails(r)}
+                            className={
+                              needsAction
+                                ? 'rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs gap-1 shadow-sm'
+                                : 'rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 font-bold text-xs gap-1'
+                            }
+                          >
+                            <Eye className="h-3.5 w-3.5" /> Detail
+                          </Button>
                         </TableCell>
                       </TableRow>
                     );
                   })
                 ) : (
                   <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={10} className="h-44 text-center text-slate-500">
-                      <div className="flex flex-col items-center justify-center gap-2">
-                        <CheckCircle2 className="h-10 w-10 text-slate-400 opacity-40" />
-                        <p className="text-sm font-bold">{emptyMessage}</p>
-                      </div>
+                    <TableCell colSpan={9}>
+                      <EmptyState />
                     </TableCell>
                   </TableRow>
                 )}
@@ -1286,8 +1395,13 @@ export default function HrdLeaveApprovalPage() {
 
   return (
     <DashboardLayout pageTitle="Workspace Monitoring Cuti HRD">
-      {/* FULL-WIDTH premium layout wrapping after sidebar */}
-      <div className="w-full min-w-0 max-w-none overflow-x-hidden space-y-5 md:space-y-6 px-3 sm:px-4 md:px-6 lg:px-8 xl:max-w-[1600px] xl:mx-auto animate-in fade-in duration-500">
+      {/* w-full + min-w-0 (no max-w cap, no mx-auto centering, no fixed
+          width) — the page must grow/shrink to fill whatever content area
+          SidebarInset actually gives it as the sidebar collapses/expands,
+          not lock itself to a capped centered column. Horizontal scroll is
+          confined to the table's own wrapper (overflow-x-auto) below, never
+          this outer wrapper. */}
+      <div className="w-full min-w-0 space-y-5 md:space-y-6 px-3 sm:px-4 md:px-6 lg:px-8 animate-in fade-in duration-500">
 
         {/* Header Section */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-4 py-2 border-b border-slate-100 dark:border-slate-800">
@@ -1304,22 +1418,32 @@ export default function HrdLeaveApprovalPage() {
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <Button
-              variant="outline"
-              onClick={() => setShowFilters(!showFilters)}
-              className={`rounded-xl font-bold text-xs gap-1.5 px-4 h-10 border transition-all ${
-                showFilters || filterBrand !== 'all' || filterDivision !== 'all' || filterStatus !== 'all'
-                  ? 'border-indigo-600 text-indigo-600 bg-indigo-50/40'
-                  : 'hover:bg-slate-50'
-              }`}
-            >
-              <Filter className="h-4 w-4" /> Filters {showFilters ? 'Tutup' : 'Buka'}
-            </Button>
+            {activeFilterChips.length > 0 && (
+              <Button variant="ghost" onClick={handleResetFilters} className="rounded-xl font-bold text-xs text-slate-500 hover:text-slate-900 dark:hover:text-white">
+                Reset Filter
+              </Button>
+            )}
           </div>
         </div>
 
+        {/* Active Filter Chips */}
+        {activeFilterChips.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 -mt-2">
+            {activeFilterChips.map((chip) => (
+              <button
+                key={chip.key}
+                onClick={chip.onRemove}
+                className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1 rounded-full text-xs font-bold bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors"
+              >
+                {chip.label}
+                <span className="text-[13px] leading-none">×</span>
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* TOP SUMMARY CARDS PANEL */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
           
           <Card className="border-indigo-100/60 dark:border-indigo-950/40 shadow-sm hover:shadow-md transition-all bg-gradient-to-br from-indigo-500/5 to-transparent relative overflow-hidden group">
             <CardContent className="pt-4 sm:pt-6">
@@ -1401,23 +1525,33 @@ export default function HrdLeaveApprovalPage() {
 
         </div>
 
-        {/* COLLAPSIBLE INTERACTIVE FILTER SECTION */}
-        {showFilters && (
-          <Card className="border-slate-100 dark:border-slate-800 shadow-md rounded-2xl overflow-hidden animate-in slide-in-from-top duration-300">
-            <CardHeader className="border-b bg-slate-50/50 dark:bg-slate-900/50 py-3 px-6">
-              <div className="flex items-center gap-2 text-indigo-600 font-black text-xs uppercase tracking-wider">
-                <Filter className="h-4 w-4" /> Filter Monitoring Lintas Divisi & Brand
-              </div>
-            </CardHeader>
-            <CardContent className="p-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                
-                {/* 1. Brand Filter */}
+        {/* ALWAYS-VISIBLE FILTER TOOLBAR — never hidden behind a "Buka
+            Filter" toggle. HRD sees and uses every filter directly above
+            the table. */}
+        <Card className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-sm overflow-hidden">
+            <CardContent className="p-4">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
+
+                {/* Search */}
+                <div className="space-y-1.5 md:col-span-2 xl:col-span-1">
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Cari Karyawan</label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <Input
+                      placeholder="Nama, jabatan, brand, divisi, status..."
+                      value={filterSearch}
+                      onChange={e => setFilterSearch(e.target.value)}
+                      className="pl-9 rounded-xl text-sm font-semibold h-10"
+                    />
+                  </div>
+                </div>
+
+                {/* Brand */}
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Filter Brand</label>
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Brand</label>
                   {brandOptions.length === 1 ? (
-                    <div className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-bold text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-white">
-                      Perusahaan: {brandOptions[0].name}
+                    <div className="w-full h-10 flex items-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-white truncate">
+                      {brandOptions[0].name}
                     </div>
                   ) : (
                     <select
@@ -1426,9 +1560,9 @@ export default function HrdLeaveApprovalPage() {
                         setFilterBrand(e.target.value);
                         setFilterDivision('all');
                       }}
-                      className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-bold text-slate-700 focus:border-indigo-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                      className="w-full h-10 rounded-xl border border-slate-200 bg-white px-2.5 text-sm font-bold text-slate-700 focus:border-indigo-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
                     >
-                      <option value="all">Semua Brand (Default)</option>
+                      <option value="all">Semua Brand</option>
                       {brandOptions.map(b => (
                         <option key={b.id} value={b.id}>{b.name}</option>
                       ))}
@@ -1436,29 +1570,59 @@ export default function HrdLeaveApprovalPage() {
                   )}
                 </div>
 
-                {/* 2. Division Filter */}
+                {/* Division */}
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Filter Divisi</label>
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Divisi</label>
                   <select
                     value={filterDivision}
                     onChange={e => setFilterDivision(e.target.value)}
                     disabled={filterBrand === 'all'}
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-bold text-slate-700 focus:border-indigo-500 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                    className="w-full h-10 rounded-xl border border-slate-200 bg-white px-2.5 text-sm font-bold text-slate-700 focus:border-indigo-500 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
                   >
-                    <option value="all">{filterBrand === 'all' ? 'Pilih brand terlebih dahulu' : (divisionOptions.length === 0 ? 'Brand ini belum memiliki divisi' : 'Semua Divisi')}</option>
+                    <option value="all">{filterBrand === 'all' ? 'Semua brand dulu' : (divisionOptions.length === 0 ? 'Belum ada divisi' : 'Semua Divisi')}</option>
                     {divisionOptions.map(d => (
                       <option key={`${d.brandId}-${d.id}`} value={`${d.brandId}__${d.id}`}>{d.name}</option>
                     ))}
                   </select>
                 </div>
 
-                {/* 3. Leave Type Filter */}
+                {/* Status Atasan */}
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Jenis Cuti</label>
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Status Atasan</label>
+                  <select
+                    value={filterSupervisorStatus}
+                    onChange={e => setFilterSupervisorStatus(e.target.value)}
+                    className="w-full h-10 rounded-xl border border-slate-200 bg-white px-2.5 text-sm font-bold text-slate-700 focus:border-indigo-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                  >
+                    <option value="all">Semua</option>
+                    <option value="pending">Menunggu</option>
+                    <option value="approved">Disetujui</option>
+                    <option value="rejected">Ditolak</option>
+                  </select>
+                </div>
+
+                {/* Status HRD */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Status HRD</label>
+                  <select
+                    value={filterStatus}
+                    onChange={e => setFilterStatus(e.target.value)}
+                    className="w-full h-10 rounded-xl border border-slate-200 bg-white px-2.5 text-sm font-bold text-slate-700 focus:border-indigo-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                  >
+                    <option value="all">Semua Status</option>
+                    <option value="pending_hrd">Menunggu Tindakan HRD</option>
+                    <option value="approved">Disetujui HRD</option>
+                    <option value="rejected_by_hrd">Ditolak HRD</option>
+                  </select>
+                </div>
+
+                {/* Leave Type */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Jenis Cuti</label>
                   <select
                     value={filterLeaveType}
                     onChange={e => setFilterLeaveType(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-bold text-slate-700 focus:border-indigo-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                    className="w-full h-10 rounded-xl border border-slate-200 bg-white px-2.5 text-sm font-bold text-slate-700 focus:border-indigo-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
                   >
                     <option value="all">Semua Cuti</option>
                     <option value="tahunan">Cuti Tahunan</option>
@@ -1468,29 +1632,20 @@ export default function HrdLeaveApprovalPage() {
                   </select>
                 </div>
 
-                {/* 4. Status Filter */}
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Status Pengajuan</label>
-                  <select
-                    value={filterStatus}
-                    onChange={e => setFilterStatus(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-bold text-slate-700 focus:border-indigo-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
-                  >
-                    <option value="all">Semua Status</option>
-                    <option value="pending_hrd">Antrean HRD</option>
-                    <option value="approved">Disetujui HRD</option>
-                    <option value="rejected_by_hrd">Ditolak HRD</option>
-                    <option value="revision_requested_by_hrd">Revisi HRD</option>
-                  </select>
+                {/* Periode — single YYYY-MM field via MonthYearPicker, replacing
+                    the old separate Bulan + Tahun dropdowns. */}
+                <div className="space-y-1.5 md:col-span-1">
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Periode</label>
+                  <MonthYearPicker value={filterPeriod} onChange={setFilterPeriod} />
                 </div>
 
-                {/* 4b. Requester Type Filter */}
+                {/* Requester Type */}
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Tipe Pengaju</label>
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Tipe Pengaju</label>
                   <select
                     value={filterRequesterType}
                     onChange={e => setFilterRequesterType(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-bold text-slate-700 focus:border-indigo-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                    className="w-full h-10 rounded-xl border border-slate-200 bg-white px-2.5 text-sm font-bold text-slate-700 focus:border-indigo-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
                   >
                     <option value="all">Semua Tipe</option>
                     <option value="staff">Staff/Karyawan</option>
@@ -1498,27 +1653,13 @@ export default function HrdLeaveApprovalPage() {
                   </select>
                 </div>
 
-                {/* 5. Search Text Input */}
+                {/* Manager Penyetuju */}
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Pencarian Nama Karyawan</label>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-                    <Input
-                      placeholder="Masukkan nama staf..."
-                      value={filterSearch}
-                      onChange={e => setFilterSearch(e.target.value)}
-                      className="pl-9 rounded-xl text-xs font-semibold"
-                    />
-                  </div>
-                </div>
-
-                {/* 6. Atasan Manager Reviewer */}
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Manager Penyetuju</label>
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Manager Penyetuju</label>
                   <select
                     value={filterManager}
                     onChange={e => setFilterManager(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-bold text-slate-700 focus:border-indigo-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                    className="w-full h-10 rounded-xl border border-slate-200 bg-white px-2.5 text-sm font-bold text-slate-700 focus:border-indigo-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
                   >
                     <option value="all">Semua Atasan</option>
                     {managerOptions.map(m => (
@@ -1527,71 +1668,26 @@ export default function HrdLeaveApprovalPage() {
                   </select>
                 </div>
 
-                {/* 7. Month Filter */}
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Bulan Cuti</label>
-                  <select
-                    value={filterMonth}
-                    onChange={e => setFilterMonth(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-bold text-slate-700 focus:border-indigo-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                {/* Reset Filter */}
+                <div className="space-y-1.5 flex flex-col justify-end">
+                  <Button
+                    variant="outline"
+                    onClick={handleResetFilters}
+                    disabled={activeFilterChips.length === 0}
+                    className="w-full h-10 rounded-xl font-bold text-sm border-slate-300 dark:border-slate-700 disabled:opacity-50"
                   >
-                    <option value="all">Semua Bulan</option>
-                    <option value="0">Januari</option>
-                    <option value="1">Februari</option>
-                    <option value="2">Maret</option>
-                    <option value="3">April</option>
-                    <option value="4">Mei</option>
-                    <option value="5">Juni</option>
-                    <option value="6">Juli</option>
-                    <option value="7">Agustus</option>
-                    <option value="8">September</option>
-                    <option value="9">Oktober</option>
-                    <option value="10">November</option>
-                    <option value="11">Desember</option>
-                  </select>
+                    Reset Filter
+                  </Button>
                 </div>
 
-                {/* 8. Year Filter */}
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Tahun Cuti</label>
-                  <select
-                    value={filterYear}
-                    onChange={e => setFilterYear(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-bold text-slate-700 focus:border-indigo-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
-                  >
-                    <option value="all">Semua Tahun</option>
-                    <option value="2024">2024</option>
-                    <option value="2025">2025</option>
-                    <option value="2026">2026</option>
-                    <option value="2027">2027</option>
-                  </select>
-                </div>
-
-              </div>
-              
-              <div className="flex justify-end gap-2 mt-4 pt-3 border-t">
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    setFilterBrand('all');
-                    setFilterDivision('all');
-                    setFilterLeaveType('all');
-                    setFilterStatus('all');
-                    setFilterRequesterType('all');
-                    setFilterSearch('');
-                    setFilterManager('all');
-                    setFilterMonth('all');
-                    setFilterYear('all');
-                  }}
-                  className="rounded-xl font-bold text-xs"
-                >
-                  Reset Filter
-                </Button>
               </div>
             </CardContent>
           </Card>
-        )}
-          {/* WORKSPACE TABS SECTION */}
+          {/* WORKSPACE TABS SECTION — 4 tabs only: pending/history are never
+              shown stacked, and the old separate Manager Divisi / Staff tabs
+              are now just the "Tipe Pengaju" filter (already in the filter
+              panel) applied to the single "Riwayat / Semua Pengajuan" tab,
+              so HRD isn't juggling 6 tabs to find one request. */}
         <Tabs defaultValue="pending" className="w-full min-w-0">
           <div className="w-full min-w-0 overflow-x-auto [scrollbar-width:thin] mb-6 rounded-2xl bg-slate-100 dark:bg-slate-950 shadow-sm border border-slate-200/40">
             <TabsList className="inline-flex h-12 w-max min-w-full items-center gap-1 bg-transparent p-1 px-2">
@@ -1599,15 +1695,10 @@ export default function HrdLeaveApprovalPage() {
                 Butuh Tindakan HRD
                 <Badge className="bg-indigo-600 text-white font-black text-[9px] rounded-full px-1.5 py-0.5">{needHrdActionList.length}</Badge>
               </TabsTrigger>
-              <TabsTrigger value="manager" className="shrink-0 whitespace-nowrap rounded-xl font-bold text-xs gap-1.5 transition-all py-2">
-                Manager Divisi
-                <Badge className="bg-slate-500 text-white font-black text-[9px] rounded-full px-1.5 py-0.5">{managerRequestsList.length}</Badge>
+              <TabsTrigger value="history" className="shrink-0 whitespace-nowrap rounded-xl font-bold text-xs gap-1.5 transition-all py-2">
+                Riwayat / Semua Pengajuan
+                <Badge className="bg-slate-500 text-white font-black text-[9px] rounded-full px-1.5 py-0.5">{allRequestsList.length}</Badge>
               </TabsTrigger>
-              <TabsTrigger value="staff" className="shrink-0 whitespace-nowrap rounded-xl font-bold text-xs gap-1.5 transition-all py-2">
-                Staff
-                <Badge className="bg-slate-500 text-white font-black text-[9px] rounded-full px-1.5 py-0.5">{staffRequestsList.length}</Badge>
-              </TabsTrigger>
-              <TabsTrigger value="history" className="shrink-0 whitespace-nowrap rounded-xl font-bold text-xs transition-all py-2">Semua Pengajuan</TabsTrigger>
               <TabsTrigger value="balances" className="shrink-0 whitespace-nowrap rounded-xl font-bold text-xs transition-all py-2">Saldo & Hak Cuti</TabsTrigger>
               <TabsTrigger value="adjustments" className="shrink-0 whitespace-nowrap rounded-xl font-bold text-xs transition-all py-2">Mutasi Saldo Cuti</TabsTrigger>
             </TabsList>
@@ -1617,31 +1708,17 @@ export default function HrdLeaveApprovalPage() {
           <TabsContent value="pending" className="space-y-6 focus:outline-none">
             {renderRequestsTable(
               needHrdActionList,
-              "Luar Biasa! Semua antrean approval cuti HRD telah bersih."
+              "Luar Biasa! Semua antrean approval cuti HRD telah bersih.",
+              activeFilterChips.length > 0
             )}
           </TabsContent>
 
-          {/* TAB 2: MANAGER DIVISI */}
-          <TabsContent value="manager" className="space-y-6 focus:outline-none">
-            {renderRequestsTable(
-              managerRequestsList,
-              "Tidak ada pengajuan cuti Manager Divisi."
-            )}
-          </TabsContent>
-
-          {/* TAB 3: STAFF */}
-          <TabsContent value="staff" className="space-y-6 focus:outline-none">
-            {renderRequestsTable(
-              staffRequestsList,
-              "Tidak ada pengajuan cuti Staff/Karyawan."
-            )}
-          </TabsContent>
-
-          {/* TAB 4: ALL REQUESTS */}
+          {/* TAB 2: RIWAYAT / SEMUA PENGAJUAN */}
           <TabsContent value="history" className="space-y-6 focus:outline-none">
             {renderRequestsTable(
               allRequestsList,
-              "Belum ada riwayat pengajuan cuti yang terdaftar."
+              "Belum ada riwayat pengajuan cuti yang terdaftar.",
+              activeFilterChips.length > 0
             )}
           </TabsContent>
 
@@ -1893,7 +1970,7 @@ export default function HrdLeaveApprovalPage() {
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between gap-4 flex-wrap">
                 <div>
-                  <DialogTitle className="text-2xl font-black text-slate-900 dark:text-white">Detail Pengajuan Cuti</DialogTitle>
+                  <DialogTitle className="text-2xl font-semibold text-slate-900 dark:text-white">Detail Pengajuan Cuti</DialogTitle>
                   {selectedRequest && (() => {
                     const detailProfile = getRequestEmployeeProfile(selectedRequest, employeeProfilesMap);
                     const currentDivision = resolveCurrentEmployeeDivision(selectedRequest, detailProfile);
@@ -1901,10 +1978,10 @@ export default function HrdLeaveApprovalPage() {
                     const divisionChanged =
                       snapshotDivision && currentDivision.divisionName && snapshotDivision !== currentDivision.divisionName;
                     return (
-                      <p className="text-sm font-bold text-slate-600 dark:text-slate-300 mt-1">
-                        {selectedRequest.employeeName} • {currentDivision.divisionName} / {selectedRequest.brandName}
+                      <p className="text-xl font-semibold text-slate-600 dark:text-slate-300 mt-1">
+                        {selectedRequest.employeeName} <span className="text-slate-400 font-normal">•</span> {currentDivision.divisionName} / {selectedRequest.brandName}
                         {divisionChanged && (
-                          <span className="ml-1.5 text-xs font-semibold text-slate-400">
+                          <span className="ml-1.5 text-sm font-medium text-slate-400">
                             (Divisi saat pengajuan: {snapshotDivision})
                           </span>
                         )}
@@ -1913,35 +1990,57 @@ export default function HrdLeaveApprovalPage() {
                   })()}
                 </div>
                 {selectedRequest && (
-                  <Badge variant="outline" className={`px-3 py-1.5 rounded-full text-xs font-black border uppercase tracking-wider h-fit ${getStatusBadgeClass(selectedRequest)}`}>
-                    {getStatusLabel(selectedRequest)}
-                  </Badge>
+                  <div className="flex flex-col items-end gap-1.5 shrink-0">
+                    <Badge variant="outline" className={`px-2.5 py-1 rounded-full text-xs font-semibold border uppercase tracking-wider ${getSupervisorStatusBadgeClass(selectedRequest)}`}>
+                      Atasan: {getSupervisorStatusLabel(selectedRequest)}
+                    </Badge>
+                    <Badge variant="outline" className={`px-2.5 py-1 rounded-full text-xs font-semibold border uppercase tracking-wider ${getHrdStatusBadgeClass(selectedRequest)}`}>
+                      HRD: {getHrdStatusLabel(selectedRequest)}
+                    </Badge>
+                  </div>
                 )}
               </div>
 
-              {/* Quick Summary Header */}
-              {selectedRequest && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
-                  <div className="bg-white/50 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700">
-                    <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Jenis Cuti</p>
-                    <p className="text-sm font-black text-indigo-600 dark:text-indigo-400 mt-0.5">
-                      {selectedRequest.leaveType === 'tahunan' ? 'Tahunan' : selectedRequest.leaveType === 'besar' ? 'Besar' : selectedRequest.leaveType === 'menikah' ? 'Menikah' : selectedRequest.leaveType === 'melahirkan' ? 'Melahirkan' : 'Tahunan'}
-                    </p>
-                  </div>
-                  <div className="bg-white/50 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700">
-                    <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Durasi</p>
-                    <p className="text-sm font-black text-emerald-600 dark:text-emerald-400 mt-0.5">{selectedRequest.durationDays} Hari</p>
-                  </div>
-                  <div className="bg-white/50 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700">
-                    <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Mulai</p>
-                    <p className="text-xs font-bold text-slate-700 dark:text-slate-200 mt-0.5">{selectedRequest.startDate ? format(selectedRequest.startDate.toDate(), 'd MMM', { locale: idLocale }) : '-'}</p>
-                  </div>
-                  <div className="bg-white/50 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700">
-                    <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Selesai</p>
-                    <p className="text-xs font-bold text-slate-700 dark:text-slate-200 mt-0.5">{selectedRequest.endDate ? format(selectedRequest.endDate.toDate(), 'd MMM yyyy', { locale: idLocale }) : '-'}</p>
+              {/* A. Ringkasan Pengajuan — kept in the sticky header (not the
+                  scrollable body) so it stays visible while HRD scrolls
+                  through B-G below; content matches the section list 1:1. */}
+              {selectedRequest && (() => {
+                return (
+                <div className="space-y-2 pt-1">
+                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-widest">A. Ringkasan Pengajuan</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                    <div className="bg-white/50 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                      <p className="text-xs uppercase font-semibold text-slate-400 tracking-wide">Jenis Cuti</p>
+                      <p className="text-base font-semibold text-indigo-600 dark:text-indigo-400 mt-0.5">
+                        {selectedRequest.leaveType === 'tahunan' ? 'Tahunan' : selectedRequest.leaveType === 'besar' ? 'Besar' : selectedRequest.leaveType === 'menikah' ? 'Menikah' : selectedRequest.leaveType === 'melahirkan' ? 'Melahirkan' : 'Tahunan'}
+                      </p>
+                    </div>
+                    <div className="bg-white/50 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                      <p className="text-xs uppercase font-semibold text-slate-400 tracking-wide">Durasi</p>
+                      <p className="text-base font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5">{selectedRequest.durationDays} Hari</p>
+                    </div>
+                    <div className="bg-white/50 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                      <p className="text-xs uppercase font-semibold text-slate-400 tracking-wide">Mulai</p>
+                      <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 mt-0.5">{selectedRequest.startDate ? format(selectedRequest.startDate.toDate(), 'd MMM', { locale: idLocale }) : '-'}</p>
+                    </div>
+                    <div className="bg-white/50 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                      <p className="text-xs uppercase font-semibold text-slate-400 tracking-wide">Selesai</p>
+                      <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 mt-0.5">{selectedRequest.endDate ? format(selectedRequest.endDate.toDate(), 'd MMM yyyy', { locale: idLocale }) : '-'}</p>
+                    </div>
+                    <div className="bg-white/50 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                      <p className="text-xs uppercase font-semibold text-slate-400 tracking-wide">Status Saat Ini</p>
+                      <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 mt-0.5 truncate">{getHrdStatusLabel(selectedRequest)}</p>
+                    </div>
+                    <div className="bg-white/50 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                      <p className="text-xs uppercase font-semibold text-slate-400 tracking-wide">Pengganti Sementara</p>
+                      <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 mt-0.5 truncate">
+                        {selectedRequest.handoverEmployeeName || '-'}
+                      </p>
+                    </div>
                   </div>
                 </div>
-              )}
+                );
+              })()}
             </div>
           </DialogHeader>
 
@@ -1986,130 +2085,216 @@ export default function HrdLeaveApprovalPage() {
               return null;
             })()}
 
-            {/* 1. Waktu Pengajuan & Periode Cuti */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
-                <p className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">Waktu Pengajuan</p>
-                <p className="text-sm font-bold text-slate-800 dark:text-slate-100">
-                  {selectedRequest?.submittedAtStr || (selectedRequest?.createdAt ? format(selectedRequest.createdAt.toDate(), "EEEE, dd MMMM yyyy", { locale: idLocale }) : '-')}
-                </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {selectedRequest?.createdAt ? format(selectedRequest.createdAt.toDate(), "'pukul' HH:mm 'WIB'", { locale: idLocale }) : '-'}
-                </p>
+            {/* B. Informasi Pengajuan */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-widest">B. Informasi Pengajuan</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
+                  <p className="text-xs uppercase font-semibold text-slate-400 tracking-wide">Waktu Pengajuan</p>
+                  <p className="text-base font-semibold text-slate-800 dark:text-slate-100">
+                    {selectedRequest?.submittedAtStr || (selectedRequest?.createdAt ? format(selectedRequest.createdAt.toDate(), "EEEE, dd MMMM yyyy", { locale: idLocale }) : '-')}
+                  </p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    {selectedRequest?.createdAt ? format(selectedRequest.createdAt.toDate(), "'pukul' HH:mm 'WIB'", { locale: idLocale }) : '-'}
+                  </p>
+                </div>
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
+                  <p className="text-xs uppercase font-semibold text-slate-400 tracking-wide">Periode Cuti</p>
+                  <p className="text-base font-semibold text-indigo-700 dark:text-indigo-300">
+                    {selectedRequest && format(selectedRequest.startDate.toDate(), 'dd MMMM yyyy', { locale: idLocale })}
+                  </p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    s/d {selectedRequest && format(selectedRequest.endDate.toDate(), 'dd MMMM yyyy', { locale: idLocale })}
+                  </p>
+                </div>
+                {selectedRequest && (() => {
+                  const infoProfile = getRequestEmployeeProfile(selectedRequest, employeeProfilesMap);
+                  const infoDivision = resolveCurrentEmployeeDivision(selectedRequest, infoProfile);
+                  return (
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 space-y-1">
+                      <p className="text-xs uppercase font-semibold text-slate-400 tracking-wide">Brand / Divisi</p>
+                      <p className="text-base font-semibold text-slate-800 dark:text-slate-100">
+                        {selectedRequest.brandName || '-'} / {infoDivision.divisionName || '-'}
+                      </p>
+                    </div>
+                  );
+                })()}
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 space-y-1">
+                  <p className="text-xs uppercase font-semibold text-slate-400 tracking-wide">Jabatan Karyawan</p>
+                  <p className="text-base font-semibold text-slate-800 dark:text-slate-100 capitalize">
+                    {selectedRequest ? getRequesterPositionLabel(selectedRequest) : '-'}
+                  </p>
+                </div>
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 space-y-1 md:col-span-2">
+                  <p className="text-xs uppercase font-semibold text-slate-400 tracking-wide">Alamat Selama Cuti</p>
+                  <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                    {selectedRequest?.leaveAddress || <span className="text-slate-500 italic">Belum diisi</span>}
+                  </p>
+                </div>
               </div>
-              <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
-                <p className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">Periode Cuti</p>
-                <p className="text-sm font-bold text-indigo-700 dark:text-indigo-300">
-                  {selectedRequest && format(selectedRequest.startDate.toDate(), 'dd MMMM yyyy', { locale: idLocale })}
-                </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  s/d {selectedRequest && format(selectedRequest.endDate.toDate(), 'dd MMMM yyyy', { locale: idLocale })}
-                </p>
-              </div>
+              {selectedRequest?.attachmentUrl && (
+                <Button variant="outline" asChild className="w-full rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800">
+                  <a href={selectedRequest.attachmentUrl} target="_blank" rel="noopener noreferrer">
+                    Lihat Dokumen Pendukung
+                  </a>
+                </Button>
+              )}
             </div>
 
-            {/* Enhanced Ringkasan Saldo Section — sourced from calculateLeaveBalanceForRequest
-                (src/lib/leave-balance.ts), the SAME function Data Karyawan and every other
-                leave-balance display call, so this can never drift from what those pages show.
-                previousBalance always excludes this request's own days, whether it's pending
-                or already approved — that's what fixes the old "11 / 1 / 11" double-count bug
-                (previousBalance used to read the POST-approval leave_balances.currentBalance
-                directly, which had already been decremented by this very request). */}
-            {selectedRequest && selectedRequestPolicyBalance?.found && (
-              <div className="p-5 bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-950/30 dark:to-blue-950/30 border-2 border-indigo-200 dark:border-indigo-800/50 rounded-2xl space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">Ringkasan Saldo Cuti</h3>
-                  <Badge className="bg-indigo-600 text-white font-black text-xs">{selectedRequestPolicyBalance.policy.name}</Badge>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {/* Before */}
-                  <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 text-center">
-                    <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">Saldo Sebelumnya</p>
-                    <p className="text-4xl font-black text-blue-600 dark:text-blue-400">{selectedRequestPolicyBalance.previousBalance}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold mt-1">Hari Kerja</p>
-                  </div>
-
-                  {/* Used */}
-                  <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 text-center">
-                    <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">Saldo Digunakan</p>
-                    <p className="text-4xl font-black text-amber-600 dark:text-amber-400">{selectedRequestPolicyBalance.usedByThisRequest}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold mt-1">Hari Kerja</p>
-                  </div>
-
-                  {/* After */}
-                  <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border-2 border-emerald-300 dark:border-emerald-700 text-center ring-2 ring-emerald-100 dark:ring-emerald-900/20">
-                    <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider mb-2">Saldo Setelah Approval</p>
-                    <p className="text-4xl font-black text-emerald-600 dark:text-emerald-400">
-                      {selectedRequestPolicyBalance.balanceAfterApproval}
-                    </p>
-                    <p className="text-xs text-emerald-600 dark:text-emerald-400 font-bold mt-1">Hari Kerja</p>
+            {/* B. Ringkasan Saldo Cuti — sourced from calculateLeaveBalance()
+                (src/lib/leave-balance.ts) called with the exact same
+                arguments as the "Saldo & Hak Cuti" tab and Directory
+                Karyawan / Policy Cuti, so every number here is guaranteed to
+                match what those pages show for this employee right now. */}
+            {selectedRequest && isLoadingSelectedBalance && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-widest">C. Ringkasan Saldo Cuti</p>
+                <div className="p-5 bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-2xl">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <div key={i} className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700 h-16 animate-pulse" />
+                    ))}
                   </div>
                 </div>
               </div>
             )}
 
-            {selectedRequest && selectedRequestPolicyBalance && !selectedRequestPolicyBalance.found && selectedRequestPolicyBalance.reason === 'contract_incomplete' && (
-              <div className="p-4 bg-amber-50 dark:bg-amber-900/10 border-2 border-amber-200 dark:border-amber-800/50 rounded-2xl text-sm text-amber-800 dark:text-amber-300 font-semibold">
+            {selectedRequest && !isLoadingSelectedBalance && selectedRequestBalance?.found && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-widest">C. Ringkasan Saldo Cuti</p>
+                <div className="p-5 bg-blue-50/60 dark:bg-blue-950/10 border border-blue-200 dark:border-blue-900/40 rounded-2xl space-y-4">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">{selectedRequestBalance.policyName}</span>
+                    <span className="text-sm font-medium text-slate-500 dark:text-slate-400">
+                      Periode: {format(selectedRequestBalance.periodStart, 'dd MMM yyyy', { locale: idLocale })} – {format(selectedRequestBalance.periodEnd, 'dd MMM yyyy', { locale: idLocale })}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                    {[
+                      { label: 'Jatah Cuti', value: selectedRequestBalance.entitlementDays, tone: 'text-slate-700 dark:text-slate-200' },
+                      { label: 'Carry Over', value: selectedRequestBalance.carryOverDays, tone: 'text-slate-700 dark:text-slate-200' },
+                      { label: 'Terpakai', value: selectedRequestBalance.usedDays, tone: 'text-amber-600 dark:text-amber-400' },
+                      { label: 'Pending', value: selectedRequestBalance.pendingDays, tone: 'text-amber-600 dark:text-amber-400' },
+                      { label: 'Sisa Resmi', value: selectedRequestBalance.remainingDays, tone: 'text-blue-600 dark:text-blue-400' },
+                      { label: 'Sisa Bisa Diajukan', value: selectedRequestBalance.availableDays, tone: 'text-emerald-600 dark:text-emerald-400' },
+                    ].map((stat) => (
+                      <div key={stat.label} className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700 text-center">
+                        <p className="text-xs uppercase font-semibold text-slate-400 tracking-wide mb-1">{stat.label}</p>
+                        <p className={`text-2xl font-black ${stat.tone}`}>{stat.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {selectedRequest && !isLoadingSelectedBalance && selectedRequestBalance && !selectedRequestBalance.found && selectedRequestBalance.reason === 'contract_incomplete' && (
+              <div className="p-4 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/50 rounded-2xl text-sm text-amber-800 dark:text-amber-300 font-semibold">
                 Periode kontrak belum diatur — lengkapi tanggal mulai/selesai kontrak karyawan ini agar sisa cuti dapat dihitung.
               </div>
             )}
 
-            {/* 2. Alasan & Alamat Cuti */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <p className="text-xs font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">Alasan Cuti</p>
-                <div className="text-sm font-medium text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 p-3.5 rounded-lg border border-slate-200 dark:border-slate-700 min-h-[80px]">
-                  {selectedRequest?.reason || <span className="text-slate-500 italic">Belum diisi</span>}
-                </div>
-              </div>
-              <div className="space-y-2">
-                <p className="text-xs font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">Alamat Selama Cuti</p>
-                <div className="text-sm font-medium text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 p-3.5 rounded-lg border border-slate-200 dark:border-slate-700 min-h-[80px]">
-                  {selectedRequest?.leaveAddress || <span className="text-slate-500 italic">Belum diisi</span>}
-                </div>
-              </div>
-            </div>
-
-            {/* 3. Pendelegasian Tugas & Kontak Darurat */}
-            <div className="p-5 bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-950/20 dark:to-indigo-950/20 rounded-2xl border-2 border-purple-200 dark:border-purple-800/50 space-y-4">
-              <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">Delegasi Tugas & Kontak Darurat</h3>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                  <p className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest mb-2">Pengganti Sementara</p>
-                  <p className="text-sm font-black text-slate-900 dark:text-white">
-                    {selectedRequest?.handoverEmployeeName || <span className="text-slate-400 italic">Tidak ada pengganti</span>}
-                  </p>
-                  {selectedRequest?.handoverEmployeePosition && (
-                    <p className="text-xs text-slate-600 dark:text-slate-400 font-semibold mt-1">{selectedRequest.handoverEmployeePosition}</p>
-                  )}
+            {/* D. Delegasi / Handover — pengganti sementara ONLY; the
+                requesting employee's own emergency contact is a separate
+                person/topic and lives in section E below, never here.
+                Status pengganti is shown ONCE, as the title badge — no
+                separate "Status Konfirmasi Pengganti" card duplicating it. */}
+            {selectedRequest && (() => {
+              const hasPengganti = Boolean(selectedRequest.handoverEmployeeName);
+              // getReplacementConfirmationStatus() is the single shared
+              // resolver (also used by the table, timeline, manager page,
+              // and staff page) — it only distinguishes accepted/declined/
+              // pending, so "no pengganti assigned at all" is handled here
+              // as its own neutral badge state rather than being reported
+              // as "Menunggu Konfirmasi".
+              const replacementStatus = getReplacementConfirmationStatus(selectedRequest);
+              const badgeLabel = hasPengganti ? replacementStatus.label : 'Belum Ada Konfirmasi';
+              const badgeClass = hasPengganti
+                ? getReplacementStatusBadgeClass(replacementStatus.tone)
+                : 'bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400';
+              return (
+              <div className="p-5 bg-purple-50/60 dark:bg-purple-950/10 rounded-2xl border border-purple-200 dark:border-purple-900/40 space-y-4">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold text-purple-700 dark:text-purple-400 uppercase tracking-widest">D. Delegasi / Handover</p>
+                  <span className={`px-2.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wider ${badgeClass}`}>
+                    {badgeLabel}
+                  </span>
                 </div>
 
-                <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                  <p className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest mb-2">Kontak Darurat</p>
-                  <p className="text-sm font-black text-slate-900 dark:text-white">
-                    {selectedRequest?.emergencyContactName || <span className="text-slate-400 italic">Tidak ada kontak</span>}
-                  </p>
-                  {selectedRequest?.emergencyContactPhone && (
-                    <p className="text-xs text-slate-600 dark:text-slate-400 font-semibold mt-1">☎ {selectedRequest.emergencyContactPhone}</p>
-                  )}
-                </div>
-              </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                    <p className="text-xs uppercase font-semibold text-slate-400 tracking-wide mb-2">Pengganti Sementara</p>
+                    <p className="text-base font-semibold text-slate-900 dark:text-white">
+                      {selectedRequest.handoverEmployeeName || <span className="text-slate-400 italic font-normal">Tidak ada pengganti</span>}
+                    </p>
+                  </div>
 
-              {selectedRequest?.handoverNotes && (
-                <div className="pt-2 border-t border-purple-200 dark:border-purple-800/30">
-                  <p className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest mb-2">Catatan Serah Terima Tugas</p>
-                  <div className="text-sm font-medium text-slate-800 dark:text-slate-200 bg-white/60 dark:bg-slate-900/60 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
-                    {selectedRequest.handoverNotes}
+                  <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                    <p className="text-xs uppercase font-semibold text-slate-400 tracking-wide mb-2">Jabatan Pengganti</p>
+                    <p className="text-base font-semibold text-slate-900 dark:text-white">
+                      {selectedRequest.handoverEmployeePosition || <span className="text-slate-400 italic font-normal">-</span>}
+                    </p>
                   </div>
                 </div>
-              )}
-            </div>
 
-            {/* 4. Timeline Alur Persetujuan (Asia/Jakarta Context) */}
-            <div className="p-5 bg-slate-100 dark:bg-slate-800/60 rounded-2xl border-2 border-slate-300 dark:border-slate-700 space-y-4">
-              <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">Timeline Alur Persetujuan</h3>
+                {selectedRequest.handoverNotes && (
+                  <div className="pt-2 border-t border-purple-200 dark:border-purple-900/30">
+                    <p className="text-xs uppercase font-semibold text-slate-400 tracking-wide mb-2">Catatan Serah Terima Tugas</p>
+                    <div className="text-sm font-medium leading-relaxed text-slate-800 dark:text-slate-200 bg-white/60 dark:bg-slate-900/60 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
+                      {selectedRequest.handoverNotes}
+                    </div>
+                  </div>
+                )}
+              </div>
+              );
+            })()}
+
+            {/* E. Kontak Darurat Karyawan — the REQUESTING employee's own
+                emergency contact (not the pengganti's), split out from
+                Delegasi/Handover above so it doesn't read as belonging to
+                the replacement employee. Resolved via resolveEmergencyContact()
+                across every known field-name variant on both the request
+                snapshot and the current employee profile. */}
+            {selectedRequest && (() => {
+              const contactProfile = getRequestEmployeeProfile(selectedRequest, employeeProfilesMap);
+              const { name: contactName, phone: contactPhone, relation: contactRelation } = resolveEmergencyContact(selectedRequest, contactProfile);
+              const hasName = Boolean(contactName);
+              const hasPhone = Boolean(contactPhone);
+              return (
+                <div className="p-5 bg-rose-50/60 dark:bg-rose-950/10 rounded-2xl border border-rose-200 dark:border-rose-900/40 space-y-4">
+                  <p className="text-xs font-semibold text-rose-700 dark:text-rose-400 uppercase tracking-widest">E. Kontak Darurat Karyawan</p>
+                  {!hasName && !hasPhone ? (
+                    <p className="text-sm text-slate-500 dark:text-slate-400 italic">Kontak darurat belum diisi.</p>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                        <p className="text-xs uppercase font-semibold text-slate-400 tracking-wide mb-2">Nama Kontak Darurat</p>
+                        <p className="text-base font-semibold text-slate-900 dark:text-white">
+                          {hasName ? contactName : (hasPhone ? 'Nama kontak darurat' : '-')}
+                        </p>
+                      </div>
+                      <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                        <p className="text-xs uppercase font-semibold text-slate-400 tracking-wide mb-2">Nomor Telepon</p>
+                        <p className="text-base font-semibold text-slate-900 dark:text-white">
+                          {hasPhone ? contactPhone : <span className="text-slate-400 italic font-normal">Nomor belum tersedia</span>}
+                        </p>
+                      </div>
+                      <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                        <p className="text-xs uppercase font-semibold text-slate-400 tracking-wide mb-2">Hubungan</p>
+                        <p className="text-base font-semibold text-slate-900 dark:text-white">
+                          {contactRelation || <span className="text-slate-400 italic font-normal">-</span>}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* F. Timeline Approval */}
+            <div className="p-5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-4">
+              <p className="text-xs font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-widest">F. Timeline Approval</p>
               {(() => {
                 const timelineStage = selectedRequest ? getLeaveProcessStage(selectedRequest) : null;
                 const replacementBlocking = timelineStage?.stage === 'replacement_pending' || timelineStage?.stage === 'replacement_rejected';
@@ -2117,6 +2302,11 @@ export default function HrdLeaveApprovalPage() {
                   (selectedRequest as any)?.replacementEmployeeName ||
                   (selectedRequest as any)?.handoverEmployeeName ||
                   'pengganti sementara';
+                // Same getReplacementConfirmationStatus() helper as section D
+                // and the table — this milestone can never say "Menunggu"
+                // while the rest of the modal already reads "Pengganti
+                // Bersedia".
+                const replacementStatus = selectedRequest ? getReplacementConfirmationStatus(selectedRequest) : null;
                 const hasReplacementAssigned =
                   Boolean((selectedRequest as any)?.replacementEmployeeUid) ||
                   (Boolean((selectedRequest as any)?.handoverEmployeeId) && (selectedRequest as any)?.handoverEmployeeId !== 'manual');
@@ -2126,8 +2316,8 @@ export default function HrdLeaveApprovalPage() {
                 {/* Milestone 1: Staff Submission */}
                 <div className="relative">
                   <div className="absolute -left-[20px] top-1 h-[12px] w-[12px] rounded-full bg-emerald-500 ring-4 ring-white dark:ring-slate-900" />
-                  <div className="text-xs font-bold text-slate-800 dark:text-white">Diajukan oleh Staff</div>
-                  <div className="text-[10px] text-slate-500 font-medium mt-0.5">
+                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Diajukan oleh Staff</div>
+                  <div className="text-sm text-slate-500 font-medium mt-0.5">
                     {selectedRequest?.submittedAtStr || (selectedRequest?.createdAt ? format(selectedRequest.createdAt.toDate(), "EEEE, dd MMMM yyyy 'pukul' HH:mm", { locale: idLocale }) : 'Sudah diajukan ke sistem.')}
                   </div>
                 </div>
@@ -2136,18 +2326,16 @@ export default function HrdLeaveApprovalPage() {
                     gate, before the atasan's queue in spirit and (once
                     firestore.rules' replacementReadyForApproval lands) in
                     practice too. */}
-                {hasReplacementAssigned && (
+                {hasReplacementAssigned && replacementStatus && (
                   <div className="relative">
                     <div className={`absolute -left-[20px] top-1 h-[12px] w-[12px] rounded-full ring-4 ring-white dark:ring-slate-900 ${
-                      timelineStage?.stage === 'replacement_pending'
+                      replacementStatus.key === 'pending'
                         ? 'bg-amber-500 animate-pulse'
-                        : (timelineStage?.stage === 'replacement_rejected' ? 'bg-red-500' : 'bg-emerald-500')
+                        : (replacementStatus.key === 'declined' ? 'bg-red-500' : 'bg-emerald-500')
                     }`} />
-                    <div className="text-xs font-bold text-slate-800 dark:text-white">Konfirmasi Pengganti Sementara</div>
-                    <div className="text-[10px] text-slate-500 font-medium mt-0.5">
-                      {timelineStage?.stage === 'replacement_pending' && `Menunggu konfirmasi dari ${replacementName}`}
-                      {timelineStage?.stage === 'replacement_rejected' && 'Pengganti menolak. Pengaju perlu memilih pengganti baru.'}
-                      {!replacementBlocking && `${replacementName} telah menyatakan bersedia.`}
+                    <div className="text-sm font-semibold text-slate-800 dark:text-white">Konfirmasi Pengganti Sementara</div>
+                    <div className="text-sm text-slate-500 font-medium mt-0.5">
+                      {replacementName} — {replacementStatus.label}
                     </div>
                   </div>
                 )}
@@ -2165,8 +2353,8 @@ export default function HrdLeaveApprovalPage() {
                             ? 'bg-gray-400'
                             : 'bg-emerald-500')))
                   }`} />
-                  <div className="text-xs font-bold text-slate-800 dark:text-white">Persetujuan Atasan ({selectedRequest?.managerName || 'Atasan Langsung'})</div>
-                  <div className="text-[10px] text-slate-500 font-medium mt-0.5">
+                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Persetujuan Atasan ({selectedRequest?.managerName || 'Atasan Langsung'})</div>
+                  <div className="text-sm text-slate-500 font-medium mt-0.5">
                     {replacementBlocking && 'Belum masuk tahap atasan.'}
                     {!replacementBlocking && selectedRequest && ['pending_manager', 'pending_manager_review'].includes(selectedRequest.status) && 'Menunggu Persetujuan Atasan'}
                     {!replacementBlocking && selectedRequest && selectedRequest.status === 'rejected_by_manager' && `Ditolak Atasan: "${selectedRequest.managerNotes}"`}
@@ -2175,7 +2363,7 @@ export default function HrdLeaveApprovalPage() {
                     {!replacementBlocking && selectedRequest && !['pending_manager', 'pending_manager_review', 'rejected_by_manager', 'revision_requested', 'revision_requested_by_manager', 'cancelled'].includes(selectedRequest.status) && (
                       <div className="space-y-1">
                         <span>Disetujui Atasan pada {selectedRequest.managerReviewedAt ? format(selectedRequest.managerReviewedAt.toDate(), "EEEE, dd MMMM yyyy 'pukul' HH:mm", { locale: idLocale }) : '-'}</span>
-                        {selectedRequest.managerNotes && <p className="italic text-slate-400 bg-slate-100 p-1.5 rounded text-[9px] mt-0.5">"{selectedRequest.managerNotes}"</p>}
+                        {selectedRequest.managerNotes && <p className="italic text-slate-500 bg-slate-100 p-1.5 rounded text-sm mt-0.5">"{selectedRequest.managerNotes}"</p>}
                       </div>
                     )}
                   </div>
@@ -2192,8 +2380,8 @@ export default function HrdLeaveApprovalPage() {
                           ? 'bg-red-500'
                           : 'bg-emerald-500'))
                   }`} />
-                  <div className="text-xs font-bold text-slate-800 dark:text-white">Verifikasi & Approval HRD</div>
-                  <div className="text-[10px] text-slate-500 font-medium mt-0.5">
+                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Verifikasi & Approval HRD</div>
+                  <div className="text-sm text-slate-500 font-medium mt-0.5">
                     {replacementBlocking && 'Belum masuk tahap HRD.'}
                     {!replacementBlocking && selectedRequest && ['pending_manager', 'pending_manager_review', 'rejected_by_manager', 'revision_requested', 'revision_requested_by_manager', 'cancelled'].includes(selectedRequest.status) && 'Menunggu persetujuan atasan'}
                     {!replacementBlocking && selectedRequest && ['pending_hrd', 'pending_hrd_review'].includes(selectedRequest.status) && 'Menunggu Verifikasi HRD'}
@@ -2202,7 +2390,7 @@ export default function HrdLeaveApprovalPage() {
                     {!replacementBlocking && selectedRequest && ['approved', 'approved_by_hrd', 'active_leave', 'completed'].includes(selectedRequest.status) && (
                       <div className="space-y-1">
                         <span>Disetujui HRD pada {selectedRequest.hrdReviewedAt ? format(selectedRequest.hrdReviewedAt.toDate(), "EEEE, dd MMMM yyyy 'pukul' HH:mm", { locale: idLocale }) : '-'}</span>
-                        {selectedRequest.hrdNotes && <p className="italic text-slate-400 bg-slate-100 p-1.5 rounded text-[9px] mt-0.5">"{selectedRequest.hrdNotes}"</p>}
+                        {selectedRequest.hrdNotes && <p className="italic text-slate-500 bg-slate-100 p-1.5 rounded text-sm mt-0.5">"{selectedRequest.hrdNotes}"</p>}
                       </div>
                     )}
                   </div>
@@ -2217,8 +2405,8 @@ export default function HrdLeaveApprovalPage() {
                         ? 'bg-indigo-500 animate-pulse'
                         : 'bg-slate-300')
                   }`} />
-                  <div className="text-xs font-bold text-slate-800 dark:text-white">Status Realisasi Cuti</div>
-                  <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">
+                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Status Realisasi Cuti</div>
+                  <div className="text-sm text-slate-500 font-semibold uppercase tracking-wider mt-0.5">
                     {selectedRequest && ['approved', 'approved_by_hrd'].includes(selectedRequest.status) && 'Menunggu Tanggal Mulai Cuti'}
                     {selectedRequest?.status === 'active_leave' && 'Cuti Aktif (Sedang Berlangsung)'}
                     {selectedRequest?.status === 'completed' && 'Cuti Selesai'}
@@ -2231,88 +2419,149 @@ export default function HrdLeaveApprovalPage() {
               })()}
             </div>
 
-            {selectedRequest?.attachmentUrl && (
-              <div className="pt-2">
-                <Button variant="outline" asChild className="w-full rounded-xl hover:bg-slate-50">
-                  <a href={selectedRequest.attachmentUrl} target="_blank" rel="noopener noreferrer">
-                    Lihat Dokumen Lampiran Pendukung
-                  </a>
-                </Button>
+            {/* G. Keputusan HRD — informational only; the actual Setujui/
+                Tolak buttons live exclusively in the sticky footer below,
+                never here. No Alasan Cuti field and no tombol Revisi
+                anywhere in this modal. */}
+            {selectedRequest && getLeaveProcessStage(selectedRequest).hrdCanApprove && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-widest">G. Keputusan HRD</p>
+                <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-700 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+                  Setelah meninjau seluruh informasi di atas, gunakan tombol{' '}
+                  <span className="font-semibold text-red-600 dark:text-red-400">Tolak</span> atau{' '}
+                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">Setujui</span>{' '}
+                  pada bagian bawah untuk memberikan keputusan. Catatan HRD (opsional untuk Setujui, wajib untuk Tolak) diisi pada dialog konfirmasi.
+                </div>
               </div>
             )}
 
           </div>
 
-          {/* Sticky Footer with Action Buttons */}
-          <div className="border-t bg-slate-100 dark:bg-slate-800/60 p-4 flex-none space-y-3">
-            {selectedRequest && getLeaveProcessStage(selectedRequest).hrdCanApprove && (
-              <div className="grid grid-cols-3 gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => handleOpenAction('revise', selectedRequest)}
-                  className="rounded-lg border-2 border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 text-amber-700 dark:text-amber-400 font-bold h-10"
-                >
-                  Minta Revisi
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => handleOpenAction('reject', selectedRequest)}
-                  className="rounded-lg border-2 border-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 text-red-700 dark:text-red-400 font-bold h-10"
-                >
-                  Tolak
-                </Button>
-                <Button
-                  onClick={() => handleOpenAction('approve', selectedRequest)}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg h-10"
-                >
-                  ✓ Setujui
-                </Button>
-              </div>
-            )}
+          {/* Sticky Footer with Action Buttons — a single row: Tutup, Tolak,
+              Setujui. Every decision opens the 2-step confirmation dialog
+              below; nothing here submits directly. */}
+          <div className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-4 flex-none space-y-2">
             {selectedRequest && !getLeaveProcessStage(selectedRequest).hrdCanApprove && (
               <p className="text-center text-xs font-semibold text-slate-400" title="Pengajuan ini masih menunggu konfirmasi pengganti / persetujuan atasan.">
                 Belum Masuk Tahap HRD — {getLeaveProcessStage(selectedRequest).label}
               </p>
             )}
-            <Button
-              onClick={() => setIsDetailOpen(false)}
-              className="w-full bg-slate-700 hover:bg-slate-600 dark:bg-slate-600 dark:hover:bg-slate-500 text-white font-bold rounded-lg h-10"
-            >
-              Tutup Detail
-            </Button>
+            <div className={`grid gap-2 ${selectedRequest && getLeaveProcessStage(selectedRequest).hrdCanApprove ? 'grid-cols-3' : 'grid-cols-1'}`}>
+              <Button
+                variant="outline"
+                onClick={() => setIsDetailOpen(false)}
+                className="rounded-xl font-semibold text-sm h-10 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                Tutup
+              </Button>
+              {selectedRequest && getLeaveProcessStage(selectedRequest).hrdCanApprove && (
+                <>
+                  <Button
+                    onClick={() => handleOpenAction('reject', selectedRequest)}
+                    className="bg-red-600 hover:bg-red-700 text-white font-semibold text-sm rounded-xl h-10"
+                  >
+                    Tolak
+                  </Button>
+                  <Button
+                    onClick={() => handleOpenAction('approve', selectedRequest)}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm rounded-xl h-10"
+                  >
+                    Setujui
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Action Dialog (Approve/Reject/Revise) */}
+      {/* Action Confirmation Dialog (Approve/Reject/Revise) — always opened
+          from the detail modal's footer, on top of it, with a distinct
+          title/message/summary per action and required-reason validation for
+          Tolak. HRD's only two decisions are Setujui and Tolak — no Revisi. */}
       <Dialog open={isActionOpen} onOpenChange={setIsActionOpen}>
         <DialogContent className="max-w-md rounded-2xl bg-white dark:bg-slate-900 border-none shadow-2xl my-auto top-[50%] translate-y-[-50%]">
           <DialogHeader>
-            <DialogTitle className="text-lg font-black text-slate-900 dark:text-white">
-              {actionType === 'approve' ? 'Setujui Final Cuti' : (actionType === 'reject' ? 'Tolak Final Cuti' : 'Minta Revisi Cuti')}
+            <DialogTitle className="text-xl font-semibold text-slate-900 dark:text-white">
+              {actionType === 'approve' ? 'Konfirmasi Persetujuan' : 'Konfirmasi Penolakan'}
             </DialogTitle>
-            <DialogDescription className="text-xs font-semibold text-slate-500 mt-1">
-              {actionType === 'approve' 
-                ? 'Apakah Anda yakin ingin menyetujui final pengajuan cuti ini? Saldo cuti staf akan berkurang secara otomatis.' 
-                : 'Harap berikan alasan/keterangan keputusan Anda di bawah ini secara ringkas.'}
+            <DialogDescription className="text-sm font-medium text-slate-500 mt-1">
+              {actionType === 'approve'
+                ? 'Yakin ingin menyetujui pengajuan cuti ini?'
+                : 'Anda yakin ingin menolak pengajuan cuti ini?'}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
+          {selectedRequest && (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 p-3">
+              <div>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Nama Karyawan</p>
+                <p className="font-semibold text-slate-900 dark:text-slate-200">{selectedRequest.employeeName}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Jenis Cuti</p>
+                <p className="font-semibold text-slate-900 dark:text-slate-200 capitalize">
+                  Cuti {selectedRequest.leaveType === 'tahunan' ? 'Tahunan' : selectedRequest.leaveType === 'besar' ? 'Besar' : selectedRequest.leaveType === 'menikah' ? 'Menikah' : selectedRequest.leaveType === 'melahirkan' ? 'Melahirkan' : 'Tahunan'}
+                </p>
+              </div>
+              <div className="col-span-2">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Periode Cuti</p>
+                <p className="font-semibold text-slate-900 dark:text-slate-200">
+                  {format(selectedRequest.startDate.toDate(), 'dd MMM yyyy', { locale: idLocale })} – {format(selectedRequest.endDate.toDate(), 'dd MMM yyyy', { locale: idLocale })}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Durasi</p>
+                <p className="font-semibold text-slate-900 dark:text-slate-200">{selectedRequest.durationDays} Hari</p>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-1.5 py-1">
+            <label className="text-sm font-semibold text-slate-600 dark:text-slate-400">
+              {actionType === 'reject' ? 'Alasan Penolakan (wajib)' : 'Catatan Persetujuan (opsional)'}
+            </label>
             <Textarea
               rows={3}
-              placeholder={actionType === 'approve' ? "Catatan persetujuan final (opsional)..." : "Keterangan/alasan (wajib, minimal 5 karakter)..."}
+              placeholder={actionType === 'approve' ? 'Catatan persetujuan final (opsional)...' : 'Keterangan/alasan (wajib, minimal 5 karakter)...'}
               value={notes}
               onChange={e => setNotes(e.target.value)}
-              className="rounded-xl"
+              className={`rounded-xl bg-white dark:bg-slate-950 text-sm focus:ring-indigo-500 ${
+                actionType === 'reject' && reasonError && !notes.trim()
+                  ? 'border-red-500 dark:border-red-500 focus:border-red-500'
+                  : 'border-slate-300 dark:border-slate-800 focus:border-indigo-500 dark:focus:border-indigo-500'
+              }`}
             />
+            {actionType === 'reject' && reasonError && !notes.trim() && (
+              <p className="text-sm font-semibold text-red-600 dark:text-red-400">
+                Alasan penolakan wajib diisi.
+              </p>
+            )}
           </div>
 
           <DialogFooter className="gap-2">
-            <Button variant="ghost" onClick={() => setIsActionOpen(false)} className="rounded-xl font-bold">Batal</Button>
-            <Button onClick={handleConfirmAction} disabled={isSaving} className={`font-bold rounded-xl px-5 ${actionType === 'approve' ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : (actionType === 'reject' ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-amber-500 hover:bg-amber-600 text-white')}`}>
-              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-              Finalisasi
+            <Button variant="ghost" onClick={() => setIsActionOpen(false)} disabled={isSaving} className="rounded-xl font-semibold text-sm">Batal</Button>
+            <Button
+              onClick={() => {
+                if (actionType === 'reject' && !notes.trim()) {
+                  setReasonError(true);
+                  return;
+                }
+                handleConfirmAction();
+              }}
+              disabled={isSaving}
+              className={`font-semibold text-sm rounded-xl px-5 disabled:opacity-60 ${actionType === 'approve' ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-red-600 hover:bg-red-700 text-white'}`}
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Memproses...
+                </>
+              ) : (
+                <>
+                  <Send className="mr-2 h-4 w-4" />
+                  {actionType === 'approve' ? 'Ya, Setujui' : 'Ya, Tolak'}
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

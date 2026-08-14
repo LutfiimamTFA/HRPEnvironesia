@@ -307,7 +307,11 @@ export const GoogleDatePicker = React.forwardRef<
         </PopoverTrigger>
         <PopoverContent
           className="w-auto rounded-xl border bg-popover shadow-lg p-0"
+          side="bottom"
           align="start"
+          sideOffset={8}
+          collisionPadding={16}
+          avoidCollisions
           portalled={portalled}
         >
           <div className="p-3">

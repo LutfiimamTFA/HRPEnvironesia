@@ -389,7 +389,28 @@ service cloud.firestore {
       allow create: if isSuperAdmin() || isHrdAllowedForBrand(request.resource.data.brandId);
       allow update, delete: if isSuperAdmin() || isHrdAllowedForBrand(resource.data.brandId);
     }
-    
+
+    /**
+     * /recruitment_batches/{batchId}
+     * - Super Admin: full CRUD on every batch.
+     * - HRD: get/list/create/update scoped to their own allowedBrandIds via
+     *   isHrdAllowedForBrand() — client MUST query with
+     *   where('brandId','in',allowedBrandIds) chunked <=10 for `list` to
+     *   succeed (useHrdScopedCollection already does this).
+     * - HRD update requires the brandId to resolve to an allowed brand both
+     *   before AND after the write, so a batch can never be reassigned out
+     *   of HRD's scope.
+     * - HRD cannot delete — Super Admin only. No delete button exists in the
+     *   HRD-facing UI; this is defense-in-depth.
+     */
+    match /recruitment_batches/{batchId} {
+      allow get, list: if isSuperAdmin() || isHrdAllowedForBrand(resource.data.brandId);
+      allow create: if isSuperAdmin() || isHrdAllowedForBrand(request.resource.data.brandId);
+      allow update: if isSuperAdmin() ||
+        (isHrdAllowedForBrand(resource.data.brandId) && isHrdAllowedForBrand(request.resource.data.brandId));
+      allow delete: if isSuperAdmin();
+    }
+
     /**
      * /brands/{brandId}
      * - Brands are public for anyone to read.

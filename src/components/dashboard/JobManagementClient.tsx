@@ -8,7 +8,7 @@ import {
   useFirestore,
   updateDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking,
 } from '@/firebase';
-import type { Job, Brand, UserProfile } from '@/lib/types';
+import type { Job, Brand, UserProfile, RecruitmentBatch } from '@/lib/types';
 import { format, differenceInDays, isPast, isToday } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 
@@ -48,7 +48,7 @@ import { HrdScopeEmptyState } from '@/components/dashboard/hrd/HrdScopeEmptyStat
 
 // ─── Status helpers ───────────────────────────────────────────────────────────
 
-function resolveEffectiveStatus(job: Job): Job['publishStatus'] {
+export function resolveEffectiveStatus(job: Job): Job['publishStatus'] {
   if (job.publishStatus === 'published' || job.publishStatus === 'reopened') {
     const deadline = job.applyDeadline || job.applicationDeadline;
     if (deadline && isPast(deadline.toDate())) return 'expired';
@@ -56,7 +56,7 @@ function resolveEffectiveStatus(job: Job): Job['publishStatus'] {
   return job.publishStatus;
 }
 
-const STATUS_CONFIG: Record<string, { label: string; dot: string; pill: string }> = {
+export const STATUS_CONFIG: Record<string, { label: string; dot: string; pill: string }> = {
   published: {
     label: 'Published',
     dot: 'bg-green-500',
@@ -94,7 +94,7 @@ const STATUS_CONFIG: Record<string, { label: string; dot: string; pill: string }
   },
 };
 
-function StatusPill({ status }: { status: string }) {
+export function StatusPill({ status }: { status: string }) {
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.draft;
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${cfg.pill}`}>
@@ -735,6 +735,7 @@ export function JobManagementClient() {
   } = useHrdScopedCollection<Job>('jobs');
 
   const { data: brands, isLoading: isLoadingBrands } = useHrdScopedBrands();
+  const { data: recruitmentBatches } = useHrdScopedCollection<RecruitmentBatch>('recruitment_batches');
 
   const internalUserConstraints = useMemo(() => {
     if (userProfile?.role === 'super-admin') {
@@ -1156,7 +1157,7 @@ export function JobManagementClient() {
       </div>
 
       {/* Dialogs */}
-      <JobFormDialog open={isFormOpen} onOpenChange={setIsFormOpen} job={selectedJob} brands={brands || []} />
+      <JobFormDialog open={isFormOpen} onOpenChange={setIsFormOpen} job={selectedJob} brands={brands || []} batches={recruitmentBatches || []} />
       <DeleteJobConfirmationDialog
         job={selectedJob}
         applicantCount={selectedJob ? (appCountsByJob.get(selectedJob.id!)?.total ?? 0) : 0}

@@ -30,6 +30,7 @@ interface MultiSelectProps {
   onChange: (selected: MultiSelectOption[]) => void;
   className?: string;
   placeholder?: string;
+  disabled?: boolean;
 }
 
 function MultiSelect({
@@ -38,6 +39,7 @@ function MultiSelect({
   onChange,
   className,
   placeholder = 'Select options...',
+  disabled = false,
   ...props
 }: MultiSelectProps) {
   const [open, setOpen] = React.useState(false);
@@ -47,12 +49,19 @@ function MultiSelect({
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen} {...props}>
+    <Popover
+      modal
+      open={disabled ? false : open}
+      onOpenChange={(v) => !disabled && setOpen(v)}
+      {...props}
+    >
       <PopoverTrigger asChild>
         <Button
+          type="button"
           variant="outline"
           role="combobox"
           aria-expanded={open}
+          disabled={disabled}
           className={cn("w-full justify-between h-auto min-h-10", className)}
         >
           <div className="flex gap-1 flex-wrap">
@@ -87,14 +96,19 @@ function MultiSelect({
               {options.map((option) => (
                 <CommandItem
                   key={option.value}
+                  value={option.value}
+                  keywords={[option.label]}
+                  className="cursor-pointer"
                   onSelect={() => {
+                    // Multi-select: stay open after each pick so HRD can
+                    // check off several divisions in one go, instead of
+                    // reopening the popover after every single click.
                     const isSelected = selected.some((s) => s.value === option.value);
                     if (isSelected) {
                       onChange(selected.filter((s) => s.value !== option.value));
                     } else {
                       onChange([...selected, option]);
                     }
-                    setOpen(false);
                   }}
                 >
                   <Check
