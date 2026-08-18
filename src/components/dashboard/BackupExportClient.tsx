@@ -1360,6 +1360,9 @@ export function BackupExportClient() {
                     <CardDescription className="mt-0.5 text-xs">
                       Gunakan OAuth User untuk My Drive, atau Service Account untuk Shared Drive.
                     </CardDescription>
+                    <p className="mt-1 text-[11px] text-slate-400">
+                      Koneksi ini hanya digunakan untuk proses Backup &amp; Export. Template Payroll dan Rekap Absensi HRD menggunakan jalur Google Drive terpisah dan tetap berfungsi meskipun koneksi ini terputus.
+                    </p>
                   </div>
                 </div>
                 {settingsLoading ? (

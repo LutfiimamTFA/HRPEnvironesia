@@ -10,9 +10,9 @@ export const DRIVE_TOKEN_EXPIRED_MESSAGE =
   'Koneksi Google Drive sudah kedaluwarsa atau dicabut. Silakan sambungkan ulang Google Drive di menu Backup & Export.';
 
 /**
- * Thrown by buildOAuthDriveClient()/downloadTemplateFromDrive() with a
- * message that's already safe to show the user directly, plus a `code` a
- * caller can branch on without re-parsing the message string.
+ * Thrown by buildOAuthDriveClient() with a message that's already safe to
+ * show the user directly, plus a `code` a caller can branch on without
+ * re-parsing the message string.
  */
 export class DriveAccessError extends Error {
   code: 'not_connected' | 'token_expired' | 'not_found' | 'permission_denied' | 'invalid_file' | 'unknown';
@@ -61,9 +61,12 @@ export async function markDriveConnectionExpired(reason: string): Promise<void> 
 }
 
 /**
- * Same OAuth Google Drive connection used by Backup & Export and every
- * payroll-template route (upload/download/test) — never a service account,
- * since service accounts have no storage quota of their own.
+ * OAuth Google Drive connection used by Backup & Export ONLY (backup runs,
+ * export runs, connection status/history). Template Payroll / Rekap Absensi
+ * has its own independent Drive access — see google-drive-payroll.ts — and
+ * must never import this. That separation is intentional: Backup & Export's
+ * OAuth token being expired/disconnected/invalid_grant must not affect HRD's
+ * payroll export.
  */
 export async function buildOAuthDriveClient() {
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
@@ -96,39 +99,4 @@ export async function buildOAuthDriveClient() {
   }
 
   return google.drive({ version: 'v3', auth: oauth2Client });
-}
-
-/**
- * Downloads a file's raw bytes from Drive by fileId, translating Google's
- * generic HTTP errors (404/403/etc.) into messages a Super Admin can act on
- * without needing to read server logs.
- */
-export async function downloadTemplateFromDrive(fileId: string): Promise<Buffer> {
-  if (!fileId) {
-    throw new DriveAccessError('invalid_file', 'Template payroll tidak memiliki fileId Google Drive. Upload ulang template dari menu Template Payroll.');
-  }
-
-  const drive = await buildOAuthDriveClient();
-
-  try {
-    const fileResponse = await drive.files.get(
-      { fileId, alt: 'media', supportsAllDrives: true },
-      { responseType: 'arraybuffer' },
-    );
-    return Buffer.from(fileResponse.data as ArrayBuffer);
-  } catch (err: any) {
-    const status = err?.code || err?.response?.status;
-    const msg = String(err?.message || '');
-    if (status === 404) {
-      throw new DriveAccessError('not_found', `File template tidak ditemukan di Google Drive (fileId: ${fileId}). File mungkin sudah dihapus/dipindahkan. Upload ulang template.`);
-    }
-    if (status === 403) {
-      throw new DriveAccessError('permission_denied', `Akses ke file template di Google Drive ditolak (fileId: ${fileId}). Periksa izin file atau upload ulang template.`);
-    }
-    if (isInvalidGrant(msg)) {
-      await markDriveConnectionExpired(msg);
-      throw new DriveAccessError('token_expired', DRIVE_TOKEN_EXPIRED_MESSAGE);
-    }
-    throw new DriveAccessError('unknown', `Gagal mengambil file template dari Google Drive (fileId: ${fileId}): ${msg || 'kesalahan tidak diketahui'}.`);
-  }
 }

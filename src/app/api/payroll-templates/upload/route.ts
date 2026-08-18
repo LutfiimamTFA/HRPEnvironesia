@@ -1,45 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Readable } from "stream";
 import * as XLSX from "xlsx";
 import admin from "@/lib/firebase/admin";
 import { FieldValue } from "firebase-admin/firestore";
-import { buildOAuthDriveClient, DriveAccessError } from "@/lib/server/google-drive-oauth";
+import { uploadFileToAppsScript, AppsScriptUploadError } from "@/lib/server/google-drive-apps-script";
 
 export const runtime = "nodejs";
 
 // Payroll templates are small spreadsheets, but give some headroom over the
 // 1MB cap used for profile photos elsewhere.
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
-const PAYROLL_TEMPLATE_FOLDER_NAME = "HRP Payroll Templates";
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-
-async function getOrCreatePayrollTemplateFolder(drive: any): Promise<string> {
-  const envFolderId = process.env.GOOGLE_DRIVE_PAYROLL_TEMPLATE_FOLDER_ID;
-  if (envFolderId) return envFolderId;
-
-  const query = `mimeType='application/vnd.google-apps.folder' and name='${PAYROLL_TEMPLATE_FOLDER_NAME}' and 'root' in parents and trashed=false`;
-  const listResponse = await drive.files.list({
-    q: query,
-    fields: "files(id, name)",
-    spaces: "drive",
-  });
-  const existing = listResponse.data.files;
-  if (existing && existing.length > 0) return existing[0].id!;
-
-  const created = await drive.files.create({
-    requestBody: {
-      name: PAYROLL_TEMPLATE_FOLDER_NAME,
-      mimeType: "application/vnd.google-apps.folder",
-      parents: ["root"],
-    },
-    fields: "id",
-  });
-  return created.data.id!;
-}
-
-function isDriveAuthError(message: string): boolean {
-  return /invalid_grant|invalid_rapt|unauthorized|token|permission|belum terhubung/i.test(message);
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -99,57 +69,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, message: "Tidak ada sheet ditemukan di file Excel ini." }, { status: 400 });
     }
 
-    let drive;
-    try {
-      drive = await buildOAuthDriveClient();
-    } catch (err) {
-      if (err instanceof DriveAccessError) {
-        return NextResponse.json({ success: false, message: err.message, code: err.code }, { status: err.code === "not_connected" ? 400 : 502 });
-      }
-      return NextResponse.json({ success: false, message: "Upload gagal karena koneksi Google Drive perlu diperbarui." }, { status: 502 });
-    }
+    console.info("[Payroll Template] Upload using Apps Script system uploader", { fileName: file.name });
 
-    let driveFolderId: string;
+    let uploadResult;
     try {
-      driveFolderId = await getOrCreatePayrollTemplateFolder(drive);
-    } catch (err: any) {
-      const msg = String(err?.message || "");
-      return NextResponse.json(
-        { success: false, message: isDriveAuthError(msg) ? "Upload gagal karena koneksi Google Drive perlu diperbarui." : "Gagal menyiapkan folder template payroll di Google Drive." },
-        { status: 502 },
-      );
-    }
-
-    const bufferStream = new Readable();
-    bufferStream.push(buffer);
-    bufferStream.push(null);
-
-    let driveFile;
-    try {
-      const driveResponse = await drive.files.create({
-        requestBody: { name: file.name, parents: [driveFolderId] },
-        media: { mimeType: XLSX_MIME, body: bufferStream },
-        fields: "id, name, size, mimeType, webViewLink, webContentLink",
-        supportsAllDrives: true,
+      uploadResult = await uploadFileToAppsScript({
+        fileName: file.name,
+        fileType: XLSX_MIME,
+        buffer,
+        category: "payroll_template",
+        uploadedBy: decoded.uid,
       });
-      driveFile = driveResponse.data;
-      if (driveFile.id) {
-        await drive.permissions.create({
-          fileId: driveFile.id,
-          requestBody: { type: "anyone", role: "reader" },
-          supportsAllDrives: true,
-        });
-      }
-    } catch (err: any) {
-      const msg = String(err?.message || "");
-      return NextResponse.json(
-        { success: false, message: isDriveAuthError(msg) ? "Upload gagal karena koneksi Google Drive perlu diperbarui." : (err.message || "Gagal upload ke Google Drive.") },
-        { status: 502 },
-      );
-    }
-
-    if (!driveFile.id) {
-      return NextResponse.json({ success: false, message: "Upload ke Google Drive gagal: file id tidak ditemukan." }, { status: 502 });
+    } catch (err) {
+      const message = err instanceof AppsScriptUploadError ? err.message : "Gagal upload template ke Google Drive.";
+      return NextResponse.json({ success: false, message }, { status: 502 });
     }
 
     const createdByName = userProfile.fullName || (userProfile as any).displayName || userProfile.email || decoded.uid;
@@ -161,10 +94,10 @@ export async function POST(req: NextRequest) {
       mimeType: XLSX_MIME,
       size: file.size,
       storageProvider: "google_drive",
-      driveFileId: driveFile.id,
-      driveFolderId,
-      driveWebViewLink: driveFile.webViewLink || null,
-      driveWebContentLink: driveFile.webContentLink || null,
+      driveFileId: uploadResult.fileId,
+      driveFolderId: uploadResult.driveFolderId || null,
+      driveWebViewLink: uploadResult.webViewLink || null,
+      driveWebContentLink: uploadResult.driveDownloadUrl || null,
       sheetNames,
       isActive: true,
       createdByUid: decoded.uid,
@@ -177,15 +110,14 @@ export async function POST(req: NextRequest) {
       success: true,
       templateId: templateRef.id,
       sheetNames,
-      driveFileId: driveFile.id,
-      driveWebViewLink: driveFile.webViewLink || null,
-      driveWebContentLink: driveFile.webContentLink || null,
+      driveFileId: uploadResult.fileId,
+      driveWebViewLink: uploadResult.webViewLink || null,
+      driveWebContentLink: uploadResult.driveDownloadUrl || null,
     });
   } catch (error: any) {
     console.error("[payroll-templates/upload] error:", error);
-    const msg = String(error?.message || "");
     return NextResponse.json(
-      { success: false, message: isDriveAuthError(msg) ? "Upload gagal karena koneksi Google Drive perlu diperbarui." : (error.message || "Terjadi kesalahan server.") },
+      { success: false, message: error?.message || "Terjadi kesalahan server." },
       { status: 500 },
     );
   }

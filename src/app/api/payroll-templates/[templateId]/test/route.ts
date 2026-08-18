@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import admin from "@/lib/firebase/admin";
-import { downloadTemplateFromDrive, DriveAccessError } from "@/lib/server/google-drive-oauth";
+import { downloadPayrollTemplateFromDrive, PayrollDriveAccessError } from "@/lib/server/google-drive-payroll";
 
 export const runtime = "nodejs";
 
-const STATUS_BY_CODE: Record<DriveAccessError["code"], number> = {
-  not_connected: 400,
-  token_expired: 502,
+const STATUS_BY_CODE: Record<PayrollDriveAccessError["code"], number> = {
+  not_configured: 500,
   not_found: 404,
   permission_denied: 403,
   invalid_file: 400,
@@ -59,9 +58,9 @@ export async function GET(
 
     let buffer: Buffer;
     try {
-      buffer = await downloadTemplateFromDrive(template.driveFileId);
+      buffer = await downloadPayrollTemplateFromDrive(template.driveFileId);
     } catch (err) {
-      if (err instanceof DriveAccessError) {
+      if (err instanceof PayrollDriveAccessError) {
         return NextResponse.json(
           { success: false, message: `Template "${template.name}" tidak dapat diambil dari Google Drive. FileId: ${template.driveFileId}. Error: ${err.message}`, code: err.code },
           { status: STATUS_BY_CODE[err.code] },

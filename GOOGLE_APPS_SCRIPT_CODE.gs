@@ -14,6 +14,12 @@
  * 7. Copy URL /exec yang keluar (format: https://script.google.com/macros/s/[ID]/exec)
  * 8. Update .env.local dengan GOOGLE_DRIVE_APPS_SCRIPT_URL=[URL dari step 7]
  * 9. Untuk update code selanjutnya, Deploy > Manage Deployments > Edit > Deploy as new version
+ *
+ * CATATAN: Jika file ini diperbarui (misalnya menambah kategori folder baru
+ * seperti "payroll_template"), perubahan HANYA berlaku di Google Drive setelah
+ * kode ini di-copy ulang ke Apps Script editor dan di-deploy sebagai versi baru
+ * (langkah 9). Sebelum redeploy, kategori yang belum dikenal tetap otomatis
+ * fallback ke root folder (lihat buildFolderPath) — upload tetap berhasil.
  */
 
 // ============== CONFIGURATION ==============
@@ -108,6 +114,11 @@ function buildFolderPath(category) {
   // Business trip documents
   if (category === "business_trip_spd") {
     return "business_trip_spd";
+  }
+
+  // Payroll templates (Template Payroll / Rekap Absensi HRD)
+  if (category === "payroll_template") {
+    return "payroll_templates";
   }
 
   // Default: root folder (no subfolder)
